@@ -54,19 +54,24 @@ Before running this project, ensure you have the following installed:
 
 ## ⚙️ Setup & Run
 
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/ClinicsManagementSln.git
+   cd ClinicsManagementSln/ClinicsManagementService
+
 After cloning the repository, follow these steps:
 
-1. **Restore .NET dependencies**
+2. **Restore .NET dependencies**
    ```powershell
    dotnet restore
    ```
 
-2. **Build the project**
+3. **Build the project**
    ```powershell
    dotnet build
    ```
 
-3. **Install Playwright browsers**
+4. **Install Playwright browsers**
    If you installed Playwright as a .NET tool:
    ```powershell
    playwright install
@@ -76,15 +81,15 @@ After cloning the repository, follow these steps:
    pwsh bin/Debug/net8.0/playwright.ps1 install
    ```
 
-4. **Update appsettings.json**
+5. **Update appsettings.json**
    - Configure any required settings in `appsettings.json` or `appsettings.Development.json`.
 
-5. **Run the Web API**
+6. **Run the Web API**
    ```powershell
    dotnet run
    ```
 
-6. **Test the API**
+7. **Test the API**
    - Use [Postman](https://www.postman.com/), [Insomnia](https://insomnia.rest/), or `curl` to send requests to the API endpoint.
    - Example request:
      ```powershell
