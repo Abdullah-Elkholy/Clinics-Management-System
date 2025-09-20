@@ -1,0 +1,56 @@
+# Build results
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+[Ll]ogs/
+
+# WhatsApp session login data
+whatsapp-session/
+
+# Debugging screenshot from inside whatsapp to ensure message is sent successfully or not
+Screenshots/
+
+# Visual Studio cache
+.vs/
+*.vsidx
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider / JetBrains
+.idea/
+
+# Logs
+*.log
+
+# OS files
+*.DS_Store
+Thumbs.db
+
+# Packages
+*.nupkg
+*.snupkg
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+# Publish output
+publish/
+out/
+
+# Configuration files (user secrets, should not be pushed)
+appsettings.*.json
+# but keep appsettings.json
+!appsettings.json
+
+# Docker
+*.dockerignore
+Dockerfile.*
+docker-compose*.yml
