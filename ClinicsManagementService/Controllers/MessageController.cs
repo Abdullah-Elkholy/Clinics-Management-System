@@ -6,9 +6,9 @@ namespace ClinicsManagementService.Controllers
     [Route("[controller]")]
     public class MessagingController : ControllerBase
     {
-        private readonly WhatsAppService _whatsAppService;
+        private readonly IMessageSender _whatsAppService;
 
-        public MessagingController(WhatsAppService whatsAppService)
+        public MessagingController(IMessageSender whatsAppService)
         {
             _whatsAppService = whatsAppService;
         }

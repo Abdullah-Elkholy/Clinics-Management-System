@@ -1,350 +1,156 @@
-using Microsoft.Playwright;
-
-public class WhatsAppService
+public class WhatsAppService : IMessageSender
 {
-    private const string SessionDir = "whatsapp-session";
+    private readonly Func<IBrowserSession> _browserSessionFactory;
+    private readonly INotifier _notifier;
+
+    public WhatsAppService(Func<IBrowserSession> browserSessionFactory, INotifier notifier)
+    {
+        _browserSessionFactory = browserSessionFactory;
+        _notifier = notifier;
+    }
 
     public async Task<bool> SendMessageAsync(string phoneNumber, string message)
     {
-        using var playwright = await Playwright.CreateAsync();
-        Directory.CreateDirectory(SessionDir);
+        await using var browserSession = _browserSessionFactory();
+        await browserSession.InitializeAsync();
 
-        var browser = await playwright.Chromium.LaunchPersistentContextAsync(
-            SessionDir,
-            new BrowserTypeLaunchPersistentContextOptions
-            {
-                Headless = false,
-                ViewportSize = null,
-                Args = new[] { "--start-maximized" }
-            }
-        );
+        await browserSession.NavigateToAsync("https://web.whatsapp.com/");
 
-        var page = browser.Pages.Count > 0 ? browser.Pages[0] : await browser.NewPageAsync();
-
-        try
+        // Detect loading chats
+        var loadingElement = await browserSession.QuerySelectorAsync("span[aria-label^='Loading your chats']");
+        if (loadingElement != null)
         {
-            await page.GotoAsync("https://web.whatsapp.com/");
-            await page.WaitForSelectorAsync("div[role='grid']", new PageWaitForSelectorOptions { Timeout = 0 });
-            await page.GotoAsync($"https://web.whatsapp.com/send?phone={phoneNumber}");
+            _notifier.Notify("WhatsApp Web is loading chats. This may take a while if you haven't opened WhatsApp recently.");
+            // Wait for the loading element to disappear (not visible)
+            await browserSession.WaitForSelectorAsync("span[aria-label^='Loading your chats']", 0, false);
+            _notifier.Notify("WhatsApp chats finished loading.");
+        }
 
-            // Check for error dialog before trying to send
-            var errorDialog = await page.QuerySelectorAsync("div[data-animate-modal-popup='true']");
-            if (errorDialog != null)
+        await browserSession.NavigateToAsync($"https://web.whatsapp.com/send?phone={phoneNumber}");
+
+        // Check for error dialog before trying to send
+        var errorDialog = await browserSession.QuerySelectorAsync("div[data-animate-modal-popup='true']");
+        if (errorDialog != null)
+        {
+            var ariaLabel = await errorDialog.GetAttributeAsync("aria-label");
+            var dialogText = await errorDialog.InnerTextAsync();
+
+            if (ariaLabel != null && ariaLabel.Contains("invalid"))
             {
-                var ariaLabel = await errorDialog.GetAttributeAsync("aria-label");
-                var dialogText = await errorDialog.InnerTextAsync();
-
-                if (ariaLabel != null && ariaLabel.Contains("invalid"))
-                {
-                    Console.WriteLine("Invalid phone number format detected.");
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_invalid_number.png" });
-                    return false;
-                }
-                else if (dialogText.Contains("Couldn't find this user") || dialogText.Contains("not on WhatsApp"))
-                {
-                    Console.WriteLine("Number is not registered on WhatsApp.");
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_not_registered.png" });
-                    return false;
-                }
-                else
-                {
-                    Console.WriteLine("Unknown error dialog detected: " + dialogText);
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_unknown_error.png" });
-                    return false;
-                }
+                _notifier.Notify("Invalid phone number format detected.");
+                return false;
             }
-
-            await page.WaitForSelectorAsync("header");
-            await page.WaitForSelectorAsync("footer", new PageWaitForSelectorOptions { State = WaitForSelectorState.Visible, Timeout = 10000 });
-            await page.WaitForSelectorAsync("footer div[contenteditable='true']", new PageWaitForSelectorOptions { State = WaitForSelectorState.Visible, Timeout = 10000 });
-
-            // Check for WhatsApp Web reconnecting banner
-            var reconnectingBanner = await page.QuerySelectorAsync("div[role='alert'], span:has-text('Reconnecting')");
-            int reconnectAttempts = 3;
-            int reconnectWaitMs = 5000;
-
-            if (reconnectingBanner != null)
+            else if (dialogText.Contains("Couldn't find this user") || dialogText.Contains("not on WhatsApp"))
             {
-                Console.WriteLine("WhatsApp Web is reconnecting or offline. Attempting to reconnect...");
-                for (int i = 0; i < reconnectAttempts; i++)
-                {
-                    await Task.Delay(reconnectWaitMs);
-                    reconnectingBanner = await page.QuerySelectorAsync("div[role='alert'], span:has-text('Reconnecting')");
-                    if (reconnectingBanner == null)
-                    {
-                        Console.WriteLine("Reconnected successfully.");
-                        break;
-                    }
-                    Console.WriteLine($"Reconnect attempt {i + 1} failed, retrying...");
-                }
-                if (reconnectingBanner != null)
-                {
-                    Console.WriteLine("Failed to reconnect after multiple attempts. Network instability detected.");
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_network_issue.png" });
-                    return false;
-                }
-            }
-
-            var input = await page.QuerySelectorAsync("footer div[contenteditable='true']");
-            await input.FocusAsync();
-            await input.FillAsync(message);
-
-            var sendButton = await page.QuerySelectorAsync("footer button span[data-icon='send']");
-            if (sendButton != null)
-            {
-                await sendButton.ClickAsync();
+                _notifier.Notify("Number is not registered on WhatsApp.");
+                return false;
             }
             else
             {
-                await input.PressAsync("Enter");
+                _notifier.Notify($"Unknown error dialog detected: {dialogText}");
+                return false;
             }
+        }
 
-            // Poll for the last message status icon
-            var lastMsgStatusSelector = "(//span[@data-icon='msg-check' or @data-icon='msg-dblcheck' or @data-icon='msg-time'])[last()]";
-            var maxWaitMs = 60000;
-            var pollIntervalMs = 1000;
-            var elapsed = 0;
-            string iconType = null;
-            bool sent = false;
+    await browserSession.WaitForSelectorAsync("header");
+    await browserSession.WaitForSelectorAsync("footer", 10000, true);
+    await browserSession.WaitForSelectorAsync("footer div[contenteditable='true']", 10000, true);
 
-            while (elapsed < maxWaitMs)
+        var input = await browserSession.QuerySelectorAsync("footer div[contenteditable='true']");
+        if (input is null)
+        {
+            _notifier.Notify("Message input box not found.");
+            return false;
+        }
+        await input.FocusAsync();
+        await input.FillAsync(message);
+
+        var sendButton = await browserSession.QuerySelectorAsync("footer button span[data-icon='send']");
+        if (sendButton != null)
+        {
+            await sendButton.ClickAsync();
+        }
+        else
+        {
+            await input.PressAsync("Enter");
+        }
+
+        // Poll for the last message status icon
+        var lastMsgStatusSelector = "(//span[@data-icon='msg-check' or @data-icon='msg-dblcheck' or @data-icon='msg-time'])[last()]";
+        var maxWaitMs = 60000;
+        var pollIntervalMs = 1000;
+        var elapsed = 0;
+        string? iconType = null;
+        bool sent = false;
+
+        while (elapsed < maxWaitMs)
+        {
+            var statusIcon = await browserSession.QuerySelectorAsync(lastMsgStatusSelector);
+            if (statusIcon != null)
             {
-                var statusIcon = await page.QuerySelectorAsync(lastMsgStatusSelector);
-                if (statusIcon != null)
+                var attr = await statusIcon.GetAttributeAsync("data-icon");
+                iconType = attr ?? string.Empty;
+                _notifier.Notify($"Polling: elapsed={elapsed}ms, iconType={iconType}");
+                if (iconType == "msg-check" || iconType == "msg-dblcheck")
                 {
-                    iconType = await statusIcon.GetAttributeAsync("data-icon");
-                    Console.WriteLine($"Polling: elapsed={elapsed}ms, iconType={iconType}");
-                    if (iconType == "msg-check" || iconType == "msg-dblcheck")
-                    {
-                        Console.WriteLine("Message sent successfully.");
-                        sent = true;
-                        break;
-                    }
-                    else if (iconType == "msg-time")
-                    {
-                        // Still pending, wait and poll again
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Unknown iconType: {iconType}, treating as failure.");
-                        break;
-                    }
+                    _notifier.Notify("Message sent successfully.");
+                    sent = true;
+                    break;
+                }
+                else if (iconType == "msg-time")
+                {
+                    // Still pending, wait and poll again
                 }
                 else
                 {
-                    Console.WriteLine($"Polling: elapsed={elapsed}ms, statusIcon=null (selector may be incorrect or message not rendered yet)");
+                    _notifier.Notify($"Unknown iconType: {iconType}, treating as failure.");
+                    break;
                 }
-                await Task.Delay(pollIntervalMs);
-                elapsed += pollIntervalMs;
             }
-
-            if (!sent && iconType == "msg-time")
+            else
             {
-                Console.WriteLine("Message still pending, waiting extra 15 seconds before closing session...");
-                await Task.Delay(15000);
+                _notifier.Notify($"Polling: elapsed={elapsed}ms, statusIcon=null (selector may be incorrect or message not rendered yet)");
+            }
+            await Task.Delay(pollIntervalMs);
+            elapsed += pollIntervalMs;
+        }
 
-                var statusIcon = await page.QuerySelectorAsync(lastMsgStatusSelector);
-                if (statusIcon != null)
+        if (!sent && iconType == "msg-time")
+        {
+            _notifier.Notify("Message still pending, waiting extra 15 seconds before closing session...");
+            await Task.Delay(15000);
+
+            var statusIcon = await browserSession.QuerySelectorAsync(lastMsgStatusSelector);
+            if (statusIcon != null)
+            {
+                var attr = await statusIcon.GetAttributeAsync("data-icon");
+                iconType = attr ?? string.Empty;
+                _notifier.Notify($"Final check after extra wait: iconType={iconType}");
+                if (iconType == "msg-check" || iconType == "msg-dblcheck")
                 {
-                    iconType = await statusIcon.GetAttributeAsync("data-icon");
-                    Console.WriteLine($"Final check after extra wait: iconType={iconType}");
-                    if (iconType == "msg-check" || iconType == "msg-dblcheck")
-                    {
-                        Console.WriteLine("Message sent successfully after extra wait.");
-                        sent = true;
-                    }
+                    _notifier.Notify("Message sent successfully after extra wait.");
+                    sent = true;
                 }
             }
+        }
 
-            await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_status.png" });
-
-            if (!sent)
-            {
-                Console.WriteLine("Message failed to send (pending/clock icon or timeout).");
-            }
-            return sent;
-        }
-        catch (Exception ex)
+        if (!sent)
         {
-            Console.WriteLine($"WhatsAppService Error: {ex.Message}");
-            throw;
+            _notifier.Notify("Message failed to send (pending/clock icon or timeout).");
         }
-        finally
-        {
-            await browser.CloseAsync();
-        }
+        return sent;
     }
 
     public async Task<bool> SendMessagesAsync(string phoneNumber, IEnumerable<string> messages)
     {
-        using var playwright = await Playwright.CreateAsync();
-        Directory.CreateDirectory(SessionDir);
-
-        var browser = await playwright.Chromium.LaunchPersistentContextAsync(
-            SessionDir,
-            new BrowserTypeLaunchPersistentContextOptions
-            {
-                Headless = false,
-                ViewportSize = null,
-                Args = new[] { "--start-maximized" }
-            }
-        );
-
-        var page = browser.Pages.Count > 0 ? browser.Pages[0] : await browser.NewPageAsync();
         bool allSent = true;
-
-        try
+        foreach (var message in messages)
         {
-            await page.GotoAsync("https://web.whatsapp.com/");
-            await page.WaitForSelectorAsync("div[role='grid']", new PageWaitForSelectorOptions { Timeout = 0 });
-            await page.GotoAsync($"https://web.whatsapp.com/send?phone={phoneNumber}");
-
-            // Error dialog check before sending any messages
-            var errorDialog = await page.QuerySelectorAsync("div[data-animate-modal-popup='true']");
-            if (errorDialog != null)
+            var sent = await SendMessageAsync(phoneNumber, message);
+            if (!sent)
             {
-                var ariaLabel = await errorDialog.GetAttributeAsync("aria-label");
-                var dialogText = await errorDialog.InnerTextAsync();
-
-                if (ariaLabel != null && ariaLabel.Contains("invalid"))
-                {
-                    Console.WriteLine("Invalid phone number format detected.");
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_invalid_number.png" });
-                    return false;
-                }
-                else if (dialogText.Contains("Couldn't find this user") || dialogText.Contains("not on WhatsApp"))
-                {
-                    Console.WriteLine("Number is not registered on WhatsApp.");
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_not_registered.png" });
-                    return false;
-                }
-                else
-                {
-                    Console.WriteLine("Unknown error dialog detected: " + dialogText);
-                    await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_unknown_error.png" });
-                    return false;
-                }
+                allSent = false;
             }
-
-            await page.WaitForSelectorAsync("header");
-            await page.WaitForSelectorAsync("footer", new PageWaitForSelectorOptions { State = WaitForSelectorState.Visible, Timeout = 10000 });
-            await page.WaitForSelectorAsync("footer div[contenteditable='true']", new PageWaitForSelectorOptions { State = WaitForSelectorState.Visible, Timeout = 10000 });
-
-            foreach (var message in messages)
-            {
-                // Reconnection logic for each message
-                var reconnectingBanner = await page.QuerySelectorAsync("div[role='alert'], span:has-text('Reconnecting')");
-                int reconnectAttempts = 3;
-                int reconnectWaitMs = 5000;
-
-                if (reconnectingBanner != null)
-                {
-                    Console.WriteLine("WhatsApp Web is reconnecting or offline. Attempting to reconnect...");
-                    for (int i = 0; i < reconnectAttempts; i++)
-                    {
-                        await Task.Delay(reconnectWaitMs);
-                        reconnectingBanner = await page.QuerySelectorAsync("div[role='alert'], span:has-text('Reconnecting')");
-                        if (reconnectingBanner == null)
-                        {
-                            Console.WriteLine("Reconnected successfully.");
-                            break;
-                        }
-                        Console.WriteLine($"Reconnect attempt {i + 1} failed, retrying...");
-                    }
-                    if (reconnectingBanner != null)
-                    {
-                        Console.WriteLine("Failed to reconnect after multiple attempts. Network instability detected.");
-                        await page.ScreenshotAsync(new PageScreenshotOptions { Path = "Screenshots/whatsapp_network_issue.png" });
-                        allSent = false;
-                        break;
-                    }
-                }
-
-                var input = await page.QuerySelectorAsync("footer div[contenteditable='true']");
-                await input.FocusAsync();
-                await input.FillAsync(message);
-
-                var sendButton = await page.QuerySelectorAsync("footer button span[data-icon='send']");
-                if (sendButton != null)
-                    await sendButton.ClickAsync();
-                else
-                    await input.PressAsync("Enter");
-
-                // Poll for status as before
-                var lastMsgStatusSelector = "(//span[@data-icon='msg-check' or @data-icon='msg-dblcheck' or @data-icon='msg-time'])[last()]";
-                var maxWaitMs = 60000;
-                var pollIntervalMs = 1000;
-                var elapsed = 0;
-                string iconType = null;
-                bool sent = false;
-
-                while (elapsed < maxWaitMs)
-                {
-                    var statusIcon = await page.QuerySelectorAsync(lastMsgStatusSelector);
-                    if (statusIcon != null)
-                    {
-                        iconType = await statusIcon.GetAttributeAsync("data-icon");
-                        Console.WriteLine($"Polling: elapsed={elapsed}ms, iconType={iconType}");
-                        if (iconType == "msg-check" || iconType == "msg-dblcheck")
-                        {
-                            Console.WriteLine("Message sent successfully.");
-                            sent = true;
-                            break;
-                        }
-                        else if (iconType == "msg-time")
-                        {
-                            // Still pending, wait and poll again
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Unknown iconType: {iconType}, treating as failure.");
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine($"Polling: elapsed={elapsed}ms, statusIcon=null (selector may be incorrect or message not rendered yet)");
-                    }
-                    await Task.Delay(pollIntervalMs);
-                    elapsed += pollIntervalMs;
-                }
-
-                if (!sent && iconType == "msg-time")
-                {
-                    Console.WriteLine("Message still pending, waiting extra 15 seconds before closing session...");
-                    await Task.Delay(15000);
-
-                    var statusIcon = await page.QuerySelectorAsync(lastMsgStatusSelector);
-                    if (statusIcon != null)
-                    {
-                        iconType = await statusIcon.GetAttributeAsync("data-icon");
-                        Console.WriteLine($"Final check after extra wait: iconType={iconType}");
-                        if (iconType == "msg-check" || iconType == "msg-dblcheck")
-                        {
-                            Console.WriteLine("Message sent successfully after extra wait.");
-                            sent = true;
-                        }
-                    }
-                }
-                // for debugging and checking whether the whatsapp message is actually sent or not by a live screenshot
-                await page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/whatsapp_status_{message.GetHashCode()}.png" });
-
-                if (!sent)
-                {
-                    Console.WriteLine("Message failed to send (pending/clock icon or timeout).");
-                    allSent = false;
-                    break;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"WhatsAppService Error: {ex.Message}");
-            allSent = false;
-        }
-        finally
-        {
-            await browser.CloseAsync();
         }
         return allSent;
     }
