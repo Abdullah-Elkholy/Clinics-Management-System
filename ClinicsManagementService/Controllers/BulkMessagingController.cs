@@ -38,37 +38,40 @@ namespace ClinicsManagementService.Controllers
         }
 
         // Send multiple messages to multiple phone numbers (each item is a phone/message pair).
+        /// Send multiple messages to multiple phone numbers (each item is a phone/message pair), with random throttling between sends.
+        /// <param name="minDelayMs">Minimum delay in ms between sends (default 1000)</param>
+        /// <param name="maxDelayMs">Maximum delay in ms between sends (default 3000)</param>
         [HttpPost("send-bulk")]
-        public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request)
+        public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request, [FromQuery] int minDelayMs = 1000, [FromQuery] int maxDelayMs = 3000)
         {
             if (request.Items == null || request.Items.Count == 0)
             {
                 return BadRequest("At least one phone/message pair is required.");
             }
-            var results = new List<(string Phone, bool Sent, string? Error)>();
-            foreach (var item in request.Items)
+            if (minDelayMs < 0 || maxDelayMs < minDelayMs)
             {
-                if (string.IsNullOrWhiteSpace(item.Phone) || string.IsNullOrWhiteSpace(item.Message))
-                {
-                    results.Add((item.Phone, false, "Phone number or message missing"));
-                    continue;
-                }
-                try
-                {
-                    var sent = await _whatsAppService.SendMessageAsync(item.Phone, item.Message);
-                    results.Add((item.Phone, sent, sent ? null : "Failed to send"));
-                }
-                catch (Exception ex)
-                {
-                    results.Add((item.Phone, false, ex.Message));
-                }
+                return BadRequest("Invalid delay parameters.");
             }
+            var items = request.Items
+                .Where(i => !string.IsNullOrWhiteSpace(i.Phone) && !string.IsNullOrWhiteSpace(i.Message))
+                .Select(i => new { i.Phone, i.Message })
+                .ToList();
+            var rawResults = await _whatsAppService.SendBulkWithThrottlingAsync(
+                items.Select(i => (i.Phone, i.Message)), minDelayMs, maxDelayMs);
+            var results = items.Zip(rawResults, (input, result) => new MessageSendResult
+            {
+                Phone = result.Phone,
+                Message = input.Message,
+                Sent = result.Sent,
+                Error = result.Error,
+                IconType = result.IconType
+            }).ToList();
             var failed = results.Where(r => !r.Sent).ToList();
             if (failed.Count == 0)
             {
-                return Ok("All messages sent successfully.");
+                return Ok(new { message = "All messages sent successfully.", results });
             }
-            return StatusCode(502, "One or more messages failed to be sent.");
+            return StatusCode(207, new { message = "Some messages failed", results });
         }
     }
 }

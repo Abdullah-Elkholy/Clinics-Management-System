@@ -1,6 +1,5 @@
 namespace ClinicsManagementService.Models
 {
-
     public class MessageSendResult
     {
         public string Phone { get; set; } = string.Empty;
