@@ -53,7 +53,7 @@ A **.NET 8.0 Web API** for automating WhatsApp message delivery using [Playwrigh
 
 1. **Clone the repository**
    ```sh
-   git clone https://github.com/your-username/ClinicsManagementSln.git
+   git clone https://github.com/Abdullah-Elkholy/ClinicsManagementSln.git
    cd ClinicsManagementSln/ClinicsManagementService
    ```
 
