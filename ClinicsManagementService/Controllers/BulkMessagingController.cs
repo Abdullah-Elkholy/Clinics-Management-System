@@ -1,4 +1,5 @@
 using ClinicsManagementService.Models;
+using ClinicsManagementService.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClinicsManagementService.Controllers
@@ -7,11 +8,15 @@ namespace ClinicsManagementService.Controllers
     [Route("[controller]")]
     public class BulkMessagingController : ControllerBase
     {
-        private readonly IMessageSender _whatsAppService;
+        private readonly IMessageSender _messageSender;
+        private readonly IWhatsAppService _whatsappService;
+        private readonly INotifier _notifier; // Default notifier
 
-        public BulkMessagingController(IMessageSender whatsAppService)
+        public BulkMessagingController(IMessageSender messageSender, IWhatsAppService whatsappService, INotifier notifier)
         {
-            _whatsAppService = whatsAppService;
+            _messageSender = messageSender;
+            _whatsappService = whatsappService;
+            _notifier = notifier;
         }
         // Send a single message to a single phone number.
         [HttpPost("send-single")]
@@ -24,7 +29,7 @@ namespace ClinicsManagementService.Controllers
             bool sent;
             try
             {
-                sent = await _whatsAppService.SendMessageAsync(request.Phone, request.Message);
+                sent = await _messageSender.SendMessageAsync(request.Phone, request.Message);
             }
             catch (Exception ex)
             {
@@ -37,14 +42,12 @@ namespace ClinicsManagementService.Controllers
             return StatusCode(502, "Message failed to be sent.");
         }
 
-        // Send multiple messages to multiple phone numbers (each item is a phone/message pair).
-        /// Send multiple messages to multiple phone numbers (each item is a phone/message pair), with random throttling between sends.
-        /// <param name="minDelayMs">Minimum delay in ms between sends (default 1000)</param>
-        /// <param name="maxDelayMs">Maximum delay in ms between sends (default 3000)</param>
+        /* Send multiple messages to multiple phone numbers (each item is a phone/message pair), 
+         with random throttling between sends using a random number between minDelayMs and maxDelayMs in MilliSeconds. */
         [HttpPost("send-bulk")]
         public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request, [FromQuery] int minDelayMs = 1000, [FromQuery] int maxDelayMs = 3000)
         {
-            if (request.Items == null || request.Items.Count == 0)
+            if (request.Items == null || request.Items.Count() == 0)
             {
                 return BadRequest("At least one phone/message pair is required.");
             }
@@ -52,11 +55,23 @@ namespace ClinicsManagementService.Controllers
             {
                 return BadRequest("Invalid delay parameters.");
             }
+
+            // Example usage before sending messages to ensure connectivity
+            if (_whatsappService != null)
+            {
+                if (!await _whatsappService.CheckInternetConnectivityAsync())
+                {
+                    _notifier.Notify("Internet connectivity to WhatsApp Web failed. Please check your connection and try again.");
+                    return StatusCode(503, "Internet connectivity to WhatsApp Web failed. Please check your connection and try again.");
+                }
+                await Task.Delay(5000);
+            }
+            // Filter out invalid entries and prepare for sending
             var items = request.Items
                 .Where(i => !string.IsNullOrWhiteSpace(i.Phone) && !string.IsNullOrWhiteSpace(i.Message))
                 .Select(i => new { i.Phone, i.Message })
                 .ToList();
-            var rawResults = await _whatsAppService.SendBulkWithThrottlingAsync(
+            var rawResults = await _messageSender.SendBulkWithThrottlingAsync(
                 items.Select(i => (i.Phone, i.Message)), minDelayMs, maxDelayMs);
             var results = items.Zip(rawResults, (input, result) => new MessageSendResult
             {

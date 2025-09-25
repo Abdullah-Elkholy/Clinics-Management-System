@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using ClinicsManagementService.Services.Interfaces;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ClinicsManagementService.Controllers
 {
@@ -6,11 +7,11 @@ namespace ClinicsManagementService.Controllers
     [Route("[controller]")]
     public class MessagingController : ControllerBase
     {
-        private readonly IMessageSender _whatsAppService;
+        private readonly IMessageSender _messageSender;
 
-        public MessagingController(IMessageSender whatsAppService)
+        public MessagingController(IMessageSender messageSender)
         {
-            _whatsAppService = whatsAppService;
+            _messageSender = messageSender;
         }
 
         [HttpPost("send")]
@@ -19,7 +20,7 @@ namespace ClinicsManagementService.Controllers
             bool sent;
             try
             {
-                sent = await _whatsAppService.SendMessageAsync(phone, message);
+                sent = await _messageSender.SendMessageAsync(phone, message);
             }
             catch (Exception ex)
             {

@@ -2,6 +2,6 @@ namespace ClinicsManagementService.Models
 {
     public class BulkPhoneMessageRequest
     {
-        public List<PhoneMessageDto> Items { get; set; } = new();
+        public required IEnumerable<PhoneMessageDto> Items { get; set; }
     }
 }

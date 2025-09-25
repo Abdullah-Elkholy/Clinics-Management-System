@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using ClinicsManagementService.Services.Interfaces;
 using Microsoft.Playwright;
 
 namespace ClinicsManagementService.Services
@@ -10,28 +11,26 @@ namespace ClinicsManagementService.Services
         private IPlaywright? _playwright;
         private IBrowserContext? _browser;
         private IPage? _page;
-        private readonly string _sessionDir;
         private readonly SemaphoreSlim _lock = new(1, 1); // For thread safety
 
-        public PlaywrightBrowserSession(string sessionDir)
-        {
-            _sessionDir = sessionDir;
-        }
-
-        public async Task InitializeAsync()
+        public async Task InitializeAsync(string sessionDir)
         {
             await _lock.WaitAsync();
             try
             {
                 _playwright = await Playwright.CreateAsync();
-                Directory.CreateDirectory(_sessionDir);
+                Directory.CreateDirectory(sessionDir);
                 _browser = await _playwright.Chromium.LaunchPersistentContextAsync(
-                    _sessionDir,
+                    sessionDir,
                     new BrowserTypeLaunchPersistentContextOptions
                     {
                         Headless = false,
-                        ViewportSize = null,
-                        Args = new[] { "--start-maximized" }
+                        Args = new[] {
+                            "--disable-blink-features=AutomationControlled",
+                            "--window-size=1280,800",
+                            "--start-maximized",
+                            "--no-sandbox",
+                        }
                     }
                 );
                 _page = _browser.Pages.Count > 0 ? _browser.Pages[0] : await _browser.NewPageAsync();
@@ -66,9 +65,7 @@ namespace ClinicsManagementService.Services
                 _lock.Release();
             }
         }
-        /// <summary>
-        /// Waits for a selector to reach a specific state (Visible, Attached, Detached).
-        /// </summary>
+        // Waits for a selector to reach a specific state (Visible, Attached, Detached).
         public async Task WaitForSelectorAsync(string selector, int? timeout = null, WaitForSelectorState state = WaitForSelectorState.Visible)
         {
             await _lock.WaitAsync();
@@ -89,11 +86,12 @@ namespace ClinicsManagementService.Services
                 string url = "unknown";
                 if (_page != null)
                 {
-                    try { url = _page.Url; } catch { url = "unavailable"; }
-                }
-                if (_page != null)
-                {
-                    try { await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/timeout_{DateTime.Now:yyyyMMdd_HHmmss}.png" }); } catch { }
+                    try
+                    {
+                        url = _page.Url;
+                        await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/timeout_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
+                    }
+                    catch { url = "unavailable"; }
                 }
                 Console.Error.WriteLine($"Timeout waiting for selector '{selector}' (state: {state}) on URL: {url}. {ex.Message}");
                 throw;
@@ -103,7 +101,12 @@ namespace ClinicsManagementService.Services
                 string url = "unknown";
                 if (_page != null)
                 {
-                    try { url = _page.Url; } catch { url = "unavailable"; }
+                    try
+                    {
+                        url = _page.Url;
+                        await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/error_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
+                    }
+                    catch { url = "unavailable"; }
                 }
                 Console.Error.WriteLine($"Error waiting for selector '{selector}' (state: {state}) on URL: {url}. {ex.Message}");
                 throw;
@@ -112,18 +115,6 @@ namespace ClinicsManagementService.Services
             {
                 _lock.Release();
             }
-        }
-        /// <summary>
-        /// Waits for WhatsApp Web to be fully ready: loading bar gone, and chat/message UI visible.
-        /// </summary>
-        public async Task WaitForWhatsAppReadyAsync(int timeoutMs = 60000)
-        {
-            // Wait for loading/progress bar to disappear (if present)
-            await WaitForSelectorAsync("div[role='progressbar']", timeout: timeoutMs, state: WaitForSelectorState.Detached);
-            // Wait for message input box to be visible (main UI ready)
-            await WaitForSelectorAsync("div[role='textbox']", timeout: timeoutMs, state: WaitForSelectorState.Visible);
-            // Optionally, also wait for chat list container
-            // await WaitForSelectorAsync("div[aria-label='Chat list']", timeout: timeoutMs, state: WaitForSelectorState.Visible);
         }
 
         public async Task<IElementHandle?> QuerySelectorAsync(string selector)
@@ -145,9 +136,7 @@ namespace ClinicsManagementService.Services
             }
         }
 
-        /// <summary>
-        /// Returns all elements matching the selector as a list of IElementHandle.
-        /// </summary>
+        // Returns all elements matching the selector as a list of IElementHandle.
         public async Task<IReadOnlyList<IElementHandle>> QuerySelectorAllAsync(string selector)
         {
             await _lock.WaitAsync();
@@ -172,9 +161,12 @@ namespace ClinicsManagementService.Services
             await _lock.WaitAsync();
             try
             {
+                if (_page != null)
+                    await _page.CloseAsync();
                 if (_browser != null)
                     await _browser.CloseAsync();
-                _playwright?.Dispose();
+                if (_playwright != null)
+                    _playwright?.Dispose();
             }
             catch (Exception ex)
             {
