@@ -13,13 +13,7 @@ public class WhatsAppService : IMessageSender
         _notifier = notifier;
     }
 
-    /// <summary>
-    /// Send multiple phone/message pairs with random throttling between each send, returning MessageSendResult for each.
-    /// </summary>
-    /// <param name="items">List of phone/message pairs</param>
-    /// <param name="minDelayMs">Minimum delay in ms between sends</param>
-    /// <param name="maxDelayMs">Maximum delay in ms between sends</param>
-    /// <returns>List of MessageSendResult for each send</returns>
+    // Send multiple phone/message pairs with random throttling between each send, returning MessageSendResult for each.
     public async Task<List<MessageSendResult>> SendBulkWithThrottlingAsync(IEnumerable<(string Phone, string Message)> items, int minDelayMs, int maxDelayMs)
     {
         _notifier.Notify("Starting bulk send process...");
@@ -29,6 +23,10 @@ public class WhatsAppService : IMessageSender
         string? networkErrorMessage = null;
         int total = items.Count(); // only for logging using notify
         int counter = 1; // only for logging using notify
+
+        // initialize session once for bulk sending
+        var browserSession = await PrepareSessionAsync();
+
         foreach (var item in items)
         {
             _notifier.Notify($"[PROGRESS] [{counter}/{total}] Phone: {item.Phone}, Message: {item.Message}"); // only for logging using notify
@@ -49,7 +47,7 @@ public class WhatsAppService : IMessageSender
                 continue;
             }
             _notifier.Notify($"[{counter}/{total}] Sending message to {item.Phone}..."); // only for logging using notify
-            var result = await ExecuteWithRetryAsync(() => SendMessageWithIconTypeAsync(item.Phone, item.Message),
+            var result = await ExecuteWithRetryAsync(() => SendMessageWithIconTypeAsync(item.Phone, item.Message, browserSession),
                 maxAttempts: 3,
                 treatAsRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
             _notifier.Notify($"[{counter}/{total}] Result for {item.Phone}: Sent={result.Sent}, Error={result.Error}, IconType={result.IconType}"); // only for logging using notify
@@ -68,39 +66,44 @@ public class WhatsAppService : IMessageSender
                 networkErrorMessage = "Pending: Internet connection unavailable. " + result.Error;
                 _notifier.Notify($"[{counter + 1}/{total}] Network error detected: {networkErrorMessage}"); // only for logging using notify
             }
-            int delay = rand.Next(minDelayMs, maxDelayMs + 1);
-            _notifier.Notify($"[{counter + 1}/{total}] Throttling for {delay}ms before next send..."); // only for logging using notify
-            await Task.Delay(delay);
+            // Only throttle if not the last message
+            if (counter < total)
+            {
+                int delay = rand.Next(minDelayMs, maxDelayMs + 1);
+                _notifier.Notify($"[{counter + 1}/{total}] Throttling for {delay}ms before next send..."); // only for logging using notify
+                await Task.Delay(delay);
+            }
             counter++; // only for logging using notify
         }
+        // Dispose browser session after bulk sending
+        await DisposeBrowserSessionAsync(browserSession);
         _notifier.Notify("Bulk send process completed."); // only for logging using notify
         return results;
     }
 
     // Helper to get iconType from SendMessageAsync
-    private async Task<(bool Sent, string? IconType, string? Error)> SendMessageWithIconTypeAsync(string phoneNumber, string message)
+    private async Task<(bool Sent, string? IconType, string? Error)> SendMessageWithIconTypeAsync(string phoneNumber, string message, IBrowserSession? browserSession)
     {
         _notifier.Notify($"Starting SendMessageWithIconTypeAsync for {phoneNumber}");
-        var browserSession = _browserSessionFactory();
+        if (!await CheckInternetConnectivityAsync())
+        {
+            _notifier.Notify("No internet connectivity detected.");
+            return (false, null, "Pending: Internet connection unavailable.");
+        }
         try
         {
-            await PrepareSessionAsync(browserSession);
-            _notifier.Notify("Session prepared.");
-            var navResult = await NavigateAndCheckRecipientAsync(browserSession, phoneNumber);
+            var navResult = await NavigateAndCheckRecipientAsync(browserSession!, phoneNumber);
             _notifier.Notify($"Navigation result: Success={navResult.Success}, Error={navResult.Error}");
             if (!navResult.Success)
                 return (false, null, navResult.Error);
-            var result = await DeliverMessageAsync(browserSession, message, phoneNumber);
+            var result = await DeliverMessageAsync(browserSession!, message, phoneNumber);
             _notifier.Notify($"DeliverMessageAsync result: Sent={result.Sent}, IconType={result.IconType}, Error={result.Error}");
             return result;
         }
-        finally
+        catch (Exception ex)
         {
-            _notifier.Notify("Disposing browser session.");
-            if (browserSession is IAsyncDisposable asyncDisposable)
-                await asyncDisposable.DisposeAsync();
-            else if (browserSession is IDisposable disposable)
-                disposable.Dispose();
+            _notifier.Notify($"Exception in SendMessageWithIconTypeAsync: {ex.Message}");
+            return (false, null, $"Error: {ex.Message}");
         }
     }
 
@@ -121,12 +124,12 @@ public class WhatsAppService : IMessageSender
     }
 
     // Increase default timeouts for navigation and selector waits
-    private const int NavigationTimeoutMs = 60000; // 60 seconds
     private const int SelectorTimeoutMs = 20000;   // 20 seconds
 
     // Prepares the browser session and ensures WhatsApp is ready
-    private async Task PrepareSessionAsync(IBrowserSession browserSession)
+    private async Task<IBrowserSession> PrepareSessionAsync()
     {
+        var browserSession = _browserSessionFactory();
         _notifier.Notify("Initializing browser session...");
         await browserSession.InitializeAsync();
         _notifier.Notify("Navigating to WhatsApp Web...");
@@ -136,6 +139,7 @@ public class WhatsAppService : IMessageSender
         _notifier.Notify("Waiting for WhatsApp to be ready...");
         await WaitForWhatsAppReadyAsync(browserSession);
         _notifier.Notify("WhatsApp session is ready.");
+        return browserSession;
     }
 
     // Navigates to the recipient and checks for errors
@@ -164,163 +168,222 @@ public class WhatsAppService : IMessageSender
     private async Task<(bool Sent, string? IconType, string? Error)> DeliverMessageAsync(
         IBrowserSession browserSession, string message, string? phoneNumber = null, int msgTimeRetryCount = 3)
     {
-        _notifier.Notify("Delivering message...");
-        await browserSession.WaitForSelectorAsync("header", SelectorTimeoutMs, WaitForSelectorState.Visible);
-        await browserSession.WaitForSelectorAsync("footer", SelectorTimeoutMs, WaitForSelectorState.Visible);
-        await browserSession.WaitForSelectorAsync("footer div[contenteditable='true']", SelectorTimeoutMs, WaitForSelectorState.Visible);
-        var input = await browserSession.QuerySelectorAsync("footer div[contenteditable='true']");
-        if (input is null)
+        try
         {
-            _notifier.Notify("Message input box not found.");
-            return (false, null, "Message input box not found.");
-        }
-        await input.FocusAsync();
-        await input.FillAsync(message);
-        var sendButton = await browserSession.QuerySelectorAsync("button[aria-label='Send']");
-        if (sendButton != null)
-        {
-            _notifier.Notify("Clicking send button...");
-            await sendButton.ClickAsync();
-        }
-        else
-        {
-            _notifier.Notify("Send button not found, pressing Enter...");
-            await input.PressAsync("Enter");
-        }
-
-        var maxWaitMs = 15000; // 15 seconds
-        var pollIntervalMs = 1000; // 1 second
-        int msgTimeRetries = 0;
-
-        while (true)
-        {
-            int elapsed = 0;
-            bool sent = false;
-            string? iconType = null;
-
-            while (elapsed < maxWaitMs)
+            _notifier.Notify("Delivering message...");
+            await browserSession.WaitForSelectorAsync("header", SelectorTimeoutMs, WaitForSelectorState.Visible);
+            await browserSession.WaitForSelectorAsync("footer", SelectorTimeoutMs, WaitForSelectorState.Visible);
+            await browserSession.WaitForSelectorAsync("footer div[contenteditable='true']", SelectorTimeoutMs, WaitForSelectorState.Visible);
+            var input = await browserSession.QuerySelectorAsync("footer div[contenteditable='true']");
+            if (input is null)
             {
-                var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
-                iconType = statusResult.IconType;
-                _notifier.Notify($"Polling message status: iconType={iconType}, elapsed={elapsed}ms");
-                if (iconType != null)
+                _notifier.Notify("Message input box not found.");
+                return (false, null, "Message input box not found.");
+            }
+            await input.FocusAsync();
+            await input.FillAsync(message);
+            var sendButton = await browserSession.QuerySelectorAsync("button[aria-label='Send']");
+            if (sendButton != null)
+            {
+                _notifier.Notify("Clicking send button...");
+                await sendButton.ClickAsync();
+            }
+            else
+            {
+                _notifier.Notify("Send button not found, pressing Enter...");
+                await input.PressAsync("Enter");
+            }
+
+            var maxWaitMs = 15000; // 15 seconds
+            var pollIntervalMs = 1000; // 1 second
+            int msgTimeRetries = 0;
+
+            while (true)
+            {
+                int elapsed = 0;
+                bool sent = false;
+                string? iconType = null;
+
+                while (elapsed < maxWaitMs)
                 {
+                    var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
+                    iconType = statusResult.IconType;
+                    _notifier.Notify($"Polling message status: iconType={iconType}, elapsed={elapsed}ms");
+                    if (iconType != null)
+                    {
+                        if (iconType == "msg-check" || iconType == "msg-dblcheck")
+                        {
+                            sent = true;
+                            _notifier.Notify($"Message sent successfully: iconType={iconType}");
+                            break;
+                        }
+                        else if (iconType == "msg-time")
+                        {
+                            _notifier.Notify($"Message still pending (msg-time), waiting...");
+                        }
+                        else
+                        {
+                            _notifier.Notify($"Unexpected iconType: {iconType}");
+                            string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                            await TakeScreenshotAsync(browserSession, screenshotPath);
+                            _notifier.Notify($"Screenshot taken for unexpected icon: {screenshotPath}");
+                            await Task.Delay(pollIntervalMs);
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        _notifier.Notify("Status icon for sent message not found, polling again...");
+                    }
+                    await Task.Delay(pollIntervalMs);
+                    elapsed += pollIntervalMs;
+                }
+                // Final extra wait if still pending
+                if (!sent && iconType == "msg-time")
+                {
+                    _notifier.Notify("Final extra wait for msg-time status...");
+                    await Task.Delay(15000);
+                    var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
+                    iconType = statusResult.IconType;
                     if (iconType == "msg-check" || iconType == "msg-dblcheck")
                     {
                         sent = true;
-                        _notifier.Notify($"Message sent successfully: iconType={iconType}");
-                        break;
+                        _notifier.Notify($"Message sent after extra wait: iconType={iconType}");
                     }
-                    else if (iconType == "msg-time")
+                }
+                // Only mark as sent if iconType is msg-check or msg-dblcheck
+                if (sent && (iconType == "msg-check" || iconType == "msg-dblcheck"))
+                {
+                    _notifier.Notify("DeliverMessageAsync completed: message sent.");
+                    return (true, iconType, null);
+                }
+                // If not sent and iconType is msg-time, try retry logic
+                if (!sent && iconType == "msg-time" && msgTimeRetries < msgTimeRetryCount)
+                {
+                    msgTimeRetries++;
+                    _notifier.Notify($"msg-time retry #{msgTimeRetries} of {msgTimeRetryCount}...");
+                    // Re-navigate to chat if phoneNumber is provided
+                    if (!string.IsNullOrEmpty(phoneNumber))
                     {
-                        _notifier.Notify($"Message still pending (msg-time), waiting...");
+                        await browserSession.NavigateToAsync($"https://web.whatsapp.com/send?phone={phoneNumber}");
+                        await browserSession.WaitForSelectorAsync("footer div[contenteditable='true']", 10000, WaitForSelectorState.Visible);
+                        _notifier.Notify("Re-navigated to chat for retry.");
+                    }
+                    // Find the last message with msg-time and its retry button
+                    var retryButton = await FindRetryButtonForLastMsgTimeAsync(browserSession);
+                    if (retryButton != null)
+                    {
+                        _notifier.Notify("Retry button found, clicking...");
+                        await retryButton.ClickAsync();
+                        // Wait for modal and click "Try again" (flexible selector)
+                        var tryAgainButton = await FindTryAgainButtonAsync(browserSession);
+                        if (tryAgainButton != null)
+                        {
+                            _notifier.Notify("Try again button found, clicking...");
+                            await tryAgainButton.ClickAsync();
+                            // After retry, continue loop to re-check status
+                            continue;
+                        }
+                        else
+                        {
+                            _notifier.Notify("Try again button not found in modal.");
+                        }
                     }
                     else
                     {
-                        _notifier.Notify($"Unexpected iconType: {iconType}");
-                        break;
+                        _notifier.Notify("Retry button not found, just re-navigating and re-checking.");
                     }
+                    // If retry button/modal not found, just re-navigate and re-check
+                    continue;
                 }
-                else
+                // Otherwise, not sent
+                if (msgTimeRetries == msgTimeRetryCount)
                 {
-                    _notifier.Notify("Status icon for sent message not found, polling again...");
+                    _notifier.Notify($"Message failed after {msgTimeRetries} msg-time retries.");
+                    break;
                 }
-                await Task.Delay(pollIntervalMs);
-                elapsed += pollIntervalMs;
+                _notifier.Notify("Message not sent yet, re-checking...");
             }
-            // Final extra wait if still pending
-            if (!sent && iconType == "msg-time")
-            {
-                _notifier.Notify("Final extra wait for msg-time status...");
-                await Task.Delay(15000);
-                var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
-                iconType = statusResult.IconType;
-                if (iconType == "msg-check" || iconType == "msg-dblcheck")
-                {
-                    sent = true;
-                    _notifier.Notify($"Message sent after extra wait: iconType={iconType}");
-                }
-            }
-            // Only mark as sent if iconType is msg-check or msg-dblcheck
-            if (sent && (iconType == "msg-check" || iconType == "msg-dblcheck"))
-            {
-                _notifier.Notify("DeliverMessageAsync completed: message sent.");
-                return (true, iconType, null);
-            }
-            // If not sent and iconType is msg-time, try retry logic
-            if (!sent && iconType == "msg-time" && msgTimeRetries < msgTimeRetryCount)
-            {
-                msgTimeRetries++;
-                _notifier.Notify($"msg-time retry #{msgTimeRetries} of {msgTimeRetryCount}...");
-                // Re-navigate to chat if phoneNumber is provided
-                if (!string.IsNullOrEmpty(phoneNumber))
-                {
-                    await browserSession.NavigateToAsync($"https://web.whatsapp.com/send?phone={phoneNumber}");
-                    await browserSession.WaitForSelectorAsync("footer div[contenteditable='true']", 10000, WaitForSelectorState.Visible);
-                    _notifier.Notify("Re-navigated to chat for retry.");
-                }
-                // Find the last message with msg-time and its retry button
-                var retryButton = await FindRetryButtonForLastMsgTimeAsync(browserSession);
-                if (retryButton != null)
-                {
-                    _notifier.Notify("Retry button found, clicking...");
-                    await retryButton.ClickAsync();
-                    // Wait for modal and click "Try again" (flexible selector)
-                    var tryAgainButton = await FindTryAgainButtonAsync(browserSession);
-                    if (tryAgainButton != null)
-                    {
-                        _notifier.Notify("Try again button found, clicking...");
-                        await tryAgainButton.ClickAsync();
-                        // After retry, continue loop to re-check status
-                        continue;
-                    }
-                    else
-                    {
-                        _notifier.Notify("Try again button not found in modal.");
-                    }
-                }
-                else
-                {
-                    _notifier.Notify("Retry button not found, just re-navigating and re-checking.");
-                }
-                // If retry button/modal not found, just re-navigate and re-check
-                continue;
-            }
-            // Otherwise, not sent
-            _notifier.Notify($"Message failed after {msgTimeRetries} msg-time retries.");
-            break;
         }
-        // Guarantee: Only sent=true if iconType is msg-check or msg-dblcheck
-        return (false, null, "Message failed to send (pending/clock icon or timeout).");
+        catch (TimeoutException ex)
+        {
+            // Check internet connectivity after timeout
+            if (!await CheckInternetConnectivityAsync())
+            {
+                _notifier.Notify("Internet connectivity lost during navigation.");
+                return (false, null, "Pending: Internet connection unavailable after navigation.");
+            }
+            // Otherwise, propagate original error
+            return (false, null, $"Timeout waiting for WhatsApp UI: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _notifier.Notify($"Exception in DeliverMessageAsync: {ex.Message}");
+            return (false, null, $"Error delivering message: {ex.Message}");
+        }
+        return (false, null, "Failed to send message for unknown reasons.");
     }
 
     // Helper: Get status icon for the last outgoing message matching the sent text
     private async Task<(string? IconType, IElementHandle? StatusIcon)> GetLastOutgoingMessageStatusAsync(IBrowserSession browserSession, string messageText)
     {
         _notifier.Notify("Checking last outgoing message status...");
-        // WhatsApp outgoing messages usually have a class like 'message-out'
         var outgoingMessages = await browserSession.QuerySelectorAllAsync("div.message-out");
         if (outgoingMessages != null && outgoingMessages.Count > 0)
         {
-            // Search from last to first for a message whose text matches
             for (int i = outgoingMessages.Count - 1; i >= 0; i--)
             {
                 var msgElem = outgoingMessages[i];
+
+                // Skip if parent or itself is a separator (e.g., "Today")
+                var parentClass = await msgElem.EvaluateAsync<string>("el => el.parentElement?.className");
+                if (parentClass != null && parentClass.Contains("x141l45o"))
+                    continue;
+
+                // Get message text
                 var msgTextElem = await msgElem.QuerySelectorAsync("span.selectable-text");
                 var msgText = msgTextElem != null ? await msgTextElem.InnerTextAsync() : null;
                 if (msgText != null && msgText.Trim() == messageText.Trim())
                 {
-                    var statusIcon = await msgElem.QuerySelectorAsync("span[data-icon]");
-                    var iconType = statusIcon != null ? await statusIcon.GetAttributeAsync("data-icon") : null;
-                    _notifier.Notify($"Found status icon: {iconType}");
-                    return (iconType, statusIcon);
+                    // Find all status icons inside the message
+                    var statusIcons = await msgElem.QuerySelectorAllAsync("span[data-icon]");
+                    foreach (var statusIcon in statusIcons)
+                    {
+                        var iconType = await statusIcon.GetAttributeAsync("data-icon");
+                        if (iconType == "msg-check" || iconType == "msg-dblcheck" || iconType == "msg-time")
+                        {
+                            _notifier.Notify($"Found status icon: {iconType} for message: '{msgText}'");
+                            return (iconType, statusIcon);
+                        }
+                        else if (iconType == "tail-out")
+                        {
+                            _notifier.Notify($"Found tail-out icon for message: '{msgText}', searching for actual status icon...");
+                            // Take screenshot for debugging
+                            string screenshotPath = $"Screenshots/tail_out_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                            await TakeScreenshotAsync(browserSession, screenshotPath);
+                            _notifier.Notify($"Screenshot taken for tail-out icon: {screenshotPath}");
+                            // Continue searching for other icons in this message
+                        }
+                        else
+                        {
+                            _notifier.Notify($"Found unexpected iconType: {iconType} for message: '{msgText}'");
+                            string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                            await TakeScreenshotAsync(browserSession, screenshotPath);
+                            _notifier.Notify($"Screenshot taken for unexpected icon: {screenshotPath}");
+                        }
+                    }
                 }
             }
         }
+
         // Fallback: use previous logic if no outgoing message matches
         _notifier.Notify("No outgoing message matched, using fallback.");
         var statusIconFallback = await browserSession.QuerySelectorAsync("(//span[@data-icon='msg-check' or @data-icon='msg-dblcheck' or @data-icon='msg-time'])[last()]");
         var iconTypeFallback = statusIconFallback != null ? await statusIconFallback.GetAttributeAsync("data-icon") : null;
+        // Take screenshot for debugging
+        string fallbackScreenshotPath = $"Screenshots/status_fallback_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+        await TakeScreenshotAsync(browserSession, fallbackScreenshotPath);
+        _notifier.Notify($"Screenshot taken for fallback status: {fallbackScreenshotPath}");
         return (iconTypeFallback, statusIconFallback);
     }
 
@@ -358,15 +421,18 @@ public class WhatsAppService : IMessageSender
             return fallback;
         return null;
     }
-    // ...existing code...
-
     public async Task<bool> SendMessageAsync(string phoneNumber, string message)
     {
-        var result = await ExecuteWithRetryAsync(() => SendMessageWithIconTypeAsync(phoneNumber, message));
+        // initialize session for each SendMessageAsync call
+        var browserSession = await PrepareSessionAsync();
+        var result = await ExecuteWithRetryAsync(() => SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
+            maxAttempts: 3,
+            treatAsRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
         if (!result.Sent && !string.IsNullOrEmpty(result.Error))
         {
             _notifier.Notify(result.Error);
         }
+        await DisposeBrowserSessionAsync(browserSession);
         return result.Sent;
     }
     // Core retry logic for WhatsApp tasks (e.g., sending a message)
@@ -409,18 +475,37 @@ public class WhatsAppService : IMessageSender
         return (false, null, $"Failed after {maxAttempts} attempts: {lastException?.Message}");
     }
 
-    public async Task<bool> SendMessagesAsync(string phoneNumber, IEnumerable<string> messages)
+    public async Task<List<MessageSendResult>> SendMessagesAsync(string phoneNumber, IEnumerable<string> messages)
     {
+        // initialize session for each SendMessageAsync call
+        var browserSession = await PrepareSessionAsync();
         bool allSent = true;
+        var results = new List<MessageSendResult>();
         foreach (var message in messages)
         {
-            var sent = await SendMessageAsync(phoneNumber, message);
-            if (!sent)
+            var result = await ExecuteWithRetryAsync(() => SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
+    maxAttempts: 3,
+    treatAsRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
+            if (!result.Sent && !string.IsNullOrEmpty(result.Error))
             {
-                allSent = false;
+                _notifier.Notify(result.Error);
             }
+            else
+            {
+                _notifier.Notify($"Message sent to {phoneNumber}: {message}");
+                results.Add(new MessageSendResult
+                {
+                    Phone = phoneNumber,
+                    Message = message,
+                    Sent = result.Sent,
+                    Error = result.Error,
+                    IconType = result.IconType
+                });
+            }
+            allSent = allSent && result.Sent;
         }
-        return allSent;
+        await DisposeBrowserSessionAsync(browserSession);
+        return results;
     }
     // Robust WhatsApp loading/waiting logic with screenshots and progress-aware retry
     private async Task WaitForWhatsAppReadyAsync(IBrowserSession browserSession)
@@ -444,7 +529,7 @@ public class WhatsAppService : IMessageSender
         }
 
         // Track WhatsApp loading screens after waiting for loading/progress bar to disappear
-        await TrackWhatsAppLoadingScreensAsync(browserSession); // wiring applied here
+        await TrackWhatsAppLoadingScreensAsync(browserSession);
 
         // 2. Ensure authentication (QR code login/session check)
         await EnsureAuthenticatedAsync(browserSession);
@@ -513,8 +598,8 @@ public class WhatsAppService : IMessageSender
     {
         // Wait for authentication: poll for QR code or login prompt, and wait until authenticated or timeout
         var qrSelectors = new[] {
-            "canvas[aria-label*='scan me' i]",
             "div[data-ref]",
+            "canvas[aria-label*='scan me' i]",
             "div[role='button'] canvas",
             "div[aria-label*='scan me' i]",
             "div[tabindex='-1'] canvas",
@@ -524,32 +609,40 @@ public class WhatsAppService : IMessageSender
             "div[aria-label*='scan qr code' i]",
             "div[aria-label*='link with qr code' i]",
             "div[aria-label*='log in' i]",
-            "div[aria-label*='session expired' i]"
+            "div[aria-label*='session expired' i]",
         };
         var loginPromptTexts = new[] {
-            "to use whatsapp on your computer",
-            "use whatsapp on your computer",
+            "log in",
             "scan qr code",
             "link with qr code",
-            "log in",
-            "session expired"
+            "session expired",
+            "to use whatsapp on your computer",
+            "use whatsapp on your computer",
         };
+        bool screenshotTaken_UI = false; // only take one screenshot per session expiry for UI-based selectors
+        bool screenshotTaken_text = false; // only take one screenshot per session expiry for text-based selectors
         int elapsed = 0;
         while (elapsed < maxWaitMs)
         {
             bool needsAuth = false;
+            // for detecting login with qr code page
             foreach (var qrSelector in qrSelectors)
             {
                 var qrElem = await browserSession.QuerySelectorAsync(qrSelector);
                 if (qrElem != null)
                 {
                     needsAuth = true;
-                    string screenshotPath = $"Screenshots/qr_login_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-                    await TakeScreenshotAsync(browserSession, screenshotPath);
-                    _notifier.Notify($"WhatsApp session is expired or unavailable. QR code/login page detected (selector: {qrSelector}). Please scan the QR code to log in. Screenshot: {screenshotPath}");
+                    if (!screenshotTaken_UI)
+                    {
+                        string screenshotPath = $"Screenshots/qr_login_UI_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                        await TakeScreenshotAsync(browserSession, screenshotPath);
+                        screenshotTaken_UI = true;
+                        _notifier.Notify($"WhatsApp session is expired or unavailable. QR code/login page detected (selector: {qrSelector}). Please scan the QR code to log in. Screenshot: {screenshotPath}");
+                    }
                     break;
                 }
             }
+            // for detecting QR Code square in login page
             if (!needsAuth)
             {
                 foreach (var prompt in loginPromptTexts)
@@ -558,9 +651,13 @@ public class WhatsAppService : IMessageSender
                     if (elem != null)
                     {
                         needsAuth = true;
-                        string screenshotPath = $"Screenshots/qr_login_text_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-                        await TakeScreenshotAsync(browserSession, screenshotPath);
-                        _notifier.Notify($"WhatsApp session is expired or unavailable. Login prompt detected (text: '{prompt}'). Please scan the QR code to log in. Screenshot: {screenshotPath}");
+                        if (!screenshotTaken_text)
+                        {
+                            string screenshotPath = $"Screenshots/qr_login_text_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                            await TakeScreenshotAsync(browserSession, screenshotPath);
+                            screenshotTaken_text = true;
+                            _notifier.Notify($"WhatsApp session is expired or unavailable. Login prompt detected (text: '{prompt}'). Please scan the QR code to log in. Screenshot: {screenshotPath}");
+                        }
                         break;
                     }
                 }
@@ -568,10 +665,15 @@ public class WhatsAppService : IMessageSender
             // If not needsAuth, check for WhatsApp header (authenticated)
             if (!needsAuth)
             {
+                // Track WhatsApp loading screens before waiting for loading/progress bar to disappear
+                await TrackWhatsAppLoadingScreensAsync(browserSession);
+                _notifier.Notify("Based on your action, WhatsApp session is authenticating...");
+                // check for WhatsApp header (authenticated)
                 var header = await browserSession.QuerySelectorAsync("header");
                 if (header != null)
                 {
                     // Authenticated
+                    _notifier.Notify("WhatsApp session is authenticated and ready.");
                     return;
                 }
             }
@@ -616,16 +718,29 @@ public class WhatsAppService : IMessageSender
         }
     }
 
-    // Add this helper method to your WhatsAppService class:
     private async Task TrackWhatsAppLoadingScreensAsync(IBrowserSession browserSession)
     {
+    returnAgain:
         // 1. Progress bar (generic, reliable)
         var progressBar = await browserSession.QuerySelectorAsync("progress");
         if (progressBar != null)
         {
-            var value = await progressBar.GetAttributeAsync("value");
-            var max = await progressBar.GetAttributeAsync("max");
-            _notifier.Notify($"WhatsApp loading progress: {value ?? "?"}/{max ?? "?"}. Please be patient...");
+            _notifier.Notify($"WhatsApp loading progress. Please be patient...");
+            // int pollCount = 0;
+            // while (pollCount < 500)
+            // {
+            //     var max = await progressBar.GetAttributeAsync("max");
+            //     var value = await progressBar.GetAttributeAsync("value");
+            //     _notifier.Notify($"WhatsApp loading progress: {value ?? "?"}/{max ?? "?"}. Please be patient...");
+            //     if (max == "100")
+            //     {
+            //         value = max; // treat as complete
+            //         _notifier.Notify($"WhatsApp loading completed {value ?? "?"}/{max ?? "?"}.");
+            //         break;
+            //     }
+            // }
+            // pollCount++;
+            // await Task.Delay(100);
         }
 
         // 2. Loading text (reliable by text content)
@@ -650,13 +765,24 @@ public class WhatsAppService : IMessageSender
         {
             var ariaLabel = await ariaLoadingElem.GetAttributeAsync("aria-label");
             _notifier.Notify($"WhatsApp loading (ARIA): {ariaLabel}. Please be patient...");
+            goto returnAgain;
         }
 
         // 5. Role-based progress bar (reliable)
         var roleProgressBar = await browserSession.QuerySelectorAsync("div[role='progressbar']");
         if (roleProgressBar != null)
         {
-            _notifier.Notify("WhatsApp is loading (role=progressbar). Please be patient...");
+            _notifier.Notify($"WhatsApp is loading (role=progressbar): {roleProgressBar}. Please be patient...");
         }
+    }
+    // Dispose browser session after sending
+    public async Task DisposeBrowserSessionAsync(IBrowserSession browserSession)
+    {
+        _notifier.Notify("Disposing browser session...");
+        if (browserSession is IAsyncDisposable asyncDisposable)
+            await asyncDisposable.DisposeAsync();
+        else if (browserSession is IDisposable disposable)
+            disposable.Dispose();
+        _notifier.Notify("Disposed browser session.");
     }
 }
