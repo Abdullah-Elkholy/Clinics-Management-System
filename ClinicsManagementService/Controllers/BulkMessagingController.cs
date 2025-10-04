@@ -1,5 +1,6 @@
 using ClinicsManagementService.Models;
 using ClinicsManagementService.Services.Interfaces;
+using ClinicsManagementService.Services.Domain;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClinicsManagementService.Controllers
@@ -10,22 +11,33 @@ namespace ClinicsManagementService.Controllers
     {
         private readonly IMessageSender _messageSender;
         private readonly IWhatsAppService _whatsappService;
-        private readonly INotifier _notifier; // Default notifier
+        private readonly INotifier _notifier;
+        private readonly IValidationService _validationService;
 
-        public BulkMessagingController(IMessageSender messageSender, IWhatsAppService whatsappService, INotifier notifier)
+        public BulkMessagingController(
+            IMessageSender messageSender, 
+            IWhatsAppService whatsappService, 
+            INotifier notifier,
+            IValidationService validationService)
         {
             _messageSender = messageSender;
             _whatsappService = whatsappService;
             _notifier = notifier;
+            _validationService = validationService;
         }
         // Send a single message to a single phone number.
         [HttpPost("send-single")]
         public async Task<IActionResult> SendSingle([FromBody] PhoneMessageDto request)
         {
-            if (string.IsNullOrWhiteSpace(request.Phone) || string.IsNullOrWhiteSpace(request.Message))
-            {
-                return BadRequest("Phone and message are required.");
-            }
+            var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
+            var messageValidation = _validationService.ValidateMessage(request.Message);
+
+            if (!phoneValidation.IsValid)
+                return BadRequest(phoneValidation.ErrorMessage);
+
+            if (!messageValidation.IsValid)
+                return BadRequest(messageValidation.ErrorMessage);
+
             bool sent;
             try
             {
@@ -35,6 +47,7 @@ namespace ClinicsManagementService.Controllers
             {
                 return StatusCode(500, $"Internal error: {ex.Message}");
             }
+
             if (sent)
             {
                 return Ok("Message sent successfully.");
@@ -47,46 +60,76 @@ namespace ClinicsManagementService.Controllers
         [HttpPost("send-bulk")]
         public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request, [FromQuery] int minDelayMs = 1000, [FromQuery] int maxDelayMs = 3000)
         {
-            if (request.Items == null || request.Items.Count() == 0)
+            var bulkValidation = _validationService.ValidateBulkRequest(request);
+            if (!bulkValidation.IsValid)
+                return BadRequest(bulkValidation.ErrorMessage);
+
+            var delayValidation = _validationService.ValidateDelayParameters(minDelayMs, maxDelayMs);
+            if (!delayValidation.IsValid)
+                return BadRequest(delayValidation.ErrorMessage);
+
+            // Check internet connectivity before sending
+            if (!await _whatsappService.CheckInternetConnectivityAsync())
             {
-                return BadRequest("At least one phone/message pair is required.");
-            }
-            if (minDelayMs < 0 || maxDelayMs < minDelayMs)
-            {
-                return BadRequest("Invalid delay parameters.");
+                _notifier.Notify("Internet connectivity to WhatsApp Web failed. Please check your connection and try again.");
+                return StatusCode(503, "Internet connectivity to WhatsApp Web failed. Please check your connection and try again.");
             }
 
-            // Example usage before sending messages to ensure connectivity
-            if (_whatsappService != null)
-            {
-                if (!await _whatsappService.CheckInternetConnectivityAsync())
-                {
-                    _notifier.Notify("Internet connectivity to WhatsApp Web failed. Please check your connection and try again.");
-                    return StatusCode(503, "Internet connectivity to WhatsApp Web failed. Please check your connection and try again.");
-                }
-                await Task.Delay(5000);
-            }
+            await Task.Delay(5000); // Brief delay after connectivity check
+
             // Filter out invalid entries and prepare for sending
             var items = request.Items
                 .Where(i => !string.IsNullOrWhiteSpace(i.Phone) && !string.IsNullOrWhiteSpace(i.Message))
                 .Select(i => new { i.Phone, i.Message })
                 .ToList();
+
             var rawResults = await _messageSender.SendBulkWithThrottlingAsync(
                 items.Select(i => (i.Phone, i.Message)), minDelayMs, maxDelayMs);
+
             var results = items.Zip(rawResults, (input, result) => new MessageSendResult
             {
                 Phone = result.Phone,
                 Message = input.Message,
                 Sent = result.Sent,
                 Error = result.Error,
-                IconType = result.IconType
+                IconType = result.IconType,
+                Status = DetermineStatus(result.Sent, result.Error)
             }).ToList();
+
             var failed = results.Where(r => !r.Sent).ToList();
             if (failed.Count == 0)
             {
                 return Ok(new { message = "All messages sent successfully.", results });
             }
             return StatusCode(207, new { message = "Some messages failed", results });
+        }
+
+        /// <summary>
+        /// Determines the status based on sent status and error message
+        /// </summary>
+        private MessageOperationStatus DetermineStatus(bool sent, string? error)
+        {
+            if (sent)
+            {
+                return MessageOperationStatus.Succeeded;
+            }
+
+            if (error?.Contains("PendingQR:") == true || error?.Contains("WhatsApp authentication required") == true)
+            {
+                return MessageOperationStatus.PendingQR;
+            }
+
+            if (error?.Contains("PendingNET:") == true || error?.Contains("Internet connection unavailable") == true)
+            {
+                return MessageOperationStatus.PendingNET;
+            }
+
+            if (error?.Contains("Waiting:") == true)
+            {
+                return MessageOperationStatus.Waiting;
+            }
+
+            return MessageOperationStatus.Failed;
         }
     }
 }

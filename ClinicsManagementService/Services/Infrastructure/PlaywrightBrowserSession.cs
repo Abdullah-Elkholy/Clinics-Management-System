@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using ClinicsManagementService.Configuration;
 using ClinicsManagementService.Services.Interfaces;
 using Microsoft.Playwright;
 
@@ -13,15 +14,15 @@ namespace ClinicsManagementService.Services
         private IPage? _page;
         private readonly SemaphoreSlim _lock = new(1, 1); // For thread safety
 
-        public async Task InitializeAsync(string sessionDir)
+        public async Task InitializeAsync()
         {
             await _lock.WaitAsync();
             try
             {
                 _playwright = await Playwright.CreateAsync();
-                Directory.CreateDirectory(sessionDir);
+                Directory.CreateDirectory(WhatsAppConfiguration.SessionDirectory);
                 _browser = await _playwright.Chromium.LaunchPersistentContextAsync(
-                    sessionDir,
+                    WhatsAppConfiguration.SessionDirectory,
                     new BrowserTypeLaunchPersistentContextOptions
                     {
                         Headless = false,
@@ -47,7 +48,7 @@ namespace ClinicsManagementService.Services
         }
         // WaitForAuthenticationAsync removed; logic will be handled by EnsureAuthenticatedAsync in WhatsAppService
 
-        public async Task NavigateToAsync(string url)
+        public async Task NavigateToAsync(string url)   
         {
             await _lock.WaitAsync();
             try
@@ -148,6 +149,48 @@ namespace ClinicsManagementService.Services
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error querying all selectors '{selector}': {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async Task<string> GetUrlAsync()
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                if (_page == null)
+                    throw new InvalidOperationException("Browser session not initialized");
+                
+                return _page.Url;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error getting URL: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+
+        public async Task ReloadAsync()
+        {
+            await _lock.WaitAsync();
+            try
+            {
+                if (_page == null)
+                    throw new InvalidOperationException("Browser session not initialized");
+                
+                await _page.ReloadAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error reloading page: {ex.Message}");
                 throw;
             }
             finally

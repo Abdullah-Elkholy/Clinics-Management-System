@@ -5,7 +5,7 @@ namespace ClinicsManagementService.Services.Interfaces
     public interface IWhatsAppService
     {
         Task<bool> CheckInternetConnectivityAsync();
-        Task<IBrowserSession> PrepareSessionAsync(string sessionDir, IBrowserSession browserSession);
+        Task<IBrowserSession> PrepareSessionAsync(IBrowserSession browserSession);
         Task<(bool Success, string? Error)> NavigateAndCheckRecipientAsync(
             IBrowserSession browserSession, string phoneNumber);
         Task<(bool Sent, string? IconType, string? Error)> DeliverMessageAsync(
@@ -21,5 +21,11 @@ namespace ClinicsManagementService.Services.Interfaces
         string SanitizeSelector(string selector);
         Task TakeScreenshotAsync(IBrowserSession browserSession, string path);
         Task DisposeBrowserSessionAsync(IBrowserSession browserSession);
+        
+        // New utility methods
+        Task<WhatsAppNumberCheckResult> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession);
+        Task<InternetConnectivityResult> CheckInternetConnectivityDetailedAsync();
+        Task<WhatsAppAuthenticationResult> CheckWhatsAppAuthenticationAsync(IBrowserSession browserSession);
+        Task<WhatsAppAuthenticationResult> AuthenticateWhatsAppAsync(IBrowserSession browserSession);
     }
 }

@@ -1,4 +1,5 @@
 ﻿using ClinicsManagementService.Services.Interfaces;
+using ClinicsManagementService.Services.Domain;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ClinicsManagementService.Controllers
@@ -8,15 +9,26 @@ namespace ClinicsManagementService.Controllers
     public class MessagingController : ControllerBase
     {
         private readonly IMessageSender _messageSender;
+        private readonly IValidationService _validationService;
 
-        public MessagingController(IMessageSender messageSender)
+        public MessagingController(IMessageSender messageSender, IValidationService validationService)
         {
             _messageSender = messageSender;
+            _validationService = validationService;
         }
 
         [HttpPost("send")]
         public async Task<IActionResult> Send([FromQuery] string phone, [FromQuery] string message)
         {
+            var phoneValidation = _validationService.ValidatePhoneNumber(phone);
+            var messageValidation = _validationService.ValidateMessage(message);
+
+            if (!phoneValidation.IsValid)
+                return BadRequest(phoneValidation.ErrorMessage);
+
+            if (!messageValidation.IsValid)
+                return BadRequest(messageValidation.ErrorMessage);
+
             bool sent;
             try
             {
@@ -24,7 +36,6 @@ namespace ClinicsManagementService.Controllers
             }
             catch (Exception ex)
             {
-                // Log the error if needed
                 return StatusCode(500, $"Internal error: {ex.Message}");
             }
 

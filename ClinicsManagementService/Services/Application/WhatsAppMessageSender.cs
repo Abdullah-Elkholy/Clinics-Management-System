@@ -1,5 +1,11 @@
+using ClinicsManagementService.Configuration;
 using ClinicsManagementService.Models;
 using ClinicsManagementService.Services.Interfaces;
+using Microsoft.Playwright;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+
 namespace ClinicsManagementService.Services.Application
 {
 
@@ -8,8 +14,6 @@ namespace ClinicsManagementService.Services.Application
         private readonly IWhatsAppService _whatsappService;
         private readonly Func<IBrowserSession> _browserSessionFactory;
         private readonly INotifier _notifier;
-        const string sessionDir = "whatsapp-session";
-
         public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier)
         {
             _whatsappService = whatsappService;
@@ -30,7 +34,7 @@ namespace ClinicsManagementService.Services.Application
 
             // initialize session once for bulk sending
             var browserSession = _browserSessionFactory();
-            await _whatsappService.PrepareSessionAsync(sessionDir, browserSession);
+            await _whatsappService.PrepareSessionAsync(browserSession);
 
             foreach (var item in items)
             {
@@ -45,8 +49,9 @@ namespace ClinicsManagementService.Services.Application
                         Phone = item.Phone,
                         Message = item.Message,
                         Sent = false,
-                        Error = networkErrorMessage ?? "Pending: Internet connection unavailable.",
-                        IconType = null
+                        Error = networkErrorMessage ?? "PendingNET: Internet connection unavailable",
+                        IconType = null,
+                        Status = MessageOperationStatus.PendingNET
                     });
                     counter++; // only for logging using notify
                     continue;
@@ -62,21 +67,43 @@ namespace ClinicsManagementService.Services.Application
                     Message = item.Message,
                     Sent = result.Sent,
                     Error = result.Error,
-                    IconType = result.IconType
+                    IconType = result.IconType,
+                    Status = DetermineStatus(result.Sent, result.Error)
                 });
                 if (!result.Sent && result.Error != null &&
                     (result.Error.Contains("net::ERR_NAME_NOT_RESOLVED") || result.Error.Contains("net::ERR_INTERNET_DISCONNECTED") || result.Error.Contains("Navigation failed")))
                 {
                     networkErrorOccurred = true;
-                    networkErrorMessage = "Pending: Internet connection unavailable. " + result.Error;
+                    networkErrorMessage = "PendingNET: Internet connection unavailable. " + result.Error;
                     _notifier.Notify($"[{counter + 1}/{total}] Network error detected: {networkErrorMessage}"); // only for logging using notify
                 }
-                // Only throttle if not the last message
+                // Only throttle if not the last message with continuous monitoring
                 if (counter < total)
                 {
                     int delay = Random.Shared.Next(minDelayMs, maxDelayMs + 1);
                     _notifier.Notify($"[{counter + 1}/{total}] Throttling for {delay}ms before next send..."); // only for logging using notify
-                    await Task.Delay(delay);
+
+                    // Run continuous monitoring during throttling delay
+                    var monitoringResult = await ContinuousMonitoringAsync(browserSession, delay);
+                    if (monitoringResult != null)
+                    {
+                        _notifier.Notify($"[{counter + 1}/{total}] Throttling interrupted: {monitoringResult.Error}");
+                        // Mark remaining messages as pending due to authentication issue
+                        for (int i = counter; i < total; i++)
+                        {
+                            var remainingItem = items.Skip(i).First();
+                            results.Add(new MessageSendResult
+                            {
+                                Phone = remainingItem.Phone,
+                                Message = remainingItem.Message,
+                                Sent = false,
+                                Error = monitoringResult.Error,
+                                IconType = null,
+                                Status = MessageOperationStatus.PendingQR
+                            });
+                        }
+                        break; // Exit the loop
+                    }
                 }
                 counter++; // only for logging using notify
             }
@@ -86,11 +113,88 @@ namespace ClinicsManagementService.Services.Application
             return results;
         }
 
+        /// <summary>
+        /// Continuous monitoring for progress bars and authentication issues
+        /// This method runs as a side job to interrupt waiting operations
+        /// </summary>
+        private async Task<MessageDeliveryResult?> ContinuousMonitoringAsync(IBrowserSession browserSession, int timeoutMs = 5000)
+        {
+            try
+            {
+                // Check for progress bars using configuration
+                foreach (var progressSelector in WhatsAppConfiguration.ProgressBarSelectors)
+                {
+                    try
+                    {
+                        var progress = await browserSession.QuerySelectorAsync(progressSelector);
+                        if (progress != null)
+                        {
+                            _notifier.Notify($"⏳ Progress bar detected during monitoring ({progressSelector}) - waiting for completion");
+                            try
+                            {
+                                await browserSession.WaitForSelectorAsync(progressSelector, timeoutMs, WaitForSelectorState.Detached);
+                                _notifier.Notify($"✅ Progress bar disappeared ({progressSelector})");
+                            }
+                            catch (Exception progressEx)
+                            {
+                                _notifier.Notify($"⚠️ Progress bar wait timeout: {progressEx.Message}");
+                            }
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _notifier.Notify($"⚠️ Error checking progress selector {progressSelector}: {ex.Message}");
+                    }
+                }
+
+                // Check for authentication issues using configuration
+                foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
+                {
+                    try
+                    {
+                        var authElement = await browserSession.QuerySelectorAsync(selector);
+                        if (authElement != null)
+                        {
+                            _notifier.Notify($"🔐 Authentication issue detected during monitoring ({selector})");
+                            return MessageDeliveryResult.PendingQR("WhatsApp authentication required. Please scan QR code.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _notifier.Notify($"⚠️ Error checking auth selector {selector}: {ex.Message}");
+                    }
+                }
+
+                // Check for logout indicators in URL
+                try
+                {
+                    var currentUrl = await browserSession.GetUrlAsync();
+                    if (currentUrl.Contains("post_logout") || currentUrl.Contains("logout_reason"))
+                    {
+                        _notifier.Notify("🔐 Logout detected during monitoring - session needs authentication");
+                        return MessageDeliveryResult.PendingQR("WhatsApp session expired. Please scan QR code.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _notifier.Notify($"⚠️ Error checking URL during monitoring: {ex.Message}");
+                }
+
+                return null; // No issues detected
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"⚠️ Error in continuous monitoring: {ex.Message}");
+                return null;
+            }
+        }
+
         public async Task<bool> SendMessageAsync(string phoneNumber, string message)
         {
             // initialize session for each SendMessageAsync call
             var browserSession = _browserSessionFactory();
-            await _whatsappService.PrepareSessionAsync(sessionDir, browserSession);
+            await _whatsappService.PrepareSessionAsync(browserSession);
             var result = await _whatsappService.ExecuteWithRetryAsync(() => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
                 maxAttempts: 3,
                 treatAsRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
@@ -106,7 +210,7 @@ namespace ClinicsManagementService.Services.Application
         {
             // initialize session for each SendMessageAsync call
             var browserSession = _browserSessionFactory();
-            await _whatsappService.PrepareSessionAsync(sessionDir, browserSession);
+            await _whatsappService.PrepareSessionAsync(browserSession);
             bool allSent = true;
             var results = new List<MessageSendResult>();
             foreach (var message in messages)
@@ -134,6 +238,31 @@ namespace ClinicsManagementService.Services.Application
             }
             await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             return results;
+        }
+
+        private MessageOperationStatus DetermineStatus(bool sent, string? error)
+        {
+            if (sent)
+            {
+                return MessageOperationStatus.Succeeded;
+            }
+
+            if (error?.Contains("PendingQR:") == true || error?.Contains("WhatsApp authentication required") == true)
+            {
+                return MessageOperationStatus.PendingQR;
+            }
+
+            if (error?.Contains("PendingNET:") == true || error?.Contains("Internet connection unavailable") == true)
+            {
+                return MessageOperationStatus.PendingNET;
+            }
+
+            if (error?.Contains("Waiting:") == true)
+            {
+                return MessageOperationStatus.Waiting;
+            }
+
+            return MessageOperationStatus.Failed;
         }
     }
 }
