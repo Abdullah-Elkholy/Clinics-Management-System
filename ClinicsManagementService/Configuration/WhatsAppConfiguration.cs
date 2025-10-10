@@ -18,6 +18,7 @@ namespace ClinicsManagementService.Configuration
         public const int DefaultProgressBarWaitMs = 60000;
         public const int DefaultUIWaitMs = 30000;
         public const int DefaultMaxUIAttempts = 100;
+    public const int DefaultMaxMonitoringWaitMs = 900000; // 15 minutes in ms, used as a safe global cap for monitoring waits
         #endregion
 
         #region UI Elements and Selectors
@@ -134,7 +135,7 @@ namespace ClinicsManagementService.Configuration
         public const string StatusIconAttribute = "data-icon";
         #endregion
 
-        #region Error Handling and Network
+        #region Error and Network Handling
         public static readonly string[] NetworkErrorPatterns = new[]
         {
             "net::ERR_NAME_NOT_RESOLVED",
@@ -146,19 +147,19 @@ namespace ClinicsManagementService.Configuration
         {
             // Specific selectors for the exact error dialog structure
             "[aria-label*='Phone number shared via url is invalid']", // General aria-label match
-            "div[role='dialog'] div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid.']",
-            "div[role='dialog'] div[data-animate-modal-body='true'] div:has-text('Phone number shared via url is invalid')",
-            "div[role='dialog'] div:has-text('Phone number shared via url is invalid')",
-            "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid']",
+            "div[role='dialog'] div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid.']", // General dialog match
+            "div[role='dialog'] div[data-animate-modal-body='true'] div:has-text('Phone number shared via url is invalid')", // Specific body text match
+            "div[role='dialog'] div:has-text('Phone number shared via url is invalid')", // Specific text match
+            "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid']", // General aria-label match
             // More specific selectors based on the provided HTML structure
-            "div.x9f619.x78zum5.xdt5ytf.x6s0dn4.xl56j7k.xh8yej3.xpb48g7.x1jn0hjm.x1us19tq[role='dialog']", // Specific class match
-            "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid.']",
-            "div[data-animate-modal-body='true'] div:has-text('Phone number shared via url is invalid.')",
-            "text='Phone number shared via url is invalid.'",
+            // "div.x9f619.x78zum5.xdt5ytf.x6s0dn4.xl56j7k.xh8yej3.xpb48g7.x1jn0hjm.x1us19tq[role='dialog']", // Specific class match
+            "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid.']", // Specific aria-label match
+            "div[data-animate-modal-body='true'] div:has-text('Phone number shared via url is invalid.')", // Specific text match
+            "text='Phone number shared via url is invalid.'", // Specific text match
             // Generic fallback selectors
-            "div[role='dialog']",
-            "div[data-animate-modal-popup='true']",
-            "div[data-animate-modal-body='true']"
+            // "div[role='dialog']", // General dialog match
+            // "div[data-animate-modal-popup='true']", // General modal popup
+            // "div[data-animate-modal-body='true']" // General modal body
         };
         #endregion
 

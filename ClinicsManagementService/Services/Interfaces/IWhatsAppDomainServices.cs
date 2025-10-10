@@ -11,6 +11,7 @@ namespace ClinicsManagementService.Services.Domain
     public interface IWhatsAppUIService
     {
     Task<OperationResult<bool>> WaitForPageLoadAsync(IBrowserSession browserSession, string[] selectors, int timeoutMs = 20000, int checkIntervalMs = 1000);
+    Task<OperationResult<bool>> NavigateToRecipientAsync(IBrowserSession browserSession, string phoneNumber);
     Task<OperationResult<string?>> DeliverMessageAsync(IBrowserSession browserSession, string message, string? phoneNumber = null);
         Task<MessageStatus> GetLastOutgoingMessageStatusAsync(IBrowserSession browserSession, string messageText);
     Task<OperationResult<bool>> WaitWithMonitoringAsync(IBrowserSession browserSession, Func<Task<bool>> waitCondition, int timeoutMs = 20000, int checkIntervalMs = 1000);
@@ -30,7 +31,9 @@ namespace ClinicsManagementService.Services.Domain
     /// </summary>
     public interface IRetryService
     {
-        Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, int maxAttempts = WhatsAppConfiguration.DefaultMaxRetryAttempts, Func<Exception, bool>? isRetryable = null);
+        // Retry-aware helper for operations that return OperationResult<T>.
+        // The shouldRetryResult predicate can inspect the returned OperationResult and decide whether to retry.
+        Task<OperationResult<T>> ExecuteWithRetryAsync<T>(Func<Task<OperationResult<T>>> operation, int maxAttempts = WhatsAppConfiguration.DefaultMaxRetryAttempts, Func<OperationResult<T>, bool>? shouldRetryResult = null, Func<Exception, bool>? isRetryable = null);
     }
 
     /// <summary>

@@ -23,7 +23,39 @@ namespace ClinicsManagementService.Services.Domain
             _screenshotService = screenshotService;
             _networkService = networkService;
         }
-        
+
+        // Executes an async operation with cancellation support and robust error handling.
+        public async Task<T> ExecuteWithCancellationAsync<T>(Func<CancellationToken, Task<T>> operation, T defaultValue, string operationName, int timeoutMs = 30000)
+        {
+            using var cts = new CancellationTokenSource(timeoutMs);
+            try
+            {
+                return await operation(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                _notifier.Notify($"⏰ {operationName} was cancelled after {timeoutMs}ms");
+                return defaultValue;
+            }
+            catch (Exception ex) when (IsBrowserClosedException(ex))
+            {
+                _notifier.Notify($"⚠️ Error in {operationName}: Browser was closed");
+                return defaultValue;
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"⚠️ Error in {operationName}: {ex.Message}");
+                return defaultValue;
+            }
+        }
+
+        /*
+        Use this when:
+            You need a more general-purpose error handler
+            The operation can safely return a default value on failure
+            You want simpler error handling without cancellation
+            The operation is non-critical or can be retried safely 
+        */
         public async Task<T> TryExecuteAsync<T>(Func<Task<T>> operation, T defaultValue, string operationName)
         {
             try
@@ -70,7 +102,7 @@ namespace ClinicsManagementService.Services.Domain
                             // Poll until the selector is no longer present, or until internet is down, or browser is closed.
                             var pollIntervalMs = Math.Max(250, delayMs);
                             var start = DateTime.UtcNow;
-                            var maxWait = maxWaitMs.HasValue ? TimeSpan.FromMilliseconds(maxWaitMs.Value) : TimeSpan.FromMinutes(15); // default 15 minutes (very long)
+                            var maxWait = maxWaitMs.HasValue ? TimeSpan.FromMilliseconds(maxWaitMs.Value) : TimeSpan.FromMilliseconds(WhatsAppConfiguration.DefaultMaxMonitoringWaitMs);
                             while (DateTime.UtcNow - start < maxWait)
                             {
                                 try
@@ -113,7 +145,7 @@ namespace ClinicsManagementService.Services.Domain
 
                             // If we exited the polling loop due to timeout, report Waiting so callers can decide
                             _notifier.Notify($"⚠️ Progress wait exceeded maxWait ({maxWait}). Returning Waiting state.");
-                            return OperationResult<bool>.Waiting();
+                            return OperationResult<bool>.Waiting($"Progress bar did not disappear in time ({maxWait}).");
                         }
                     }
                     catch (Exception ex)
@@ -278,6 +310,101 @@ namespace ClinicsManagementService.Services.Domain
             return selectorTimeoutResult ?? OperationResult<bool>.Success(true);
         }
 
+
+        public async Task<OperationResult<bool>> NavigateToRecipientAsync(IBrowserSession browserSession, string phoneNumber)
+        {
+            _notifier.Notify($"🌐 Starting navigation to recipient: {phoneNumber}");
+
+            try
+            {
+                // Step 1: Construct URL
+                var url = $"{WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber}";
+                _notifier.Notify($"🔗 Navigation URL: {url}");
+
+                // Step 2: Navigate to URL
+                _notifier.Notify("🚀 Initiating navigation...");
+                await browserSession.NavigateToAsync(url);
+                _notifier.Notify("✅ Navigation request sent");
+
+                // Step 3: Wait for page to load with continuous monitoring
+                _notifier.Notify("⏳ Waiting for page to load...");
+                var navRes = await WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                // Centralize mapping of navRes states via extension helpers
+                if (navRes.IsWaiting())
+                    return OperationResult<bool>.Waiting(navRes.ResultMessage ?? "Waiting for page load");
+                if (navRes.IsPendingQr())
+                    return OperationResult<bool>.PendingQR(navRes.ResultMessage ?? "Authentication required");
+                if (navRes.IsPendingNet())
+                    return OperationResult<bool>.PendingNET(navRes.ResultMessage ?? "Internet issue");
+                if (navRes.IsSuccess == false)
+                    return OperationResult<bool>.Failure(navRes.ResultMessage ?? "Navigation interrupted");
+
+                // Step 4: Check for error dialogs with continuous monitoring
+                _notifier.Notify("🔍 Checking for error dialogs...");
+                var errorWaitResult = await WaitWithMonitoringAsync(browserSession, async () =>
+                {
+                    foreach (var selector in WhatsAppConfiguration.ErrorDialogSelectors)
+                    {
+                        var errorDialog = await browserSession.QuerySelectorAsync(selector);
+                        if (errorDialog != null)
+                            return true;
+                    }
+                    return false;
+                }, 10000, 500);
+
+                if (errorWaitResult.IsSuccess == false)
+                {
+                    if (errorWaitResult.State == OperationState.Waiting)
+                        return OperationResult<bool>.Waiting(errorWaitResult.ResultMessage ?? "Waiting: Error dialog check timed out");
+                    if (errorWaitResult.State == OperationState.PendingQR)
+                        return OperationResult<bool>.PendingQR(errorWaitResult.ResultMessage ?? "Authentication required");
+                    if (errorWaitResult.State == OperationState.PendingNET)
+                        return OperationResult<bool>.PendingNET(errorWaitResult.ResultMessage ?? "Internet issue");
+                    return OperationResult<bool>.Failure(errorWaitResult.ResultMessage ?? "Error dialog check interrupted by authentication or progress bar");
+                }
+
+                foreach (var selector in WhatsAppConfiguration.ErrorDialogSelectors)
+                {
+                    var errorDialog = await browserSession.QuerySelectorAsync(selector);
+                    if (errorDialog != null)
+                    {
+                        _notifier.Notify("❌ Error dialog detected");
+                        var result = await HandleErrorDialogAsync(errorDialog);
+                        _notifier.Notify($"📋 Error dialog result: {result.IsSuccess} - {result.ResultMessage}");
+                        return result;
+                    }
+                }
+
+                // Step 5: Verify navigation success
+                _notifier.Notify("✅ Checking navigation success...");
+                var currentUrl = await browserSession.GetUrlAsync();
+                _notifier.Notify($"📍 Current URL: {currentUrl}");
+
+                // Check for logout indicators in URL
+                if (currentUrl.Contains("post_logout") || currentUrl.Contains("logout_reason"))
+                {
+                    _notifier.Notify("🚪 WhatsApp session expired (logout detected in URL).");
+                    return OperationResult<bool>.Failure("Session expired: WhatsApp logged out. Please restart the service.");
+                }
+
+                if (currentUrl.Contains(phoneNumber))
+                {
+                    _notifier.Notify("✅ Navigation successful - phone number found in URL");
+                    return OperationResult<bool>.Success(true);
+                }
+                else
+                {
+                    _notifier.Notify("⚠️ Navigation may not have completed properly");
+                    return OperationResult<bool>.Success(true); // Still proceed, might be a timing issue
+                }
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Navigation failed with exception: {ex.Message}");
+                return OperationResult<bool>.Failure($"Navigation failed: {ex.Message}");
+            }
+        }
+
         public async Task<OperationResult<string?>> DeliverMessageAsync(IBrowserSession browserSession, string message, string? phoneNumber = null)
         {
             // Modularized and robust async execution with retries and error handling
@@ -404,7 +531,7 @@ namespace ClinicsManagementService.Services.Domain
                     if (iconType == null || iconType == "")
                     {
                         _notifier.Notify("No status icon found after polling - using existing retry logic");
-                        return OperationResult<string?>.Waiting(); // Will trigger retry below (treated as waiting)
+                        return OperationResult<string?>.Waiting($"No status icon found after polling"); // Will trigger retry below (treated as waiting)
                     }
 
                     // Final extra wait if still pending with continuous monitoring
@@ -422,7 +549,7 @@ namespace ClinicsManagementService.Services.Domain
                         {
                             // Map monitoring result (OperationResult<bool>) to OperationResult<string?> so caller can handle Waiting/Pending states
                             if (extraWaitResult.IsWaiting())
-                                return OperationResult<string?>.Waiting();
+                                return OperationResult<string?>.Waiting($"Waiting: {extraWaitResult.ResultMessage ?? "Final wait..."}");
                             if (extraWaitResult.IsPendingQr())
                                 return OperationResult<string?>.PendingQR(extraWaitResult.ResultMessage ?? "Authentication required");
                             if (extraWaitResult.IsPendingNet())
@@ -451,7 +578,7 @@ namespace ClinicsManagementService.Services.Domain
                     {
                         msgTimeRetries++;
                         _notifier.Notify($"msg-time retry #{msgTimeRetries} of {msgTimeRetryCount}...");
-                        return OperationResult<string?>.Waiting(); // Will trigger retry below
+                        return OperationResult<string?>.Waiting($"msg-time retry #{msgTimeRetries} of {msgTimeRetryCount}..."); // Will trigger retry below
                     }
 
                     // Otherwise, not sent
@@ -462,7 +589,7 @@ namespace ClinicsManagementService.Services.Domain
                     }
 
                     _notifier.Notify("Message not sent yet, re-checking...");
-                    return OperationResult<string?>.Waiting(); // Will trigger retry below
+                    return OperationResult<string?>.Waiting($"Message not sent yet, re-checking..."); // Will trigger retry below
                 }, OperationResult<string?>.Failure("DeliverMessageAsync failed"), "DeliverMessageAsync");
 
                 if (result.IsWaiting())
@@ -474,6 +601,196 @@ namespace ClinicsManagementService.Services.Domain
                 return result;
             }
             return OperationResult<string?>.Failure($"Failed: No status icon found after {maxMsgTimeoutRetryCount} retries");
+        }
+
+        // Removed retry button helper methods - now using full task retry instead
+
+        /// <summary>
+        /// Enhanced progress bar handling based on BeforeSOLID project logic
+        /// </summary>
+        private async Task HandleProgressBarsAsync(IBrowserSession browserSession)
+        {
+            _notifier.Notify("🔍 Checking for progress bars and loading indicators...");
+
+            // Multiple progress bar selectors (from BeforeSOLID project)
+            foreach (var progressSelector in WhatsAppConfiguration.ProgressBarSelectors)
+            {
+                try
+                {
+                    var progress = await browserSession.QuerySelectorAsync(progressSelector);
+                    if (progress != null)
+                    {
+                        _notifier.Notify($"⏳ Progress/loading bar detected ({progressSelector}), waiting for it to disappear...");
+
+                        try
+                        {
+                            await browserSession.WaitForSelectorAsync(progressSelector, 60000, WaitForSelectorState.Detached);
+                            _notifier.Notify($"✅ Progress/loading bar disappeared ({progressSelector})");
+                        }
+                        catch (Exception progressEx)
+                        {
+                            _notifier.Notify($"⚠️ Progress bar wait failed for {progressSelector}: {progressEx.Message}");
+                        }
+
+                        // After one progress bar disappears, check for others
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _notifier.Notify($"⚠️ Error checking progress selector {progressSelector}: {ex.Message}");
+                }
+            }
+
+            // Check for loading text indicators
+            foreach (var textSelector in WhatsAppConfiguration.ProgressBarSelectors)
+            {
+                try
+                {
+                    var loadingElement = await browserSession.QuerySelectorAsync(textSelector);
+                    if (loadingElement != null)
+                    {
+                        var loadingText = await loadingElement.InnerTextAsync();
+                        _notifier.Notify($"⏳ Loading text detected: {loadingText}. Please be patient...");
+
+                        // Wait a bit for loading to complete
+                        await Task.Delay(2000);
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _notifier.Notify($"⚠️ Error checking loading text {textSelector}: {ex.Message}");
+                }
+            }
+
+            _notifier.Notify("✅ Progress bar handling completed");
+        }
+
+        /// <summary>
+        /// Determines if an exception is fatal and should trigger crash prevention
+        /// </summary>
+        private bool IsFatalException(Exception ex)
+        {
+            // Fatal exceptions that could crash the system
+            var fatalExceptionTypes = new[]
+            {
+                typeof(OutOfMemoryException),
+                typeof(StackOverflowException),
+                typeof(AccessViolationException),
+                typeof(InvalidProgramException),
+                typeof(BadImageFormatException),
+                typeof(System.Runtime.InteropServices.SEHException)
+            };
+
+            // Check exception type
+            if (fatalExceptionTypes.Contains(ex.GetType()))
+            {
+                return true;
+            }
+
+            // Check for fatal error messages
+            var fatalMessages = new[]
+            {
+                "Access violation",
+                "Stack overflow",
+                "Out of memory",
+                "Invalid program",
+                "Bad image format",
+                "System.Runtime.InteropServices.SEHException",
+                "TargetInvocationException",
+                "TypeLoadException",
+                "MissingMethodException"
+            };
+
+            return fatalMessages.Any(msg => ex.Message.Contains(msg, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Attempts graceful recovery from fatal exceptions
+        /// </summary>
+        private async Task<OperationResult<string?>?> AttemptGracefulRecovery(IBrowserSession browserSession, Exception ex, string? phoneNumber)
+        {
+            try
+            {
+                _notifier.Notify("🔄 Attempting graceful recovery from fatal exception...");
+
+                // Step 1: Check if browser session is still alive
+                try
+                {
+                    var currentUrl = await browserSession.GetUrlAsync();
+                    _notifier.Notify($"✅ Browser session alive, current URL: {currentUrl}");
+                }
+                catch
+                {
+                    _notifier.Notify("❌ Browser session appears to be dead, cannot recover");
+                    return OperationResult<string?>.Failure("Failed: Browser session terminated due to fatal exception");
+                }
+
+                // Step 2: Check internet connectivity
+                if (!await _networkService.CheckInternetConnectivityAsync())
+                {
+                    _notifier.Notify("❌ Internet connectivity lost during fatal exception recovery");
+                    return OperationResult<string?>.PendingNET("Internet connection unavailable");
+                }
+
+                // Step 3: Try to navigate to a safe page
+                try
+                {
+                    _notifier.Notify("🔄 Navigating to WhatsApp main page for recovery...");
+                    await browserSession.NavigateToAsync(WhatsAppConfiguration.WhatsAppBaseUrl);
+                    await Task.Delay(3000); // Give time for page to load
+                    _notifier.Notify("✅ Successfully navigated to WhatsApp main page");
+                }
+                catch (Exception navEx)
+                {
+                    _notifier.Notify($"⚠️ Navigation recovery failed: {navEx.Message}");
+                    return OperationResult<string?>.Failure("Failed: Navigation recovery failed after fatal exception");
+                }
+
+                // Step 4: Check for QR code or authentication issues
+                foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
+                {
+                    try
+                    {
+                        var qrElement = await browserSession.QuerySelectorAsync(selector);
+                        if (qrElement != null)
+                        {
+                            _notifier.Notify("🔐 QR code detected during recovery - authentication required");
+                            return OperationResult<string?>.PendingQR("WhatsApp authentication required. Please scan QR code.");
+                        }
+                    }
+                    catch { /* ignore errors */ }
+                }
+
+                // Step 5: If we have a phone number, try to navigate to it
+                if (!string.IsNullOrEmpty(phoneNumber))
+                {
+                    try
+                    {
+                        _notifier.Notify($"🔄 Attempting to navigate to chat for recovery: {phoneNumber}");
+                        await browserSession.NavigateToAsync($"{WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber}");
+                        await Task.Delay(2000); // Give time for navigation
+                        _notifier.Notify("✅ Successfully navigated to chat for recovery");
+
+                        // Return null to continue with normal retry logic
+                        return null;
+                    }
+                    catch (Exception chatNavEx)
+                    {
+                        _notifier.Notify($"⚠️ Chat navigation recovery failed: {chatNavEx.Message}");
+                        return OperationResult<string?>.Failure("Failed: Chat navigation recovery failed after fatal exception");
+                    }
+                }
+
+                _notifier.Notify("✅ Graceful recovery completed successfully");
+                return null; // Continue with normal retry logic
+            }
+            catch (Exception recoveryEx)
+            {
+                _notifier.Notify($"❌ Graceful recovery failed: {recoveryEx.Message}");
+                return OperationResult<string?>.Failure($"Failed: Graceful recovery failed - {recoveryEx.Message}");
+            }
         }
 
         public async Task<MessageStatus> GetLastOutgoingMessageStatusAsync(IBrowserSession browserSession, string messageText)
@@ -592,6 +909,225 @@ namespace ClinicsManagementService.Services.Domain
             _notifier.Notify($"Screenshot taken for fallback status: {fallbackScreenshotPath}");
 
             return MessageStatus.WithIcon(iconTypeFallback ?? string.Empty, statusIconFallback);
+        }
+
+        private async Task<OperationResult<bool>> HandleErrorDialogAsync(IElementHandle errorDialog)
+        {
+            var ariaLabel = await errorDialog.GetAttributeAsync(WhatsAppConfiguration.AriaLabelAttribute);
+            var dialogText = await errorDialog.InnerTextAsync();
+            _notifier.Notify($"Error dialog detected: ariaLabel={ariaLabel}, dialogText={dialogText}");
+
+            if (ariaLabel != null && ariaLabel.Contains("invalid"))
+                return OperationResult<bool>.Failure("Invalid phone number format detected.");
+
+            if (dialogText.Contains("Couldn't find this user") || dialogText.Contains("not on WhatsApp"))
+                return OperationResult<bool>.Failure("Number is not registered on WhatsApp.");
+
+            return OperationResult<bool>.Failure($"Unknown error dialog detected: {dialogText}");
+        }
+
+        private async Task WaitForProgressBarsToDisappearAsync(IBrowserSession browserSession)
+        {
+            try
+            {
+                _notifier.Notify("Waiting for WhatsApp loading/progress bar to disappear...");
+                await browserSession.WaitForSelectorAsync(
+                    string.Join(", ", WhatsAppConfiguration.ProgressBarSelectors),
+                    WhatsAppConfiguration.DefaultProgressBarWaitMs,
+                    WaitForSelectorState.Detached);
+                _notifier.Notify("WhatsApp loading bar disappeared, proceeding...");
+            }
+            catch (TimeoutException ex)
+            {
+                string screenshotPath = $"Screenshots/loadingbar_timeout_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                await _screenshotService.TakeScreenshotAsync(browserSession, screenshotPath);
+                _notifier.Notify($"Loading bar did not disappear in time: {ex.Message}. Screenshot: {screenshotPath}. Proceeding anyway...");
+            }
+        }
+
+        private async Task WaitForUIElementsAsync(IBrowserSession browserSession)
+        {
+            int attempt = 0;
+            while (attempt < WhatsAppConfiguration.DefaultMaxUIAttempts)
+            {
+                foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
+                {
+                    try
+                    {
+                        _notifier.Notify($"🔍 Waiting for WhatsApp UI selector: {selector}");
+                        await browserSession.WaitForSelectorAsync(selector, WhatsAppConfiguration.DefaultUIWaitMs, WaitForSelectorState.Visible);
+                        _notifier.Notify($"✅ WhatsApp UI element visible: {selector}, UI is ready.");
+                        return;
+                    }
+                    catch (TimeoutException ex)
+                    {
+                        _notifier.Notify($"⏰ Timeout waiting for selector: {selector} - {ex.Message}");
+
+                        // Take screenshot for debugging
+                        string screenshotPath = $"Screenshots/ready_timeout_{_screenshotService.SanitizeSelector(selector)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                        await _screenshotService.TakeScreenshotAsync(browserSession, screenshotPath);
+                        _notifier.Notify($"📸 Screenshot taken: {screenshotPath}");
+
+                        // Enhanced timeout handling with comprehensive analysis
+                        _notifier.Notify("🔍 Performing comprehensive timeout analysis for UI elements...");
+
+                        // Step 1: Check internet connectivity
+                        _notifier.Notify("🌐 Checking internet connectivity...");
+                        if (!await _networkService.CheckInternetConnectivityAsync())
+                        {
+                            _notifier.Notify("❌ Internet connectivity lost. Cannot continue.");
+                            throw new TimeoutException($"Internet connectivity lost: {ex.Message}", ex);
+                        }
+                        _notifier.Notify("✅ Internet connectivity confirmed.");
+
+                        // Step 2: Check for progress bars and wait for them to disappear
+                        await HandleProgressBarsAsync(browserSession);
+
+                        attempt++;
+                        if (attempt >= WhatsAppConfiguration.DefaultMaxUIAttempts)
+                        {
+                            _notifier.Notify("❌ Max UI attempts reached. Cannot continue.");
+                            throw new TimeoutException($"WhatsApp UI did not become ready after {WhatsAppConfiguration.DefaultMaxUIAttempts} attempts: {ex.Message}", ex);
+                        }
+
+                        _notifier.Notify($"🔄 Retrying UI detection after comprehensive analysis (attempt {attempt + 1}/{WhatsAppConfiguration.DefaultMaxUIAttempts})...");
+
+                        _notifier.Notify($"🔄 Retrying UI detection after timeout handling (attempt {attempt + 1}/{WhatsAppConfiguration.DefaultMaxUIAttempts})...");
+                        goto RetrySelectors;
+                    }
+                }
+                break;
+
+            RetrySelectors:
+                attempt++;
+            }
+
+            _notifier.Notify("❌ WhatsApp UI did not become ready after all fallbacks and progress retries.");
+            throw new TimeoutException("WhatsApp UI did not become ready after all fallbacks and progress retries.");
+        }
+
+        public async Task<bool> CheckForProgressBarsAndWaitAsync(IBrowserSession browserSession)
+        {
+            foreach (var progressSelector in WhatsAppConfiguration.ProgressBarSelectors)
+            {
+                try
+                {
+                    var progress = await browserSession.QuerySelectorAsync(progressSelector);
+                    if (progress != null)
+                    {
+                        _notifier.Notify($"Progress/loading bar detected ({progressSelector}), waiting for it to disappear before retrying UI selector...");
+                        await browserSession.WaitForSelectorAsync(progressSelector, WhatsAppConfiguration.DefaultProgressBarWaitMs, WaitForSelectorState.Detached);
+                        _notifier.Notify($"Progress/loading bar disappeared, retrying UI selector.");
+                        return true;
+                    }
+                }
+                catch { /* ignore errors in progress check */ }
+            }
+            return false;
+        }
+
+        public async Task WaitForMessageInputAsync(IBrowserSession browserSession)
+        {
+            foreach (var inputSelector in WhatsAppConfiguration.InputFieldSelectors)
+            {
+                try
+                {
+                    _notifier.Notify($"🔍 Waiting for message input selector: {inputSelector}");
+                    await browserSession.WaitForSelectorAsync(inputSelector, WhatsAppConfiguration.DefaultSelectorTimeoutMs, WaitForSelectorState.Visible);
+                    _notifier.Notify($"✅ Message input element visible: {inputSelector}");
+                    return;
+                }
+                catch (TimeoutException ex)
+                {
+                    _notifier.Notify($"⏰ Timeout waiting for message input selector: {inputSelector} - {ex.Message}");
+
+                    // Take screenshot for debugging
+                    string screenshotPath = $"Screenshots/input_timeout_{_screenshotService.SanitizeSelector(inputSelector)}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                    await _screenshotService.TakeScreenshotAsync(browserSession, screenshotPath);
+                    _notifier.Notify($"📸 Screenshot taken: {screenshotPath}");
+
+                    // Check for progress bars and wait if found
+                    bool progressHandled = await CheckForProgressBarsAndWaitAsync(browserSession);
+                    if (progressHandled)
+                    {
+                        _notifier.Notify("🔄 Retrying message input detection after progress bar handling...");
+                        continue; // Retry the same selector
+                    }
+
+                    // If no progress bars, continue to next selector
+                }
+            }
+            _notifier.Notify("❌ Message input element not found after all selectors.");
+            throw new TimeoutException("Message input element not found after all selectors.");
+        }
+
+        public async Task FillAndSendMessageAsync(IBrowserSession browserSession, string message)
+        {
+            _notifier.Notify($"📝 Starting message fill and send process");
+            _notifier.Notify($"📄 Message to send: {message}");
+
+            try
+            {
+                // Step 1: Find message input
+                _notifier.Notify("🔍 Step 1: Finding message input box...");
+                var input = (IElementHandle?)null;
+                foreach (var selector in WhatsAppConfiguration.InputFieldSelectors)
+                {
+                    var inputIN = await browserSession.QuerySelectorAsync(selector);
+                    if (inputIN != null)
+                    {
+                        input = inputIN;
+                        _notifier.Notify($"✅ Message input box found using selector: {selector}");
+                        break;
+                    }
+                }
+                if (input == null)
+                {
+                    _notifier.Notify("❌ Message input box not found after trying all selectors.");
+                    throw new Exception("Message input box not found.");
+                }
+
+                // Step 2: Focus input
+                _notifier.Notify("🎯 Step 2: Focusing message input...");
+                await input.FocusAsync();
+                _notifier.Notify("✅ Message input focused");
+
+                // Step 3: Clear any existing text
+                _notifier.Notify("🧹 Step 3: Clearing existing text...");
+                await input.EvaluateAsync("el => el.innerText = ''");
+                _notifier.Notify("✅ Existing text cleared");
+
+                // Step 4: Fill message
+                _notifier.Notify("📝 Step 4: Filling message text...");
+                await input.FillAsync(message);
+                _notifier.Notify("✅ Message text filled");
+
+                // Step 5: Find and click send button
+                _notifier.Notify("🔍 Step 5: Looking for send button...");
+                foreach (var sendSelector in WhatsAppConfiguration.SendButtonSelectors)
+                {
+                    var sendButton = await browserSession.QuerySelectorAsync(sendSelector);
+                    if (sendButton != null)
+                    {
+                        _notifier.Notify("✅ Send button found, clicking...");
+                        await sendButton.ClickAsync();
+                        _notifier.Notify("✅ Send button clicked");
+                    }
+                    else
+                    {
+                        _notifier.Notify("⚠️ Send button not found, pressing Enter...");
+                        await input.PressAsync(WhatsAppConfiguration.SendEnterKey);
+                        _notifier.Notify("✅ Enter key pressed");
+                    }
+                }
+
+                _notifier.Notify("✅ Message send process completed");
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error in message fill and send: {ex.Message}");
+                throw;
+            }
         }
     }
 }

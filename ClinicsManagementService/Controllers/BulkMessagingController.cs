@@ -50,6 +50,7 @@ namespace ClinicsManagementService.Controllers
                 var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
                 var messageValidation = _validationService.ValidateMessage(request.Message);
 
+
                 if (!phoneValidation.IsValid)
                     return BadRequest(phoneValidation.ErrorMessage);
 

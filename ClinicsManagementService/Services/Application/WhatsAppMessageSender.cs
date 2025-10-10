@@ -72,9 +72,11 @@ namespace ClinicsManagementService.Services.Application
                 _notifier.Notify($"[{counter}/{total}] Sending message to {item.Phone}...");
                 var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
                     async () => {
-                        var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(() => _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, browserSession),
+                        var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
+                            () => _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, browserSession),
                             maxAttempts: 3,
-                            treatAsRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
+                            shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
+                            isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
                             return new MessageSendResult {
                                 Phone = item.Phone,
                                 Message = item.Message,
@@ -220,9 +222,11 @@ namespace ClinicsManagementService.Services.Application
             await _whatsappService.PrepareSessionAsync(browserSession);
             var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
                 async () => {
-                    var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(() => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
+                    var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
+                        () => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
                         maxAttempts: 3,
-                        treatAsRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
+                        shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
+                        isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
                         return new MessageSendResult {
                             Phone = phoneNumber,
                             Message = message,
@@ -251,9 +255,11 @@ namespace ClinicsManagementService.Services.Application
             {
                 var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
                     async () => {
-                        var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(() => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
+                        var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
+                            () => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
                             maxAttempts: 3,
-                            treatAsRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
+                            shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
+                            isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
                         return new MessageSendResult {
                             Phone = phoneNumber,
                             Message = message,

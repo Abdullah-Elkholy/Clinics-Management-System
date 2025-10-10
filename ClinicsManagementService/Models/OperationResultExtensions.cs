@@ -17,7 +17,7 @@ namespace ClinicsManagementService.Models
             switch (result.State)
             {
                 case OperationState.Waiting:
-                    return OperationResult<T>.Waiting(result.Data);
+                    return OperationResult<T>.Waiting(result.ResultMessage ?? "Waiting...", result.Data);
                 case OperationState.PendingNET:
                     return OperationResult<T>.PendingNET(result.ResultMessage ?? "Internet connection unavailable", result.Data);
                 case OperationState.PendingQR:
@@ -32,7 +32,7 @@ namespace ClinicsManagementService.Models
 
             // If IsSuccess is null, treat as Waiting (operation not completed yet)
             if (result.IsSuccess == null)
-                return OperationResult<T>.Waiting(result.Data);
+                return OperationResult<T>.Waiting(result.ResultMessage ?? "Waiting...", result.Data);
 
             // Generic failure (IsSuccess false but no special State)
             return OperationResult<T>.Failure(result.ResultMessage ?? defaultFailureMessage, result.Data);

@@ -39,8 +39,8 @@ namespace ClinicsManagementService.Models
             new OperationResult(false, message, OperationState.PendingQR);
         public static OperationResult CreatePendingNET(string message) => 
             new OperationResult(false, message, OperationState.PendingNET);
-        public static OperationResult CreateWaiting() => 
-            new OperationResult(null, null, OperationState.Waiting);
+        public static OperationResult CreateWaiting(string? message) => 
+            new OperationResult(null, message, OperationState.Waiting);
     }
 
     /// <summary>
@@ -59,7 +59,7 @@ namespace ClinicsManagementService.Models
 
         public static OperationResult<T> Success(T? data) => new OperationResult<T>(true, data, null, OperationState.Success);
         public static OperationResult<T> Failure(string error, T? data = default) => new OperationResult<T>(false, data, error, OperationState.Failure);
-        public static OperationResult<T> Waiting(T? data = default) => new OperationResult<T>(null, data, null, OperationState.Waiting);
+        public static OperationResult<T> Waiting(string? message, T? data = default) => new OperationResult<T>(null, data, message, OperationState.Waiting);
         public static OperationResult<T> PendingQR(string message = "Please scan the QR code to authenticate.", T? data = default) => new OperationResult<T>(false, data, message, OperationState.PendingQR);
         public static OperationResult<T> PendingNET(string message = "Internet connection unavailable", T? data = default) => new OperationResult<T>(false, data, message, OperationState.PendingNET);
     }
