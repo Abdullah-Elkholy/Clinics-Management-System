@@ -1,32 +1,20 @@
 using ClinicsManagementService.Services.Interfaces;
-using ClinicsManagementService.Models;
-using ClinicsManagementService.Configuration;
 
 namespace ClinicsManagementService.Services.Domain
 {
-    /// <summary>
-    /// Handles network connectivity checks
-    /// </summary>
     public class NetworkService : INetworkService
     {
-        private readonly INotifier _notifier;
-
-        public NetworkService(INotifier notifier)
-        {
-            _notifier = notifier;
-        }
-
         public async Task<bool> CheckInternetConnectivityAsync()
         {
+            // Simple connectivity check (could be improved)
             try
             {
                 using var client = new HttpClient();
-                var response = await client.GetAsync(WhatsAppConfiguration.WhatsAppBaseUrl);
+                var response = await client.GetAsync("https://www.google.com");
                 return response.IsSuccessStatusCode;
             }
-            catch (Exception ex)
+            catch
             {
-                _notifier.Notify($"Internet connectivity check failed: {ex.Message}");
                 return false;
             }
         }

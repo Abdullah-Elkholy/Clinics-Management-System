@@ -10,7 +10,6 @@ namespace ClinicsManagementService.Services.Interfaces
         Task<IBrowserSession> GetOrCreateSessionAsync();
         Task<bool> IsSessionReadyAsync();
         Task DisposeSessionAsync();
-        Task<bool> IsAuthenticatedAsync();
-        Task WaitForAuthenticationAsync();
+        Task<IBrowserSession?> GetCurrentSessionAsync();
     }
 }

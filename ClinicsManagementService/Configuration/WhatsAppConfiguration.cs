@@ -154,6 +154,7 @@ namespace ClinicsManagementService.Configuration
             "div.x9f619.x78zum5.xdt5ytf.x6s0dn4.xl56j7k.xh8yej3.xpb48g7.x1jn0hjm.x1us19tq[role='dialog']", // Specific class match
             "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid.']",
             "div[data-animate-modal-body='true'] div:has-text('Phone number shared via url is invalid.')",
+            "text='Phone number shared via url is invalid.'",
             // Generic fallback selectors
             "div[role='dialog']",
             "div[data-animate-modal-popup='true']",

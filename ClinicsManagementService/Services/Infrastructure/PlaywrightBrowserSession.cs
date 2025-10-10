@@ -26,11 +26,11 @@ namespace ClinicsManagementService.Services
                     new BrowserTypeLaunchPersistentContextOptions
                     {
                         Headless = false,
-                        Args = new[] {
+                        Args = new[]
+                        {
                             "--disable-blink-features=AutomationControlled",
                             "--window-size=1280,800",
                             "--start-maximized",
-                            "--no-sandbox",
                         }
                     }
                 );
@@ -46,9 +46,8 @@ namespace ClinicsManagementService.Services
                 _lock.Release();
             }
         }
-        // WaitForAuthenticationAsync removed; logic will be handled by EnsureAuthenticatedAsync in WhatsAppService
 
-        public async Task NavigateToAsync(string url)   
+        public async Task NavigateToAsync(string url)
         {
             await _lock.WaitAsync();
             try
@@ -164,33 +163,12 @@ namespace ClinicsManagementService.Services
             {
                 if (_page == null)
                     throw new InvalidOperationException("Browser session not initialized");
-                
+
                 return _page.Url;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error getting URL: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                _lock.Release();
-            }
-        }
-
-        public async Task ReloadAsync()
-        {
-            await _lock.WaitAsync();
-            try
-            {
-                if (_page == null)
-                    throw new InvalidOperationException("Browser session not initialized");
-                
-                await _page.ReloadAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Error reloading page: {ex.Message}");
                 throw;
             }
             finally
@@ -213,8 +191,8 @@ namespace ClinicsManagementService.Services
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error disposing Playwright session: {ex.Message}");
-                throw;
+                // Log disposal errors but don't rethrow; disposal should be best-effort
+                Console.Error.WriteLine($"Error disposing Playwright session (ignored): {ex.Message}");
             }
             finally
             {

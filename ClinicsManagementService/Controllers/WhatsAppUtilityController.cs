@@ -3,6 +3,7 @@ using ClinicsManagementService.Services.Interfaces;
 using ClinicsManagementService.Models;
 using ClinicsManagementService.Services.Domain;
 using ClinicsManagementService.Services.Infrastructure;
+using ClinicsManagementService.Configuration;
 
 namespace ClinicsManagementService.Controllers
 {
@@ -17,17 +18,20 @@ namespace ClinicsManagementService.Controllers
         private readonly INotifier _notifier;
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly Func<IBrowserSession> _browserSessionFactory;
+        private readonly IWhatsAppUIService _whatsAppUIService;
 
         public WhatsAppUtilityController(
             IWhatsAppService whatsAppService,
             INotifier notifier,
             IWhatsAppSessionManager sessionManager,
-            Func<IBrowserSession> browserSessionFactory)
+            Func<IBrowserSession> browserSessionFactory,
+            IWhatsAppUIService whatsAppUIService)
         {
             _whatsAppService = whatsAppService;
             _notifier = notifier;
             _sessionManager = sessionManager;
             _browserSessionFactory = browserSessionFactory;
+            _whatsAppUIService = whatsAppUIService;
         }
 
         /// <summary>
@@ -35,14 +39,14 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>Internet connectivity status</returns>
         [HttpGet("check-connectivity")]
-        public async Task<ActionResult<InternetConnectivityResult>> CheckConnectivity()
+        public async Task<ActionResult<OperationResult<bool>>> CheckConnectivity()
         {
             try
             {
                 _notifier.Notify("🌐 Checking internet connectivity...");
                 var result = await _whatsAppService.CheckInternetConnectivityDetailedAsync();
 
-                if (result.IsConnected)
+                if (result.Data == true)
                 {
                     _notifier.Notify("✅ Internet connectivity confirmed.");
                     return Ok(result);
@@ -56,7 +60,7 @@ namespace ClinicsManagementService.Controllers
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ Internet connectivity check failed: {ex.Message}");
-                return Ok(InternetConnectivityResult.Failure($"Connectivity check failed: {ex.Message}"));
+                return Ok(OperationResult<bool>.Failure($"Connectivity check failed: {ex.Message}"));
             }
         }
 
@@ -66,7 +70,7 @@ namespace ClinicsManagementService.Controllers
         /// <param name="phoneNumber">Phone number to check</param>
         /// <returns>WhatsApp availability status</returns>
         [HttpGet("check-whatsapp/{phoneNumber}")]
-        public async Task<ActionResult<WhatsAppNumberCheckResult>> CheckWhatsAppNumber(string phoneNumber)
+        public async Task<ActionResult<OperationResult<bool>>> CheckWhatsAppNumber(string phoneNumber)
         {
             try
             {
@@ -75,27 +79,25 @@ namespace ClinicsManagementService.Controllers
                 // Create a direct browser session for this simple check
                 var browserSession = _browserSessionFactory();
                 await browserSession.InitializeAsync();
-
                 var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession);
 
                 // Dispose the session after use
                 await browserSession.DisposeAsync();
 
-                if (result.HasWhatsApp)
+                if (result != null && result.Data == true)
                 {
                     _notifier.Notify($"✅ Number {phoneNumber} has WhatsApp.");
-                    return WhatsAppNumberCheckResult.Success();
                 }
                 else
                 {
                     _notifier.Notify($"❌ Number {phoneNumber} does not have WhatsApp.");
-                    return WhatsAppNumberCheckResult.Failure($"Number {phoneNumber} does not have WhatsApp.");
                 }
+                return Ok(result);
             }
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ Exception checking WhatsApp number {phoneNumber}: {ex.Message}");
-                return Ok(WhatsAppNumberCheckResult.Failure($"Error checking WhatsApp number: {ex.Message}"));
+                return Ok(OperationResult<bool>.Failure($"Error checking WhatsApp number: {ex.Message}"));
             }
         }
 
@@ -104,7 +106,7 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>WhatsApp authentication status</returns>
         [HttpGet("check-authentication")]
-        public async Task<ActionResult<WhatsAppAuthenticationResult>> CheckAuthentication()
+        public async Task<ActionResult<OperationResult<bool>>> CheckAuthentication()
         {
             try
             {
@@ -112,23 +114,17 @@ namespace ClinicsManagementService.Controllers
 
                 // Get the session and run the full authentication check for consistent results
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync();
-                var result = await _whatsAppService.CheckWhatsAppAuthenticationAsync(browserSession);
 
-                if (result.IsAuthenticated)
-                {
-                    _notifier.Notify("✅ WhatsApp session is authenticated.");
-                }
-                else
-                {
-                    _notifier.Notify("❌ WhatsApp session is not authenticated.");
-                }
+                var waitUIResult = await _whatsAppUIService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
 
-                return Ok(result);
+                // Return the unified OperationResult<bool> from the UI service
+                return Ok(waitUIResult);
+
             }
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ Exception checking WhatsApp authentication: {ex.Message}");
-                return Ok(WhatsAppAuthenticationResult.Failure($"Authentication check failed: {ex.Message}"));
+                return Ok(OperationResult<bool>.Failure($"Authentication check failed: {ex.Message}"));
             }
         }
 
@@ -137,30 +133,20 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>WhatsApp authentication result</returns>
         [HttpPost("authenticate")]
-        public async Task<ActionResult<WhatsAppAuthenticationResult>> Authenticate()
+        public async Task<ActionResult<OperationResult<bool>>> Authenticate()
         {
             try
             {
                 _notifier.Notify("🔐 Starting WhatsApp authentication process...");
 
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync();
-                var result = await _whatsAppService.AuthenticateWhatsAppAsync(browserSession);
-
-                if (result.IsAuthenticated)
-                {
-                    _notifier.Notify("✅ WhatsApp authentication successful.");
-                }
-                else
-                {
-                    _notifier.Notify("❌ WhatsApp authentication failed.");
-                }
-
-                return Ok(result);
+                var waitUIResult = await _whatsAppUIService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                return Ok(waitUIResult);
             }
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ Exception during WhatsApp authentication: {ex.Message}");
-                return Ok(WhatsAppAuthenticationResult.Failure($"Authentication failed: {ex.Message}"));
+                return Ok(OperationResult<bool>.Failure($"Authentication failed: {ex.Message}"));
             }
         }
     }

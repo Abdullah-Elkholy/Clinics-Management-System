@@ -16,7 +16,6 @@ builder.Services.AddSingleton<INotifier, ConsoleNotifier>();
 builder.Services.AddScoped<INetworkService, NetworkService>();
 builder.Services.AddScoped<IScreenshotService, ScreenshotService>();
 builder.Services.AddScoped<IRetryService, RetryService>();
-builder.Services.AddScoped<IWhatsAppAuthenticationService, WhatsAppAuthenticationService>();
 builder.Services.AddScoped<IWhatsAppUIService, WhatsAppUIService>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
 
@@ -47,5 +46,27 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Graceful shutdown handling
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() => 
+{
+    // Get all active scopes and cleanup
+    using var scope = app.Services.CreateScope();
+    var whatsAppService = scope.ServiceProvider.GetRequiredService<IWhatsAppService>();
+    var sessionManager = scope.ServiceProvider.GetRequiredService<IWhatsAppSessionManager>();
+    
+    try 
+    {
+        // Dispose WhatsAppService which will cleanup browser sessions
+        (whatsAppService as IDisposable)?.Dispose();
+        // Explicitly dispose session manager
+        sessionManager.DisposeSessionAsync().GetAwaiter().GetResult();
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Error during shutdown: {ex.Message}");
+    }
+});
 
 app.Run();

@@ -5,6 +5,22 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ClinicsManagementService.Controllers
 {
+    // Helper for robust async execution in controllers
+    public static class ControllerAsyncHelper
+    {
+        public static async Task<IActionResult> TryExecuteAsync(Func<Task<IActionResult>> operation, ControllerBase controller, INotifier notifier, string operationName)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (Exception ex)
+            {
+                notifier?.Notify($"❌ Error in {operationName}: {ex.Message}");
+                return controller.StatusCode(500, $"Internal error: {ex.Message}");
+            }
+        }
+    }
     [ApiController]
     [Route("[controller]")]
     public class BulkMessagingController : ControllerBase
@@ -29,30 +45,22 @@ namespace ClinicsManagementService.Controllers
         [HttpPost("send-single")]
         public async Task<IActionResult> SendSingle([FromBody] PhoneMessageDto request)
         {
-            var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
-            var messageValidation = _validationService.ValidateMessage(request.Message);
-
-            if (!phoneValidation.IsValid)
-                return BadRequest(phoneValidation.ErrorMessage);
-
-            if (!messageValidation.IsValid)
-                return BadRequest(messageValidation.ErrorMessage);
-
-            bool sent;
-            try
+            return await ControllerAsyncHelper.TryExecuteAsync(async () =>
             {
-                sent = await _messageSender.SendMessageAsync(request.Phone, request.Message);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Internal error: {ex.Message}");
-            }
+                var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
+                var messageValidation = _validationService.ValidateMessage(request.Message);
 
-            if (sent)
-            {
-                return Ok("Message sent successfully.");
-            }
-            return StatusCode(502, "Message failed to be sent.");
+                if (!phoneValidation.IsValid)
+                    return BadRequest(phoneValidation.ErrorMessage);
+
+                if (!messageValidation.IsValid)
+                    return BadRequest(messageValidation.ErrorMessage);
+
+                var sent = await _messageSender.SendMessageAsync(request.Phone, request.Message);
+                if (sent)
+                    return Ok("Message sent successfully.");
+                return StatusCode(502, "Message failed to be sent.");
+            }, this, _notifier, nameof(SendSingle));
         }
 
         /* Send multiple messages to multiple phone numbers (each item is a phone/message pair), 

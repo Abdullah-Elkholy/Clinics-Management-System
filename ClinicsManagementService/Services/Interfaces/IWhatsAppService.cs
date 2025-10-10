@@ -6,26 +6,21 @@ namespace ClinicsManagementService.Services.Interfaces
     {
         Task<bool> CheckInternetConnectivityAsync();
         Task<IBrowserSession> PrepareSessionAsync(IBrowserSession browserSession);
-        Task<(bool Success, string? Error)> NavigateAndCheckRecipientAsync(
-            IBrowserSession browserSession, string phoneNumber);
-        Task<(bool Sent, string? IconType, string? Error)> DeliverMessageAsync(
+        // Task<OperationResult<bool>> NavigateAndCheckRecipientAsync(
+        //     IBrowserSession browserSession, string phoneNumber);
+        Task<OperationResult<string?>> DeliverMessageAsync(
             IBrowserSession browserSession, string message, string? phoneNumber, int msgTimeRetryCount, int maxMsgTimeoutRetryCount);
-        Task TrackWhatsAppLoadingScreensAsync(IBrowserSession browserSession);
-        Task WaitForWhatsAppReadyAsync(IBrowserSession browserSession);
-        Task<(bool Sent, string? IconType, string? Error)> SendMessageWithIconTypeAsync(
+        Task<OperationResult<string?>> SendMessageWithIconTypeAsync(
             string phoneNumber, string message, IBrowserSession browserSession);
-        Task<(bool Sent, string? IconType, string? Error)> ExecuteWithRetryAsync(
-            Func<Task<(bool Sent, string? IconType, string? Error)>> taskFunc, int maxAttempts,
+        Task<OperationResult<string?>> ExecuteWithRetryAsync(
+            Func<Task<OperationResult<string?>>> taskFunc, int maxAttempts,
             Func<Exception, bool>? treatAsRetryable);
-        Task EnsureAuthenticatedAsync(IBrowserSession browserSession, int pollIntervalMs, int maxWaitMs);
         string SanitizeSelector(string selector);
         Task TakeScreenshotAsync(IBrowserSession browserSession, string path);
         Task DisposeBrowserSessionAsync(IBrowserSession browserSession);
         
         // New utility methods
-        Task<WhatsAppNumberCheckResult> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession);
-        Task<InternetConnectivityResult> CheckInternetConnectivityDetailedAsync();
-        Task<WhatsAppAuthenticationResult> CheckWhatsAppAuthenticationAsync(IBrowserSession browserSession);
-        Task<WhatsAppAuthenticationResult> AuthenticateWhatsAppAsync(IBrowserSession browserSession);
+    Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession);
+    Task<OperationResult<bool>> CheckInternetConnectivityDetailedAsync();
     }
 }
