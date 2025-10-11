@@ -7,18 +7,12 @@ namespace ClinicsManagementService.Configuration
     {
         #region Timeouts and Intervals
         public const int DefaultSelectorTimeoutMs = 20000;
-        public const int DefaultMaxWaitMs = 15000;
-        public const int DefaultPollIntervalMs = 1000;
+        public const int DefaultMaxRetryErrorDialog = 10;
         public const int DefaultMaxRetryAttempts = 3;
-        public const int DefaultMaxMsgTimeoutRetryCount = 3;
-        public const int DefaultMsgTimeRetryCount = 3;
-        public const int DefaultAuthenticationPollIntervalMs = 2000;
-        public const int DefaultAuthenticationMaxWaitMs = 300000;
-        public const int DefaultExtraWaitMs = 15000;
         public const int DefaultProgressBarWaitMs = 60000;
         public const int DefaultUIWaitMs = 30000;
         public const int DefaultMaxUIAttempts = 100;
-    public const int DefaultMaxMonitoringWaitMs = 900000; // 15 minutes in ms, used as a safe global cap for monitoring waits
+        public const int DefaultMaxMonitoringWaitMs = 900000; // 15 minutes in ms, used as a safe global cap for monitoring progressbar waits
         #endregion
 
         #region UI Elements and Selectors
@@ -44,8 +38,8 @@ namespace ClinicsManagementService.Configuration
         {
             "div[role='progressbar']",
             "progress",
-            "div[class*='x1n2onr6'] progress",
             "div[aria-label^='Loading your chats']",
+            "div[class*='x1n2onr6'] progress",
         };
         // Check for loading text indicators
         public static readonly string[] LoadingTextSelectors = new[]
@@ -97,12 +91,6 @@ namespace ClinicsManagementService.Configuration
         #endregion
 
         #region Message Status and Icons
-        public static readonly string[] MessageStatusIcons = new[]
-        {
-            "msg-check",
-            "msg-dblcheck",
-            "msg-time"
-        };
 
         public static readonly string[] OutgoingMessageSelectors = new[]
         {
@@ -194,22 +182,6 @@ namespace ClinicsManagementService.Configuration
         #region URLs
         public const string WhatsAppBaseUrl = "https://web.whatsapp.com/";
         public const string WhatsAppSendUrl = WhatsAppBaseUrl + "send?phone=";
-        #endregion
-
-        #region Error Messages
-        public static readonly string[] InvalidPhoneErrorMessages = new[]
-        {
-            "Phone number shared via url is invalid",
-            "invalid",
-            "not found",
-            "doesn't exist"
-        };
-
-        public static readonly string[] SpecificInvalidPhoneMessages = new[]
-        {
-            "Phone number shared via url is invalid",
-            "Phone number shared via url is invalid."
-        };
         #endregion
     }
 }
