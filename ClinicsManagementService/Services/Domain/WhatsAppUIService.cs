@@ -56,7 +56,7 @@ namespace ClinicsManagementService.Services.Domain
 
         // Continuous monitoring for progress bars and authentication issues
         // This method runs as a side job to interrupt waiting operations
-        public async Task<OperationResult<bool>?> ContinuousMonitoringAsync(IBrowserSession browserSession, int delayMs = 500, int? maxWaitMs = null)
+        public async Task<OperationResult<bool>?> ContinuousMonitoringAsync(IBrowserSession browserSession, int delayMs = WhatsAppConfiguration.defaultProgressChecksDelayMs, int maxWaitMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs)
         {
             try
             {
@@ -75,7 +75,7 @@ namespace ClinicsManagementService.Services.Domain
                             // Poll until the selector is no longer present, or until internet is down, or browser is closed.
                             var pollIntervalMs = Math.Max(250, delayMs);
                             var start = DateTime.UtcNow;
-                            var maxWait = maxWaitMs.HasValue ? TimeSpan.FromMilliseconds(maxWaitMs.Value) : TimeSpan.FromMilliseconds(WhatsAppConfiguration.DefaultMaxMonitoringWaitMs);
+                            var maxWait = TimeSpan.FromMilliseconds(maxWaitMs);
                             while (DateTime.UtcNow - start < maxWait)
                             {
                                 try
@@ -130,6 +130,25 @@ namespace ClinicsManagementService.Services.Domain
                         _notifier.Notify($"⚠️ Error checking progress selector {progressSelector}: {ex.Message}");
                     }
                 }
+                // await Task.Delay(delayMs);
+
+                // Check for authentication issues
+                foreach (var selector in WhatsAppConfiguration.LoginPromptTexts)
+                {
+                    try
+                    {
+                        var authElement = await browserSession.QuerySelectorAsync(selector);
+                        if (authElement != null)
+                        {
+                            _notifier.Notify($"🔐 Authentication issue detected during monitoring ({selector})");
+                            return OperationResult<bool>.PendingQR("WhatsApp authentication required. Please scan QR code.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _notifier.Notify($"⚠️ Error checking auth selector {selector}: {ex.Message}");
+                    }
+                }
 
                 // Check for authentication issues
                 foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
@@ -174,7 +193,7 @@ namespace ClinicsManagementService.Services.Domain
         }
 
         // Enhanced waiting with continuous monitoring for progress bars and authentication
-        public async Task<OperationResult<bool>> WaitWithMonitoringAsync(IBrowserSession browserSession, Func<Task<bool>> waitCondition, int timeoutMs = 120000, int delayMs = 500)
+        public async Task<OperationResult<bool>> WaitWithMonitoringAsync(IBrowserSession browserSession, Func<Task<bool>> waitCondition, int timeoutMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, int delayMs = WhatsAppConfiguration.defaultProgressChecksDelayMs)
         {
             var startTime = DateTime.UtcNow;
             var timeout = TimeSpan.FromMilliseconds(timeoutMs);
@@ -242,7 +261,7 @@ namespace ClinicsManagementService.Services.Domain
             return OperationResult<bool>.Failure("Operation timed out without meeting condition");
         }
 
-        public async Task<OperationResult<bool>> WaitForPageLoadAsync(IBrowserSession browserSession, string[]? selectors, int timeoutMs = 120000, int delayMs = 500)
+        public async Task<OperationResult<bool>> WaitForPageLoadAsync(IBrowserSession browserSession, string[]? selectors, int timeoutMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, int delayMs = WhatsAppConfiguration.defaultProgressChecksDelayMs)
         {
             // Increase the progress bar wait timeout to 5000ms (or configurable)
             OperationResult<bool>? selectorTimeoutResult = null;

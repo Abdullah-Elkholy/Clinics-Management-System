@@ -1,13 +1,19 @@
 using System;
+using System.Runtime.Serialization;
 
 namespace ClinicsManagementService.Models
 {
     public enum OperationState
     {
+        [EnumMember(Value = "Success")]
         Success,
+        [EnumMember(Value = "Failure")]
         Failure,
+        [EnumMember(Value = "Waiting")]
         Waiting,
+        [EnumMember(Value = "PendingQR")]
         PendingQR,
+        [EnumMember(Value = "PendingNET")]
         PendingNET,
     }
 
@@ -31,15 +37,15 @@ namespace ClinicsManagementService.Models
             State = state;
         }
 
-        public static OperationResult CreateSuccess(string message) => 
+        public static OperationResult CreateSuccess(string message) =>
             new OperationResult(true, message, OperationState.Success);
-        public static OperationResult CreateFailure(string error) => 
+        public static OperationResult CreateFailure(string error) =>
             new OperationResult(false, error, OperationState.Failure);
-        public static OperationResult CreatePendingQR(string message) => 
+        public static OperationResult CreatePendingQR(string message) =>
             new OperationResult(false, message, OperationState.PendingQR);
-        public static OperationResult CreatePendingNET(string message) => 
+        public static OperationResult CreatePendingNET(string message) =>
             new OperationResult(false, message, OperationState.PendingNET);
-        public static OperationResult CreateWaiting(string? message) => 
+        public static OperationResult CreateWaiting(string? message) =>
             new OperationResult(null, message, OperationState.Waiting);
     }
 

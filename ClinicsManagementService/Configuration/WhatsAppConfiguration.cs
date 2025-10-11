@@ -6,13 +6,13 @@ namespace ClinicsManagementService.Configuration
     public static class WhatsAppConfiguration
     {
         #region Timeouts and Intervals
+        public const int DefaultTaskTimeoutMs = 150000; // timeout for progress
+        public const int defaultProgressChecksDelayMs = 500; // delay between progress checks in waiting loops
         public const int DefaultSelectorTimeoutMs = 20000;
-        public const int DefaultMaxRetryErrorDialog = 10;
+        public const int DefaultMaxRetryErrorDialog = 10; // Max retries for error dialog detection, high frequency check
         public const int DefaultMaxRetryAttempts = 3;
-        public const int DefaultProgressBarWaitMs = 60000;
-        public const int DefaultUIWaitMs = 30000;
-        public const int DefaultMaxUIAttempts = 100;
         public const int DefaultMaxMonitoringWaitMs = 900000; // 15 minutes in ms, used as a safe global cap for monitoring progressbar waits
+    public const int DefaultAuthenticationWaitMs = 300000; // 5 minutes for user to scan QR and authenticate
         #endregion
 
         #region UI Elements and Selectors
@@ -66,7 +66,7 @@ namespace ClinicsManagementService.Configuration
             "canvas", // QR code canvas
             "div[aria-label*='QR']", // QR code aria label
             "div[data-testid='qr-code']", // QR code test id
-            "div[aria-label*='scan me' i]",
+            "div[aria-label*='scan me' i]", 
             "div[role='button'] canvas",
             "canvas[aria-label*='scan me' i]",
             "div[tabindex='-1'] canvas",
@@ -129,6 +129,14 @@ namespace ClinicsManagementService.Configuration
             "net::ERR_NAME_NOT_RESOLVED",
             "net::ERR_INTERNET_DISCONNECTED",
             "Navigation failed"
+        };
+
+                public static readonly string[] DisposedObjectMessage = new[]
+        {
+            "Target page, context or browser has been closed",
+            "Browser has been disconnected",
+            "Session was closed",
+            "Cannot access a disposed object"
         };
 
         public static readonly string[] ErrorDialogSelectors = new[]
