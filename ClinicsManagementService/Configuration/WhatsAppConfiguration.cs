@@ -9,10 +9,16 @@ namespace ClinicsManagementService.Configuration
         public const int DefaultSelectorTimeoutMs = 20000;
         public const int DefaultMaxRetryErrorDialog = 10;
         public const int DefaultMaxRetryAttempts = 3;
-        public const int DefaultProgressBarWaitMs = 60000;
         public const int DefaultUIWaitMs = 30000;
-        public const int DefaultMaxUIAttempts = 100;
         public const int DefaultMaxMonitoringWaitMs = 900000; // 15 minutes in ms, used as a safe global cap for monitoring progressbar waits
+        #endregion
+        
+        #region Timeouts and Intervals
+        // public const int DefaultMaxRetryAttempts = 3;
+        public const int DefaultBrowserRetryAttempts = 1;
+        public const int DefaultProgressBarWaitMs = 60000;
+        public const int DefaultTaskTimeoutMs = 150000; // Timeout for general tasks sent to WaitForPageLoadAsync and similar methods
+        public const int DefaultDelayBtwnChecksMs = 500; // Delay between checks in continuous monitoring (e.g., checking for progress bars or auth issues) with minimum of 250ms
         #endregion
 
         #region UI Elements and Selectors

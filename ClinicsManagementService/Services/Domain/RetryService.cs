@@ -27,25 +27,55 @@ namespace ClinicsManagementService.Services.Domain
             OperationResult<T>? lastResult = null;
             while (true)
             {
+                attempt++;
+                _notifier.Notify($"➡️ Attempt {attempt}/{maxAttempts} for operation {operationName}...");
                 try
                 {
                     var res = await operation();
                     lastResult = res;
-                    // If caller provided a predicate to decide retries based on result, use it
-                    if (shouldRetryResult != null && shouldRetryResult(res) && attempt < maxAttempts - 1)
+
+                    // Decide whether the caller wants a retry based on the result
+                    if (shouldRetryResult != null && shouldRetryResult(res) && attempt < maxAttempts)
                     {
-                        attempt++;
+                        _notifier.Notify($"↩️ Attempt {attempt} for {operationName} returned retryable result: {res.ResultMessage}");
+                        if (attempt >= maxAttempts)
+                        {
+                            _notifier.Notify($"❌ Operation {operationName} exhausted {maxAttempts} attempts with retryable results.");
+                            return OperationResult<T>.Failure($"Operation {operationName} exhausted attempts: {res.ResultMessage}");
+                        }
                         continue; // retry
                     }
-                    // Otherwise return the result as is
-                    _notifier.Notify($"✅ Done operation {operationName} after " + (attempt + 1) + " attempts.");
+
+                    // Log final result state
+                    if (res.IsSuccess == true)
+                    {
+                        _notifier.Notify($"✅ Operation {operationName} succeeded after {attempt} attempt(s).");
+                    }
+                    else if (res.IsSuccess == false)
+                    {
+                        _notifier.Notify($"❌ Operation {operationName} returned failure after {attempt} attempt(s): {res.ResultMessage}");
+                    }
+                    else
+                    {
+                        _notifier.Notify($"⏳ Operation {operationName} returned waiting/pending state after {attempt} attempt(s): {res.ResultMessage}");
+                    }
+
                     return res;
                 }
                 catch (Exception ex)
                 {
-                    attempt++;
-                    if (attempt >= maxAttempts || (isRetryable != null && !isRetryable(ex))) throw;
-                    // otherwise loop and retry
+                    _notifier.Notify($"⚠️ Attempt {attempt} for {operationName} threw: {ex.Message}");
+
+                    // Decide whether to retry based on isRetryable predicate
+                    bool willRetry = (isRetryable == null) ? false : isRetryable(ex);
+                    if (!willRetry || attempt >= maxAttempts)
+                    {
+                        _notifier.Notify($"❌ Operation {operationName} failed after {attempt} attempts: {ex.Message}");
+                        return OperationResult<T>.Failure($"Operation {operationName} failed: {ex.Message}");
+                    }
+
+                    _notifier.Notify($"♻️ Will retry {operationName} due to error: {ex.Message}");
+                    // loop and retry
                 }
             }
         }
