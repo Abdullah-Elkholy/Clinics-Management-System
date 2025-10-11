@@ -1,5 +1,6 @@
 using ClinicsManagementService.Configuration;
 using ClinicsManagementService.Models;
+using ClinicsManagementService.Services.Domain;
 using ClinicsManagementService.Services.Interfaces;
 using Microsoft.Playwright;
 using System;
@@ -30,11 +31,13 @@ namespace ClinicsManagementService.Services.Application
         private readonly IWhatsAppService _whatsappService;
         private readonly Func<IBrowserSession> _browserSessionFactory;
         private readonly INotifier _notifier;
-        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier)
+        private readonly IRetryService _retryService;
+        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService)
         {
             _whatsappService = whatsappService;
             _browserSessionFactory = browserSessionFactory;
             _notifier = notifier;
+            _retryService = retryService;
         }
 
         // Send multiple phone/message pairs with random throttling between each send, returning MessageSendResult for each.
@@ -71,20 +74,22 @@ namespace ClinicsManagementService.Services.Application
                 }
                 _notifier.Notify($"[{counter}/{total}] Sending message to {item.Phone}...");
                 var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
-                    async () => {
+                    async () =>
+                    {
                         var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
                             () => _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, browserSession),
                             maxAttempts: 3,
                             shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
                             isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
-                            return new MessageSendResult {
-                                Phone = item.Phone,
-                                Message = item.Message,
-                                Sent = deliveryResult.IsSuccess == true,
-                                Error = deliveryResult.ResultMessage,
-                                IconType = deliveryResult.Data,
-                                Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
-                            };
+                        return new MessageSendResult
+                        {
+                            Phone = item.Phone,
+                            Message = item.Message,
+                            Sent = deliveryResult.IsSuccess == true,
+                            Error = deliveryResult.ResultMessage,
+                            IconType = deliveryResult.Data,
+                            Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
+                        };
                     },
                     new MessageSendResult { Phone = item.Phone, Message = item.Message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failed },
                     $"SendMessageWithIconTypeAsync for {item.Phone}", _notifier);
@@ -139,102 +144,109 @@ namespace ClinicsManagementService.Services.Application
             return results;
         }
 
-    /// <summary>
-    /// Adapter to domain ContinuousMonitoringAsync so application layer can call it with same semantics.
-    /// Returns OperationResult<string?> with ResultMessage populated from underlying bool result states.
-    /// </summary>
-    private async Task<OperationResult<string?>?> ContinuousMonitoringAsync(IBrowserSession browserSession, int timeoutMs = 5000)
-    {
-        try
+        /// <summary>
+        /// Adapter to domain ContinuousMonitoringAsync so application layer can call it with same semantics.
+        /// Returns OperationResult<string?> with ResultMessage populated from underlying bool result states.
+        /// </summary>
+        private async Task<OperationResult<string?>?> ContinuousMonitoringAsync(IBrowserSession browserSession, int timeoutMs = 5000)
         {
-            // Check for progress bars
-            foreach (var progressSelector in WhatsAppConfiguration.ProgressBarSelectors)
-            {
-                try
-                {
-                    var progress = await browserSession.QuerySelectorAsync(progressSelector);
-                    if (progress != null)
-                    {
-                        _notifier.Notify($"⏳ Progress bar detected during monitoring ({progressSelector}) - waiting for completion");
-                        try
-                        {
-                            await browserSession.WaitForSelectorAsync(progressSelector, timeoutMs, WaitForSelectorState.Detached);
-                            _notifier.Notify($"✅ Progress bar disappeared ({progressSelector})");
-                        }
-                        catch (Exception progressEx)
-                        {
-                            _notifier.Notify($"⚠️ Progress bar wait timeout: {progressEx.Message}");
-                        }
-                        break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _notifier.Notify($"⚠️ Error checking progress selector {progressSelector}: {ex.Message}");
-                }
-            }
-
-            // Check for auth
-            foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
-            {
-                try
-                {
-                    var authElement = await browserSession.QuerySelectorAsync(selector);
-                    if (authElement != null)
-                    {
-                        _notifier.Notify($"🔐 Authentication issue detected during monitoring ({selector})");
-                        return OperationResult<string?>.PendingQR("WhatsApp authentication required. Please scan QR code.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _notifier.Notify($"⚠️ Error checking auth selector {selector}: {ex.Message}");
-                }
-            }
-
-            // Check for logout indicators
             try
             {
-                var currentUrl = await browserSession.GetUrlAsync();
-                if (currentUrl.Contains("post_logout") || currentUrl.Contains("logout_reason"))
+                // Check for progress bars
+                foreach (var progressSelector in WhatsAppConfiguration.ProgressBarSelectors)
                 {
-                    _notifier.Notify("🔐 Logout detected during monitoring - session needs authentication");
-                    return OperationResult<string?>.PendingQR("WhatsApp session expired. Please scan QR code.");
+                    try
+                    {
+                        var progress = await browserSession.QuerySelectorAsync(progressSelector);
+                        if (progress != null)
+                        {
+                            _notifier.Notify($"⏳ Progress bar detected during monitoring ({progressSelector}) - waiting for completion");
+                            try
+                            {
+                                await browserSession.WaitForSelectorAsync(progressSelector, timeoutMs, WaitForSelectorState.Detached);
+                                _notifier.Notify($"✅ Progress bar disappeared ({progressSelector})");
+                            }
+                            catch (Exception ex)
+                            {
+                                if (_retryService.IsBrowserClosedException(ex)) throw;
+                                _notifier.Notify($"⚠️ Progress bar wait timeout: {ex.Message}");
+                            }
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_retryService.IsBrowserClosedException(ex)) throw;
+                        _notifier.Notify($"⚠️ Error checking progress selector {progressSelector}: {ex.Message}");
+                    }
                 }
+
+                // Check for auth
+                foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
+                {
+                    try
+                    {
+                        var authElement = await browserSession.QuerySelectorAsync(selector);
+                        if (authElement != null)
+                        {
+                            _notifier.Notify($"🔐 Authentication issue detected during monitoring ({selector})");
+                            return OperationResult<string?>.PendingQR("WhatsApp authentication required. Please scan QR code.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_retryService.IsBrowserClosedException(ex)) throw;
+                        _notifier.Notify($"⚠️ Error checking auth selector {selector}: {ex.Message}");
+                    }
+                }
+
+                // Check for logout indicators
+                try
+                {
+                    var currentUrl = await browserSession.GetUrlAsync();
+                    if (currentUrl.Contains("post_logout") || currentUrl.Contains("logout_reason"))
+                    {
+                        _notifier.Notify("🔐 Logout detected during monitoring - session needs authentication");
+                        return OperationResult<string?>.PendingQR("WhatsApp session expired. Please scan QR code.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (_retryService.IsBrowserClosedException(ex)) throw;
+                    _notifier.Notify($"⚠️ Error checking URL during monitoring: {ex.Message}");
+                }
+
+                return null;
             }
             catch (Exception ex)
             {
-                _notifier.Notify($"⚠️ Error checking URL during monitoring: {ex.Message}");
+                if (_retryService.IsBrowserClosedException(ex)) throw;
+                _notifier.Notify($"⚠️ Error in continuous monitoring: {ex.Message}");
+                return null;
             }
-
-            return null;
         }
-        catch (Exception ex)
-        {
-            _notifier.Notify($"⚠️ Error in continuous monitoring: {ex.Message}");
-            return null;
-        }
-    }
 
         public async Task<bool> SendMessageAsync(string phoneNumber, string message)
         {
             var browserSession = _browserSessionFactory();
             await _whatsappService.PrepareSessionAsync(browserSession);
             var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
-                async () => {
+                async () =>
+                {
                     var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
                         () => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
                         maxAttempts: 3,
                         shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
                         isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
-                        return new MessageSendResult {
-                            Phone = phoneNumber,
-                            Message = message,
-                            Sent = deliveryResult.IsSuccess == true,
-                            Error = deliveryResult.ResultMessage,
-                            IconType = deliveryResult.Data,
-                            Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
-                        };
+                    return new MessageSendResult
+                    {
+                        Phone = phoneNumber,
+                        Message = message,
+                        Sent = deliveryResult.IsSuccess == true,
+                        Error = deliveryResult.ResultMessage,
+                        IconType = deliveryResult.Data,
+                        Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
+                    };
                 },
                 new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failed },
                 $"SendMessageWithIconTypeAsync for {phoneNumber}", _notifier);
@@ -254,13 +266,15 @@ namespace ClinicsManagementService.Services.Application
             foreach (var message in messages)
             {
                 var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
-                    async () => {
+                    async () =>
+                    {
                         var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
                             () => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
                             maxAttempts: 3,
                             shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
                             isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
-                        return new MessageSendResult {
+                        return new MessageSendResult
+                        {
                             Phone = phoneNumber,
                             Message = message,
                             Sent = deliveryResult.IsSuccess == true,

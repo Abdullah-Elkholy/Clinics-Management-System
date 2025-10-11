@@ -38,9 +38,27 @@ namespace ClinicsManagementService.Services
                     lockTaken = false;
                 }
 
-                // Try to recreate page and retry once
+                // Clean up any possibly-disposed objects and force recreation before retrying
                 try
                 {
+                    try
+                    {
+                        // Close and null existing page/browser to force recreation.
+                        if (_page != null)
+                        {
+                            try { _page.CloseAsync().GetAwaiter().GetResult(); } catch { }
+                            _page = null;
+                        }
+
+                        if (_browser != null)
+                        {
+                            try { _browser.CloseAsync().GetAwaiter().GetResult(); } catch { }
+                            _browser = null;
+                        }
+                    }
+                    catch { /* best-effort cleanup */ }
+
+                    // Recreate page/context and retry once
                     await EnsurePageInitializedAsync();
                     await _lock.WaitAsync();
                     lockTaken = true;
@@ -110,6 +128,20 @@ namespace ClinicsManagementService.Services
                 if (needNewPage)
                 {
                     _page = _browser.Pages.Count > 0 ? _browser.Pages[0] : await _browser.NewPageAsync();
+                    // Post-creation health check: if the page is closed immediately (some environments close
+                    // newly created pages due to profile or other issues), wait briefly and try one more time.
+                    try
+                    {
+                        await Task.Delay(300);
+                        bool closed = false;
+                        try { closed = _page.IsClosed; } catch { closed = true; }
+                        if (closed)
+                        {
+                            Console.Error.WriteLine($"Playwright page was closed immediately after creation; recreating page ({DateTime.UtcNow:O})");
+                            try { _page = await _browser.NewPageAsync(); } catch { /* ignore - best effort */ }
+                        }
+                    }
+                    catch { /* ignore timing failures */ }
                     // Log and instrument page close
                     try
                     {

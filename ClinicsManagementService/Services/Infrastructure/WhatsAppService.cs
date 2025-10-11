@@ -92,113 +92,93 @@ namespace ClinicsManagementService.Services
 
         public Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession)
         {
-            return CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession);
+            // Apply full-operation retry at the public entry point so callers get retries on Waiting results
+            // and Playwright/browser-closed exceptions. This keeps the internal method single-pass and
+            // simpler to reason about.
+            return _retryService.ExecuteWithRetryAsync<bool>(
+                () => CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession),
+                maxAttempts: Math.Max(1, WhatsAppConfiguration.DefaultMaxRetryAttempts),
+                shouldRetryResult: r => r?.IsWaiting() == true,
+                isRetryable: ex => _retryService.IsBrowserClosedException(ex));
         }
 
         private async Task<OperationResult<bool>> CheckWhatsAppNumberInternalAsync(string phoneNumber, IBrowserSession browserSession)
         {
-            bool retried = false;
-            IBrowserSession currentSession = browserSession;
-
-            while (true)
+            try
             {
-                try
+                await browserSession.InitializeAsync();
+                // Navigate directly to the WhatsApp send URL for the phone number
+                var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
+                _notifier.Notify($"🔗 Navigating to {url}...");
+                await browserSession.NavigateToAsync(url);
+
+                // WaitForPageLoadAsync handles connectivity/auth/progress monitoring
+                var navRes = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                if (navRes == null)
                 {
-                    // Navigate directly to the WhatsApp send URL for the phone number
-                    var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
-                    _notifier.Notify($"🔗 Navigating to {url}...");
-                    await currentSession.NavigateToAsync(url);
-
-                    // WaitForPageLoadAsync handles all connectivity/auth/progress monitoring
-                    var navRes = await _uiService.WaitForPageLoadAsync(currentSession, WhatsAppConfiguration.ChatUIReadySelectors);
-                    // Normalize and centralize result handling
-                    if (navRes == null)
-                    {
-                        _notifier.Notify("Navigation result was null - treating as waiting state");
-                        return OperationResult<bool>.Waiting("Navigation result was null", false);
-                    }
-                    var normalizedNav = navRes.Normalize<bool>();
-                    if (normalizedNav.IsWaiting())
-                    {
-                        _notifier.Notify("Navigation is still waiting - will check for error dialogs before deciding.");
-                    }
-                    else if (normalizedNav.IsPendingNet())
-                    {
-                        _notifier.Notify($"Navigation interrupted (network): {normalizedNav.ResultMessage}");
-                        return OperationResult<bool>.PendingNET(normalizedNav.ResultMessage ?? "Internet issue", false);
-                    }
-                    else if (normalizedNav.IsPendingQr())
-                    {
-                        _notifier.Notify($"Navigation interrupted (auth): {normalizedNav.ResultMessage}");
-                        return OperationResult<bool>.PendingQR(normalizedNav.ResultMessage ?? "Authentication required", false);
-                    }
-                    else if (normalizedNav.IsSuccess == false)
-                    {
-                        _notifier.Notify($"Navigation failed: {normalizedNav.ResultMessage}");
-                        // return OperationResult<bool>.Failure(normalizedNav.ResultMessage ?? "Navigation failed", false);
-                    }
-                    else
-                    {
-                        _notifier.Notify($"Navigation/page-load status: State={normalizedNav.State}, Success={normalizedNav.IsSuccess}, Message={normalizedNav.ResultMessage} - continuing to error-dialog check.");
-                    }
-
-                    // Only check error dialog after success page load
-                    var hasWhatsApp = await _retryService.ExecuteWithRetryAsync<bool>(
-                        () => CheckForWhatsAppErrorDialog(currentSession),
-                        maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
-                        shouldRetryResult: r => r?.IsWaiting() == true,
-                        isRetryable: null);
-
-                    if (hasWhatsApp.IsWaiting())
-                    {
-                        _notifier.Notify($"Could not determine WhatsApp status after {WhatsAppConfiguration.DefaultMaxRetryAttempts} retries: {hasWhatsApp.ResultMessage}");
-                        return OperationResult<bool>.Waiting(hasWhatsApp.ResultMessage, false);
-                    }
-                    else if (hasWhatsApp.IsPendingNet())
-                    {
-                        _notifier.Notify($"Network issue detected while checking number: {hasWhatsApp.ResultMessage}");
-                        return OperationResult<bool>.PendingNET(hasWhatsApp.ResultMessage ?? "Internet connection unavailable", false);
-                    }
-                    else if (hasWhatsApp.IsPendingQr())
-                    {
-                        _notifier.Notify($"Authentication required while checking number: {hasWhatsApp.ResultMessage}");
-                        return OperationResult<bool>.PendingQR(hasWhatsApp.ResultMessage ?? "Authentication required", false);
-                    }
-                    else if (hasWhatsApp.IsSuccess == false)
-                    {
-                        _notifier.Notify($"❌ Error dialog found - number {phoneNumber} does not have WhatsApp.");
-                        return OperationResult<bool>.Failure($"Number {phoneNumber} does not have WhatsApp.", false);
-                    }
-                    // No error dialog and navigation didn't report auth/net blocks -> treat as success
-                    _notifier.Notify($"✅ Number {phoneNumber} has WhatsApp.");
-                    return OperationResult<bool>.Success(true);
+                    _notifier.Notify("Navigation result was null - treating as waiting state");
+                    return OperationResult<bool>.Waiting("Navigation result was null", false);
                 }
-                catch (Exception ex) when (IsBrowserClosedException(ex))
+                var normalizedNav = navRes.Normalize<bool>();
+                if (normalizedNav.IsWaiting())
                 {
-                    _notifier.Notify($"⚠️ Browser closed while checking number {phoneNumber}: {ex.Message}");
-                    if (retried)
-                    {
-                        return OperationResult<bool>.Failure($"Browser closed during check (after retry): {ex.Message}", false);
-                    }
-
-                    // Try one session recreation
-                    _notifier.Notify("♻️ Recreating browser session for retry...");
-                    retried = true;
-                    try
-                    {
-                        currentSession = await _sessionManager.GetOrCreateSessionAsync();
-                        continue;
-                    }
-                    catch (Exception createEx)
-                    {
-                        return OperationResult<bool>.Failure($"Failed to recreate session: {createEx.Message}", false);
-                    }
+                    _notifier.Notify("Navigation is still waiting - will check for error dialogs before deciding.");
                 }
-                catch (Exception ex)
+                else if (normalizedNav.IsPendingNet())
                 {
-                    _notifier.Notify($"❌ Exception in CheckWhatsAppNumberAsync for {phoneNumber}: {ex.Message}");
-                    return OperationResult<bool>.Failure($"Error checking number: {ex.Message}", false);
+                    _notifier.Notify($"Navigation interrupted (network): {normalizedNav.ResultMessage}");
+                    return OperationResult<bool>.PendingNET(normalizedNav.ResultMessage ?? "Internet issue", false);
                 }
+                else if (normalizedNav.IsPendingQr())
+                {
+                    _notifier.Notify($"Navigation interrupted (auth): {normalizedNav.ResultMessage}");
+                    return OperationResult<bool>.PendingQR(normalizedNav.ResultMessage ?? "Authentication required", false);
+                }
+                else if (normalizedNav.IsSuccess == false)
+                {
+                    _notifier.Notify($"Navigation failed: {normalizedNav.ResultMessage}");
+                    // fall through to error-dialog checks
+                }
+                else
+                {
+                    _notifier.Notify($"Navigation/page-load status: State={normalizedNav.State}, Success={normalizedNav.IsSuccess}, Message={normalizedNav.ResultMessage} - continuing to error-dialog check.");
+                }
+
+                // Only check error dialog after success page load
+                var hasWhatsApp = await _retryService.ExecuteWithRetryAsync<bool>(
+                    () => CheckForWhatsAppErrorDialog(browserSession),
+                    maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
+                    shouldRetryResult: r => r?.IsWaiting() == true,
+                    isRetryable: null);
+
+                if (hasWhatsApp.IsWaiting())
+                {
+                    _notifier.Notify($"Could not determine WhatsApp status in single pass: {hasWhatsApp.ResultMessage}");
+                    return OperationResult<bool>.Waiting(hasWhatsApp.ResultMessage, false);
+                }
+                else if (hasWhatsApp.IsPendingNet())
+                {
+                    _notifier.Notify($"Network issue detected while checking number: {hasWhatsApp.ResultMessage}");
+                    return OperationResult<bool>.PendingNET(hasWhatsApp.ResultMessage ?? "Internet connection unavailable", false);
+                }
+                else if (hasWhatsApp.IsPendingQr())
+                {
+                    _notifier.Notify($"Authentication required while checking number: {hasWhatsApp.ResultMessage}");
+                    return OperationResult<bool>.PendingQR(hasWhatsApp.ResultMessage ?? "Authentication required", false);
+                }
+                else if (hasWhatsApp.IsSuccess == false)
+                {
+                    _notifier.Notify($"❌ Error dialog found - number {phoneNumber} does not have WhatsApp.");
+                    return OperationResult<bool>.Failure($"Number {phoneNumber} does not have WhatsApp.", false);
+                }
+
+                _notifier.Notify($"✅ Number {phoneNumber} has WhatsApp.");
+                return OperationResult<bool>.Success(true);
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Exception in CheckWhatsAppNumberInternalAsync for {phoneNumber}: {ex.Message}");
+                return OperationResult<bool>.Failure($"Error checking number: {ex.Message}", false);
             }
         }
 
@@ -222,15 +202,6 @@ namespace ClinicsManagementService.Services
         {
             // Delegate to domain retry service's OperationResult-aware overload.
             return await _retryService.ExecuteWithRetryAsync<string?>(taskFunc, maxAttempts, shouldRetryResult, isRetryable);
-        }
-
-        private bool IsBrowserClosedException(Exception ex)
-        {
-            return (ex is PlaywrightException || ex is ObjectDisposedException) &&
-                   (ex.Message.Contains("Target page, context or browser has been closed") ||
-                    ex.Message.Contains("Browser has been disconnected") ||
-                    ex.Message.Contains("Session was closed") ||
-                    ex.Message.Contains("Cannot access a disposed object"));
         }
 
         public async void Dispose()
@@ -284,11 +255,11 @@ namespace ClinicsManagementService.Services
                     }
                     catch (Exception ex)
                     {
+                        if (_retryService.IsBrowserClosedException(ex)) break;
                         _notifier.Notify($"⚠️ Error checking textbox selector {selector}: {ex.Message}");
                     }
                 }
-
-                _notifier.Notify("❌ No chat textbox found - checking for error dialogs...");
+                // _notifier.Notify("❌ No chat textbox found - checking for error dialogs...");
 
                 // If no chat textbox found, check for error dialogs
                 foreach (var selector in WhatsAppConfiguration.ErrorDialogSelectors)
@@ -304,11 +275,11 @@ namespace ClinicsManagementService.Services
                     }
                     catch (Exception ex)
                     {
+                        if (_retryService.IsBrowserClosedException(ex)) break;
                         _notifier.Notify($"⚠️ Error checking selector {selector}: {ex.Message}");
                     }
                 }
-
-                _notifier.Notify("⚠️ No chat textbox or error dialog found - unclear status.");
+                // _notifier.Notify("⚠️ No chat textbox or error dialog found - unclear status.");
                 return OperationResult<bool>.Waiting("Could not determine WhatsApp status in single pass");
             }
             catch (Exception ex)

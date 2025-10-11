@@ -78,21 +78,32 @@ namespace ClinicsManagementService.Controllers
 
                 // Create a direct browser session for this simple check
                 var browserSession = _browserSessionFactory();
-                await browserSession.InitializeAsync();
                 var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession);
 
                 // Dispose the session after use
                 await browserSession.DisposeAsync();
 
-                if (result != null && result.Data == true)
+                if (result != null)
                 {
-                    _notifier.Notify($"✅ Number {phoneNumber} has WhatsApp.");
+                    if (result.Data == true)
+                    {
+                        _notifier.Notify($"✅ Number {phoneNumber} has WhatsApp.");
+                    }
+                    else if (result.Data == false)
+                    {
+                        _notifier.Notify($"❌ Number {phoneNumber} does not have WhatsApp.");
+                    }
                 }
                 else
                 {
-                    _notifier.Notify($"❌ Number {phoneNumber} does not have WhatsApp.");
+                    _notifier.Notify($"❌ Unable to determine WhatsApp status for {phoneNumber}.");
                 }
                 return Ok(result);
+            }
+            catch (TimeoutException tex)
+            {
+                _notifier.Notify($"❌ Timeout checking WhatsApp number {phoneNumber}: {tex.Message}");
+                return Ok(OperationResult<bool>.Failure($"Timeout checking WhatsApp number: {tex.Message}"));
             }
             catch (Exception ex)
             {

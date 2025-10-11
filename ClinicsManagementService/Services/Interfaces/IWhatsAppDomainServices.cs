@@ -31,6 +31,8 @@ namespace ClinicsManagementService.Services.Domain
     /// </summary>
     public interface IRetryService
     {
+        // Determines if the exception indicates a closed browser scenario
+        bool IsBrowserClosedException(Exception ex);
         // Retry-aware helper for operations that return OperationResult<T>.
         // The shouldRetryResult predicate can inspect the returned OperationResult and decide whether to retry.
         Task<OperationResult<T>> ExecuteWithRetryAsync<T>(Func<Task<OperationResult<T>>> operation, int maxAttempts = WhatsAppConfiguration.DefaultMaxRetryAttempts, Func<OperationResult<T>, bool>? shouldRetryResult = null, Func<Exception, bool>? isRetryable = null);
