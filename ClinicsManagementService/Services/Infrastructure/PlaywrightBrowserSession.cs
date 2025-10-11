@@ -30,7 +30,7 @@ namespace ClinicsManagementService.Services
             }
             catch (Exception ex) when (ex is PlaywrightException)
             {
-                Console.Error.WriteLine($"Playwright target/page closed during operation: {ex.Message}");
+                Console.Error.WriteLine($"Playwright target/page closed during operation: {ex.Message}\nStack: {ex.StackTrace}");
                 // Release lock if held
                 if (lockTaken)
                 {
@@ -39,36 +39,43 @@ namespace ClinicsManagementService.Services
                 }
 
                 // Clean up any possibly-disposed objects and force recreation before retrying
-                try
-                {
                     try
                     {
-                        // Close and null existing page/browser to force recreation.
-                        if (_page != null)
+                        try
                         {
-                            try { _page.CloseAsync().GetAwaiter().GetResult(); } catch { }
-                            _page = null;
+                            // Close and null existing page/browser to force recreation.
+                            Console.Error.WriteLine($"Attempting cleanup before recreation (timestamp: {DateTime.UtcNow:O})\nCallStack: {Environment.StackTrace}");
+                            if (_page != null)
+                            {
+                                try { _page.CloseAsync().GetAwaiter().GetResult(); } catch (Exception cex) { Console.Error.WriteLine($"Error closing page during cleanup: {cex.Message}"); }
+                                _page = null;
+                            }
+
+                            if (_browser != null)
+                            {
+                                try { _browser.CloseAsync().GetAwaiter().GetResult(); } catch (Exception bex) { Console.Error.WriteLine($"Error closing browser during cleanup: {bex.Message}"); }
+                                _browser = null;
+                            }
+                        }
+                        catch (Exception inner)
+                        {
+                            Console.Error.WriteLine($"Best-effort cleanup exception: {inner.Message}\n{inner.StackTrace}");
                         }
 
-                        if (_browser != null)
-                        {
-                            try { _browser.CloseAsync().GetAwaiter().GetResult(); } catch { }
-                            _browser = null;
-                        }
+                        // Recreate page/context and retry once
+                        Console.Error.WriteLine($"Recreating Playwright browser/page and retrying operation (timestamp: {DateTime.UtcNow:O})");
+                        await EnsurePageInitializedAsync();
+                        await _lock.WaitAsync();
+                        lockTaken = true;
+                        var result = await operation();
+                        Console.Error.WriteLine($"Retry attempt completed (timestamp: {DateTime.UtcNow:O})");
+                        return result;
                     }
-                    catch { /* best-effort cleanup */ }
-
-                    // Recreate page/context and retry once
-                    await EnsurePageInitializedAsync();
-                    await _lock.WaitAsync();
-                    lockTaken = true;
-                    return await operation();
-                }
-                catch (Exception retryEx)
-                {
-                    Console.Error.WriteLine($"Retry after page recreation failed: {retryEx.Message}");
-                    throw;
-                }
+                    catch (Exception retryEx)
+                    {
+                        Console.Error.WriteLine($"Retry after page recreation failed: {retryEx.Message}\nStack: {retryEx.StackTrace}");
+                        throw;
+                    }
             }
             finally
             {
@@ -137,15 +144,15 @@ namespace ClinicsManagementService.Services
                         try { closed = _page.IsClosed; } catch { closed = true; }
                         if (closed)
                         {
-                            Console.Error.WriteLine($"Playwright page was closed immediately after creation; recreating page ({DateTime.UtcNow:O})");
-                            try { _page = await _browser.NewPageAsync(); } catch { /* ignore - best effort */ }
+                            Console.Error.WriteLine($"Playwright page was closed immediately after creation; recreating page ({DateTime.UtcNow:O})\nCallStack: {Environment.StackTrace}");
+                            try { _page = await _browser.NewPageAsync(); } catch (Exception ex) { Console.Error.WriteLine($"Failed to recreate page: {ex.Message}\n{ex.StackTrace}"); }
                         }
                     }
                     catch { /* ignore timing failures */ }
                     // Log and instrument page close
                     try
                     {
-                        _page.Close += (_, _) => Console.Error.WriteLine($"Playwright page closed event at {DateTime.UtcNow:O}");
+                        _page.Close += (_, _) => Console.Error.WriteLine($"Playwright page closed event at {DateTime.UtcNow:O}\nCallStack: {Environment.StackTrace}");
                     }
                     catch { /* ignore if attach fails */ }
                     Console.Error.WriteLine($"Playwright page recreated at {DateTime.UtcNow:O}");
@@ -259,17 +266,24 @@ namespace ClinicsManagementService.Services
             await _lock.WaitAsync();
             try
             {
+                Console.Error.WriteLine($"PlaywrightBrowserSession.DisposeAsync called (timestamp: {DateTime.UtcNow:O})\nCallStack: {Environment.StackTrace}");
                 if (_page != null)
-                    await _page.CloseAsync();
+                {
+                    try { await _page.CloseAsync(); } catch (Exception pex) { Console.Error.WriteLine($"Error closing page in DisposeAsync: {pex.Message}\n{pex.StackTrace}"); }
+                }
                 if (_browser != null)
-                    await _browser.CloseAsync();
+                {
+                    try { await _browser.CloseAsync(); } catch (Exception bex) { Console.Error.WriteLine($"Error closing browser in DisposeAsync: {bex.Message}\n{bex.StackTrace}"); }
+                }
                 if (_playwright != null)
-                    _playwright?.Dispose();
+                {
+                    try { _playwright?.Dispose(); } catch (Exception dx) { Console.Error.WriteLine($"Error disposing Playwright: {dx.Message}\n{dx.StackTrace}"); }
+                }
             }
             catch (Exception ex)
             {
                 // Log disposal errors but don't rethrow; disposal should be best-effort
-                Console.Error.WriteLine($"Error disposing Playwright session (ignored): {ex.Message}");
+                Console.Error.WriteLine($"Error disposing Playwright session (ignored): {ex.Message}\n{ex.StackTrace}");
             }
             finally
             {

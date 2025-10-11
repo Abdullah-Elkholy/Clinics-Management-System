@@ -139,7 +139,8 @@ namespace ClinicsManagementService.Services.Application
                 }
                 counter++;
             }
-            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+            // Do not dispose the shared session here; session lifecycle is managed globally
+            // await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             _notifier.Notify("Bulk send process completed.");
             return results;
         }
@@ -254,7 +255,8 @@ namespace ClinicsManagementService.Services.Application
             {
                 _notifier.Notify(result.Error);
             }
-            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+            // Do not dispose the shared session here; session lifecycle is managed globally
+            // await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             return result.Sent;
         }
 
@@ -302,7 +304,8 @@ namespace ClinicsManagementService.Services.Application
                     IconType = result.IconType
                 });
             }
-            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+            // Do not dispose the shared session here; session lifecycle is managed globally
+            // await _whatsapp_service.DisposeBrowserSessionAsync(browserSession);
             return results;
         }
 

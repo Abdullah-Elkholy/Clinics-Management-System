@@ -81,12 +81,25 @@ namespace ClinicsManagementService.Services
 
         public async Task DisposeBrowserSessionAsync(IBrowserSession browserSession)
         {
-            _notifier.Notify("Disposing browser session...");
-            if (browserSession is IAsyncDisposable asyncDisposable)
-                await asyncDisposable.DisposeAsync();
-            else if (browserSession is IDisposable disposable)
-                disposable.Dispose();
-            _notifier.Notify("Disposed browser session.");
+            try
+            {
+                _notifier.Notify($"Disposing browser session... (timestamp: {DateTime.UtcNow:O})");
+                // Log call-site stack to help trace who triggered disposal
+                var stack = Environment.StackTrace;
+                _notifier.Notify($"Dispose called from stack:\n{stack}");
+
+                if (browserSession is IAsyncDisposable asyncDisposable)
+                    await asyncDisposable.DisposeAsync();
+                else if (browserSession is IDisposable disposable)
+                    disposable.Dispose();
+
+                _notifier.Notify($"Disposed browser session. (timestamp: {DateTime.UtcNow:O})");
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"Error disposing browser session: {ex.GetType().Name}: {ex.Message}\nStack: {ex.StackTrace}");
+                throw;
+            }
         }
 
 
@@ -221,12 +234,10 @@ namespace ClinicsManagementService.Services
                     _notifier?.Notify($"⚠️ Error cancelling CTS during cleanup: {cancelEx.Message}");
                 }
 
-                var session = await _sessionManager.GetCurrentSessionAsync();
-                if (session != null)
-                {
-                    try { await DisposeBrowserSessionAsync(session); } catch (Exception disposeEx) { _notifier?.Notify($"⚠️ Error disposing browser session: {disposeEx.Message}"); }
-                }
-
+                // IMPORTANT: do NOT dispose shared session here. The WhatsApp session is managed
+                // by `WhatsAppSessionManager` and by the application shutdown hook in Program.cs.
+                // Disposing the shared Playwright session when this scoped service is disposed
+                // was causing the browser/page to be closed right after controller actions completed.
                 try { _cts?.Dispose(); } catch (ObjectDisposedException) { /* ignore */ }
             }
             catch (Exception ex)

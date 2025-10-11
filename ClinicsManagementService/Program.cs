@@ -20,10 +20,14 @@ builder.Services.AddScoped<IWhatsAppUIService, WhatsAppUIService>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
 
 // Infrastructure Services
-builder.Services.AddScoped<IBrowserSession, PlaywrightBrowserSession>();
-// here we tell DI how to create a Func<IBrowserSession> that resolves a new IBrowserSession each time it's called.
-builder.Services.AddScoped<Func<IBrowserSession>>(sp => () => sp.GetRequiredService<IBrowserSession>()); 
-builder.Services.AddScoped<IWhatsAppSessionManager, WhatsAppSessionManager>();
+// Make the browser session and session manager singletons so the Playwright session
+// persists across HTTP request scopes (otherwise scoped services will be disposed
+// at the end of the request and your browser page will be closed when the controller
+// returns).
+builder.Services.AddSingleton<IBrowserSession, PlaywrightBrowserSession>();
+// The factory resolves the singleton IBrowserSession from the container
+builder.Services.AddSingleton<Func<IBrowserSession>>(sp => () => sp.GetRequiredService<IBrowserSession>());
+builder.Services.AddSingleton<IWhatsAppSessionManager, WhatsAppSessionManager>();
 
 // Application Services
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
