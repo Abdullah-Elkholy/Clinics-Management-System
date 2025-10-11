@@ -110,8 +110,6 @@ namespace ClinicsManagementService.Services
                 // Navigate directly to the WhatsApp send URL for the phone number
                 var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
                 _notifier.Notify($"🔗 Navigating to {url}...");
-                // Note: RetryService already logs Attempt X/Y. This line follows that attempt log so
-                // you'll see "Attempt 1/3..." then "Navigating to ..." which indicates which attempt this is.
                 await browserSession.NavigateToAsync(url);
 
                 // WaitForPageLoadAsync handles connectivity/auth/progress monitoring
