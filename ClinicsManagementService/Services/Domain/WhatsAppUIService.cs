@@ -76,6 +76,7 @@ namespace ClinicsManagementService.Services.Domain
                             var pollIntervalMs = Math.Max(250, delayMs);
                             var start = DateTime.UtcNow;
                             var maxWait = TimeSpan.FromMilliseconds(maxWaitMs);
+                            var progressDisappeared = false;
                             while (DateTime.UtcNow - start < maxWait)
                             {
                                 try
@@ -84,6 +85,7 @@ namespace ClinicsManagementService.Services.Domain
                                     if (still == null)
                                     {
                                         _notifier.Notify($"✅ Progress bar disappeared ({progressSelector})");
+                                        progressDisappeared = true;
                                         break;
                                     }
                                 }
@@ -116,8 +118,12 @@ namespace ClinicsManagementService.Services.Domain
                                 await Task.Delay(pollIntervalMs);
                             }
 
-                            // If we exited the polling loop due to timeout, report Waiting so callers can decide
-                            return OperationResult<bool>.Waiting($"Progress bar did not disappear in time ({maxWait}).");
+                            // If we exited the polling loop due to timeout (i.e. progress did NOT disappear), report Waiting
+                            if (!progressDisappeared)
+                            {
+                                return OperationResult<bool>.Waiting($"Progress bar did not disappear in time ({maxWait}).");
+                            }
+                            // otherwise the progress disappeared and we continue monitoring other selectors
                         }
                     }
                     catch (Exception ex)
@@ -238,8 +244,14 @@ namespace ClinicsManagementService.Services.Domain
                     }
                     catch (Exception ex)
                     {
+                        // If the browser/page was closed, surface a failure so the caller can recreate the session.
+                        if (IsBrowserClosedException(ex))
+                        {
+                            _notifier.Notify("❌ Browser/session closed during wait");
+                            return OperationResult<bool>.Failure("Failed: Browser session terminated during wait");
+                        }
                         _notifier.Notify($"⚠️ Wait condition error: {ex.Message}");
-                        // Continue waiting despite errors
+                        // Continue waiting despite other non-fatal errors
                     }
                 }
             }

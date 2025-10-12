@@ -82,7 +82,7 @@ namespace ClinicsManagementService.Controllers
                 _notifier.Notify($"🔍 Checking if {phoneNumber} has WhatsApp...");
 
                 // Create a direct browser session for this simple check
-                var browserSession = _browserSessionFactory();
+                var browserSession = await _sessionManager.GetOrCreateSessionAsync();
                 var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession);
 
                 // Dispose the session after use
@@ -141,8 +141,7 @@ namespace ClinicsManagementService.Controllers
                 _notifier.Notify("🔐 Checking WhatsApp authentication status...");
 
                 // Get the session and run the full authentication check for consistent results
-                // var browserSession = await _sessionManager.GetOrCreateSessionAsync();
-                var browserSession = _browserSessionFactory();
+                var browserSession = await _sessionManager.GetOrCreateSessionAsync();
                 await browserSession.InitializeAsync();
                 // Navigate directly to the WhatsApp base URL for the phone number
                 var url = WhatsAppConfiguration.WhatsAppBaseUrl;
@@ -209,45 +208,105 @@ namespace ClinicsManagementService.Controllers
                 // If initial state shows PendingQR, give the user some time to scan the QR
                 if (initial.IsPendingQr())
                 {
-                    _notifier.Notify($"🔔 Authentication pending - will wait up to {WhatsAppConfiguration.DefaultAuthenticationWaitMs / 1000} seconds for user action.");
-                    var waitForAuthShort = await _whatsAppUIService.WaitWithMonitoringAsync(browserSession, async () =>
+                    var totalMs = WhatsAppConfiguration.DefaultAuthenticationWaitMs;
+                    var intervalMs = WhatsAppConfiguration.defaultProgressChecksDelayMs;
+                    _notifier.Notify($"🔔 Authentication pending - will wait up to {totalMs / 1000} seconds for user action.");
+
+                    var start = DateTime.UtcNow;
+                    var timeout = TimeSpan.FromMilliseconds(totalMs);
+                    try
                     {
-                        // success condition: any ChatUI selector is present
-                        foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors ?? Array.Empty<string>())
+                        while (DateTime.UtcNow - start < timeout)
                         {
-                            var element = await browserSession.QuerySelectorAsync(selector);
-                            if (element != null)
-                                return true;
+                            // Check success condition: any ChatUI selector is present
+                            foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors ?? Array.Empty<string>())
+                            {
+                                try
+                                {
+                                    var element = await browserSession.QuerySelectorAsync(selector);
+                                    if (element != null)
+                                    {
+                                        _notifier.Notify("✅ Authentication completed: Chat UI detected after QR scan.");
+                                        return Ok(OperationResult<bool>.Success(true));
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (_retryService.IsBrowserClosedException(ex))
+                                    {
+                                        _notifier.Notify("❗ Browser closed detected during authentication while waiting for Chat UI.");
+                                        // Return a failure result instead of throwing to avoid terminating the host process
+                                        return Ok(OperationResult<bool>.Failure("Authentication failed: browser session was closed during authentication"));
+                                    }
+                                    _notifier.Notify($"⚠️ Error checking Chat UI selector {selector}: {ex.Message}");
+                                }
+                            }
+
+                            // Run continuous monitoring to detect progress bars, QR presence and network state
+                            OperationResult<bool>? monitoringResult = null;
+                            if (_whatsAppUIService is Services.Domain.WhatsAppUIService concreteMonitor)
+                            {
+                                monitoringResult = await concreteMonitor.ContinuousMonitoringAsync(browserSession, intervalMs, totalMs);
+                            }
+                            else
+                            {
+                                _notifier.Notify("⚠️ Monitoring not available on current UI service implementation.");
+                            }
+                            if (monitoringResult != null)
+                            {
+                                if (monitoringResult.IsPendingNet())
+                                {
+                                    _notifier.Notify("❌ Authentication interrupted due to network issues during wait.");
+                                    return Ok(OperationResult<bool>.PendingNET(monitoringResult.ResultMessage ?? "Internet connection unavailable"));
+                                }
+                                if (monitoringResult.IsWaiting())
+                                {
+                                    // Progress bar didn't disappear in the monitoring window
+                                    _notifier.Notify($"⚠️ Authentication still in progress: {monitoringResult.ResultMessage}");
+                                    return Ok(OperationResult<bool>.Waiting(monitoringResult.ResultMessage));
+                                }
+                                if (monitoringResult.IsPendingQr())
+                                {
+                                    // Still on QR, continue waiting until timeout
+                                    _notifier.Notify($"⏳ Still waiting for QR scan: {monitoringResult.ResultMessage}");
+                                }
+                                else if (monitoringResult.IsSuccess == true)
+                                {
+                                    _notifier.Notify("✅ Authentication completed (monitoring detected success).");
+                                    return Ok(OperationResult<bool>.Success(true));
+                                }
+                                else if (monitoringResult.IsSuccess == false)
+                                {
+                                    _notifier.Notify($"❌ Monitoring reported failure: {monitoringResult.ResultMessage}");
+                                    return Ok(OperationResult<bool>.Failure(monitoringResult.ResultMessage ?? "Authentication failed during monitoring"));
+                                }
+                            }
+
+                            // Send periodic progress notification (percent/time left)
+                            var elapsed = DateTime.UtcNow - start;
+                            var remaining = timeout - elapsed;
+                            var pct = Math.Min(100, (int)((elapsed.TotalMilliseconds / totalMs) * 100));
+                            if (remaining.TotalSeconds > 0)
+                                _notifier.Notify($"⏳ Waiting for QR scan... {pct}% ({(int)remaining.TotalSeconds}s left)");
+
+                            await Task.Delay(Math.Max(250, intervalMs));
                         }
-                        return false;
-                    }, WhatsAppConfiguration.DefaultAuthenticationWaitMs, WhatsAppConfiguration.defaultProgressChecksDelayMs);
 
-                    if (waitForAuthShort.IsSuccess == true)
-                    {
-                        _notifier.Notify("✅ Authentication completed within wait window: Chat UI detected.");
-                        return Ok(OperationResult<bool>.Success(true));
-                    }
-
-                    if (waitForAuthShort.IsPendingQr())
-                    {
+                        // Timed out waiting for QR scan
                         _notifier.Notify("❌ Authentication failed or timed out: still on QR page after wait period.");
                         return Ok(OperationResult<bool>.Failure("Authentication failed: still on QR page after wait period."));
                     }
-
-                    if (waitForAuthShort.IsPendingNet())
+                    catch (Exception ex)
                     {
-                        _notifier.Notify("❌ Authentication interrupted due to network issues during wait.");
-                        return Ok(OperationResult<bool>.PendingNET(waitForAuthShort.ResultMessage ?? "Internet connection unavailable"));
+                        if (_retryService.IsBrowserClosedException(ex))
+                        {
+                            _notifier.Notify("❗ Browser closed detected during authentication. Consider recreating the browser session before retrying.");
+                            // Return a failure so the caller can decide to recreate a session instead of rethrowing
+                            return Ok(OperationResult<bool>.Failure("Authentication failed: browser session was closed during authentication."));
+                        }
+                        _notifier.Notify($"❌ Exception while waiting for QR scan: {ex.Message}");
+                        return Ok(OperationResult<bool>.Failure($"Authentication failed: {ex.Message}"));
                     }
-
-                    if (waitForAuthShort.IsWaiting())
-                    {
-                        _notifier.Notify($"⚠️ Authentication still in progress after wait: {waitForAuthShort.ResultMessage}");
-                        return Ok(OperationResult<bool>.Waiting(waitForAuthShort.ResultMessage));
-                    }
-
-                    _notifier.Notify($"❌ Authentication unsuccessful after wait: {waitForAuthShort.ResultMessage}");
-                    return Ok(OperationResult<bool>.Failure(waitForAuthShort.ResultMessage ?? "Authentication unsuccessful after wait"));
                 }
 
                 // Otherwise, proceed to monitor until a longer default monitoring timeout (progress/transition)
