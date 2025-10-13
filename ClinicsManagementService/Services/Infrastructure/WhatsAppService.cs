@@ -39,14 +39,207 @@ namespace ClinicsManagementService.Services
 
         public async Task<OperationResult<string?>> SendMessageWithIconTypeAsync(string phoneNumber, string message, IBrowserSession browserSession)
         {
-            // Should be completed, BUT LATER
             try
             {
-                return OperationResult<string?>.Failure("Message delivery failed: unknown result");
+                // Initialize session/page
+                await browserSession.InitializeAsync();
+
+                // Navigate to send URL for the phone number
+                var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
+                _notifier.Notify($"🔗 Navigating to {url}...");
+                await browserSession.NavigateToAsync(url);
+
+                // Wait for chat UI (handles progressbars, auth and network via WaitForPageLoadAsync)
+                var uiLoad = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                if (uiLoad.IsPendingNet())
+                {
+                    _notifier.Notify($"❌ Network unavailable during navigation: {uiLoad.ResultMessage}");
+                    return OperationResult<string?>.PendingNET(uiLoad.ResultMessage ?? "Internet connection unavailable");
+                }
+                if (uiLoad.IsPendingQr())
+                {
+                    _notifier.Notify($"❌ Authentication required during navigation: {uiLoad.ResultMessage}");
+                    return OperationResult<string?>.PendingQR(uiLoad.ResultMessage ?? "WhatsApp authentication required");
+                }
+                if (uiLoad.IsWaiting())
+                {
+                    _notifier.Notify($"⚠️ Page load waiting state: {uiLoad.ResultMessage}");
+                    return OperationResult<string?>.Waiting(uiLoad.ResultMessage ?? "Waiting for page load");
+                }
+
+                // Check for WhatsApp error dialog (e.g., number not registered) before attempting to type/send
+                var hasWhatsApp = await _retryService.ExecuteWithRetryAsync<bool>(
+                    () => CheckForWhatsAppErrorDialog(browserSession),
+                    maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
+                    shouldRetryResult: r => r?.IsWaiting() == true,
+                    isRetryable: null);
+
+                if (hasWhatsApp.IsWaiting())
+                {
+                    _notifier.Notify($"Could not determine WhatsApp chat status in single pass: {hasWhatsApp.ResultMessage}");
+                    return OperationResult<string?>.Waiting(hasWhatsApp.ResultMessage ?? "Could not determine chat status");
+                }
+                if (hasWhatsApp.IsPendingNet())
+                {
+                    _notifier.Notify($"❌ Network issue detected while checking chat status: {hasWhatsApp.ResultMessage}");
+                    return OperationResult<string?>.PendingNET(hasWhatsApp.ResultMessage ?? "Internet connection unavailable");
+                }
+                if (hasWhatsApp.IsPendingQr())
+                {
+                    _notifier.Notify($"❌ Authentication required while checking chat status: {hasWhatsApp.ResultMessage}");
+                    return OperationResult<string?>.PendingQR(hasWhatsApp.ResultMessage ?? "Authentication required");
+                }
+                if (hasWhatsApp.IsSuccess == false)
+                {
+                    _notifier.Notify($"❌ Error dialog found - number {phoneNumber} does not have WhatsApp.");
+                    return OperationResult<string?>.Failure(hasWhatsApp.ResultMessage ?? $"Number {phoneNumber} does not have WhatsApp.");
+                }
+
+                // Ensure input field exists (use WaitForPageLoadAsync so progressbars/auth/network are observed)
+                var inputWait = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.InputFieldSelectors, WhatsAppConfiguration.DefaultSelectorTimeoutMs, WhatsAppConfiguration.defaultChecksFrequencyDelayMs);
+                if (inputWait.IsPendingNet())
+                {
+                    _notifier.Notify($"❌ Network lost while waiting for input field: {inputWait.ResultMessage}");
+                    return OperationResult<string?>.PendingNET(inputWait.ResultMessage ?? "Internet connection unavailable");
+                }
+                if (inputWait.IsPendingQr())
+                {
+                    _notifier.Notify($"❌ Authentication required while waiting for input field: {inputWait.ResultMessage}");
+                    return OperationResult<string?>.PendingQR(inputWait.ResultMessage ?? "WhatsApp authentication required");
+                }
+                if (inputWait.IsWaiting())
+                {
+                    _notifier.Notify($"⚠️ Waiting for input field: {inputWait.ResultMessage}");
+                    return OperationResult<string?>.Waiting(inputWait.ResultMessage ?? "Waiting for input field");
+                }
+
+                // Find input element
+                IElementHandle? input = null;
+                foreach (var selector in WhatsAppConfiguration.InputFieldSelectors)
+                {
+                    try
+                    {
+                        input = await browserSession.QuerySelectorAsync(selector);
+                        if (input != null) break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_retryService.IsBrowserClosedException(ex))
+                        {
+                            _notifier.Notify("❌ Browser closed while querying input selector");
+                            return OperationResult<string?>.Failure("Failed: Browser session terminated while querying input field");
+                        }
+                        _notifier.Notify($"⚠️ Error querying input selector {selector}: {ex.Message}");
+                    }
+                }
+
+                if (input == null)
+                {
+                    _notifier.Notify("❌ Input field not found after waiting");
+                    return OperationResult<string?>.Failure("Message input box not found.");
+                }
+
+                await input.FocusAsync();
+                await input.FillAsync(message);
+
+                // Try to find send button
+                IElementHandle? sendButton = null;
+                foreach (var sendSelector in WhatsAppConfiguration.SendButtonSelectors)
+                {
+                    try
+                    {
+                        sendButton = await browserSession.QuerySelectorAsync(sendSelector);
+                        if (sendButton != null) break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (_retryService.IsBrowserClosedException(ex))
+                        {
+                            _notifier.Notify("❌ Browser closed while querying send button");
+                            return OperationResult<string?>.Failure("Failed: Browser session terminated while querying send button");
+                        }
+                    }
+                }
+
+                if (sendButton != null)
+                {
+                    _notifier.Notify("🔘 Clicking send button...");
+                    await sendButton.ClickAsync();
+                }
+                else
+                {
+                    _notifier.Notify("↩️ Send button not found, pressing Enter...");
+                    await input.PressAsync(WhatsAppConfiguration.SendEnterKey);
+                }
+
+                // Wait for message status icon
+                var maxWaitMs = WhatsAppConfiguration.DefaultSelectorTimeoutMs;
+                var pollIntervalMs = WhatsAppConfiguration.defaultChecksFrequencyDelayMs;
+                int elapsed = 0;
+
+                while (elapsed < maxWaitMs)
+                {
+                    // Run continuous monitoring to detect progressbars/auth/network
+                    var mon = await _uiService.ContinuousMonitoringAsync(browserSession, pollIntervalMs);
+                    if (mon != null)
+                    {
+                        if (mon.IsPendingNet())
+                        {
+                            _notifier.Notify($"❌ Network lost while waiting for message status: {mon.ResultMessage}");
+                            return OperationResult<string?>.PendingNET(mon.ResultMessage ?? "Internet connection unavailable");
+                        }
+                        if (mon.IsPendingQr())
+                        {
+                            _notifier.Notify($"❌ Authentication required while waiting for message status: {mon.ResultMessage}");
+                            return OperationResult<string?>.PendingQR(mon.ResultMessage ?? "Authentication required");
+                        }
+                        if (mon.IsWaiting())
+                        {
+                            _notifier.Notify($"⚠️ Monitoring reported waiting while polling message status: {mon.ResultMessage}");
+                            return OperationResult<string?>.Waiting(mon.ResultMessage ?? "Waiting for progress to finish");
+                        }
+                    }
+
+                    var status = await _uiService.GetLastOutgoingMessageStatusAsync(browserSession, message);
+                    var iconType = status.IconType;
+                    _notifier.Notify($"Polling message status: iconType={iconType}, elapsed={elapsed}ms");
+
+                    if (!string.IsNullOrEmpty(iconType))
+                    {
+                        if (iconType == "msg-check" || iconType == "msg-dblcheck")
+                        {
+                            _notifier.Notify($"✅ Message sent: iconType={iconType}");
+                            return OperationResult<string?>.Success(iconType);
+                        }
+                        if (iconType == "msg-time")
+                        {
+                            _notifier.Notify("⏳ Message pending (msg-time), will wait...");
+                        }
+                        else
+                        {
+                            _notifier.Notify($"⚠️ Unexpected iconType: {iconType}");
+                            var path = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                            await TakeScreenshotAsync(browserSession, path);
+                            _notifier.Notify($"Screenshot taken: {path}");
+                        }
+                    }
+
+                    await Task.Delay(pollIntervalMs);
+                    elapsed += pollIntervalMs;
+                }
+
+                // If we reach here without success, return Waiting so higher-level retry logic can act
+                _notifier.Notify("⚠️ Message status not confirmed within timeout");
+                return OperationResult<string?>.Waiting("No status icon found after polling");
             }
             catch (Exception ex)
             {
-                _notifier.Notify($"Exception in SendMessageWithIconTypeAsync: {ex.Message}");
+                if (_retryService.IsBrowserClosedException(ex))
+                {
+                    _notifier.Notify($"❌ Browser closed during SendMessageWithIconTypeAsync: {ex.Message}");
+                    return OperationResult<string?>.Failure("Failed: Browser session terminated during send");
+                }
+                _notifier.Notify($"❌ Exception in SendMessageWithIconTypeAsync: {ex.Message}");
                 return OperationResult<string?>.Failure($"Failed: {ex.Message}");
             }
         }
@@ -192,7 +385,7 @@ namespace ClinicsManagementService.Services
 
         public async Task<bool> CheckInternetConnectivityAsync() => await _networkService.CheckInternetConnectivityAsync();
 
-        public async Task<IBrowserSession> PrepareSessionAsync(IBrowserSession browserSession) => await _sessionManager.GetOrCreateSessionAsync();
+        public async Task<IBrowserSession> PrepareSessionAsync() => await _sessionManager.GetOrCreateSessionAsync();
 
         // Delegate retry logic to central IRetryService
         public async Task<OperationResult<string?>> ExecuteWithRetryAsync(

@@ -10,12 +10,12 @@ namespace ClinicsManagementService.Services.Domain
     /// </summary>
     public interface IWhatsAppUIService
     {
-    Task<OperationResult<bool>> WaitForPageLoadAsync(IBrowserSession browserSession, string[] selectors, int timeoutMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, int checkIntervalMs = WhatsAppConfiguration.defaultProgressChecksDelayMs);
-    Task<OperationResult<bool>?> ContinuousMonitoringAsync(IBrowserSession browserSession, int delayMs = WhatsAppConfiguration.defaultProgressChecksDelayMs, int maxWaitMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs);
+    Task<OperationResult<bool>> WaitForPageLoadAsync(IBrowserSession browserSession, string[] selectors, int timeoutMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, int checkIntervalMs = WhatsAppConfiguration.defaultChecksFrequencyDelayMs);
+    Task<OperationResult<bool>?> ContinuousMonitoringAsync(IBrowserSession browserSession, int delayMs = WhatsAppConfiguration.defaultChecksFrequencyDelayMs, int maxWaitMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs);
     Task<OperationResult<bool>> NavigateToRecipientAsync(IBrowserSession browserSession, string phoneNumber);
     Task<OperationResult<string?>> DeliverMessageAsync(IBrowserSession browserSession, string message, string? phoneNumber = null);
         Task<MessageStatus> GetLastOutgoingMessageStatusAsync(IBrowserSession browserSession, string messageText);
-    Task<OperationResult<bool>> WaitWithMonitoringAsync(IBrowserSession browserSession, Func<Task<bool>> waitCondition, int timeoutMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, int checkIntervalMs = WhatsAppConfiguration.defaultProgressChecksDelayMs);
+    Task<OperationResult<bool>> WaitWithMonitoringAsync(IBrowserSession browserSession, Func<Task<bool>> waitCondition, int timeoutMs = WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, int checkIntervalMs = WhatsAppConfiguration.defaultChecksFrequencyDelayMs);
     }
 
     /// <summary>

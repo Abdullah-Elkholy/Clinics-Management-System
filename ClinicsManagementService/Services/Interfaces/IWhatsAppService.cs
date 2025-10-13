@@ -5,7 +5,7 @@ namespace ClinicsManagementService.Services.Interfaces
     public interface IWhatsAppService
     {
         Task<bool> CheckInternetConnectivityAsync();
-        Task<IBrowserSession> PrepareSessionAsync(IBrowserSession browserSession);
+        Task<IBrowserSession> PrepareSessionAsync();
         Task<OperationResult<string?>> SendMessageWithIconTypeAsync(
             string phoneNumber, string message, IBrowserSession browserSession);
         Task<OperationResult<string?>> ExecuteWithRetryAsync(

@@ -120,7 +120,7 @@ namespace ClinicsManagementService.Controllers
         {
             if (sent)
             {
-                return MessageOperationStatus.Succeeded;
+                return MessageOperationStatus.Success;
             }
 
             if (error?.Contains("PendingQR:") == true || error?.Contains("WhatsApp authentication required") == true)
@@ -138,7 +138,7 @@ namespace ClinicsManagementService.Controllers
                 return MessageOperationStatus.Waiting;
             }
 
-            return MessageOperationStatus.Failed;
+            return MessageOperationStatus.Failure;
         }
     }
 }

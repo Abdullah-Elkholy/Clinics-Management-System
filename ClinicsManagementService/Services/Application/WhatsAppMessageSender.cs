@@ -9,22 +9,7 @@ using System.Threading.Tasks;
 
 namespace ClinicsManagementService.Services.Application
 {
-    // Helper for robust async execution
-    public static class AsyncExecutionHelper
-    {
-        public static async Task<T> TryExecuteAsync<T>(Func<Task<T>> operation, T defaultValue, string operationName, INotifier notifier)
-        {
-            try
-            {
-                return await operation();
-            }
-            catch (Exception ex)
-            {
-                notifier.Notify($"⚠️ Error in {operationName}: {ex.Message}");
-                return defaultValue;
-            }
-        }
-    }
+    // Note: removed AsyncExecutionHelper; call sites use explicit try/catch now.
 
     public class WhatsAppMessageSender : IMessageSender
     {
@@ -32,12 +17,14 @@ namespace ClinicsManagementService.Services.Application
         private readonly Func<IBrowserSession> _browserSessionFactory;
         private readonly INotifier _notifier;
         private readonly IRetryService _retryService;
-        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService)
+        private readonly IWhatsAppSessionManager _sessionManager;
+        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService, IWhatsAppSessionManager sessionManager)
         {
             _whatsappService = whatsappService;
             _browserSessionFactory = browserSessionFactory;
             _notifier = notifier;
             _retryService = retryService;
+            _sessionManager = sessionManager;
         }
 
         // Send multiple phone/message pairs with random throttling between each send, returning MessageSendResult for each.
@@ -51,7 +38,7 @@ namespace ClinicsManagementService.Services.Application
             int counter = 1;
 
             var browserSession = _browserSessionFactory();
-            await _whatsappService.PrepareSessionAsync(browserSession);
+            browserSession = await _sessionManager.GetOrCreateSessionAsync();
 
             foreach (var item in items)
             {
@@ -73,26 +60,42 @@ namespace ClinicsManagementService.Services.Application
                     continue;
                 }
                 _notifier.Notify($"[{counter}/{total}] Sending message to {item.Phone}...");
-                var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
-                    async () =>
-                    {
-                        var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
-                            () => _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, browserSession),
-                            maxAttempts: 3,
-                            shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
-                            isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
-                        return new MessageSendResult
+                MessageSendResult result;
+                try
+                {
+                    var deliveryResult = await _retryService.ExecuteWithRetryAsync<string?>(
+                        async () =>
                         {
-                            Phone = item.Phone,
-                            Message = item.Message,
-                            Sent = deliveryResult.IsSuccess == true,
-                            Error = deliveryResult.ResultMessage,
-                            IconType = deliveryResult.Data,
-                            Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
-                        };
-                    },
-                    new MessageSendResult { Phone = item.Phone, Message = item.Message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failed },
-                    $"SendMessageWithIconTypeAsync for {item.Phone}", _notifier);
+                            var session = _browserSessionFactory();
+                            session = await _sessionManager.GetOrCreateSessionAsync();
+                            try
+                            {
+                                return await _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, session);
+                            }
+                            finally
+                            {
+                                await _whatsappService.DisposeBrowserSessionAsync(session);
+                            }
+                        },
+                        maxAttempts: 3,
+                        shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
+                        isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
+
+                    result = new MessageSendResult
+                    {
+                        Phone = item.Phone,
+                        Message = item.Message,
+                        Sent = deliveryResult.IsSuccess == true,
+                        Error = deliveryResult.ResultMessage,
+                        IconType = deliveryResult.Data,
+                        Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {item.Phone}: {ex.Message}");
+                    result = new MessageSendResult { Phone = item.Phone, Message = item.Message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
+                }
                 _notifier.Notify($"[{counter}/{total}] Result for {item.Phone}: Sent={result.Sent}, Error={result.Error}, IconType={result.IconType}");
                 results.Add(new MessageSendResult
                 {
@@ -114,10 +117,16 @@ namespace ClinicsManagementService.Services.Application
                 {
                     int delay = Random.Shared.Next(minDelayMs, maxDelayMs + 1);
                     _notifier.Notify($"[{counter + 1}/{total}] Throttling for {delay}ms before next send...");
-                    var monitoringResult = await AsyncExecutionHelper.TryExecuteAsync(
-                        async () => await ContinuousMonitoringAsync(browserSession, delay),
-                        null,
-                        $"ContinuousMonitoringAsync for {item.Phone}", _notifier);
+                    OperationResult<string?>? monitoringResult = null;
+                    try
+                    {
+                        monitoringResult = await ContinuousMonitoringAsync(browserSession, delay);
+                    }
+                    catch (Exception ex)
+                    {
+                        _notifier.Notify($"⚠️ Error during ContinuousMonitoringAsync for {item.Phone}: {ex.Message}");
+                        monitoringResult = null;
+                    }
                     if (monitoringResult != null)
                     {
                         _notifier.Notify($"[{counter + 1}/{total}] Throttling interrupted: {monitoringResult.ResultMessage}");
@@ -229,27 +238,42 @@ namespace ClinicsManagementService.Services.Application
         public async Task<bool> SendMessageAsync(string phoneNumber, string message)
         {
             var browserSession = _browserSessionFactory();
-            await _whatsappService.PrepareSessionAsync(browserSession);
-            var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
-                async () =>
-                {
-                    var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
-                        () => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
-                        maxAttempts: 3,
-                        shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
-                        isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
-                    return new MessageSendResult
+            // browserSession = await _sessionManager.GetOrCreateSessionAsync();
+            MessageSendResult result;
+            try
+            {
+                var deliveryResult = await _retryService.ExecuteWithRetryAsync(
+                    async () =>
                     {
-                        Phone = phoneNumber,
-                        Message = message,
-                        Sent = deliveryResult.IsSuccess == true,
-                        Error = deliveryResult.ResultMessage,
-                        IconType = deliveryResult.Data,
-                        Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
-                    };
-                },
-                new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failed },
-                $"SendMessageWithIconTypeAsync for {phoneNumber}", _notifier);
+                        browserSession = await _sessionManager.GetOrCreateSessionAsync();
+                        try
+                        {
+                            return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
+                        }
+                        finally
+                        {
+                            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                        }
+                    },
+                    maxAttempts: WhatsAppConfiguration.DefaultMaxRetryAttempts,
+                    shouldRetryResult: r => r?.IsWaiting() == true,
+                    isRetryable: null);
+
+                result = new MessageSendResult
+                {
+                    Phone = phoneNumber,
+                    Message = message,
+                    Sent = deliveryResult.IsSuccess == true,
+                    Error = deliveryResult.ResultMessage,
+                    IconType = deliveryResult.Data,
+                    Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
+                };
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {phoneNumber}: {ex.Message}");
+                result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
+            }
             if (!result.Sent && !string.IsNullOrEmpty(result.Error))
             {
                 _notifier.Notify(result.Error);
@@ -261,30 +285,45 @@ namespace ClinicsManagementService.Services.Application
         public async Task<List<MessageSendResult>> SendMessagesAsync(string phoneNumber, IEnumerable<string> messages)
         {
             var browserSession = _browserSessionFactory();
-            await _whatsappService.PrepareSessionAsync(browserSession);
+            // browserSession = await _sessionManager.GetOrCreateSessionAsync();
             var results = new List<MessageSendResult>();
             foreach (var message in messages)
             {
-                var result = await AsyncExecutionHelper.TryExecuteAsync<MessageSendResult>(
-                    async () =>
-                    {
-                        var deliveryResult = await _whatsappService.ExecuteWithRetryAsync(
-                            () => _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession),
-                            maxAttempts: 3,
-                            shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
-                            isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
-                        return new MessageSendResult
+                MessageSendResult result;
+                try
+                {
+                    var deliveryResult = await _retryService.ExecuteWithRetryAsync(
+                        async () =>
                         {
-                            Phone = phoneNumber,
-                            Message = message,
-                            Sent = deliveryResult.IsSuccess == true,
-                            Error = deliveryResult.ResultMessage,
-                            IconType = deliveryResult.Data,
-                            Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
-                        };
-                    },
-                    new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failed },
-                    $"SendMessageWithIconTypeAsync for {phoneNumber}", _notifier);
+                            browserSession = await _sessionManager.GetOrCreateSessionAsync();
+                            try
+                            {
+                                return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
+                            }
+                            finally
+                            {
+                                await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                            }
+                        },
+                        maxAttempts: WhatsAppConfiguration.DefaultMaxRetryAttempts,
+                        shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
+                        isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
+
+                    result = new MessageSendResult
+                    {
+                        Phone = phoneNumber,
+                        Message = message,
+                        Sent = deliveryResult.IsSuccess == true,
+                        Error = deliveryResult.ResultMessage,
+                        IconType = deliveryResult.Data,
+                        Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {phoneNumber}: {ex.Message}");
+                    result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
+                }
                 if (!result.Sent && !string.IsNullOrEmpty(result.Error))
                 {
                     _notifier.Notify(result.Error);
@@ -310,7 +349,7 @@ namespace ClinicsManagementService.Services.Application
         {
             if (sent)
             {
-                return MessageOperationStatus.Succeeded;
+                return MessageOperationStatus.Success;
             }
 
             if (error?.Contains("PendingQR:") == true || error?.Contains("WhatsApp authentication required") == true)
@@ -328,7 +367,7 @@ namespace ClinicsManagementService.Services.Application
                 return MessageOperationStatus.Waiting;
             }
 
-            return MessageOperationStatus.Failed;
+            return MessageOperationStatus.Failure;
         }
     }
 }

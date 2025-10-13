@@ -209,7 +209,7 @@ namespace ClinicsManagementService.Controllers
                 if (initial.IsPendingQr())
                 {
                     var totalMs = WhatsAppConfiguration.DefaultAuthenticationWaitMs;
-                    var intervalMs = WhatsAppConfiguration.defaultProgressChecksDelayMs;
+                    var intervalMs = WhatsAppConfiguration.defaultChecksFrequencyDelayMs;
                     _notifier.Notify($"🔔 Authentication pending - will wait up to {totalMs / 1000} seconds for user action.");
 
                     var start = DateTime.UtcNow;
@@ -319,7 +319,7 @@ namespace ClinicsManagementService.Controllers
                             return true;
                     }
                     return false;
-                }, WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, WhatsAppConfiguration.defaultProgressChecksDelayMs);
+                }, WhatsAppConfiguration.DefaultMaxMonitoringWaitMs, WhatsAppConfiguration.defaultChecksFrequencyDelayMs);
 
                 if (waitForAuth.IsSuccess == true)
                 {

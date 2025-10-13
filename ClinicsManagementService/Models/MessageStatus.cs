@@ -1,3 +1,4 @@
+using System.Runtime.Serialization;
 using Microsoft.Playwright;
 
 namespace ClinicsManagementService.Models
@@ -7,10 +8,15 @@ namespace ClinicsManagementService.Models
     /// </summary>
     public enum MessageOperationStatus
     {
-        Succeeded,
-        Failed,
+        [EnumMember(Value = "Success")]
+        Success,
+        [EnumMember(Value = "Failure")]
+        Failure,
+        [EnumMember(Value = "Waiting")]
         Waiting,
+        [EnumMember(Value = "PendingQR")]
         PendingQR,
+        [EnumMember(Value = "PendingNET")]
         PendingNET
     }
 

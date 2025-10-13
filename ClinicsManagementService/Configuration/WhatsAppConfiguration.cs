@@ -6,8 +6,9 @@ namespace ClinicsManagementService.Configuration
     public static class WhatsAppConfiguration
     {
         #region Timeouts and Intervals
-        public const int DefaultTaskTimeoutMs = 150000; // timeout for progress
-        public const int defaultProgressChecksDelayMs = 1000; // delay between progress checks in waiting loops
+    public const int DefaultTaskTimeoutMs = 150000; // timeout for progress
+    public const int defaultChecksFrequencyDelayMs = 1000; // delay between progress checks in waiting loops
+    public const int DefaultSelectorTimeoutMs = 20000; // default timeout for selector-based waits
         public const int DefaultMaxRetryErrorDialog = 10; // Max retries for error dialog detection, high frequency check
         public const int DefaultMaxRetryAttempts = 3;
         public const int DefaultMaxMonitoringWaitMs = 900000; // 15 minutes in ms, used as a safe global cap for monitoring progressbar waits
