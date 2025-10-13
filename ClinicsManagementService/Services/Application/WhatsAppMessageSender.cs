@@ -18,13 +18,15 @@ namespace ClinicsManagementService.Services.Application
         private readonly INotifier _notifier;
         private readonly IRetryService _retryService;
         private readonly IWhatsAppSessionManager _sessionManager;
-        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService, IWhatsAppSessionManager sessionManager)
+        private readonly IWhatsAppUIService _whatsappUIService;
+        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService, IWhatsAppSessionManager sessionManager, IWhatsAppUIService whatsappUIService)
         {
             _whatsappService = whatsappService;
             _browserSessionFactory = browserSessionFactory;
             _notifier = notifier;
             _retryService = retryService;
             _sessionManager = sessionManager;
+            _whatsappUIService = whatsappUIService;
         }
 
         // Send multiple phone/message pairs with random throttling between each send, returning MessageSendResult for each.
@@ -117,10 +119,10 @@ namespace ClinicsManagementService.Services.Application
                 {
                     int delay = Random.Shared.Next(minDelayMs, maxDelayMs + 1);
                     _notifier.Notify($"[{counter + 1}/{total}] Throttling for {delay}ms before next send...");
-                    OperationResult<string?>? monitoringResult = null;
+                    OperationResult<bool>? monitoringResult = null;
                     try
                     {
-                        monitoringResult = await ContinuousMonitoringAsync(browserSession, delay);
+                        monitoringResult = await _whatsappUIService.ContinuousMonitoringAsync(browserSession, delay);
                     }
                     catch (Exception ex)
                     {
@@ -151,88 +153,6 @@ namespace ClinicsManagementService.Services.Application
             await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             _notifier.Notify("Bulk send process completed.");
             return results;
-        }
-
-        /// <summary>
-        /// Adapter to domain ContinuousMonitoringAsync so application layer can call it with same semantics.
-        /// Returns OperationResult<string?> with ResultMessage populated from underlying bool result states.
-        /// </summary>
-        private async Task<OperationResult<string?>?> ContinuousMonitoringAsync(IBrowserSession browserSession, int timeoutMs = 5000)
-        {
-            try
-            {
-                // Check for progress bars
-                foreach (var progressSelector in WhatsAppConfiguration.ProgressBarSelectors)
-                {
-                    try
-                    {
-                        var progress = await browserSession.QuerySelectorAsync(progressSelector);
-                        if (progress != null)
-                        {
-                            _notifier.Notify($"⏳ Progress bar detected during monitoring ({progressSelector}) - waiting for completion");
-                            try
-                            {
-                                await browserSession.WaitForSelectorAsync(progressSelector, timeoutMs, WaitForSelectorState.Detached);
-                                _notifier.Notify($"✅ Progress bar disappeared ({progressSelector})");
-                            }
-                            catch (Exception ex)
-                            {
-                                if (_retryService.IsBrowserClosedException(ex)) throw;
-                                _notifier.Notify($"⚠️ Progress bar wait timeout: {ex.Message}");
-                            }
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (_retryService.IsBrowserClosedException(ex)) throw;
-                        _notifier.Notify($"⚠️ Error checking progress selector {progressSelector}: {ex.Message}");
-                    }
-                }
-
-                // Check for auth
-                foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
-                {
-                    try
-                    {
-                        var authElement = await browserSession.QuerySelectorAsync(selector);
-                        if (authElement != null)
-                        {
-                            _notifier.Notify($"🔐 Authentication issue detected during monitoring ({selector})");
-                            return OperationResult<string?>.PendingQR("WhatsApp authentication required. Please scan QR code.");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (_retryService.IsBrowserClosedException(ex)) throw;
-                        _notifier.Notify($"⚠️ Error checking auth selector {selector}: {ex.Message}");
-                    }
-                }
-
-                // Check for logout indicators
-                try
-                {
-                    var currentUrl = await browserSession.GetUrlAsync();
-                    if (currentUrl.Contains("post_logout") || currentUrl.Contains("logout_reason"))
-                    {
-                        _notifier.Notify("🔐 Logout detected during monitoring - session needs authentication");
-                        return OperationResult<string?>.PendingQR("WhatsApp session expired. Please scan QR code.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    if (_retryService.IsBrowserClosedException(ex)) throw;
-                    _notifier.Notify($"⚠️ Error checking URL during monitoring: {ex.Message}");
-                }
-
-                return null;
-            }
-            catch (Exception ex)
-            {
-                if (_retryService.IsBrowserClosedException(ex)) throw;
-                _notifier.Notify($"⚠️ Error in continuous monitoring: {ex.Message}");
-                return null;
-            }
         }
 
         public async Task<bool> SendMessageAsync(string phoneNumber, string message)

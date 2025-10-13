@@ -6,10 +6,10 @@ namespace ClinicsManagementService.Configuration
     public static class WhatsAppConfiguration
     {
         #region Timeouts and Intervals
-    public const int DefaultTaskTimeoutMs = 150000; // timeout for progress
-    public const int defaultChecksFrequencyDelayMs = 1000; // delay between progress checks in waiting loops
-    public const int DefaultSelectorTimeoutMs = 20000; // default timeout for selector-based waits
-        public const int DefaultMaxRetryErrorDialog = 10; // Max retries for error dialog detection, high frequency check
+        public const int DefaultTaskTimeoutMs = 150000; // timeout for progress
+        public const int defaultChecksFrequencyDelayMs = 1000; // delay between progress checks in waiting loops
+        public const int DefaultSelectorTimeoutMs = 20000; // default timeout for selector-based waits
+        public const int DefaultMaxRetryErrorDialog = 20; // Max retries for error dialog detection, high frequency check
         public const int DefaultMaxRetryAttempts = 3;
         public const int DefaultMaxMonitoringWaitMs = 900000; // 15 minutes in ms, used as a safe global cap for monitoring progressbar waits
         public const int DefaultAuthenticationWaitMs = 300000; // 5 minutes for user to scan QR and authenticate
@@ -25,13 +25,25 @@ namespace ClinicsManagementService.Configuration
 
         public static readonly string[] SendButtonSelectors = new[]
         {
+            // Specific selector from provided HTML: data-icon 'wds-ic-send-filled'
+            "span[data-icon='wds-ic-send-filled']",
+            "div[role='button'] span[data-icon='wds-ic-send-filled']",
+            // "div[role='button'][tabindex='0']",
+            // "button[tabindex='0']",
+            "[data-icon='wds-ic-send-filled']",
+
+            // WhatsApp web default send icon/button variations
             "button[aria-label='Send']",
             "button[data-testid='send']",
             "span[data-icon='send']",
             "button[role='button'] span[data-icon='send']",
             "div[role='button'] span[data-icon='send']",
             "div[role='button'][data-testid='send']",
-            "button[type='submit']"
+            "button[type='submit']",
+
+            // fallback: any element with a send-related aria-label or title
+            "[aria-label*='send' i]",
+            "[title*='send' i]",
         };
 
         public static readonly string[] ProgressBarSelectors = new[]
@@ -56,6 +68,25 @@ namespace ClinicsManagementService.Configuration
             "div[role='listbox']", // chat list container
             "header", // WhatsApp header
             "footer" // WhatsApp footer
+        };
+
+        // Selectors for the "Starting chat" modal/dialog shown by WhatsApp Web
+        public static readonly string[] StartingChatDialogSelectors = new[]
+        {
+            // Strong, attribute-based matches
+            "div[data-animate-modal-popup='true'][aria-label='Starting chat']",
+            "div[aria-label='Starting chat']",
+
+            // Playwright-friendly text/has-text checks
+            "div[data-animate-modal-body='true'] h1:has-text('Starting chat')",
+            "text='Starting chat'",
+
+            // Action/button presence inside the dialog
+            "div[data-animate-modal-popup='true'] button:has-text('Cancel')",
+            "button:has-text('Cancel')",
+
+            "div[data-animate-modal-popup='true'] svg[role='status']", // Loading indicator inside the dialog (spinner)
+            "div[data-animate-modal-body='true']", // Modal body container
         };
         #endregion
 

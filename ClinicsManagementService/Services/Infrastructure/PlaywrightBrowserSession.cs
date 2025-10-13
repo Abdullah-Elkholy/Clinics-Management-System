@@ -167,7 +167,7 @@ namespace ClinicsManagementService.Services
             });
         }
         // Waits for a selector to reach a specific state (Visible, Attached, Detached).
-        public async Task WaitForSelectorAsync(string selector, int? timeout = null, WaitForSelectorState state = WaitForSelectorState.Visible)
+        public async Task WaitForSelectorAsync(string selector, int timeout = WhatsAppConfiguration.DefaultSelectorTimeoutMs, WaitForSelectorState state = WaitForSelectorState.Visible)
         {
             await WithPageRetryAsync(async () =>
             {
@@ -179,7 +179,7 @@ namespace ClinicsManagementService.Services
                         selector,
                         new PageWaitForSelectorOptions
                         {
-                            Timeout = (timeout.HasValue && timeout > 0) ? timeout : null,
+                            Timeout = (timeout > 0) ? timeout : 20000,
                             State = state
                         }
                     );

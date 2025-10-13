@@ -68,7 +68,7 @@ namespace ClinicsManagementService.Services
                 }
 
                 // Check for WhatsApp error dialog (e.g., number not registered) before attempting to type/send
-                var hasWhatsApp = await _retryService.ExecuteWithRetryAsync<bool>(
+                var hasWhatsApp = await _retryService.ExecuteWithRetryAsync(
                     () => CheckForWhatsAppErrorDialog(browserSession),
                     maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
                     shouldRetryResult: r => r?.IsWaiting() == true,
@@ -149,7 +149,11 @@ namespace ClinicsManagementService.Services
                     try
                     {
                         sendButton = await browserSession.QuerySelectorAsync(sendSelector);
-                        if (sendButton != null) break;
+                        if (sendButton != null)
+                        {
+                            _notifier.Notify($"Found send button, using selector: {sendSelector}.");
+                            break;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -163,13 +167,18 @@ namespace ClinicsManagementService.Services
 
                 if (sendButton != null)
                 {
-                    _notifier.Notify("🔘 Clicking send button...");
                     await sendButton.ClickAsync();
+                    _notifier.Notify("🔘 Clicked send button.");
                 }
-                else
+                else if (!string.IsNullOrEmpty(WhatsAppConfiguration.SendEnterKey))
                 {
                     _notifier.Notify("↩️ Send button not found, pressing Enter...");
                     await input.PressAsync(WhatsAppConfiguration.SendEnterKey);
+                }
+                else
+                {
+                    _notifier.Notify("❌ Send button not found and no Enter key configured.");
+                    return OperationResult<string?>.Waiting("Send button not found and no Enter key configured.");
                 }
 
                 // Wait for message status icon
@@ -434,6 +443,19 @@ namespace ClinicsManagementService.Services
         {
             try
             {
+                foreach (var selector in WhatsAppConfiguration.StartingChatDialogSelectors)
+                {
+                    var selectorDialog = await browserSession.QuerySelectorAsync(selector);
+                    if (selectorDialog != null)
+                    {
+                        _notifier.Notify("Dialog element found on page, checking further...");
+                        await browserSession.WaitForSelectorAsync(selector, state: WaitForSelectorState.Detached);
+                        // var dialogHTML = await selectorDialog.InnerHTMLAsync();
+                        // _notifier.Notify($"Dialog HTML: {dialogHTML}");
+                        break; // Found a dialog, wait for it to go away after disposal
+                    }
+                }
+
                 // Check if we have a chat textbox (indicates successful navigation to a valid WhatsApp number)
                 foreach (var selector in WhatsAppConfiguration.InputFieldSelectors)
                 {

@@ -9,7 +9,7 @@ namespace ClinicsManagementService.Services.Interfaces
     {
         Task InitializeAsync();
         Task NavigateToAsync(string url);
-        Task WaitForSelectorAsync(string selector, int? timeout = null, WaitForSelectorState state = WaitForSelectorState.Visible);
+        Task WaitForSelectorAsync(string selector, int timeout = WhatsAppConfiguration.DefaultSelectorTimeoutMs, WaitForSelectorState state = WaitForSelectorState.Visible);
         Task<IElementHandle?> QuerySelectorAsync(string selector);
         Task<IReadOnlyList<IElementHandle>> QuerySelectorAllAsync(string selector);
         Task<string> GetUrlAsync();
