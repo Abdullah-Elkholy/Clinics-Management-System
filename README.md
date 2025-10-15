@@ -47,7 +47,18 @@ This project implements **Clean Architecture** with clear separation of concerns
    ```sh
    dotnet --version
    ```
+1. **.NET 8.0 SDK**  
+   [Download](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
+   ```sh
+   dotnet --version
+   ```
 
+2. **Node.js** (required for Playwright)  
+   [Download](https://nodejs.org/)
+   ```sh
+   node -v
+   npm -v
+   ```
 2. **Node.js** (required for Playwright)  
    [Download](https://nodejs.org/)
    ```sh
@@ -66,7 +77,20 @@ This project implements **Clean Architecture** with clear separation of concerns
    dotnet build
    pwsh bin/Debug/net8.0/playwright.ps1 install
    ```
+3. **Playwright**  
+   Install Playwright and browsers:
+   ```sh
+   dotnet tool install --global Microsoft.Playwright.CLI
+   playwright install
+   ```
+   Or, if using NuGet:
+   ```sh
+   dotnet build
+   pwsh bin/Debug/net8.0/playwright.ps1 install
+   ```
 
+4. **Git**  
+   [Download](https://git-scm.com/downloads)
 4. **Git**  
    [Download](https://git-scm.com/downloads)
 
@@ -79,7 +103,10 @@ This project implements **Clean Architecture** with clear separation of concerns
    git clone https://github.com/Abdullah-Elkholy/ClinicsManagementSln.git
    cd ClinicsManagementSln/ClinicsManagementService
    ```
+   ```
 
+2. **Restore dependencies**
+   ```sh
 2. **Restore dependencies**
    ```sh
    dotnet restore
@@ -87,24 +114,32 @@ This project implements **Clean Architecture** with clear separation of concerns
 
 3. **Build the project**
    ```sh
+   ```sh
    dotnet build
    ```
 
 4. **Install Playwright browsers**
    ```sh
+   ```sh
    playwright install
+   # or
    # or
    pwsh bin/Debug/net8.0/playwright.ps1 install
    ```
 
 5. **Configure appsettings.json**  
    Edit `appsettings.json` for logging and allowed hosts.
+5. **Configure appsettings.json**  
+   Edit `appsettings.json` for logging and allowed hosts.
 
 6. **Run the Web API**
+   ```sh
    ```sh
    dotnet run
    ```
 
+7. **Test the API**  
+   Use Swagger UI (`/swagger`), Postman, Insomnia, or `curl`.
 7. **Test the API**  
    Use Swagger UI (`/swagger`), Postman, Insomnia, or `curl`.
 
@@ -117,8 +152,25 @@ This project implements **Clean Architecture** with clear separation of concerns
 | POST   | `/Messaging/send`                 | Send a single message (query params)        |
 | POST   | `/BulkMessaging/send-single`      | Send a single message (JSON body)           |
 | POST   | `/BulkMessaging/send-bulk`        | Send bulk messages (JSON body, throttling)  |
+| Method | Endpoint                          | Description                                 |
+|--------|-----------------------------------|---------------------------------------------|
+| POST   | `/Messaging/send`                 | Send a single message (query params)        |
+| POST   | `/BulkMessaging/send-single`      | Send a single message (JSON body)           |
+| POST   | `/BulkMessaging/send-bulk`        | Send bulk messages (JSON body, throttling)  |
 
 ### Example Requests
+
+**Single Message (Query)**
+```sh
+curl -X POST "http://localhost:5185/Messaging/send?phone=+1234567890&message=Hello%20from%20API!"
+```
+
+**Single Message (Body)**
+```sh
+curl -X POST "http://localhost:5185/BulkMessaging/send-single" \
+  -H "Content-Type: application/json" \
+  -d '{"Phone": "+1234567890", "Message": "Hello"}'
+```
 
 **Single Message (Query)**
 ```sh

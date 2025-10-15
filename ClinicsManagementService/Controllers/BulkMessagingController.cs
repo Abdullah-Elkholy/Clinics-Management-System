@@ -68,6 +68,7 @@ namespace ClinicsManagementService.Controllers
          with random throttling between sends using a random number between minDelayMs and maxDelayMs in MilliSeconds. */
         [HttpPost("send-bulk")]
         public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request, [FromQuery] int minDelayMs = 1000, [FromQuery] int maxDelayMs = 3000)
+        public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request, [FromQuery] int minDelayMs = 1000, [FromQuery] int maxDelayMs = 3000)
         {
             var bulkValidation = _validationService.ValidateBulkRequest(request);
             if (!bulkValidation.IsValid)
