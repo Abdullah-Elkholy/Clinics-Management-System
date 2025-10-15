@@ -1,4 +1,7 @@
-public interface INotifier
+namespace ClinicsManagementService.Services.Interfaces
 {
-    void Notify(string message);
+    public interface INotifier
+    {
+        void Notify(string message);
+    }
 }

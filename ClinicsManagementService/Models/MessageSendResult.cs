@@ -7,5 +7,6 @@ namespace ClinicsManagementService.Models
         public bool Sent { get; set; } = false;
         public string? Error { get; set; }
         public string? IconType { get; set; }
+        public MessageOperationStatus Status { get; set; }
     }
 }
