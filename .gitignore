@@ -1,4 +1,4 @@
-# Build results
+# Comprehensive .gitignore for Clinics-Management-System
 bin/
 obj/
 [Bb]uild/
@@ -11,19 +11,11 @@ whatsapp-session/
 # Debugging screenshot from inside whatsapp to ensure message is sent successfully or not
 Screenshots/
 
-# Visual Studio cache
-.vs/
-*.vsidx
-.vscode/
-
 # User-specific files
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
-
-# Rider / JetBrains
-.idea/
 
 # Logs
 *.log
@@ -46,12 +38,55 @@ Thumbs.db
 publish/
 out/
 
-# Configuration files (user secrets, should not be pushed)
-appsettings.*.json
-# but keep appsettings.json
-!appsettings.json
+# # Configuration files (user secrets, should not be pushed)
+# appsettings.*.json
+# # but keep appsettings.json
+# !appsettings.json
 
-# Docker
-*.dockerignore
-Dockerfile.*
-docker-compose*.yml
+# # Docker
+# # Compose overrides and local compose files
+# docker-compose.override.yml
+# docker-compose.*.local.yml
+
+# # Dockerfiles and context
+# .docker/
+# *.tar
+
+### Additional ignore rules (appended)
+
+# Node / Next.js
+apps/web/node_modules/
+node_modules/
+.next/
+apps/web/.next/
+out/
+dist/
+build/
+.next/cache
+
+# # env files
+# .env
+# .env.*.local
+# .env.local
+
+# logs & coverage
+logs/
+*.log
+coverage/
+coverage/**
+TestResults/
+
+# # Docker
+# docker-compose.override.yml
+# .docker/
+# *.tar
+
+# Editors
+.history/
+.idea/
+
+# Binaries
+*.dll
+*.exe
+*.pdb
+

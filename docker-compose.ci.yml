@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: 'Y'
+      SA_PASSWORD: 'Your_strong!Passw0rd'
+    ports:
+      - '1433:1433'
+    healthcheck:
+      test: 
+        ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "Your_strong!Passw0rd", "-Q", "select 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+# Usage:
+# docker-compose -f docker-compose.ci.yml up -d
+# Wait for health: docker inspect --format='{{json .State.Health}}' <container_id>
+# In CI you can use this container and set E2E_CONNECTION to:
+# Server=localhost,1433;Database=ClinicsDb;User Id=sa;Password=Your_strong!Passw0rd;TrustServerCertificate=True;
