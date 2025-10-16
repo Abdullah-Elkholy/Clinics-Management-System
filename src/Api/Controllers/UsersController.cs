@@ -2,12 +2,13 @@ using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Microsoft.EntityFrameworkCore;
-
+using Microsoft.AspNetCore.Authorization;
+using Clinics.Api.DTOs;
 namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
+    [Authorize(Roles = "primary_admin,secondary_admin")]
     public class UsersController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -18,14 +19,6 @@ namespace Clinics.Api.Controllers
 
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id) => Ok(new { success = true, data = await _db.Users.FindAsync(id) });
-
-        public class CreateUserRequest
-        {
-            public string Username { get; set; } = null!;
-            public string FullName { get; set; } = null!;
-            public string Role { get; set; } = "user";
-            public string? Password { get; set; }
-        }
 
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateUserRequest req)

@@ -23,12 +23,12 @@ public class UsersControllerTests
     {
         using var db = CreateInMemoryDb();
         var controller = new UsersController(db);
-        var user = new User { Username = "u1", FullName = "U One" };
-        var createResult = await controller.Create(user) as Microsoft.AspNetCore.Mvc.OkObjectResult;
+    var req = new Clinics.Api.DTOs.CreateUserRequest { Username = "u1", FullName = "U One" };
+    var createResult = await controller.Create(req) as Microsoft.AspNetCore.Mvc.OkObjectResult;
         createResult.Should().NotBeNull();
         var getAll = await controller.GetAll() as Microsoft.AspNetCore.Mvc.OkObjectResult;
         getAll.Should().NotBeNull();
-        var data = ((dynamic)getAll.Value).data as System.Collections.Generic.List<User>;
+    var data = ((dynamic)getAll.Value).data as System.Collections.Generic.List<Clinics.Domain.User>;
         data.Should().ContainSingle(u => u.Username == "u1");
     }
 }

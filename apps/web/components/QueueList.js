@@ -7,8 +7,8 @@ export default function QueueList({ queues, selectedQueue, onSelect }){
       <div className="space-y-2">
         {queues.map(q=> (
           <button key={q.id} onClick={()=>onSelect(q.id)} className={`w-full text-right p-3 rounded border ${selectedQueue===q.id ? 'bg-blue-50 border-blue-300' : ''}`}>
-            <div className="font-medium">{q.doctorName}</div>
-            <div className="text-xs text-gray-500">{q.description}</div>
+            <div className="font-medium">{q.doctorName ?? q.name ?? q.title}</div>
+            <div className="text-xs text-gray-500">{q.description ?? q.summary}</div>
           </button>
         ))}
       </div>

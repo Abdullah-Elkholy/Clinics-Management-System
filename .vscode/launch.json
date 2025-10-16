@@ -1,49 +1,66 @@
 {
     "configurations": 
     [
+    {
+      "name": "Run WhatsApp Service (dotnet)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-whatsapp",
+      "program": "${workspaceFolder}/ClinicsManagementService/bin/Debug/net8.0/WhatsAppMessagingService.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/ClinicsManagementService",
+      "stopAtEntry": false,
+      "console": "integratedTerminal",
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5100"
+      },
+      "launchBrowser": {
+        "enabled": true
+      }
+    },
         {
-            "name": "Run WhatsApp API (dotnet)",
-            "type": "dotnet",
-            "request": "launch"
-        },
-        {
-            "name": "Run Backend API (dotnet)",
-            "type": "coreclr",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/Api/bin/Debug/net8.0/Clinics.Api.dll",
-            "args": [],
-            "cwd": "${workspaceFolder}/src/Api",
-            "stopAtEntry": false,
-            "console": "integratedTerminal",
-            "env": 
-            {
-                "USE_LOCAL_SQL": "true",
-                "LocalSqlServer": "Server=BODYELKHOLY\\SQL2022;Database=ClinicsDb;User Id=sa;Password=123456;TrustServerCertificate=True;",
-                "SEED_ADMIN": "true",
-                "ASPNETCORE_URLS": "http://localhost:5000",
-                "ASPNETCORE_ENVIRONMENT": "Development"
-            }
-        },
-        {
-            "name": "Run Frontend (Next.js)",
-            "type": "node",
-            "request": "launch",
-            "cwd": "${workspaceFolder}/apps/web",
-            "runtimeExecutable": "npm",
-            "runtimeArgs": ["run", "dev"],      
-            "console": "integratedTerminal",
-            "env": {}
-        }
+      "name": "Run Backend API (dotnet)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build-api",
+      "program": "${workspaceFolder}/src/Api/bin/Debug/net8.0/Clinics.Api.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}/src/Api",
+      "stopAtEntry": false,
+      "console": "integratedTerminal",
+      "env": {
+        "USE_LOCAL_SQL": "true",
+        "LocalSqlServer": "${env:LOCAL_SQL_CONN}",
+        "SEED_ADMIN": "true",
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:5000"
+      },
+      "launchBrowser": {
+        "enabled": true
+      }
+    },
+    {
+      "name": "Run Frontend (Next.js)",
+      "type": "node",
+      "request": "launch",
+      // "preLaunchTask": "start-frontend",
+      "cwd": "${workspaceFolder}/apps/web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],      
+      "console": "integratedTerminal",
+      "env": {}
+    }
   ],
   "compounds": 
   [
     {
       "name": "Run Backend API + Frontend",
-      "configurations": [ "Run Backend API (dotnet)", "Run Frontend (Next.js)" ]
+      "configurations": [ "Run Frontend (Next.js)", "Run Backend API (dotnet)" ]
     },
     {
       "name": "Run All",
-      "configurations": [ "Run Backend API (dotnet)", "Run WhatsApp API (dotnet)", "Run Frontend (Next.js)" ]
+      "configurations": [ "Run Frontend (Next.js)", "Run Backend API (dotnet)", "Run WhatsApp Service (dotnet)" ]
     }
   ]
 }

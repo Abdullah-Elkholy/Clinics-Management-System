@@ -5,15 +5,11 @@ const api = axios.create({
   withCredentials: true
 })
 
-// attach auth header from localStorage if present
-export function setAuth(token) {
-  if (token) api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-  else delete api.defaults.headers.common['Authorization']
-}
+// attach auth header from localStorage if present (single implementation below)
 
 // login helper
 export async function login(username, password) {
-  const res = await api.post('/api/auth/login', { username, password })
+  const res = await api.post('/api/Auth/login', { username, password })
   if (res?.data?.success) {
     const data = res.data.data
     // support both accessToken and AccessToken casing returned by different endpoints
@@ -82,6 +78,11 @@ api.interceptors.response.use(
     return Promise.reject(err)
   }
 )
+
+export function setAuth(token) {
+  if (token) api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+  else delete api.defaults.headers.common['Authorization']
+}
 
 export default api
 

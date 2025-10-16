@@ -25,8 +25,62 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] LoginRequest req)
+    public async Task<IActionResult> Login([FromBody] LoginRequest? req)
         {
+            // If model binding failed (invalid JSON or wrong content-type), attempt a tolerant fallback:
+            // - enable request buffering so we can read the body even after model binding attempted to consume it
+            // - if the raw body looks like form-encoded (username=...), parse that
+            // - if it's JSON, try deserializing with case-insensitive option
+            if (req == null)
+            {
+                try
+                {
+                    Request.EnableBuffering();
+                }
+                catch { /* No-op if buffering already enabled */ }
+
+                // rewind and read raw body
+                Request.Body.Position = 0;
+                using (var sr = new System.IO.StreamReader(Request.Body, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
+                {
+                    var bodyStr = await sr.ReadToEndAsync();
+                    // rewind so other middleware won't be broken
+                    Request.Body.Position = 0;
+
+                    if (!string.IsNullOrWhiteSpace(bodyStr))
+                    {
+                        // If looks like JSON, try to deserialize
+                        bodyStr = bodyStr.Trim();
+                        if (bodyStr.StartsWith("{") || bodyStr.StartsWith("["))
+                        {
+                            try
+                            {
+                                req = System.Text.Json.JsonSerializer.Deserialize<LoginRequest>(bodyStr, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                            }
+                            catch { /* ignore and fallback to form parse */ }
+                        }
+
+                        // If still null and body looks like form data (username=...&password=...)
+                        if (req == null && (bodyStr.Contains('=') || bodyStr.Contains('&')))
+                        {
+                            try
+                            {
+                                var parsed = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(bodyStr);
+                                var username = parsed.TryGetValue("username", out var u) ? u.ToString() : parsed.TryGetValue("Username", out var U) ? U.ToString() : null;
+                                var password = parsed.TryGetValue("password", out var p) ? p.ToString() : parsed.TryGetValue("Password", out var P) ? P.ToString() : null;
+                                if (!string.IsNullOrEmpty(username)) req = new LoginRequest { Username = username, Password = password };
+                            }
+                            catch { /* ignore */ }
+                        }
+                    }
+                }
+            }
+
+            if (req == null)
+            {
+                return BadRequest(new { success = false, errors = new[] { new { code = "InvalidRequest", message = "Invalid or missing request body. Expected JSON { \"username\":..., \"password\":... } or form-encoded username=...&password=..." } } });
+            }
+
             var user = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Username == req.Username);
             if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
@@ -34,7 +88,7 @@ namespace Clinics.Api.Controllers
             var valid = false;
             var hasher = new PasswordHasher<Domain.User>();
             if (string.IsNullOrEmpty(user.PasswordHash) && req.Password == "admin") valid = true;
-            else if (!string.IsNullOrEmpty(user.PasswordHash))
+            else if (!string.IsNullOrEmpty(user.PasswordHash) && req.Password != null)
             {
                 var verification = hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password);
                 valid = verification != PasswordVerificationResult.Failed;

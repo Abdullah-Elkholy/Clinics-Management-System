@@ -4,6 +4,8 @@ import QueueList from '../components/QueueList'
 import PatientsTable from '../components/PatientsTable'
 import TemplatesSelect from '../components/TemplatesSelect'
 import AddPatientsModal from '../components/AddPatientsModal'
+import CSVUpload from '../components/CSVUpload'
+import MessageSelectionModal from '../components/MessageSelectionModal'
 import Toast, { showToast } from '../components/Toast'
 
 export default function Dashboard(){
@@ -99,6 +101,22 @@ export default function Dashboard(){
     }
   }
 
+  async function handleReorder(fromIdx, toIdx){
+    // optimistic reorder in UI
+    setPatients(ps=>{
+      const arr = [...ps]
+      const [item] = arr.splice(fromIdx,1)
+      arr.splice(toIdx,0,item)
+      // recompute positions locally
+      return arr.map((p, i)=> ({ ...p, position: i+1 }))
+    })
+    // send reorder to server (simple approach: tell server new positions)
+    try{
+      const positions = patients.map((p, i)=> ({ id: p.id, position: i+1 }))
+      await api.post(`/api/queues/${selectedQueue}/reorder`, { positions })
+    }catch(e){ showToast('فشل إعادة الترتيب') }
+  }
+
   const isAdmin = currentUser?.role && ['primary_admin','secondary_admin'].includes(currentUser.role)
 
   const [activePanel, setActivePanel] = useState('welcome') // 'welcome' | 'messages' | 'management' | 'queue'
@@ -118,7 +136,7 @@ export default function Dashboard(){
           </div>
         </div>
 
-        <div className="col-span-3">
+  <main role="main" className="col-span-3">
           {activePanel==='welcome' && (
             <div className="p-8 text-center">
               <h2 className="text-2xl font-bold mb-4">مرحباً بك في نظام إدارة العيادات</h2>
@@ -135,7 +153,10 @@ export default function Dashboard(){
                   <button onClick={()=>setModalOpen(true)} className="bg-green-600 text-white px-4 py-2 rounded">إضافة مريض</button>
                 </div>
               </div>
-              {loadingPatients ? <div>جارٍ تحميل المرضى...</div> : <PatientsTable patients={patients} onToggle={togglePatient} />}
+              {loadingPatients ? <div>جارٍ تحميل المرضى...</div> : <PatientsTable patients={patients} onToggle={togglePatient} onReorder={handleReorder} />}
+              <div className="mt-4">
+                <CSVUpload onParsed={(rows)=> handleAddPatients(rows)} />
+              </div>
             </>
           )}
 
@@ -173,7 +194,7 @@ export default function Dashboard(){
             </div>
           )}
 
-        </div>
+  </main>
       </div>
 
       <AddPatientsModal open={modalOpen} onClose={()=>setModalOpen(false)} onAdd={handleAddPatients} />

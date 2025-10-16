@@ -324,3 +324,34 @@ This project is licensed under the MIT License.
 - [Playwright](https://playwright.dev/) for browser automation
 - [.NET 8.0](https://dotnet.microsoft.com/) for the robust framework
 - Clean Architecture principles for maintainable code
+
+---
+
+## Running the full stack locally (quick)
+
+This repository contains three main runnable parts:
+
+- Backend API: `src/Api` (runs on http://localhost:5000)
+- WhatsApp service: `ClinicsManagementService` (runs on http://localhost:5100)
+- Frontend: `apps/web` (Next.js, runs on http://localhost:3000)
+
+Recommended quick start (PowerShell):
+
+```powershell
+# from repository root
+dotnet build src/Api/Clinics.Api.csproj -c Debug
+dotnet build ClinicsManagementService/WhatsAppMessagingService.csproj -c Debug
+# start frontend in its own terminal
+cd apps/web; npm install; npm run dev
+
+# then run the backend and whatsapp service (separate terminals)
+dotnet run --project src/Api/Clinics.Api.csproj
+dotnet run --project ClinicsManagementService/WhatsAppMessagingService.csproj
+```
+
+Environment variables / secrets
+
+- Copy `.env.local.example` to `.env.local` and set `LOCAL_SQL_CONN` (or set the environment variable in your shell). The VS Code launch configurations reference `${env:LOCAL_SQL_CONN}` for the DB connection string.
+- Alternatively, use `dotnet user-secrets` for secure per-developer secrets.
+
+See `apps/web/README.md` for frontend-specific instructions.

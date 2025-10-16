@@ -21,7 +21,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services
 builder.Services.AddControllers().AddJsonOptions(opt =>
 {
+    // Keep property naming as-is on serialization but accept case-insensitive property names from clients
     opt.JsonSerializerOptions.PropertyNamingPolicy = null;
+    opt.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -53,7 +55,11 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        // When AllowCredentials() is used you must explicitly list allowed origins.
+        policy.WithOrigins("http://localhost:3000")
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
@@ -105,15 +111,15 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
     Authorization = new[] { new DashboardAuthorizationFilter() }
 });
 
+// Middleware ordering: Routing -> CORS -> Auth -> Map controllers
+app.UseRouting();
 app.UseCors();
 app.UseHttpsRedirection();
-app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
-
 // Cookie policy for refresh token (HttpOnly cookie usage planned)
 app.UseCookiePolicy();
+app.MapControllers();
 
 // Seed sample data only when SEED_ADMIN=true (to avoid accidental production seeding)
 try
