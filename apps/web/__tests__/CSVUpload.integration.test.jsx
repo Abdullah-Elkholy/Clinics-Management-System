@@ -16,14 +16,16 @@ test('CSV upload parse flow adds patients', async ()=>{
   const queueBtn = await screen.findByText(/الطابور الأول/i)
   fireEvent.click(queueBtn)
 
-  // create CSV: fullName,phoneNumber
+  // Click CSV button to show modal 
+  const csvButton = screen.getByRole('button', { name: 'رفع ملف المرضى' })
+  fireEvent.click(csvButton)
+
+  // Now create CSV file and find input
   const file = makeCSVFile('fullName,phoneNumber\nZaid,099\nLina,098')
-  const input = screen.getByLabelText('رفع ملف المرضى (CSV)') || screen.getByLabelText('csv-upload-input') || document.getElementById('csv-upload-input')
-  // fallback to querySelector
-  const fileInput = input || document.querySelector('#csv-upload-input')
-  expect(fileInput).toBeTruthy()
+  const input = screen.getByLabelText('رفع ملف المرضى (CSV)')
+  expect(input).toBeTruthy()
   // fire change event
-  fireEvent.change(fileInput, { target: { files: [file] } })
+  fireEvent.change(input, { target: { files: [file] } })
 
   // wait for added patients to appear
   await waitFor(()=> expect(screen.getByText('Zaid')).toBeInTheDocument())

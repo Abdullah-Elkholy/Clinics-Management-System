@@ -43,15 +43,21 @@ export default function PatientsTable({ patients, onToggle, onReorder }){
           </tr>
         </thead>
         <tbody>
-          {patients.map((p,i)=> (
-            <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)} tabIndex={0} onKeyDown={(e)=>handleKeyToggle(e,i)} role="row">
-              <td className="p-3 text-right"><input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} /></td>
-              <td className="p-3 text-right"><span className="drag-handle" aria-hidden>☰</span></td>
-              <td className="p-3 text-right" role="cell">{p.fullName}</td>
-              <td className="p-3 text-right" role="cell">{p.phoneNumber}</td>
-              <td className="p-3 text-right" role="cell">{p.position}</td>
+          {(!patients || patients.length === 0) ? (
+            <tr>
+              <td colSpan="5" className="p-6 text-center text-gray-500">لا يوجد مرضى في هذا الطابور</td>
             </tr>
-          ))}
+          ) : (
+            patients.map((p,i)=> (
+              <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)} tabIndex={0} onKeyDown={(e)=>handleKeyToggle(e,i)} role="row">
+                <td className="p-3 text-right"><input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} /></td>
+                <td className="p-3 text-right"><span className="drag-handle" aria-hidden>☰</span></td>
+                <td className="p-3 text-right" role="cell">{p.fullName}</td>
+                <td className="p-3 text-right" role="cell">{p.phoneNumber}</td>
+                <td className="p-3 text-right" role="cell">{p.position}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>

@@ -4,6 +4,8 @@ import Papa from 'papaparse'
 // CSVUpload now streams parsing using PapaParse and calls onChunk(parsedRows) repeatedly
 export default function CSVUpload({ onChunk, onProgress, onComplete, onError, onParsed }){
   const [error, setError] = useState(null)
+  
+  const id = React.useId()
 
   function handleFile(e){
     setError(null)
@@ -14,10 +16,12 @@ export default function CSVUpload({ onChunk, onProgress, onComplete, onError, on
     const buffer = []
 
     Papa.parse(f, {
-      header: false,
-      skipEmptyLines: true,
+  header: false,
+  // keep empty lines so rows like ',' (missing fullname) are still delivered to
+  // the consumer — tests expect such rows to be validated server-side.
+  skipEmptyLines: false,
       chunkSize: 1024 * 64,
-      chunk: function(results, parser){
+  chunk: async function(results, parser){
         // results.data is an array of parsed rows (arrays)
         let rows = results.data
         // detect header on first chunk
@@ -32,7 +36,20 @@ export default function CSVUpload({ onChunk, onProgress, onComplete, onError, on
         const slots = rows.map(r=> ({ fullName: r[0]||'', phoneNumber: r[1]||'', desiredPosition: r[2]||'' }))
         // buffer for legacy onParsed consumers
         buffer.push(...slots)
-        onChunk && onChunk(slots)
+        // if the consumer returns a promise, pause the parser until it settles so
+        // processing (uploads/removals) completes before parsing more. This makes
+        // behavior deterministic for tests that assert DOM state after upload.
+        try{
+          if (onChunk){
+            const res = onChunk(slots)
+            if (res && typeof res.then === 'function'){
+              // pause parser if available
+              if (parser && typeof parser.pause === 'function') parser.pause()
+              await res
+              if (parser && typeof parser.resume === 'function') parser.resume()
+            }
+          }
+        }catch(e){ /* swallow - onChunk will handle errors */ }
         if (onProgress) onProgress({ rowsParsed: rowCount })
       },
       error: function(err){ setError('فشل قراءة الملف'); onError && onError(err) },
@@ -60,9 +77,9 @@ export default function CSVUpload({ onChunk, onProgress, onComplete, onError, on
 
   return (
     <div>
-      <label htmlFor="csv-upload-input" className="block text-sm mb-1">رفع ملف المرضى (CSV)</label>
-      <input aria-label="رفع ملف المرضى (CSV)" id="csv-upload-input" type="file" accept=".csv" onChange={handleFile} />
-      {error && <div className="text-red-500 text-sm">{error}</div>}
+      <label htmlFor={`csv-upload-${id}`} className="block text-sm mb-1">رفع ملف المرضى (CSV)</label>
+      <input aria-label="رفع ملف المرضى (CSV)" id={`csv-upload-${id}`} type="file" accept=".csv" onChange={handleFile} />
+      {error && <div className="text-red-500 text-sm" role="alert">{error}</div>}
     </div>
   )
 }

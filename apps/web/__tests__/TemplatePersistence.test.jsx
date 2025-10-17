@@ -15,7 +15,7 @@ test('persists selected template to localStorage', async ()=>{
   fireEvent.click(queueBtn)
 
   // wait for templates select
-  const tplSelect = await screen.findByLabelText(/القوالب/i)
+  const tplSelect = await screen.findByRole('listbox', { name: /قائمة القوالب/i })
   // choose the first non-empty option (value t1 from mocks)
   fireEvent.change(tplSelect, { target: { value: 't1' } })
 
@@ -24,6 +24,12 @@ test('persists selected template to localStorage', async ()=>{
 
   // unmount and remount to simulate page reload
   const { unmount } = renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: 'primary_admin' }), selectedTemplate: 't1' } })
+
+  // Click on queue to show templates section
+  const queueBtn2 = await screen.findByText(/الطابور الأول/i)
+  fireEvent.click(queueBtn2)
+
   // the dashboard loads selectedTemplate from localStorage in useEffect; expect the selected option to be present
-  await waitFor(()=> expect(screen.getByLabelText(/القوالب/i).value).toBe('t1'))
+  const remountedSelect = await screen.findByRole('listbox', { name: /قائمة القوالب/i })
+  await waitFor(()=> expect(remountedSelect.value).toBe('t1'))
 })

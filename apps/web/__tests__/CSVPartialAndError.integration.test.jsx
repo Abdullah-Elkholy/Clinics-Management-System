@@ -26,9 +26,15 @@ test('CSV upload partial success and invalid format handling', async ()=>{
   fireEvent.click(queueBtn)
   await waitFor(()=> expect(screen.getByText('Ali')).toBeInTheDocument())
 
+  // Click the Upload CSV button to open the modal
+  const uploadBtn = screen.getByRole('button', { name: 'رفع ملف المرضى' })
+  fireEvent.click(uploadBtn)
+
+  // Wait for the modal and file input to be available
+  const fileInput = await waitFor(() => screen.getByLabelText('رفع ملف المرضى (CSV)'))
+
   // upload CSV with one bad row
   const file = makeCSVFile('fullName,phoneNumber\nGoodGuy,0123\nBadGuy,BADNUM')
-  const fileInput = document.querySelector('#csv-upload-input')
   fireEvent.change(fileInput, { target: { files: [file] } })
 
   // expect either success toast or partial-failure toast, and that GoodGuy appears but BadGuy does not

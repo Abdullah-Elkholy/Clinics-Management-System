@@ -11,7 +11,7 @@ export default function Toast(){
   useEffect(()=>{ globalShow = (m,t)=>{ setMsg(m); setTimeout(()=>setMsg(null), t) } }, [])
   if (!msg) return null
   return (
-    <div className="fixed bottom-6 left-6 z-50" role="status" aria-live="polite">
+    <div className="fixed bottom-6 left-6 z-50" role="alert" aria-live="polite">
       <div className="bg-black text-white px-4 py-2 rounded shadow">{msg}</div>
     </div>
   )

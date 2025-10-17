@@ -1,49 +1,154 @@
 import React from 'react'
 import { screen, fireEvent } from '@testing-library/react'
+import '@testing-library/jest-dom'
 import PatientsTable from '../components/PatientsTable'
 import renderWithProviders from '../test-utils/renderWithProviders'
 
-test('renders patients and toggles selection', async ()=>{
-  const patients = [ { id:1, fullName: 'Ahmed', phoneNumber: '010', position: 1 }, { id:2, fullName: 'Mona', phoneNumber: '011', position: 2 } ]
-  const toggle = jest.fn()
-  const reorder = jest.fn()
-  const { container } = renderWithProviders(<PatientsTable patients={patients} onToggle={toggle} onReorder={reorder} />)
+describe('PatientsTable Component', () => {
+  const mockPatients = [
+    { id: 'p1', fullName: 'أحمد محمد', phoneNumber: '123456789', position: 1 },
+    { id: 'p2', fullName: 'محمد علي', phoneNumber: '987654321', position: 2 },
+    { id: 'p3', fullName: 'علي حسن', phoneNumber: '456789123', position: 3 }
+  ]
 
-  expect(screen.getByText('Ahmed')).toBeInTheDocument()
-  const checkbox = screen.getByLabelText('select-patient-0')
-  fireEvent.click(checkbox)
-  expect(toggle).toHaveBeenCalledWith(0)
+  test('renders table structure and headers correctly', async () => {
+    const { container } = renderWithProviders(<PatientsTable patients={mockPatients} />)
 
-  // a11y check on the table
-  const results = await global.axe(container)
-  expect(results).toHaveNoViolations()
-})
+    // Check table structure
+    expect(screen.getByRole('table', { name: 'قائمة المرضى' })).toBeInTheDocument()
 
-test('calls onReorder when dropping', async ()=>{
-  const patients = [ { id:1, fullName: 'A', phoneNumber: '0', position:1 }, { id:2, fullName:'B', phoneNumber:'1', position:2 } ]
-  const reorder = jest.fn()
-  renderWithProviders(<PatientsTable patients={patients} onToggle={()=>{}} onReorder={reorder} />)
-  const rows = screen.getAllByRole('row')
-  // header + 2 rows
-  expect(rows.length).toBeGreaterThanOrEqual(3)
-  const firstDataRow = rows[1]
-  const secondDataRow = rows[2]
+    // Check headers
+    expect(screen.getByText('تحديد')).toBeInTheDocument()
+    expect(screen.getByText('سحب')).toBeInTheDocument()
+    expect(screen.getByText('الاسم')).toBeInTheDocument()
+    expect(screen.getByText('هاتف')).toBeInTheDocument()
+    expect(screen.getByText('ترتيب')).toBeInTheDocument()
 
-  const dataTransfer = {
-    setData: jest.fn(),
-    getData: jest.fn(),
-    effectAllowed: 'move',
-    dropEffect: 'move'
-  }
+    // Accessibility check
+    const results = await global.axe(container)
+    expect(results).toHaveNoViolations()
+  })
 
-  fireEvent.dragStart(firstDataRow, { dataTransfer })
-  fireEvent.dragOver(secondDataRow, { dataTransfer })
-  fireEvent.drop(secondDataRow, { dataTransfer })
+  test('renders patient data and handles selection', async () => {
+    const toggle = jest.fn()
+    const { container } = renderWithProviders(
+      <PatientsTable patients={mockPatients} onToggle={toggle} />
+    )
 
-  expect(reorder).toHaveBeenCalled()
+    // Check patient data
+    mockPatients.forEach((patient, index) => {
+      expect(screen.getByText(patient.fullName)).toBeInTheDocument()
+      expect(screen.getByText(patient.phoneNumber)).toBeInTheDocument()
+      expect(screen.getByText(patient.position.toString())).toBeInTheDocument()
+      
+      // Check checkbox
+      const checkbox = screen.getByLabelText(`select-patient-${index}`)
+      fireEvent.click(checkbox)
+      expect(toggle).toHaveBeenCalledWith(index)
+    })
 
-  // a11y smoke check after reorder interaction (scope to the table)
-  const table = document.querySelector('table') || document.body
-  const results2 = await global.axe(table)
-  expect(results2).toHaveNoViolations()
+    // Accessibility check after interactions
+    const results = await global.axe(container)
+    expect(results).toHaveNoViolations()
+  })
+
+  test('handles drag and drop reordering', async () => {
+    const reorder = jest.fn()
+    const { container } = renderWithProviders(
+      <PatientsTable patients={mockPatients} onToggle={() => {}} onReorder={reorder} />
+    )
+
+    const rows = screen.getAllByRole('row').slice(1) // Skip header row
+    const dataTransfer = {
+      setData: jest.fn(),
+      getData: jest.fn(),
+      effectAllowed: 'move',
+      dropEffect: 'move'
+    }
+
+    // Test drag and drop
+    fireEvent.dragStart(rows[0], { dataTransfer })
+    fireEvent.dragOver(rows[2], { dataTransfer })
+    fireEvent.drop(rows[2], { dataTransfer })
+
+    expect(reorder).toHaveBeenCalledWith(0, 2)
+
+    // Accessibility check after drag interaction
+    const results = await global.axe(container)
+    expect(results).toHaveNoViolations()
+  })
+
+  test('handles keyboard interactions', async () => {
+    const toggle = jest.fn()
+    const { container } = renderWithProviders(
+      <PatientsTable patients={mockPatients} onToggle={toggle} />
+    )
+
+    const rows = screen.getAllByRole('row').slice(1)
+
+    // Test Enter key
+    fireEvent.keyDown(rows[0], { key: 'Enter' })
+    expect(toggle).toHaveBeenCalledWith(0)
+
+    // Test Space key
+    fireEvent.keyDown(rows[1], { key: ' ' })
+    expect(toggle).toHaveBeenCalledWith(1)
+
+    // Test invalid key
+    fireEvent.keyDown(rows[2], { key: 'A' })
+    expect(toggle).toHaveBeenCalledTimes(2)
+
+    // Accessibility check after keyboard interactions
+    const results = await global.axe(container)
+    expect(results).toHaveNoViolations()
+  })
+
+  test('handles optimistic updates', async () => {
+    const optimisticPatients = [
+      { ...mockPatients[0], _optimistic: true },
+      ...mockPatients.slice(1)
+    ]
+
+    const { container } = renderWithProviders(
+      <PatientsTable patients={optimisticPatients} />
+    )
+
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows[0]).toHaveClass('opacity-70')
+    expect(rows[1]).not.toHaveClass('opacity-70')
+
+    // Accessibility check for optimistic UI
+    const results = await global.axe(container)
+    expect(results).toHaveNoViolations()
+  })
+
+  test('handles empty state', async () => {
+    const { container } = renderWithProviders(
+      <PatientsTable patients={[]} />
+    )
+
+    // Should render table structure
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    expect(screen.getAllByRole('row')).toHaveLength(1) // Just header row
+
+    // Accessibility check for empty state
+    const results = await global.axe(container)
+    expect(results).toHaveNoViolations()
+  })
+
+  test('has proper RTL support', async () => {
+    const { container } = renderWithProviders(
+      <PatientsTable patients={mockPatients} />
+    )
+
+    // Check text alignment
+    const cells = screen.getAllByRole('cell')
+    cells.forEach(cell => {
+      expect(cell).toHaveClass('text-right')
+    })
+
+    // Accessibility check for RTL layout
+    const results = await global.axe(container)
+    expect(results).toHaveNoViolations()
+  })
 })

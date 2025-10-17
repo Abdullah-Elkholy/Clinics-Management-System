@@ -21,8 +21,9 @@ test('message send partial failure shows failure toast and leaves retry option',
     return res(ctx.status(200), ctx.json({ success: false, failed: [101], message: 'Some failed' }))
   }))
 
-  // open send modal and send
-  fireEvent.click(screen.getByLabelText('open-message-modal'))
+  // open send modal and send: click the toolbar message button (aria-label present on Dashboard)
+  const openMessageBtn = screen.getByLabelText('إرسال رسالة واتساب') || screen.getByRole('button', { name: /إرسال رسالة/i })
+  fireEvent.click(openMessageBtn)
   const sendBtn = await screen.findByText('إرسال')
   fireEvent.click(sendBtn)
 
@@ -46,7 +47,8 @@ test('message send batching handles large recipient list (no crash)', async ()=>
   checkboxes.forEach(cb => { try{ fireEvent.click(cb) }catch(e){} })
 
   // send messages (use default mock which returns success)
-  fireEvent.click(screen.getByLabelText('open-message-modal'))
+  const openMessageBtn2 = screen.getByLabelText('إرسال رسالة واتساب') || screen.getByRole('button', { name: /إرسال رسالة/i })
+  fireEvent.click(openMessageBtn2)
   const sendBtn = await screen.findByText('إرسال')
   fireEvent.click(sendBtn)
 

@@ -22,10 +22,13 @@ test('CSV optimistic additions appear immediately and are not hidden by immediat
     return res(ctx.status(201), ctx.json({ success: true, data: { id: 9999, fullName: body.fullName, phoneNumber: body.phoneNumber, position: 999 } }))
   }))
 
-  // click CSV upload input and provide a fake file
+  // Open CSV modal and get input
+  const csvButton = screen.getByRole('button', { name: 'رفع ملف المرضى' })
+  fireEvent.click(csvButton)
+
+  // Create file and upload
   const file = new File([`fullName,phoneNumber,desiredPosition\nNew User,099,`], 'patients.csv', { type: 'text/csv' })
   const input = screen.getByLabelText('رفع ملف المرضى (CSV)')
-  // fire input change with files
   fireEvent.change(input, { target: { files: [file] } })
 
   // optimistic row should appear quickly
