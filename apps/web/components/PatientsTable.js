@@ -23,9 +23,16 @@ export default function PatientsTable({ patients, onToggle, onReorder }){
     draggingRef.current = null
   }
 
+  function handleKeyToggle(e, idx){
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onToggle && onToggle(idx)
+    }
+  }
+
   return (
     <div className="bg-white border rounded">
-      <table className="w-full">
+      <table className="w-full" role="table" aria-label="قائمة المرضى">
         <thead className="bg-gray-50">
           <tr>
             <th className="p-3 text-right">تحديد</th>
@@ -37,12 +44,12 @@ export default function PatientsTable({ patients, onToggle, onReorder }){
         </thead>
         <tbody>
           {patients.map((p,i)=> (
-            <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)}>
+            <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)} tabIndex={0} onKeyDown={(e)=>handleKeyToggle(e,i)} role="row">
               <td className="p-3 text-right"><input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} /></td>
-              <td className="p-3 text-right"><span className="drag-handle">☰</span></td>
-              <td className="p-3 text-right">{p.fullName}</td>
-              <td className="p-3 text-right">{p.phoneNumber}</td>
-              <td className="p-3 text-right">{p.position}</td>
+              <td className="p-3 text-right"><span className="drag-handle" aria-hidden>☰</span></td>
+              <td className="p-3 text-right" role="cell">{p.fullName}</td>
+              <td className="p-3 text-right" role="cell">{p.phoneNumber}</td>
+              <td className="p-3 text-right" role="cell">{p.position}</td>
             </tr>
           ))}
         </tbody>

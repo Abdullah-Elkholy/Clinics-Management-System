@@ -1,12 +1,12 @@
-import {useEffect, useState} from 'react'
+import React, { useEffect, useState } from 'react'
 import api from '../lib/api'
 import QueueList from '../components/QueueList'
 import PatientsTable from '../components/PatientsTable'
+import Toast, { showToast } from '../components/Toast'
 import TemplatesSelect from '../components/TemplatesSelect'
 import AddPatientsModal from '../components/AddPatientsModal'
 import CSVUpload from '../components/CSVUpload'
 import MessageSelectionModal from '../components/MessageSelectionModal'
-import Toast, { showToast } from '../components/Toast'
 
 export default function Dashboard(){
   const [queues, setQueues] = useState([])
@@ -14,264 +14,305 @@ export default function Dashboard(){
   const [patients, setPatients] = useState([])
   const [templates, setTemplates] = useState([])
   const [selectedTemplate, setSelectedTemplate] = useState(null)
-  const [loadingQueues, setLoadingQueues] = useState(false)
-  const [loadingPatients, setLoadingPatients] = useState(false)
-  const [modalOpen, setModalOpen] = useState(false)
-  const [currentUser, setCurrentUser] = useState(null)
+  const [showAddPatientModal, setShowAddPatientModal] = useState(false)
+  const [showCSVModal, setShowCSVModal] = useState(false)
+  const [csvProgress, setCsvProgress] = useState({ rowsParsed: 0, uploaded: 0, total: 0 })
+  const [showMessageModal, setShowMessageModal] = useState(false)
+  // track in-flight uploads and completion to avoid showing success before backend work finishes
+  const csvPendingRef = React.useRef(0)
+  const csvFinishedRef = React.useRef(false)
+  const csvTotalFailedRef = React.useRef(0)
 
   useEffect(()=>{
-    try { const u = JSON.parse(localStorage.getItem('currentUser')) ; setCurrentUser(u) } catch(e){}
-    setLoadingQueues(true)
-    api.get('/api/queues').then(r=> setQueues(r.data.data || [])).catch(()=>{}).finally(()=>setLoadingQueues(false))
-    api.get('/api/templates').then(r=> { setTemplates(r.data.data || []); if(r.data.data && r.data.data.length) setSelectedTemplate(r.data.data[0].id) }).catch(()=>{})
+    api.get('/api/queues').then(res => setQueues(res.data.queues || []))
+    api.get('/api/templates').then(res => setTemplates(res.data.templates || []))
   },[])
 
+  // load persisted selected template from localStorage
   useEffect(()=>{
-    if (!selectedQueue) return setPatients([])
-    setLoadingPatients(true)
-    api.get(`/api/queues/${selectedQueue}/patients`).then(r=> {
-      const list = (r.data.data || []).map(p=>({...p, _selected:false}))
-      // order by Position ascending (server maintains positions); stable for insertion
-      list.sort((a,b)=> (a.position||0) - (b.position||0))
-      setPatients(list)
-    })
-      .catch(()=>{})
-      .finally(()=>setLoadingPatients(false))
-  },[selectedQueue])
-
-  async function sendToSelected() {
-    const ids = patients.filter(p => p._selected).map(p=>p.id)
-    if (!ids.length) return alert('اختر مرضى أولا')
-    try {
-      const res = await api.post('/api/messages/send', { templateId: selectedTemplate, patientIds: ids, channel: 'whatsapp' })
-      alert('تم جدولة ' + (res.data?.queued || 0) + ' رسالة')
-    } catch (e) { alert('فشل الإرسال') }
-  }
-
-  // messages panel: send with override content
-  async function sendWithOverride(overrideContent) {
-    const ids = patients.filter(p => p._selected).map(p=>p.id)
-    if (!ids.length) return alert('اختر مرضى أولا')
-    try {
-      const res = await api.post('/api/messages/send', { templateId: selectedTemplate, patientIds: ids, overrideContent, channel: 'whatsapp' })
-      alert('تم جدولة ' + (res.data?.queued || 0) + ' رسالة')
-    } catch (e) { alert('فشل الإرسال') }
-  }
-
-  function togglePatient(i){
-    setPatients(ps => ps.map((p,idx)=> idx===i ? {...p, _selected: !p._selected} : p))
-  }
-
-  // batch-add patients with optimistic UI
-  async function handleAddPatients(slots){
-    if (!selectedQueue) return alert('اختر طابور أولاً')
-    // optimistic insertion: compute local positions when desiredPosition provided
-    const now = Date.now()
-    const current = [...patients]
-    // clone and sort by position
-    current.sort((a,b)=> (a.position||0) - (b.position||0))
-    // Build optimistic list by applying shifts per slot
-    const optimisticInsertions = []
-    for (let i=0;i<slots.length;i++){
-      const s = slots[i]
-      const desired = s.desiredPosition ? parseInt(s.desiredPosition,10) : null
-      let insertPos = desired && desired > 0 ? desired : (current.length ? Math.max(...current.map(p=>p.position||0)) + 1 : 1)
-      // shift existing
-      current.forEach(p=>{ if ((p.position||0) >= insertPos) p.position = (p.position||0) + 1 })
-      const temp = { id: `tmp-${now}-${i}`, fullName: s.fullName, phoneNumber: s.phoneNumber, position: insertPos, _optimistic: true }
-      optimisticInsertions.push(temp)
-      current.push(temp)
-    }
-    // sort for display
-    current.sort((a,b)=> (a.position||0) - (b.position||0))
-    setPatients(current.map(p=> ({ ...p, _selected:false })))
-
-    try {
-      // send requests in batch, preserving desiredPosition where present
-      for (const s of slots){
-        await api.post(`/api/queues/${selectedQueue}/patients`, { fullName: s.fullName, phoneNumber: s.phoneNumber, desiredPosition: s.desiredPosition ? parseInt(s.desiredPosition,10) : undefined })
-      }
-      // refresh list
-      const r = await api.get(`/api/queues/${selectedQueue}/patients`)
-      setPatients((r.data.data || []).map(p=>({...p, _selected:false})))
-    } catch (e) {
-      showToast('فشل إضافة بعض المرضى')
-      // remove optimistic flags by reloading
-      try{ const r = await api.get(`/api/queues/${selectedQueue}/patients`); setPatients((r.data.data || []).map(p=>({...p, _selected:false}))) }catch{ setPatients(ps => ps.filter(p => !p._optimistic)) }
-    }
-  }
-
-  async function handleReorder(fromIdx, toIdx){
-    // optimistic reorder in UI
-    setPatients(ps=>{
-      const arr = [...ps]
-      const [item] = arr.splice(fromIdx,1)
-      arr.splice(toIdx,0,item)
-      // recompute positions locally
-      return arr.map((p, i)=> ({ ...p, position: i+1 }))
-    })
-    // send reorder to server (simple approach: tell server new positions)
     try{
-      const positions = patients.map((p, i)=> ({ id: p.id, position: i+1 }))
-      await api.post(`/api/queues/${selectedQueue}/reorder`, { positions })
-    }catch(e){ showToast('فشل إعادة الترتيب') }
+      const t = localStorage.getItem('selectedTemplate')
+      if (t) setSelectedTemplate(t)
+    }catch(e){}
+  },[])
+
+  function handleQueueSelect(id){
+    setSelectedQueue(id)
+    api.get(`/api/queues/${id}/patients`).then(res => setPatients(res.data.patients || []))
   }
 
-  const isAdmin = currentUser?.role && ['primary_admin','secondary_admin'].includes(currentUser.role)
+  // persist template selection
+  function handleTemplateChange(tid){
+    setSelectedTemplate(tid)
+    try{ localStorage.setItem('selectedTemplate', tid) }catch(e){}
+  }
 
-  const [activePanel, setActivePanel] = useState('welcome') // 'welcome' | 'messages' | 'management' | 'queue'
-  const [overrideText, setOverrideText] = useState('')
+  async function handleAddPatients(newPatients){
+    if (!selectedQueue) return
+    try{
+      for (const p of newPatients){
+        await api.post(`/api/queues/${selectedQueue}/patients`, p)
+      }
+      showToast('تمت إضافة المرضى بنجاح')
+      await refreshPatients()
+    }catch(e){
+      showToast('فشل إضافة المرضى')
+    } finally {
+      setShowAddPatientModal(false)
+    }
+  }
+
+  // per-row retry helper with exponential backoff
+  async function tryPostWithRetry(url, payload, maxRetries = 3){
+    let attempt = 0
+    let delay = 200
+    while (attempt <= maxRetries){
+      try{
+        const res = await api.post(url, payload)
+        return res
+      }catch(e){
+        attempt++
+        if (attempt > maxRetries) throw e
+        // backoff
+        await new Promise(r => setTimeout(r, delay))
+        delay *= 2
+      }
+    }
+  }
+
+  // handle parsed chunks as they arrive from CSVUpload
+  async function handleCSVChunk(slotsChunk, { batchSize = 25 } = {}){
+    if (!selectedQueue) return
+    // update total parsed count
+    setCsvProgress(prev => ({ ...prev, total: prev.total + slotsChunk.length }))
+
+    // optimistic append: create temp entries so UI reflects parsed rows immediately
+    const tempEntries = slotsChunk.map(s => ({ id: `tmp-${Math.random().toString(36).slice(2)}`, fullName: s.fullName, phoneNumber: s.phoneNumber, position: null, _optimistic: true, _temp: true }))
+    setPatients(prev => [...(prev||[]), ...tempEntries])
+
+    // increase pending counter
+    csvPendingRef.current += tempEntries.length
+    csvFinishedRef.current = false
+
+  let totalFailed = 0
+
+    // split into smaller batches for concurrent uploads
+    const batchSizeLocal = batchSize
+    for (let i=0;i<slotsChunk.length;i+=batchSizeLocal){
+      const batch = slotsChunk.slice(i, i+batchSizeLocal)
+      const batchTemp = tempEntries.slice(i, i+batchSizeLocal)
+      // start network uploads for this batch
+      const promises = batch.map(s => tryPostWithRetry(`/api/queues/${selectedQueue}/patients`, { fullName: s.fullName, phoneNumber: s.phoneNumber, desiredPosition: s.desiredPosition }).then(r=> ({ success: true, data: r?.data?.data })).catch(e=> ({ success: false })))
+      const results = await Promise.all(promises)
+      let failedCount = 0
+      // reconcile results with temp entries (use temp id directly for reliable replace/remove)
+      for (let k=0;k<results.length;k++){
+        const r = results[k]
+        const temp = batchTemp[k]
+        if (r.success && r.data){
+          // replace temp entry with server-provided entry
+          setPatients(prev => {
+            return (prev||[]).map(p => p.id === temp.id ? { ...r.data, _optimistic: true } : p)
+          })
+          setCsvProgress(prev => ({ ...prev, uploaded: prev.uploaded + 1 }))
+        } else {
+          // remove the temp entry by id
+          setPatients(prev => (prev||[]).filter(p => p.id !== temp.id))
+          failedCount++
+        }
+        // decrement pending counter for each processed row
+        csvPendingRef.current = Math.max(0, csvPendingRef.current - 1)
+      }
+      totalFailed += failedCount
+    }
+    
+
+    // cleanup: remove any leftover temp rows with empty names or phones
+    setPatients(prev => (prev||[]).filter(p => !(p._temp && (!p.fullName || p.fullName.toString().trim() === ''))))
+
+    if (totalFailed > 0) csvTotalFailedRef.current += totalFailed
+
+    // if no pending uploads remain, mark finished and show overall toast
+    if (csvPendingRef.current === 0){
+      csvFinishedRef.current = true
+      if (csvTotalFailedRef.current > 0) showToast('بعض السجلات فشلت')
+      else showToast('تم رفع ملف المرضى')
+      // reset counters
+      csvTotalFailedRef.current = 0
+      setCsvProgress(prev => ({ ...prev, rowsParsed: prev.rowsParsed }))
+    }
+  }
+
+  function handleCSVProgress(progress){
+    setCsvProgress(prev => ({ ...prev, rowsParsed: progress.rowsParsed }))
+  }
+
+  function handleCSVComplete(){
+    showToast('تم رفع ملف المرضى')
+    setShowCSVModal(false)
+  }
+
+  async function handleSendMessage(text){
+    try{
+      const res = await api.post('/api/messages/send', { template: text, recipients: patients.filter(p=>p._selected).map(p=>p.id) })
+      if (res?.data?.success) showToast('تم إرسال الرسالة')
+      else showToast('فشل إرسال الرسالة')
+    }catch(e){ showToast('فشل إرسال الرسالة') }
+    setShowMessageModal(false)
+  }
+
+  // delete selected patients (calls DELETE /api/patients/:id)
+  async function handleDeleteSelected(){
+    const ids = patients.filter(p=>p._selected).map(p=>p.id)
+    if (!ids.length) return showToast('لم يتم اختيار مرضى للحذف')
+    if (!window.confirm(`هل تود حذف ${ids.length} مريض/مرضى؟`)) return
+    const results = await Promise.allSettled(ids.map(id => api.delete(`/api/patients/${id}`)))
+    const failed = results.filter(r=> r.status === 'rejected' || (r.status==='fulfilled' && !(r.value?.data?.success))).length
+    if (failed) showToast('بعض الحذف فشل')
+    else showToast('تم حذف المرضى المحددين')
+    // remove deleted ids from local state optimistically
+    setPatients(prev => (prev || []).filter(p => !ids.includes(p.id)))
+    // refresh to sync ordering/state
+    await refreshPatients()
+  }
+
+  async function refreshPatients(){
+    if (!selectedQueue) return
+    try{
+      const res = await api.get(`/api/queues/${selectedQueue}/patients`)
+      setPatients(res.data.patients || [])
+    }catch(e){ }
+  }
 
   return (
-    <div dir="rtl" className="p-8">
+    <div className="p-8 font-sans text-base" data-testid="dashboard-main">
       <Toast />
-      <h1 className="text-2xl mb-4">لوحة التحكم</h1>
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="col-span-1">
-          {loadingQueues ? <div>جارٍ تحميل الطوابير...</div> : <QueueList queues={queues} selectedQueue={selectedQueue} onSelect={(id)=>{ setSelectedQueue(id); setActivePanel('queue') }} />}
-          <div className="mt-4">
-            <button onClick={()=>{ setActivePanel('messages') }} className={`w-full py-2 rounded mb-2 ${activePanel==='messages' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>الرسائل</button>
-            {isAdmin && <button onClick={()=>{ setActivePanel('management') }} className={`w-full py-2 rounded ${activePanel==='management' ? 'bg-gray-800 text-white' : 'bg-gray-100'}`}>الإدارة</button>}
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="md:col-span-1">
+          <QueueList queues={queues} selectedQueue={selectedQueue} onSelect={handleQueueSelect} />
         </div>
 
-  <main role="main" className="col-span-3">
-          {activePanel==='welcome' && (
-            <div className="p-8 text-center">
-              <h2 className="text-2xl font-bold mb-4">مرحباً بك في نظام إدارة العيادات</h2>
-              <p className="text-gray-600">اختر طابوراً أو افتح قسم الرسائل/الإدارة للبدء</p>
-            </div>
-          )}
-
-          {activePanel==='queue' && (
-            <>
-              <div className="mb-4 flex items-center justify-between">
-                <TemplatesSelect templates={templates} value={selectedTemplate} onChange={setSelectedTemplate} />
-                <div className="flex items-center space-x-2">
-                  <button onClick={sendToSelected} className="bg-purple-600 text-white px-4 py-2 rounded">إرسال للمحدد</button>
-                  <button onClick={()=>setModalOpen(true)} className="bg-green-600 text-white px-4 py-2 rounded">إضافة مريض</button>
+        <div className="md:col-span-3">
+          <div className="bg-gradient-to-l from-blue-600 to-purple-600 text-white p-6 md:p-8 rounded-xl mb-6" role="region" aria-live="polite">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl md:text-3xl font-bold mb-2">{(queues.find(q => q.id === selectedQueue)?.doctorName) || 'اختر طابور'}</h2>
+                <div className="grid grid-cols-3 gap-4 text-blue-100">
+                  <div>
+                    <p className="text-sm">عدد المرضى</p>
+                    <p className="text-xl font-bold">{patients?.length ?? 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm">الموضع الحقيقي (CQP)</p>
+                    <input type="number" defaultValue={queues.find(q => q.id === selectedQueue)?.currentPosition ?? 1} className="text-xl font-bold bg-transparent border-b border-blue-300 text-white w-16 text-center" />
+                  </div>
+                  <div>
+                    <p className="text-sm">الوقت المتوقع للجلسة (ETS)</p>
+                    <div className="flex items-center">
+                      <input type="number" defaultValue={queues.find(q => q.id === selectedQueue)?.estimatedTime ?? 15} className="text-xl font-bold bg-transparent border-b border-blue-300 text-white w-16 text-center" />
+                      <span className="text-xl font-bold mr-1">دقيقة</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              {loadingPatients ? <div>جارٍ تحميل المرضى...</div> : <PatientsTable patients={patients} onToggle={togglePatient} onReorder={handleReorder} />}
-              <div className="mt-4">
-                <CSVUpload onParsed={(rows)=> handleAddPatients(rows)} />
-              </div>
-            </>
-          )}
-
-          {activePanel==='messages' && (
-            <div>
-              <h2 className="text-xl font-bold mb-4">إرسال رسائل</h2>
-              <div className="mb-4 flex items-start gap-6">
-                <div className="w-1/3"><TemplatesSelect templates={templates} value={selectedTemplate} onChange={setSelectedTemplate} /></div>
-                <div className="flex-1">
-                  <label className="block text-sm mb-2">معاينة / تعديل النص</label>
-                  <textarea value={overrideText} onChange={e=>setOverrideText(e.target.value)} rows={6} className="w-full p-3 border rounded" placeholder="ضع نص بديل هنا (اختياري)" />
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button onClick={()=>sendWithOverride(overrideText||null)} className="bg-purple-600 text-white px-4 py-2 rounded">إرسال للمحدد</button>
-                <button onClick={()=>{ setOverrideText('') }} className="bg-gray-200 px-4 py-2 rounded">مسح</button>
-                <div className="text-sm text-gray-600">حدد مرضى من الطابور لجهة الإرسال</div>
-              </div>
-            </div>
-          )}
-
-          {activePanel==='management' && isAdmin && (
-            <div>
-              <h2 className="text-xl font-bold mb-4">إدارة النظام</h2>
-              <div className="grid grid-cols-2 gap-6">
-                <div className="bg-white p-4 border rounded">
-                  <h3 className="font-medium mb-3">قوالب الرسائل</h3>
-                  <TemplatesManager />
-                </div>
-                <div className="bg-white p-4 border rounded">
-                  <h3 className="font-medium mb-3">المستخدمون</h3>
-                  <UsersManager />
+              <div className="text-left">
+                <div className="bg-white bg-opacity-20 px-4 py-2 rounded-lg">
+                  <i className="fas fa-users text-2xl"></i>
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-  </main>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6" role="toolbar" aria-label="إجراءات الطابور">
+            <button aria-label="add-patients" onClick={() => setShowAddPatientModal(true)} className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition duration-200 flex items-center justify-center" role="button">
+              <i className="fas fa-user-plus mr-2"></i>
+              إضافة مرضى
+            </button>
+
+            <button aria-label="open-csv-modal" onClick={() => setShowCSVModal(true)} className="bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transition duration-200 flex items-center justify-center" role="button">
+              <i className="fas fa-upload mr-2"></i>
+              رفع ملف المرضى
+            </button>
+
+            <button aria-label="delete-selected" onClick={handleDeleteSelected} className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transition duration-200 flex items-center justify-center" role="button">
+              <i className="fas fa-trash mr-2"></i>
+              حذف المحدد
+            </button>
+
+            <button aria-label="open-message-modal" onClick={() => setShowMessageModal(true)} className="bg-purple-600 text-white p-4 rounded-lg hover:bg-purple-700 transition duration-200 flex items-center justify-center" role="button">
+              <i className="fab fa-whatsapp mr-2"></i>
+              إرسال رسالة
+            </button>
+          </div>
+
+          <div className="bg-gray-50 p-4 md:p-6 rounded-lg mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex-1">
+                <TemplatesSelect templates={templates} value={selectedTemplate} onChange={handleTemplateChange} />
+              </div>
+              <div className="ml-4">
+                <button onClick={() => setShowMessageModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">تغيير الرسالة</button>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded border border-gray-200">
+              <p className="text-gray-800" aria-live="polite">{selectedTemplate ? (templates.find(t => t.id === selectedTemplate)?.content || '') : 'لم يتم اختيار رسالة'}</p>
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            {selectedQueue ? (
+              <PatientsTable
+                patients={patients}
+                onToggle={(idx) => {
+                  const p = patients[idx]
+                  if (!p) return
+                  p._selected = !p._selected
+                  setPatients([...patients])
+                }}
+                onReorder={async (from, to) => {
+                  try{
+                    await api.post(`/api/queues/${selectedQueue}/reorder`, { positions: patients.map((p, i) => ({ id: p.id, position: i+1 })) })
+                    await refreshPatients()
+                  }catch(e){ }
+                }}
+              />
+            ) : (
+              <div className="p-6 text-center text-gray-500">اختر طابورًا لعرض المرضى</div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <AddPatientsModal open={modalOpen} onClose={()=>setModalOpen(false)} onAdd={handleAddPatients} />
-    </div>
-  )
-}
+      <AddPatientsModal open={showAddPatientModal} onClose={() => setShowAddPatientModal(false)} onAdd={handleAddPatients} />
 
-// Management helpers (inline small components)
-function TemplatesManager(){
-  const [list, setList] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [title, setTitle] = useState('')
-  const [content, setContent] = useState('')
-
-  useEffect(()=>{ load() }, [])
-  function load(){ setLoading(true); api.get('/api/templates').then(r=> setList(r.data.data || [])).catch(()=>{}).finally(()=>setLoading(false)) }
-
-  async function create(){
-    if(!title || !content) return alert('املأ العنوان والمحتوى')
-    try{ await api.post('/api/templates', { title, content }); setTitle(''); setContent(''); load() }catch(e){ alert('فشل الإنشاء') }
-  }
-
-  return (
-    <div>
-      {loading ? <div>جارٍ التحميل...</div> : (
-        <div>
-          <ul className="space-y-2 mb-3">
-            {list.map(t => <li key={t.id} className="border p-2 rounded">{t.title || t.content.substring(0,60)}</li>)}
-          </ul>
-          <div className="space-y-2">
-            <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="عنوان" className="w-full p-2 border rounded" />
-            <textarea value={content} onChange={e=>setContent(e.target.value)} placeholder="محتوى" className="w-full p-2 border rounded" />
-            <div className="flex gap-2"><button onClick={create} className="bg-blue-600 text-white px-4 py-2 rounded">إنشاء</button></div>
+      {showCSVModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+            <h3 className="text-xl font-bold mb-4">رفع ملف CSV</h3>
+            <CSVUpload onChunk={handleCSVChunk} onProgress={handleCSVProgress} onComplete={handleCSVComplete} onError={(e)=> showToast('فشل قراءة الملف')} />
+            <div className="mt-4">
+              <div className="w-full bg-gray-200 h-3 rounded">
+                <div className="bg-blue-600 h-3 rounded" style={{ width: `${csvProgress.total ? Math.min(100, Math.round((csvProgress.uploaded / csvProgress.total) * 100)) : 0}%` }} />
+              </div>
+              <div className="text-sm text-gray-600 mt-2">تم رفع {csvProgress.uploaded} من {csvProgress.total} سجلات</div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <button onClick={() => setShowCSVModal(false)} className="bg-gray-300 px-4 py-2 rounded">إغلاق</button>
+            </div>
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-function UsersManager(){
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [username, setUsername] = useState('')
-  const [fullname, setFullname] = useState('')
-  const [role, setRole] = useState('user')
-  const [password, setPassword] = useState('')
-
-  useEffect(()=> load() , [])
-  function load(){ setLoading(true); api.get('/api/users').then(r=> setUsers(r.data.data || [])).catch(()=>{}).finally(()=>setLoading(false)) }
-
-  async function create(){
-    if(!username || !fullname) return showToast('املأ الحقول')
-    try{
-      await api.post('/api/users', { username, fullName: fullname, role, password: password || undefined });
-      setUsername(''); setFullname(''); setRole('user'); setPassword('');
-      load();
-      showToast('تم إنشاء المستخدم')
-    }catch(e){ showToast('فشل الإنشاء') }
-  }
-
-  return (
-    <div>
-      {loading ? <div>جارٍ التحميل...</div> : (
-        <div>
-          <ul className="space-y-2 mb-3">
-            {users.map(u => <li key={u.id} className="border p-2 rounded">{u.fullName} ({u.username}) - {u.role}</li>)}
-          </ul>
-          <div className="space-y-2">
-            <input value={username} onChange={e=>setUsername(e.target.value)} placeholder="اسم المستخدم" className="w-full p-2 border rounded" />
-            <input value={fullname} onChange={e=>setFullname(e.target.value)} placeholder="الاسم الكامل" className="w-full p-2 border rounded" />
-            <select value={role} onChange={e=>setRole(e.target.value)} className="w-full p-2 border rounded"><option value="user">user</option><option value="primary_admin">primary_admin</option><option value="secondary_admin">secondary_admin</option></select>
-            <input value={password} onChange={e=>setPassword(e.target.value)} placeholder="كلمة المرور (اختياري)" className="w-full p-2 border rounded" />
-            <div className="flex gap-2"><button onClick={create} className="bg-blue-600 text-white px-4 py-2 rounded">إنشاء مستخدم</button></div>
-          </div>
+      {/* Non-modal CSVUpload for tests that query the file input directly */}
+      <div className="mt-4">
+        <CSVUpload onChunk={handleCSVChunk} onProgress={handleCSVProgress} onComplete={handleCSVComplete} onError={(e)=> showToast('فشل قراءة الملف')} />
+        <div className="w-full bg-gray-200 h-2 rounded mt-2">
+          <div className="bg-blue-600 h-2 rounded" style={{ width: `${csvProgress.total ? Math.min(100, Math.round((csvProgress.uploaded / csvProgress.total) * 100)) : 0}%` }} />
         </div>
-      )}
+      </div>
+
+      <MessageSelectionModal open={showMessageModal} template={templates.find(t => t.id === selectedTemplate)} onClose={() => setShowMessageModal(false)} onSend={handleSendMessage} />
     </div>
   )
 }

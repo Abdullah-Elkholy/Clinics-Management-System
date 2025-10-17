@@ -1,8 +1,11 @@
 import '@testing-library/jest-dom'
 import { server } from './mocks/server'
+import { resetMockData } from './mocks/handlers'
 
 // Start MSW before all tests and stop after
 beforeAll(() => server.listen({ onUnhandledRequest: 'warn' }))
+// Reset in-memory mock data before each test for deterministic state
+beforeEach(() => resetMockData())
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
