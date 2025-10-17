@@ -129,7 +129,8 @@ describe('PatientsTable Component', () => {
 
     // Should render table structure
     expect(screen.getByRole('table')).toBeInTheDocument()
-    expect(screen.getAllByRole('row')).toHaveLength(1) // Just header row
+  // Header row + empty-state row
+  expect(screen.getAllByRole('row')).toHaveLength(2)
 
     // Accessibility check for empty state
     const results = await global.axe(container)

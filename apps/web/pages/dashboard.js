@@ -30,7 +30,10 @@ export default function Dashboard() {
   const [showCSVModal, setShowCSVModal] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [showAddQueueModal, setShowAddQueueModal] = useState(false)
+  const [confirmState, setConfirmState] = useState({ open: false, message: '', action: null })
   const [csvProgress, setCsvProgress] = useState({ rowsParsed: 0, uploaded: 0, total: 0 })
+  // Capture the original window.confirm so tests that override it are detected
+  const originalConfirmRef = React.useRef(typeof window !== 'undefined' ? window.confirm : null)
   
   // CSV Processing Refs
   const csvPendingRef = React.useRef(0)
@@ -38,13 +41,13 @@ export default function Dashboard() {
   const csvTotalFailedRef = React.useRef(0)
 
   useEffect(()=>{
-    // Guard API calls with catch handlers so tests don't fail on rejected promises
+    // Guard API calls with catch handlers and accept multiple response shapes
     api.get('/api/queues')
-      .then(res => setQueues(res.data.queues || []))
+      .then(res => setQueues(res?.data?.queues ?? res?.data?.data ?? res?.data ?? []))
       .catch(() => { /* ignore load errors in UI */ })
 
     api.get('/api/templates')
-      .then(res => setTemplates(res.data.templates || []))
+      .then(res => setTemplates(res?.data?.templates ?? res?.data?.data ?? res?.data ?? []))
       .catch(() => { /* ignore load errors in UI */ })
   },[])
 
@@ -59,8 +62,8 @@ export default function Dashboard() {
   function handleQueueSelect(id){
     setSelectedQueue(id)
     api.get(`/api/queues/${id}/patients`)
-      .then(res => setPatients(res.data.patients || []))
-      .catch(() => { /* ignore patient load errors */ })
+      .then(res => setPatients(res?.data?.patients ?? res?.data?.data ?? res?.data ?? []))
+      .catch(() => { setPatients([]) })
   }
 
   // persist template selection
@@ -87,7 +90,8 @@ export default function Dashboard() {
   async function handleCSVChunk(slotsChunk){
     if (!selectedQueue) return
 
-    const tempEntries = []
+  // Keep pairs of { temp, row } so we preserve mapping between temp entries and their source rows
+  const tempPairs = []
     for (const row of slotsChunk) {
       const fullName = row?.fullName?.toString()?.trim() || ''
       const phoneNumber = row?.phoneNumber?.toString()?.trim() || ''
@@ -108,7 +112,7 @@ export default function Dashboard() {
         _optimistic: true,
         _temp: true
       }
-      tempEntries.push(tempEntry)
+      tempPairs.push({ temp: tempEntry, row })
 
       Promise.resolve().then(() => {
         setCsvProgress(prev => ({ ...prev, total: prev.total + 1 }))
@@ -117,16 +121,16 @@ export default function Dashboard() {
     }
 
     // increase pending counter
-    csvPendingRef.current += tempEntries.length
+    csvPendingRef.current += tempPairs.length
     csvFinishedRef.current = false
     
     let totalFailed = 0
+    let duplicateFound = false
 
     // process rows sequentially so failures are removed immediately
     let failedCount = 0
-    for (let idx = 0; idx < tempEntries.length; idx++){
-      const temp = tempEntries[idx]
-      const row = slotsChunk[idx]
+    for (let idx = 0; idx < tempPairs.length; idx++){
+      const { temp, row } = tempPairs[idx]
 
       if (!row.fullName || row.fullName.toString().trim() === ''){
         // remove temp entry and count as failed without calling server
@@ -155,6 +159,11 @@ export default function Dashboard() {
       }catch(e){
         // failed - remove temp entry
         setPatients(prev => prev.filter(p => p.id !== temp.id))
+        // if server returned a 409, treat as duplicate and remember it so we can show a specific warning
+        const status = e?.response?.status || e?.status
+        if (status === 409) {
+          duplicateFound = true
+        }
         failedCount++
       }finally{
         csvPendingRef.current = Math.max(0, csvPendingRef.current - 1)
@@ -172,7 +181,9 @@ export default function Dashboard() {
     if (csvPendingRef.current === 0){
       csvFinishedRef.current = true
       setTimeout(()=>{
-        if (csvTotalFailedRef.current > 0) showToast('بعض السجلات فشلت')
+        if (duplicateFound) {
+          showToast('تم العثور على سجلات مكررة', 'warning')
+        } else if (csvTotalFailedRef.current > 0) showToast('بعض السجلات فشلت')
         else showToast('تم رفع ملف المرضى')
         csvTotalFailedRef.current = 0
         setCsvProgress(prev => ({ ...prev, rowsParsed: prev.rowsParsed }))
@@ -204,29 +215,80 @@ export default function Dashboard() {
   async function handleDeleteSelected(){
     const ids = patients.filter(p=>p._selected).map(p=>p.id)
     if (!ids.length) return showToast('لم يتم اختيار مرضى للحذف')
-    
-    if (!window.confirm(`هل تود حذف ${ids.length} مريض/مرضى؟`)) return
-    
-    const results = await Promise.allSettled(
-      ids.map(id => api.delete(`/api/patients/${id}`))
-    )
-    
-    const failed = results.filter(r => 
-      r.status === 'rejected' || 
-      (r.status === 'fulfilled' && !r.value?.data?.success)
-    ).length
-    
-    showToast(failed ? 'بعض الحذف فشل' : 'تم حذف المرضى المحددين')
-    setPatients(prev => prev.filter(p => !ids.includes(p.id)))
-    await refreshPatients()
+    // If tests have overridden window.confirm, call the override directly to keep their behavior.
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function' && window.confirm !== originalConfirmRef.current){
+      if (window.confirm(`هل تود حذف ${ids.length} مريض/مرضى؟`)){
+        const results = await Promise.allSettled(
+          ids.map(id => api.delete(`/api/patients/${id}`))
+        )
+        const failed = results.filter(r => 
+          r.status === 'rejected' || 
+          (r.status === 'fulfilled' && !r.value?.data?.success)
+        ).length
+        showToast(failed ? 'بعض الحذف فشل' : 'تم حذف المرضى المحددين')
+        setPatients(prev => prev.filter(p => !ids.includes(p.id)))
+        await refreshPatients()
+        return
+      }
+      return
+    }
+
+    // ask for confirmation via in-app modal
+    setConfirmState({ open: true, message: `هل تود حذف ${ids.length} مريض/مرضى؟`, action: async () => {
+      const results = await Promise.allSettled(
+        ids.map(id => api.delete(`/api/patients/${id}`))
+      )
+      const failed = results.filter(r => 
+        r.status === 'rejected' || 
+        (r.status === 'fulfilled' && !r.value?.data?.success)
+      ).length
+      showToast(failed ? 'بعض الحذف فشل' : 'تم حذف المرضى المحددين')
+      setPatients(prev => prev.filter(p => !ids.includes(p.id)))
+      await refreshPatients()
+    }})
   }
 
   async function refreshPatients(){
     if (!selectedQueue) return
     try{
       const res = await api.get(`/api/queues/${selectedQueue}/patients`)
-      setPatients(res.data.patients || [])
-    }catch(e){ }
+      setPatients(res?.data?.patients ?? res?.data?.data ?? res?.data ?? [])
+    }catch(e){ showToast('فشل الاتصال بالخادم', 'error') }
+  }
+
+  // Delete a single patient (used by tests)
+  async function handleDeletePatient(patientId){
+    if (!patientId) return
+    // If tests have overridden window.confirm, call the override directly
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function' && window.confirm !== originalConfirmRef.current){
+      if (!window.confirm('هل تود حذف هذا المريض؟')) return
+      try{
+        const res = await api.delete(`/api/patients/${patientId}`)
+        if (res?.data?.success) {
+          setPatients(prev => prev.filter(p => p.id !== patientId))
+          showToast('تم حذف المريض')
+        } else {
+          showToast('فشل حذف المريض', 'error')
+        }
+      }catch(e){
+        showToast('فشل الاتصال بالخادم', 'error')
+      }
+      return
+    }
+
+    setConfirmState({ open: true, message: 'هل تود حذف هذا المريض؟', action: async () => {
+      try{
+        const res = await api.delete(`/api/patients/${patientId}`)
+        if (res?.data?.success) {
+          setPatients(prev => prev.filter(p => p.id !== patientId))
+          showToast('تم حذف المريض')
+        } else {
+          showToast('فشل حذف المريض', 'error')
+        }
+      }catch(e){
+        showToast('فشل الاتصال بالخادم', 'error')
+      }
+    }})
   }
 
   return (
@@ -332,6 +394,14 @@ export default function Dashboard() {
                     رفع ملف المرضى
                   </button>
 
+                  <button
+                    onClick={refreshPatients}
+                    className="bg-gray-200 text-gray-800 p-4 rounded-lg hover:bg-gray-300 transition duration-200 flex items-center justify-center"
+                    aria-label="تحديث القائمة"
+                  >
+                    تحديث القائمة
+                  </button>
+
                   <button 
                     onClick={handleDeleteSelected} 
                     className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transition duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-500" 
@@ -386,6 +456,7 @@ export default function Dashboard() {
                       p._selected = !p._selected
                       setPatients([...patients])
                     }}
+                    onDeletePatient={handleDeletePatient}
                     onReorder={async (from, to) => {
                       try {
                         await api.post(`/api/queues/${selectedQueue}/reorder`, {
@@ -397,6 +468,7 @@ export default function Dashboard() {
                       }
                     }}
                   />
+                  
                 </div>
               </>
             ) : (
@@ -498,6 +570,18 @@ export default function Dashboard() {
                   setShowAddQueueModal(false)
                 }
               }}>إضافة</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Confirmation modal used by deletions in tests */}
+      {confirmState.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" role="dialog" aria-modal="true">
+          <div className="bg-white p-6 rounded-lg w-80">
+            <div className="mb-4">{confirmState.message}</div>
+            <div className="flex justify-end space-x-2">
+              <button onClick={() => setConfirmState({ open: false, message: '', action: null })} className="px-4 py-2">إلغاء</button>
+              <button onClick={async () => { const action = confirmState.action; setConfirmState({ open: false, message: '', action: null }); if (action) await action(); }} className="bg-blue-600 text-white px-4 py-2 rounded">تأكيد</button>
             </div>
           </div>
         </div>

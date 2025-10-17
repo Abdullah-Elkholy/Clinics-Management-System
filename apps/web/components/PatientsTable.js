@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 
-export default function PatientsTable({ patients, onToggle, onReorder }){
+export default function PatientsTable({ patients, onToggle, onReorder, onDeletePatient }){
   const [dragIndex, setDragIndex] = useState(null)
   const draggingRef = useRef(null)
 
@@ -52,9 +52,14 @@ export default function PatientsTable({ patients, onToggle, onReorder }){
               <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)} tabIndex={0} onKeyDown={(e)=>handleKeyToggle(e,i)} role="row">
                 <td className="p-3 text-right"><input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} /></td>
                 <td className="p-3 text-right"><span className="drag-handle" aria-hidden>☰</span></td>
-                <td className="p-3 text-right" role="cell">{p.fullName}</td>
-                <td className="p-3 text-right" role="cell">{p.phoneNumber}</td>
+                <td className="p-3 text-right" role="cell" title={p.fullName || ''}>{p.fullName}</td>
+                <td className="p-3 text-right" role="cell" title={p.phoneNumber || ''}>{p.phoneNumber}</td>
                 <td className="p-3 text-right" role="cell">{p.position}</td>
+                <td className="p-3 text-right">
+                  {onDeletePatient ? (
+                    <button aria-label={`حذف المريض ${p.fullName}`} onClick={()=> onDeletePatient(p.id)} className="text-red-600 hover:text-red-700">حذف</button>
+                  ) : null}
+                </td>
               </tr>
             ))
           )}
