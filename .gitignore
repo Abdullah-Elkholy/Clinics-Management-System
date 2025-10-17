@@ -62,7 +62,7 @@ apps/web/.next/
 out/
 dist/
 build/
-.next/cache
+apps/web/.next/cache
 
 # # env files
 # .env

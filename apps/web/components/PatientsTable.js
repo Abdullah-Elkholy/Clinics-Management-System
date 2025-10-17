@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 
-export default function PatientsTable({ patients, onToggle, onReorder, onDeletePatient }){
+export default function PatientsTable({ patients, onToggle, onReorder, onDeletePatient, onToggleAll, selectAll }){
   const [dragIndex, setDragIndex] = useState(null)
   const draggingRef = useRef(null)
 
@@ -35,11 +35,17 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
       <table className="w-full" role="table" aria-label="قائمة المرضى">
         <thead className="bg-gray-50">
           <tr>
-            <th className="p-3 text-right">تحديد</th>
+            <th className="p-3 text-right">
+              <div className="flex items-center">
+                <input aria-label="select-all-patients" type="checkbox" checked={!!selectAll} onChange={onToggleAll} />
+                <label className="text-sm text-gray-600 mr-2">تحديد الكل</label>
+              </div>
+            </th>
             <th className="p-3 text-right">سحب</th>
-            <th className="p-3 text-right">الاسم</th>
-            <th className="p-3 text-right">هاتف</th>
-            <th className="p-3 text-right">ترتيب</th>
+            <th className="p-3 text-right">الترتيب</th>
+            <th className="p-3 text-right">الاسم الكامل</th>
+            <th className="p-3 text-right">رقم الهاتف</th>
+            <th className="p-3 text-right">الإجراءات</th>
           </tr>
         </thead>
         <tbody>

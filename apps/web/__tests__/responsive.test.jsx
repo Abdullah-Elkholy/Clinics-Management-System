@@ -108,10 +108,10 @@ describe('Responsive Design Tests', () => {
         const table = screen.getByRole('table', { name: 'قائمة المرضى' });
         expect(table).toBeInTheDocument();
 
-        // Check headers
-        expect(screen.getByRole('columnheader', { name: 'الاسم' })).toBeInTheDocument();
-        expect(screen.getByRole('columnheader', { name: 'هاتف' })).toBeInTheDocument();
-        expect(screen.getByRole('columnheader', { name: 'ترتيب' })).toBeInTheDocument();
+  // Check headers (names updated to match prototype)
+  expect(screen.getByRole('columnheader', { name: 'الاسم الكامل' })).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'رقم الهاتف' })).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'الترتيب' })).toBeInTheDocument();
 
         // Check data
         expect(screen.getByText('أحمد محمد')).toBeInTheDocument();

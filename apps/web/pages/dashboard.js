@@ -248,6 +248,14 @@ export default function Dashboard() {
     }})
   }
 
+  // Toggle select all patients in the current list
+  function toggleSelectAll(){
+    const list = patients || []
+    if (!list.length) return
+    const allSelected = list.every(p => !!p._selected)
+    setPatients(prev => (prev || []).map(p => ({ ...p, _selected: !allSelected })))
+  }
+
   async function refreshPatients(){
     if (!selectedQueue) return
     try{
@@ -449,15 +457,17 @@ export default function Dashboard() {
                   </div>
 
                   <PatientsTable
-                    patients={patients}
-                    onToggle={(idx) => {
-                      const p = patients[idx]
-                      if (!p) return
-                      p._selected = !p._selected
-                      setPatients([...patients])
-                    }}
-                    onDeletePatient={handleDeletePatient}
-                    onReorder={async (from, to) => {
+                      patients={patients}
+                      selectAll={(patients || []).length > 0 && (patients || []).every(p => !!p._selected)}
+                      onToggleAll={toggleSelectAll}
+                      onToggle={(idx) => {
+                        const p = patients[idx]
+                        if (!p) return
+                        p._selected = !p._selected
+                        setPatients([...patients])
+                      }}
+                      onDeletePatient={handleDeletePatient}
+                      onReorder={async (from, to) => {
                       try {
                         await api.post(`/api/queues/${selectedQueue}/reorder`, {
                           positions: patients.map((p, i) => ({ id: p.id, position: i + 1 }))

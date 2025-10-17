@@ -1,10 +1,16 @@
 import React, { useState } from 'react'
 
 export default function AddPatientsModal({ open, onClose, onAdd }){
-  const [slots, setSlots] = useState([{ fullName: '', phoneNumber: '', desiredPosition: '' }])
+  const MAX_SLOTS = 50
+  const [slots, setSlots] = useState([{ fullName: '', countryCode: '+20', phoneNumber: '', desiredPosition: '' }])
   const [submitting, setSubmitting] = useState(false)
 
-  function addSlot(){ setSlots(s => [...s, { fullName: '', phoneNumber: '', desiredPosition: '' }]) }
+  function addSlot(){
+    setSlots(s => {
+      if (s.length >= MAX_SLOTS) return s
+      return [...s, { fullName: '', countryCode: '+20', phoneNumber: '', desiredPosition: '' }]
+    })
+  }
   function updateSlot(i, key, value){ setSlots(s => s.map((it,idx) => idx===i ? {...it,[key]:value} : it)) }
   function removeSlot(i){ setSlots(s => s.filter((_,idx)=>idx!==i)) }
 
@@ -17,7 +23,7 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
       const payload = toAdd.map(s => ({ fullName: s.fullName, phoneNumber: s.phoneNumber, desiredPosition: s.desiredPosition ? parseInt(s.desiredPosition,10) : undefined }))
       await onAdd(payload)
     }finally{ setSubmitting(false) }
-    setSlots([{ fullName: '', phoneNumber: '' }])
+  setSlots([{ fullName: '', countryCode: '+20', phoneNumber: '', desiredPosition: '' }])
     onClose()
   }
 
@@ -33,14 +39,21 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
                 <div className="text-sm text-gray-500">مظهر رقمي: اترك فارغاً ليتم الإلحاق في النهاية</div>
                 <button onClick={()=>removeSlot(i)} className="text-red-500">حذف</button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
                   <input value={s.fullName} onChange={e=>updateSlot(i,'fullName',e.target.value)} type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="أدخل الاسم الكامل" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف</label>
-                  <input value={s.phoneNumber} onChange={e=>updateSlot(i,'phoneNumber',e.target.value)} type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="رقم الهاتف" />
+                  <div className="flex">
+                    <select value={s.countryCode} onChange={e=>updateSlot(i,'countryCode',e.target.value)} className="country-code px-2 py-2 border border-gray-300 rounded-r-lg bg-gray-50">
+                      <option value="+20">+20 (مصر)</option>
+                      <option value="+966">+966 (السعودية)</option>
+                      <option value="+971">+971 (الإمارات)</option>
+                    </select>
+                    <input value={s.phoneNumber} onChange={e=>updateSlot(i,'phoneNumber',e.target.value)} type="tel" className="phone-input flex-1 px-3 py-2 border border-gray-300 rounded-l-lg" placeholder="رقم الهاتف" />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">الموقع المرغوب (اختياري)</label>
@@ -51,7 +64,10 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
           ))}
         </div>
         <div className="flex items-center space-x-3 mt-4 justify-between">
-          <button onClick={addSlot} className="bg-blue-600 text-white px-4 py-2 rounded">إضافة صف</button>
+          <div>
+            <button disabled={(slots || []).length >= MAX_SLOTS} onClick={addSlot} className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded">إضافة صف</button>
+            <span className="text-sm text-gray-500 mr-3">الحد الأقصى: {MAX_SLOTS} مريض</span>
+          </div>
           <div className="flex space-x-2">
             <button onClick={onClose} className="bg-gray-300 text-gray-700 px-4 py-2 rounded">إلغاء</button>
             <button onClick={submit} className="bg-green-600 text-white px-4 py-2 rounded">{submitting ? 'جارٍ الإضافة...' : 'إضافة المرضى'}</button>

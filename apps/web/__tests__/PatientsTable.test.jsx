@@ -17,12 +17,12 @@ describe('PatientsTable Component', () => {
     // Check table structure
     expect(screen.getByRole('table', { name: 'قائمة المرضى' })).toBeInTheDocument()
 
-    // Check headers
-    expect(screen.getByText('تحديد')).toBeInTheDocument()
-    expect(screen.getByText('سحب')).toBeInTheDocument()
-    expect(screen.getByText('الاسم')).toBeInTheDocument()
-    expect(screen.getByText('هاتف')).toBeInTheDocument()
-    expect(screen.getByText('ترتيب')).toBeInTheDocument()
+  // Check headers (updated to prototype labels)
+  expect(screen.getByText('تحديد الكل')).toBeInTheDocument()
+  expect(screen.getByText('سحب')).toBeInTheDocument()
+  expect(screen.getByText('الاسم الكامل')).toBeInTheDocument()
+  expect(screen.getByText('رقم الهاتف')).toBeInTheDocument()
+  expect(screen.getByText('الترتيب')).toBeInTheDocument()
 
     // Accessibility check
     const results = await global.axe(container)
