@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react'
 
-export default function PatientsTable({ patients, onToggle, onReorder, onDeletePatient, onToggleAll, selectAll }){
+export default function PatientsTable({ patients, onToggle, onReorder, onDeletePatient, onToggleAll, selectAll, onEditPatient }){
   const [dragIndex, setDragIndex] = useState(null)
+  const [hoverIndex, setHoverIndex] = useState(null)
   const draggingRef = useRef(null)
 
   function handleDragStart(e, idx){
@@ -12,6 +13,7 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
   function handleDragOver(e, idx){
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
+    setHoverIndex(idx)
   }
   function handleDrop(e, idx){
     e.preventDefault()
@@ -21,6 +23,7 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
     if (from !== to && onReorder) onReorder(from, to)
     setDragIndex(null)
     draggingRef.current = null
+    setHoverIndex(null)
   }
 
   function handleKeyToggle(e, idx){
@@ -60,7 +63,7 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
             </tr>
           ) : (
             patients.map((p,i)=> (
-              <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)} tabIndex={0} onKeyDown={(e)=>handleKeyToggle(e,i)} role="row">
+              <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''} ${hoverIndex === i ? 'bg-blue-50 border-blue-200' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)} onDragEnd={()=>{ setHoverIndex(null); setDragIndex(null); draggingRef.current = null }} tabIndex={0} onKeyDown={(e)=>handleKeyToggle(e,i)} role="row">
                   <td className="p-3 text-right align-middle">
                   {onToggle ? (
                     <input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} />
@@ -69,7 +72,7 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
                   )}
                 </td>
                   <td className="p-3 text-right align-middle" title="سحب لإعادة الترتيب">
-                    <span className="drag-handle inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 text-gray-600">☰</span>
+                    <span className="drag-handle inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 text-gray-600 cursor-grab" aria-hidden>☰</span>
                   </td>
                   <td className="p-3 text-right align-middle" role="cell" title={p.fullName || ''}>
                     <div className="font-medium text-gray-800">{p.fullName}</div>
@@ -82,6 +85,9 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
                   </td>
                   <td className="p-3 text-right align-middle">
                     <div className="flex items-center justify-end gap-3">
+                      {onEditPatient ? (
+                        <button aria-label={`تعديل المريض ${p.fullName}`} onClick={()=> onEditPatient(p)} className="text-blue-600 hover:text-blue-700 text-sm">تعديل</button>
+                      ) : null}
                       {onDeletePatient ? (
                         <button aria-label={`حذف المريض ${p.fullName}`} onClick={()=> onDeletePatient(p.id)} className="text-red-600 hover:text-red-700 text-sm">حذف</button>
                       ) : null}

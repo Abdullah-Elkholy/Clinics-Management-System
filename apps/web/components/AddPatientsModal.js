@@ -5,6 +5,7 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
   const MAX_SLOTS = 50
   const [slots, setSlots] = useState([{ fullName: '', countryCode: '+20', phoneNumber: '', desiredPosition: '' }])
   const [submitting, setSubmitting] = useState(false)
+  const [errors, setErrors] = useState({})
 
   function addSlot(){
     setSlots(s => {
@@ -16,8 +17,18 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
   function removeSlot(i){ setSlots(s => s.filter((_,idx)=>idx!==i)) }
 
   async function submit(){
-    const toAdd = slots.filter(s => s.fullName.trim())
-    if (!toAdd.length) return alert('أدخل اسم واحد على الأقل')
+    // validate slots
+    const errs = {}
+    const toAdd = []
+    slots.forEach((s,i)=>{
+      const e = {}
+      if (!s.fullName || !s.fullName.trim()) e.fullName = 'الاسم الكامل مطلوب'
+      if (!s.phoneNumber || !s.phoneNumber.trim()) e.phoneNumber = 'رقم الهاتف مطلوب'
+      if (Object.keys(e).length) errs[i] = e
+      else toAdd.push(s)
+    })
+    setErrors(errs)
+    if (!toAdd.length) return
     try{
       setSubmitting(true)
       // map desiredPosition to int? and pass through
@@ -47,6 +58,7 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
                   <input value={s.fullName} onChange={e=>updateSlot(i,'fullName',e.target.value)} type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="أدخل الاسم الكامل" />
+                  {errors[i] && errors[i].fullName && <div role="alert" className="text-sm text-red-600 mt-1">{errors[i].fullName}</div>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف</label>
@@ -58,6 +70,7 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
                     </select>
                     <input value={s.phoneNumber} onChange={e=>updateSlot(i,'phoneNumber',e.target.value)} type="tel" className="phone-input flex-1 px-3 py-2 border border-gray-300 rounded-l-lg" placeholder="رقم الهاتف" />
                   </div>
+                  {errors[i] && errors[i].phoneNumber && <div role="alert" className="text-sm text-red-600 mt-1">{errors[i].phoneNumber}</div>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">الموقع المرغوب (اختياري)</label>
@@ -74,7 +87,7 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
           </div>
           <div className="flex space-x-2">
             <button onClick={onClose} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg">إلغاء</button>
-            <button onClick={submit} className="bg-gradient-to-r from-emerald-600 to-green-500 text-white px-4 py-2 rounded-lg">{submitting ? 'جارٍ الإضافة...' : 'إضافة المرضى'}</button>
+            <button onClick={submit} disabled={submitting} className={`px-4 py-2 rounded-lg text-white ${submitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-emerald-600 to-green-500'}`}>{submitting ? 'جارٍ الإضافة...' : 'إضافة المرضى'}</button>
           </div>
         </div>
       </div>

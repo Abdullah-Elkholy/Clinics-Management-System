@@ -12,6 +12,7 @@
   "dependencies": {
     "@testing-library/user-event": "^14.6.1",
     "axios": "^1.12.2",
+    "focus-trap-react": "^11.0.4",
     "papaparse": "^5.5.3",
     "react": "18.2.0",
     "react-dom": "18.2.0"

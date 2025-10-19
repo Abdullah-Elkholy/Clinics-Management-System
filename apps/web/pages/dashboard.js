@@ -5,6 +5,7 @@ import QueueList from '../components/QueueList'
 import PatientsTable from '../components/PatientsTable'
 import Toast, { showToast } from '../components/Toast'
 import TemplatesSelect from '../components/TemplatesSelect'
+import AddMessageTemplateModal from '../components/AddMessageTemplateModal'
 import AddPatientsModal from '../components/AddPatientsModal'
 import CSVUpload from '../components/CSVUpload'
 import MessageSelectionModal from '../components/MessageSelectionModal'
@@ -12,9 +13,11 @@ import MessagePreviewModal from '../components/MessagePreviewModal'
 import RetryPreviewModal from '../components/RetryPreviewModal'
 import QuotaManagementModal from '../components/QuotaManagementModal'
 import EditUserModal from '../components/EditUserModal'
+import EditPatientModal from '../components/EditPatientModal'
 import MessagesPanel from '../components/MessagesPanel'
 import Icon from '../components/Icon'
 import ModalWrapper from '../components/ModalWrapper'
+import AccountInfoModal from '../components/AccountInfoModal'
 
 export default function Dashboard() {
   // Navigation & Layout State
@@ -31,6 +34,8 @@ export default function Dashboard() {
   const [patients, setPatients] = useState([])
   const [templates, setTemplates] = useState([])
   const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [showAddTemplateModal, setShowAddTemplateModal] = useState(false)
+  const [showAccountModal, setShowAccountModal] = useState(false)
   
   // Modal State
   const [showAddPatientModal, setShowAddPatientModal] = useState(false)
@@ -40,7 +45,10 @@ export default function Dashboard() {
   const [showRetryPreview, setShowRetryPreview] = useState(false)
   const [showQuotaModal, setShowQuotaModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
+  const [editingPatient, setEditingPatient] = useState(null)
   const [showAddQueueModal, setShowAddQueueModal] = useState(false)
+  const [newQueueName, setNewQueueName] = useState('')
+  const [newQueueDesc, setNewQueueDesc] = useState('')
   const [confirmState, setConfirmState] = useState({ open: false, message: '', action: null })
   const [csvProgress, setCsvProgress] = useState({ rowsParsed: 0, uploaded: 0, total: 0 })
   // Capture the original window.confirm so tests that override it are detected
@@ -114,10 +122,28 @@ export default function Dashboard() {
   async function handleAddPatients(newPatients){
     if (!selectedQueue) return
     try{
+      const added = []
       for (const p of newPatients){
-        await api.post(`/api/queues/${selectedQueue}/patients`, p)
+        try{
+          const res = await api.post(`/api/queues/${selectedQueue}/patients`, p)
+          const serverData = res?.data?.patient ?? res?.data?.data ?? res?.data
+          if (serverData && serverData.id){
+            added.push(serverData)
+            setPatients(prev => [...(prev||[]), serverData])
+          } else {
+            // fallback: push the original object with a generated id
+            const temp = { id: `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`, ...p }
+            added.push(temp)
+            setPatients(prev => [...(prev||[]), temp])
+          }
+        }catch(err){
+          // on failure for an individual row, continue and inform later
+          console.warn('failed to add patient', err)
+        }
       }
-      showToast('تمت إضافة المرضى بنجاح')
+      if (added.length) showToast('تمت إضافة المرضى بنجاح')
+      else showToast('لم تتم إضافة أي مرضى')
+      // best-effort: refresh to ensure server canonical state
       await refreshPatients()
     }catch(e){
       showToast('فشل إضافة المرضى')
@@ -373,6 +399,7 @@ export default function Dashboard() {
           }
         }}
         onRequestAddQueue={() => setShowAddQueueModal(true)}
+  onRequestAccount={() => setShowAccountModal(true)}
         onEditQueue={async (id, name, description) => {
           try {
             const res = await api.put(`/api/queues/${id}`, { doctorName: name, description })
@@ -494,6 +521,12 @@ export default function Dashboard() {
                         >
                           تغيير الرسالة
                         </button>
+                        <button
+                          onClick={() => setShowAddTemplateModal(true)}
+                          className="mr-2 bg-gray-100 text-gray-800 px-3 py-2 rounded-md hover:bg-gray-200 transition duration-200"
+                        >
+                          إضافة قالب
+                        </button>
                       </div>
                     </div>
                     <div className="bg-gray-50 p-4 rounded-md border border-gray-200">
@@ -514,6 +547,7 @@ export default function Dashboard() {
                         setPatients([...patients])
                       }}
                       onDeletePatient={handleDeletePatient}
+                      onEditPatient={(p) => setEditingPatient(p)}
                       onReorder={async (from, to) => {
                       try {
                         await api.post(`/api/queues/${selectedQueue}/reorder`, {
@@ -554,10 +588,36 @@ export default function Dashboard() {
         )}
       </Layout>
 
+  <AccountInfoModal open={showAccountModal} onClose={() => setShowAccountModal(false)} user={userInfo} />
+
       <AddPatientsModal 
         open={showAddPatientModal}
         onClose={() => setShowAddPatientModal(false)}
         onAdd={handleAddPatients}
+      />
+
+      <EditPatientModal
+        open={!!editingPatient}
+        patient={editingPatient}
+        onClose={() => setEditingPatient(null)}
+        onSave={async (data) => {
+          try{
+            // optimistic update locally
+            setPatients(prev => prev.map(p => p.id === data.id ? { ...p, fullName: data.fullName, phoneNumber: data.phoneNumber, position: data.position } : p))
+            const res = await api.put(`/api/patients/${data.id}`, { fullName: data.fullName, phoneNumber: data.phoneNumber, position: data.position })
+            const serverData = res?.data?.patient ?? res?.data?.data ?? res?.data
+            if (serverData && serverData.id) {
+              setPatients(prev => prev.map(p => p.id === data.id ? ({ ...p, ...serverData }) : p))
+            } else {
+              // fallback to refresh when server didn't return canonical data
+              await refreshPatients()
+            }
+          }catch(e){
+            showToast('فشل في حفظ بيانات المريض')
+          } finally {
+            setEditingPatient(null)
+          }
+        }}
       />
 
       <ModalWrapper open={showCSVModal} onClose={() => setShowCSVModal(false)} dir="rtl">
@@ -600,6 +660,34 @@ export default function Dashboard() {
         onClose={() => setShowMessageModal(false)}
         onSend={handleSendMessage}
       />
+      <AddMessageTemplateModal
+        open={showAddTemplateModal}
+        onClose={() => setShowAddTemplateModal(false)}
+        onSave={async (data) => {
+          // optimistic create with temp id and replace with server response when available
+          const tempId = `tmpl-tmp-${Date.now()}`
+          const tempTemplate = { id: tempId, name: data.name, content: data.content, _optimistic: true }
+          setTemplates(prev => [...(prev || []), tempTemplate])
+          setShowAddTemplateModal(false)
+          showToast('جارٍ إضافة القالب...')
+          try{
+            const res = await api.post('/api/templates', { name: data.name, content: data.content })
+            const serverTpl = res?.data?.template ?? res?.data?.data ?? res?.data
+            if (serverTpl && serverTpl.id) {
+              setTemplates(prev => prev.map(t => t.id === tempId ? ({ id: serverTpl.id, name: serverTpl.name ?? data.name, content: serverTpl.content ?? data.content }) : t))
+              showToast('تم إضافة القالب')
+            } else {
+              // fallback: remove temp and show success (server didn't return canonical id)
+              setTemplates(prev => prev.map(t => t.id === tempId ? ({ id: `tmpl-${Date.now()}`, name: data.name, content: data.content }) : t))
+              showToast('تم إضافة القالب')
+            }
+          }catch(e){
+            // remove optimistic template on failure
+            setTemplates(prev => (prev || []).filter(t => t.id !== tempId))
+            showToast('فشل في إضافة القالب', 'error')
+          }
+        }}
+      />
       <MessagePreviewModal
         open={showMessagePreview}
         template={templates.find(t => t.id === selectedTemplate)}
@@ -634,22 +722,22 @@ export default function Dashboard() {
       <ModalWrapper open={showAddQueueModal} onClose={() => setShowAddQueueModal(false)} dir="rtl">
         <h3 className="text-lg font-bold mb-4">إضافة طابور</h3>
         <label className="block text-sm mb-1" htmlFor="new-queue-name">اسم الطابور</label>
-        <input id="new-queue-name" aria-label="اسم الطابور" className="w-full p-2 border rounded mb-3" />
+        <input id="new-queue-name" aria-label="اسم الطابور" value={newQueueName} onChange={e=>setNewQueueName(e.target.value)} className="w-full p-2 border rounded mb-3" />
         <label className="block text-sm mb-1" htmlFor="new-queue-desc">الوصف</label>
-        <textarea id="new-queue-desc" aria-label="وصف الطابور" className="w-full p-2 border rounded mb-3" />
+        <textarea id="new-queue-desc" aria-label="وصف الطابور" value={newQueueDesc} onChange={e=>setNewQueueDesc(e.target.value)} className="w-full p-2 border rounded mb-3" />
         <div className="flex justify-end space-x-2">
-          <button className="px-4 py-2" onClick={()=>setShowAddQueueModal(false)}>إلغاء</button>
+          <button className="px-4 py-2" onClick={()=>{ setShowAddQueueModal(false); setNewQueueName(''); setNewQueueDesc('') }}>إلغاء</button>
           <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={async ()=>{
-            const name = document.getElementById('new-queue-name')?.value || ''
-            const desc = document.getElementById('new-queue-desc')?.value || ''
             try{
-              const res = await api.post('/api/queues', { doctorName: name, description: desc })
+              const res = await api.post('/api/queues', { doctorName: newQueueName, description: newQueueDesc })
               setQueues(prev => [...prev, res.data.queue])
               showToast('تم إنشاء الطابور بنجاح')
             }catch(e){
               showToast('فشل في إنشاء الطابور')
             }finally{
               setShowAddQueueModal(false)
+              setNewQueueName('')
+              setNewQueueDesc('')
             }
           }}>إضافة</button>
         </div>
