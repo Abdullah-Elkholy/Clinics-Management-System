@@ -8,7 +8,7 @@ export default function RetryPreviewModal({ open, tasks = [], onClose, onRetry }
       <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold">معاينة المهام الفاشلة</h3>
-          <button onClick={onClose} className="text-gray-500 p-2 rounded hover:bg-gray-100">✕</button>
+          <button type="button" onClick={onClose} className="text-gray-500 p-2 rounded hover:bg-gray-100">✕</button>
         </div>
 
         <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mb-4 text-sm text-yellow-900">سيتم محاولة إعادة إرسال الرسائل التالية. يمكنك إزالة أي مهمة قبل الإرسال.</div>
@@ -31,8 +31,8 @@ export default function RetryPreviewModal({ open, tasks = [], onClose, onRetry }
         </div>
 
         <div className="flex justify-end gap-3 mt-4">
-          <button onClick={onClose} className="px-4 py-2 rounded bg-gray-100">إغلاق</button>
-          <button onClick={() => { onRetry && onRetry(tasks); onClose && onClose() }} className="px-4 py-2 rounded bg-yellow-500 text-white">إعادة الإرسال</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded bg-gray-100">إغلاق</button>
+            <button type="button" onClick={() => { onRetry && onRetry(tasks); onClose && onClose() }} className="px-4 py-2 rounded bg-yellow-500 text-white">إعادة الإرسال</button>
         </div>
       </div>
     </ModalWrapper>

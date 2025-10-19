@@ -9,7 +9,7 @@ export default function TemplatesSelect({ templates = [], value, onChange, onPre
 					<option value="">-- اختر قالباً --</option>
 					{templates.map(t => <option key={t.id} value={t.id}>{t.title || (t.content && t.content.substring(0,60))}</option>)}
 				</select>
-				<button aria-label="معاينة القالب" onClick={()=> onPreview && onPreview(value)} className="bg-blue-600 text-white px-3 py-2 rounded-lg">معاينة</button>
+				<button type="button" aria-label="معاينة القالب" onClick={()=> onPreview && onPreview(value)} className="bg-blue-600 text-white px-3 py-2 rounded-lg">معاينة</button>
 			</div>
 			{value && (() => {
 				const sel = templates.find(t=>String(t.id) === String(value))

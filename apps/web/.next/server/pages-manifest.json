@@ -1,10 +1,6 @@
 {
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
-  "/debug-logins": "pages/debug-logins.html",
-  "/": "pages/index.html",
-  "/dashboard": "pages/dashboard.html",
-  "/login": "pages/login.html",
   "/_document": "pages/_document.js",
-  "/404": "pages/404.html"
+  "/dashboard": "pages/dashboard.js"
 }

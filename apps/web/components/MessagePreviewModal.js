@@ -9,7 +9,7 @@ export default function MessagePreviewModal({ open, template, patients = [], onC
       <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-4xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold">معاينة الرسالة</h3>
-          <button onClick={onClose} className="text-gray-500 p-2 rounded hover:bg-gray-100">✕</button>
+          <button type="button" onClick={onClose} className="text-gray-500 p-2 rounded hover:bg-gray-100">✕</button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -42,8 +42,8 @@ export default function MessagePreviewModal({ open, template, patients = [], onC
         </div>
 
         <div className="flex justify-end gap-3 mt-4">
-          <button onClick={onClose} className="px-4 py-2 rounded bg-gray-100">إغلاق</button>
-          <button onClick={() => { onConfirm && onConfirm(); onClose && onClose() }} className="px-4 py-2 rounded bg-purple-600 text-white">إرسال</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded bg-gray-100">إغلاق</button>
+          <button type="button" onClick={() => { onConfirm && onConfirm(); onClose && onClose() }} className="px-4 py-2 rounded bg-purple-600 text-white">إرسال</button>
         </div>
       </div>
     </ModalWrapper>

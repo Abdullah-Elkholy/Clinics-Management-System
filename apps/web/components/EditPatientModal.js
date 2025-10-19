@@ -57,8 +57,8 @@ export default function EditPatientModal({ open = false, patient = null, onClose
       <input value={position} onChange={e=>setPosition(e.target.value)} className="w-full p-2 border rounded mb-2" />
 
       <div className="flex justify-end space-x-2">
-        <button onClick={onClose} className="px-4 py-2">إلغاء</button>
-        <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded">حفظ</button>
+        <button type="button" onClick={onClose} className="px-4 py-2">إلغاء</button>
+        <button type="button" onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded">حفظ</button>
       </div>
     </ModalWrapper>
   )

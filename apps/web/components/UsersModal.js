@@ -155,8 +155,8 @@ export default function UsersModal({ open, onClose }){
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setEditing({ ...u })} className="p-1 text-gray-600 hover:text-blue-600" aria-label={`${i18n.t('users.edit')} ${u.username}`}><Icon name="fas fa-edit" /></button>
-              <button onClick={() => setPwResetUser(u)} className="p-1 text-gray-600 hover:text-green-600 relative" aria-label={`${i18n.t('users.resetPassword')} ${u.username}`}>
+              <button type="button" onClick={() => setEditing({ ...u })} className="p-1 text-gray-600 hover:text-blue-600" aria-label={`${i18n.t('users.edit')} ${u.username}`}><Icon name="fas fa-edit" /></button>
+              <button type="button" onClick={() => setPwResetUser(u)} className="p-1 text-gray-600 hover:text-green-600 relative" aria-label={`${i18n.t('users.resetPassword')} ${u.username}`}>
                 <Icon name="fas fa-key" />
                 {justResetUserId === u.id && (
                   <>
@@ -167,7 +167,7 @@ export default function UsersModal({ open, onClose }){
                   </>
                 )}
               </button>
-              <button onClick={() => deleteUser(u.id)} className="p-1 text-gray-600 hover:text-red-600" aria-label={`${i18n.t('users.deleteConfirm')} ${u.username}`}><Icon name="fas fa-trash" /></button>
+              <button type="button" onClick={() => deleteUser(u.id)} className="p-1 text-gray-600 hover:text-red-600" aria-label={`${i18n.t('users.deleteConfirm')} ${u.username}`}><Icon name="fas fa-trash" /></button>
             </div>
           </div>
         ))}
@@ -204,13 +204,13 @@ export default function UsersModal({ open, onClose }){
       <div className="mt-3 flex items-center justify-between text-sm">
         <div className="text-gray-600">{i18n.t('users.previous')} {page} {i18n.t('users.next')} {Math.max(1, Math.ceil(total / pageSize))}</div>
         <div className="flex gap-2">
-          <button disabled={page<=1} onClick={()=> { setPage(p=> Math.max(1, p-1)); fetchUsers(page-1) }} className="px-3 py-1 border rounded disabled:opacity-50">{i18n.t('users.previous')}</button>
-          <button disabled={page>=Math.ceil(total / pageSize)} onClick={()=> { setPage(p=> p+1); fetchUsers(page+1) }} className="px-3 py-1 border rounded disabled:opacity-50">{i18n.t('users.next')}</button>
+          <button type="button" disabled={page<=1} onClick={()=> { setPage(p=> Math.max(1, p-1)); fetchUsers(page-1) }} className="px-3 py-1 border rounded disabled:opacity-50">{i18n.t('users.previous')}</button>
+          <button type="button" disabled={page>=Math.ceil(total / pageSize)} onClick={()=> { setPage(p=> p+1); fetchUsers(page+1) }} className="px-3 py-1 border rounded disabled:opacity-50">{i18n.t('users.next')}</button>
         </div>
       </div>
 
       <div className="flex justify-end mt-4">
-        <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">{i18n.t('modal.close')}</button>
+        <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">{i18n.t('modal.close')}</button>
       </div>
       <PasswordResetModal
         open={!!pwResetUser}

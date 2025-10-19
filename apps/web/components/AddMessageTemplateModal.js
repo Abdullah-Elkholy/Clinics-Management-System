@@ -58,8 +58,8 @@ export default function AddMessageTemplateModal({ open = false, onClose = null, 
       {errors.content && <div className="text-red-600 text-sm mb-2">{errors.content}</div>}
 
       <div className="flex justify-end space-x-2">
-        <button onClick={()=>{ setName(''); setContent(''); onClose && onClose() }} className="px-4 py-2">إلغاء</button>
-        <button onClick={handleSave} disabled={!name.trim() || !content.trim()} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60">إضافة</button>
+        <button type="button" onClick={()=>{ setName(''); setContent(''); onClose && onClose() }} className="px-4 py-2">إلغاء</button>
+        <button type="button" onClick={handleSave} disabled={!name.trim() || !content.trim()} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60">إضافة</button>
       </div>
     </ModalWrapper>
   )

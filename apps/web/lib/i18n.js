@@ -1,25 +1,17 @@
 const en = require('../locales/en.json')
 const ar = require('../locales/ar.json')
 
-let current = 'ar'
-try{
-  if (typeof window !== 'undefined'){
-    const stored = localStorage.getItem('locale')
-    if (stored) current = stored
-    else {
-      const nav = navigator.language || navigator.userLanguage || 'ar'
-      current = nav.startsWith('en') ? 'en' : 'ar'
-    }
-  }
-}catch(e){}
-
 const bundles = { en, ar }
+
+// default language used on the server until the client initializes
+let current = 'ar'
 
 export function setLocale(l){
   if (!bundles[l]) return
   current = l
   try{ localStorage.setItem('locale', l) }catch(e){}
 }
+
 export function getLocale(){ return current }
 
 export function t(key, vars){
@@ -30,4 +22,17 @@ export function t(key, vars){
 
 export function getDir(){ return current === 'ar' ? 'rtl' : 'ltr' }
 
-export default { t, setLocale, getLocale }
+// Client-only init to read navigator/localStorage safely and avoid
+// changing `current` at module-evaluation time which causes hydration
+// mismatches between server and client HTML.
+export function initLocaleFromBrowser(){
+  try{
+    if (typeof window === 'undefined') return
+    const stored = localStorage.getItem('locale')
+    if (stored && bundles[stored]) { current = stored; return }
+    const nav = navigator.language || navigator.userLanguage || 'ar'
+    current = nav.startsWith('en') ? 'en' : 'ar'
+  }catch(e){}
+}
+
+export default { t, setLocale, getLocale, initLocaleFromBrowser }

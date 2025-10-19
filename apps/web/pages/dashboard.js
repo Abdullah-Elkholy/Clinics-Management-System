@@ -18,6 +18,9 @@ import MessagesPanel from '../components/MessagesPanel'
 import Icon from '../components/Icon'
 import ModalWrapper from '../components/ModalWrapper'
 import AccountInfoModal from '../components/AccountInfoModal'
+import WhatsAppAuthModal from '../components/WhatsAppAuthModal'
+import ManagementPanel from '../components/ManagementPanel'
+import UsersModal from '../components/UsersModal'
 
 export default function Dashboard() {
   // Navigation & Layout State
@@ -36,6 +39,8 @@ export default function Dashboard() {
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [showAddTemplateModal, setShowAddTemplateModal] = useState(false)
   const [showAccountModal, setShowAccountModal] = useState(false)
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false)
+  const [showUsersModal, setShowUsersModal] = useState(false)
   
   // Modal State
   const [showAddPatientModal, setShowAddPatientModal] = useState(false)
@@ -400,6 +405,7 @@ export default function Dashboard() {
         }}
         onRequestAddQueue={() => setShowAddQueueModal(true)}
   onRequestAccount={() => setShowAccountModal(true)}
+  onRequestWhatsApp={() => setShowWhatsAppModal(true)}
         onEditQueue={async (id, name, description) => {
           try {
             const res = await api.put(`/api/queues/${id}`, { doctorName: name, description })
@@ -583,12 +589,18 @@ export default function Dashboard() {
         {activeSection === 'management' && (
           <div className="p-6" role="region" aria-label="إدارة النظام">
             <h2 className="text-2xl font-bold mb-4">إدارة النظام</h2>
-            {/* سيتم تنفيذ قسم الإدارة */}
+            <ManagementPanel
+              onOpenQuotas={() => setShowQuotaModal(true)}
+              onOpenWhatsApp={() => setShowWhatsAppModal(true)}
+              onOpenTemplates={() => setShowAddTemplateModal(true)}
+              onOpenUsers={() => setShowUsersModal(true)}
+            />
           </div>
         )}
       </Layout>
 
   <AccountInfoModal open={showAccountModal} onClose={() => setShowAccountModal(false)} user={userInfo} />
+  <WhatsAppAuthModal open={showWhatsAppModal} onClose={() => setShowWhatsAppModal(false)} />
 
       <AddPatientsModal 
         open={showAddPatientModal}
@@ -718,6 +730,8 @@ export default function Dashboard() {
       />
       <Toast />
 
+  <UsersModal open={showUsersModal} onClose={() => setShowUsersModal(false)} />
+
       {/* Simple Add Queue Modal for tests */}
       <ModalWrapper open={showAddQueueModal} onClose={() => setShowAddQueueModal(false)} dir="rtl">
         <h3 className="text-lg font-bold mb-4">إضافة طابور</h3>
@@ -726,8 +740,8 @@ export default function Dashboard() {
         <label className="block text-sm mb-1" htmlFor="new-queue-desc">الوصف</label>
         <textarea id="new-queue-desc" aria-label="وصف الطابور" value={newQueueDesc} onChange={e=>setNewQueueDesc(e.target.value)} className="w-full p-2 border rounded mb-3" />
         <div className="flex justify-end space-x-2">
-          <button className="px-4 py-2" onClick={()=>{ setShowAddQueueModal(false); setNewQueueName(''); setNewQueueDesc('') }}>إلغاء</button>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={async ()=>{
+          <button type="button" className="px-4 py-2" onClick={()=>{ setShowAddQueueModal(false); setNewQueueName(''); setNewQueueDesc('') }}>إلغاء</button>
+          <button type="button" className="bg-blue-600 text-white px-4 py-2 rounded" onClick={async ()=>{
             try{
               const res = await api.post('/api/queues', { doctorName: newQueueName, description: newQueueDesc })
               setQueues(prev => [...prev, res.data.queue])
@@ -746,8 +760,8 @@ export default function Dashboard() {
       <ModalWrapper open={confirmState.open} onClose={() => setConfirmState({ open: false, message: '', action: null })} dir="rtl">
         <div className="mb-4">{confirmState.message}</div>
         <div className="flex justify-end space-x-2">
-          <button onClick={() => setConfirmState({ open: false, message: '', action: null })} className="px-4 py-2">إلغاء</button>
-          <button onClick={async () => { const action = confirmState.action; setConfirmState({ open: false, message: '', action: null }); if (action) await action(); }} className="bg-blue-600 text-white px-4 py-2 rounded">تأكيد</button>
+          <button type="button" onClick={() => setConfirmState({ open: false, message: '', action: null })} className="px-4 py-2">إلغاء</button>
+          <button type="button" onClick={async () => { const action = confirmState.action; setConfirmState({ open: false, message: '', action: null }); if (action) await action(); }} className="bg-blue-600 text-white px-4 py-2 rounded">تأكيد</button>
         </div>
       </ModalWrapper>
     </>

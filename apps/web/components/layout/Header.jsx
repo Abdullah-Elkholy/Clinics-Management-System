@@ -28,7 +28,7 @@ export default function Header({ user }){
         <div className="flex items-center space-x-4 space-x-reverse">
           <div className="flex items-center space-x-3 space-x-reverse">
             <span className="text-sm text-gray-700">{user?.fullName ?? user?.username ?? '—'}</span>
-            <button onClick={logout} className="text-red-600 hover:text-red-700"><Icon name="fas fa-sign-out-alt" /></button>
+            <button type="button" onClick={logout} className="text-red-600 hover:text-red-700"><Icon name="fas fa-sign-out-alt" /></button>
           </div>
         </div>
       </div>

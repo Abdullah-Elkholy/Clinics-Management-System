@@ -52,7 +52,7 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
             <div key={i} className="patient-slot border border-gray-100 rounded-lg p-4 mb-2 bg-white">
               <div className="flex items-center mb-3 justify-between">
                 <div className="text-sm text-gray-500">الاسم والمعلومات</div>
-                <button onClick={()=>removeSlot(i)} className="text-red-500 p-1 rounded hover:bg-red-50">حذف</button>
+                <button type="button" onClick={()=>removeSlot(i)} className="text-red-500 p-1 rounded hover:bg-red-50">حذف</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -82,12 +82,12 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
         </div>
         <div className="flex items-center space-x-3 mt-4 justify-between">
           <div>
-            <button disabled={(slots || []).length >= MAX_SLOTS} onClick={addSlot} className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg">إضافة صف</button>
+            <button type="button" disabled={(slots || []).length >= MAX_SLOTS} onClick={addSlot} className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg">إضافة صف</button>
             <span className="text-sm text-gray-500 mr-3">الحد الأقصى: {MAX_SLOTS} مريض</span>
           </div>
           <div className="flex space-x-2">
-            <button onClick={onClose} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg">إلغاء</button>
-            <button onClick={submit} disabled={submitting} className={`px-4 py-2 rounded-lg text-white ${submitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-emerald-600 to-green-500'}`}>{submitting ? 'جارٍ الإضافة...' : 'إضافة المرضى'}</button>
+            <button type="button" onClick={onClose} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg">إلغاء</button>
+            <button type="button" onClick={submit} disabled={submitting} className={`px-4 py-2 rounded-lg text-white ${submitting ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-emerald-600 to-green-500'}`}>{submitting ? 'جارٍ الإضافة...' : 'إضافة المرضى'}</button>
           </div>
         </div>
       </div>

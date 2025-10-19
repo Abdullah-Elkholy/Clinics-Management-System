@@ -11,8 +11,8 @@ export default function QueueList({ queues = [], selectedQueue, onSelect = () =>
         </div>
       </div>
 
-      <div className="space-y-3" role="list" aria-label="قائمة الطوابير">
-        {queues.map((q, idx) => {
+    <div className="space-y-3" role="list" aria-label="قائمة الطوابير">
+      {queues.map((q, idx) => {
           const displayName = (q.doctorName ?? q.name ?? q.title) || ''
           const ariaLabel = `طابور ${displayName}`
 
@@ -20,10 +20,9 @@ export default function QueueList({ queues = [], selectedQueue, onSelect = () =>
           const key = q.id ?? q._tempId ?? `queue-${idx}`
 
           return (
-            <div key={key} className="relative" role="listitem" data-queue-item data-queue-id={itemId}>
-              <div
-                role="button"
-                tabIndex={0}
+            <div key={key} className="relative group" role="listitem" data-queue-item data-queue-id={itemId}>
+              <button
+                type="button"
                 onClick={() => onSelect(itemId)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(itemId) } }}
                 aria-pressed={selectedQueue === itemId}
@@ -53,18 +52,18 @@ export default function QueueList({ queues = [], selectedQueue, onSelect = () =>
                   )}
                   <Icon name="fas fa-angle-left text-gray-400" />
                 </div>
-              </div>
+              </button>
 
               {/* Controls appear on hover (left side) */}
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                 <div className="flex flex-col space-y-1">
                   {onEditQueue && (
-                    <button onClick={() => onEditQueue(itemId)} className="p-1 text-gray-500 hover:text-blue-600 transition-colors" aria-label={`تعديل طابور ${displayName}`}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onEditQueue(itemId) }} className="p-1 text-gray-500 hover:text-blue-600 transition-colors" aria-label={`تعديل طابور ${displayName}`}>
                       <Icon name="fas fa-edit" />
                     </button>
                   )}
                   {onDeleteQueue && (
-                    <button onClick={() => onDeleteQueue(itemId)} className="p-1 text-gray-500 hover:text-red-600 transition-colors" aria-label={`حذف طابور ${displayName}`}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onDeleteQueue(itemId) }} className="p-1 text-gray-500 hover:text-red-600 transition-colors" aria-label={`حذف طابور ${displayName}`}>
                       <Icon name="fas fa-trash" />
                     </button>
                   )}
@@ -78,6 +77,7 @@ export default function QueueList({ queues = [], selectedQueue, onSelect = () =>
       {canAddQueue && (
         <div className="mt-4 text-center">
           <button 
+            type="button"
             onClick={() => { if (onRequestAddQueue) return onRequestAddQueue(); if (onAddQueue) return onAddQueue() }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full hover:from-blue-700 hover:to-purple-700 shadow-md transition"
             aria-label="إضافة طابور"
