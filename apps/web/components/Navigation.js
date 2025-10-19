@@ -1,4 +1,5 @@
 import React from 'react'
+import Icon from './Icon'
 
 export default function Navigation({ activeSection, onSectionChange }) {
   return (
@@ -16,7 +17,7 @@ export default function Navigation({ activeSection, onSectionChange }) {
             aria-label="قسم الرسائل"
           >
             <span>الرسائل</span>
-            <i className="fas fa-comments" aria-hidden="true"></i>
+            <Icon name="fas fa-comments" />
           </button>
         </li>
         <li role="listitem">
@@ -31,7 +32,7 @@ export default function Navigation({ activeSection, onSectionChange }) {
             aria-label="قسم الإدارة"
           >
             <span>الإدارة</span>
-            <i className="fas fa-cog" aria-hidden="true"></i>
+            <Icon name="fas fa-cog" />
           </button>
         </li>
       </ul>

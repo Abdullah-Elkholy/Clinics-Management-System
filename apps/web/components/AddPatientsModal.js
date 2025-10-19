@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import ModalWrapper from './ModalWrapper'
 
 export default function AddPatientsModal({ open, onClose, onAdd }){
   const MAX_SLOTS = 50
@@ -29,17 +30,20 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
 
   if (!open) return null
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-96 overflow-y-auto">
-        <h3 className="text-xl font-bold mb-4">إضافة مرضى جدد</h3>
+    <ModalWrapper open={open} onClose={onClose}>
+      <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[70vh] overflow-y-auto shadow-xl">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold">إضافة مرضى جدد</h3>
+          <div className="text-sm text-gray-500">الحد الأقصى: {MAX_SLOTS} مريض</div>
+        </div>
         <div className="space-y-4">
           {slots.map((s,i)=> (
-            <div key={i} className="patient-slot border border-gray-200 rounded-lg p-4 mb-2">
+            <div key={i} className="patient-slot border border-gray-100 rounded-lg p-4 mb-2 bg-white">
               <div className="flex items-center mb-3 justify-between">
-                <div className="text-sm text-gray-500">مظهر رقمي: اترك فارغاً ليتم الإلحاق في النهاية</div>
-                <button onClick={()=>removeSlot(i)} className="text-red-500">حذف</button>
+                <div className="text-sm text-gray-500">الاسم والمعلومات</div>
+                <button onClick={()=>removeSlot(i)} className="text-red-500 p-1 rounded hover:bg-red-50">حذف</button>
               </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
                   <input value={s.fullName} onChange={e=>updateSlot(i,'fullName',e.target.value)} type="text" className="w-full px-3 py-2 border rounded-lg" placeholder="أدخل الاسم الكامل" />
@@ -65,15 +69,15 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
         </div>
         <div className="flex items-center space-x-3 mt-4 justify-between">
           <div>
-            <button disabled={(slots || []).length >= MAX_SLOTS} onClick={addSlot} className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded">إضافة صف</button>
+            <button disabled={(slots || []).length >= MAX_SLOTS} onClick={addSlot} className="bg-blue-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg">إضافة صف</button>
             <span className="text-sm text-gray-500 mr-3">الحد الأقصى: {MAX_SLOTS} مريض</span>
           </div>
           <div className="flex space-x-2">
-            <button onClick={onClose} className="bg-gray-300 text-gray-700 px-4 py-2 rounded">إلغاء</button>
-            <button onClick={submit} className="bg-green-600 text-white px-4 py-2 rounded">{submitting ? 'جارٍ الإضافة...' : 'إضافة المرضى'}</button>
+            <button onClick={onClose} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg">إلغاء</button>
+            <button onClick={submit} className="bg-gradient-to-r from-emerald-600 to-green-500 text-white px-4 py-2 rounded-lg">{submitting ? 'جارٍ الإضافة...' : 'إضافة المرضى'}</button>
           </div>
         </div>
       </div>
-    </div>
+    </ModalWrapper>
   )
 }

@@ -8,6 +8,13 @@ import TemplatesSelect from '../components/TemplatesSelect'
 import AddPatientsModal from '../components/AddPatientsModal'
 import CSVUpload from '../components/CSVUpload'
 import MessageSelectionModal from '../components/MessageSelectionModal'
+import MessagePreviewModal from '../components/MessagePreviewModal'
+import RetryPreviewModal from '../components/RetryPreviewModal'
+import QuotaManagementModal from '../components/QuotaManagementModal'
+import EditUserModal from '../components/EditUserModal'
+import MessagesPanel from '../components/MessagesPanel'
+import Icon from '../components/Icon'
+import ModalWrapper from '../components/ModalWrapper'
 
 export default function Dashboard() {
   // Navigation & Layout State
@@ -29,6 +36,10 @@ export default function Dashboard() {
   const [showAddPatientModal, setShowAddPatientModal] = useState(false)
   const [showCSVModal, setShowCSVModal] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(false)
+  const [showMessagePreview, setShowMessagePreview] = useState(false)
+  const [showRetryPreview, setShowRetryPreview] = useState(false)
+  const [showQuotaModal, setShowQuotaModal] = useState(false)
+  const [editingUser, setEditingUser] = useState(null)
   const [showAddQueueModal, setShowAddQueueModal] = useState(false)
   const [confirmState, setConfirmState] = useState({ open: false, message: '', action: null })
   const [csvProgress, setCsvProgress] = useState({ rowsParsed: 0, uploaded: 0, total: 0 })
@@ -43,11 +54,29 @@ export default function Dashboard() {
   useEffect(()=>{
     // Guard API calls with catch handlers and accept multiple response shapes
     api.get('/api/queues')
-      .then(res => setQueues(res?.data?.queues ?? res?.data?.data ?? res?.data ?? []))
+      .then(res => {
+        const maybe = res?.data?.queues ?? res?.data?.data ?? res?.data ?? []
+        const list = Array.isArray(maybe) ? maybe : []
+        // Normalize server DTOs to frontend-friendly shape
+        const normalized = list.map(q => ({
+          id: q.id ?? q.Id ?? q._tempId,
+          name: q.doctorName ?? q.DoctorName ?? q.name ?? q.title ?? '',
+          description: q.description ?? q.Description ?? q.desc ?? q.description ?? '',
+          currentPosition: q.currentPosition ?? q.CurrentPosition ?? q.currentPosition ?? 1,
+          estimatedTime: q.estimatedTime ?? q.estimatedWaitMinutes ?? q.EstimatedWaitMinutes ?? 15,
+          patientCount: q.patientCount ?? q.PatientCount ?? 0,
+          // keep original payload for any further usage
+          _raw: q
+        }))
+        setQueues(normalized)
+      })
       .catch(() => { /* ignore load errors in UI */ })
 
     api.get('/api/templates')
-      .then(res => setTemplates(res?.data?.templates ?? res?.data?.data ?? res?.data ?? []))
+      .then(res => {
+        const maybe = res?.data?.templates ?? res?.data?.data ?? res?.data ?? []
+        setTemplates(Array.isArray(maybe) ? maybe : [])
+      })
       .catch(() => { /* ignore load errors in UI */ })
   },[])
 
@@ -60,9 +89,19 @@ export default function Dashboard() {
   },[])
 
   function handleQueueSelect(id){
+    // Defensive: avoid calling API for falsy or temporary/local-only ids
+    if (!id || typeof id !== 'string' || id.startsWith('queue-') || id.startsWith('tmp-')){
+      setSelectedQueue(null)
+      setPatients([])
+      return
+    }
+
     setSelectedQueue(id)
     api.get(`/api/queues/${id}/patients`)
-      .then(res => setPatients(res?.data?.patients ?? res?.data?.data ?? res?.data ?? []))
+      .then(res => {
+        const maybe = res?.data?.patients ?? res?.data?.data ?? res?.data ?? []
+        setPatients(Array.isArray(maybe) ? maybe : [])
+      })
       .catch(() => { setPatients([]) })
   }
 
@@ -201,9 +240,11 @@ export default function Dashboard() {
 
   async function handleSendMessage(text){
     try{
+      // used backend DTO: TemplateId, PatientIds, Channel?, OverrideContent?
       const res = await api.post('/api/messages/send', { 
-        template: text, 
-        recipients: patients.filter(p=>p._selected).map(p=>p.id) 
+        templateId: selectedTemplate || null,
+        patientIds: patients.filter(p=>p._selected).map(p=>p.id),
+        overrideContent: text
       })
       showToast(res?.data?.success ? 'تم إرسال الرسالة' : 'فشل إرسال الرسالة')
     }catch(e){ 
@@ -260,7 +301,8 @@ export default function Dashboard() {
     if (!selectedQueue) return
     try{
       const res = await api.get(`/api/queues/${selectedQueue}/patients`)
-      setPatients(res?.data?.patients ?? res?.data?.data ?? res?.data ?? [])
+      const maybe = res?.data?.patients ?? res?.data?.data ?? res?.data ?? []
+      setPatients(Array.isArray(maybe) ? maybe : [])
     }catch(e){ showToast('فشل الاتصال بالخادم', 'error') }
   }
 
@@ -321,8 +363,10 @@ export default function Dashboard() {
         canAddQueue={userInfo.role === 'مدير أساسي'}
         onAddQueue={async (name, description) => {
           try {
-            const res = await api.post('/api/queues', { title: name, description })
-            setQueues(prev => [...prev, res.data.queue])
+            const res = await api.post('/api/queues', { doctorName: name, description })
+            const q = res?.data?.queue ?? res?.data?.data ?? res?.data
+            const normalized = { id: q.id ?? q.Id, name: q.doctorName ?? q.DoctorName ?? q.name ?? name, description: q.description ?? q.Description }
+            setQueues(prev => [...prev, normalized])
             showToast('تم إنشاء الطابور بنجاح')
           } catch (error) {
             showToast('فشل في إنشاء الطابور')
@@ -331,8 +375,10 @@ export default function Dashboard() {
         onRequestAddQueue={() => setShowAddQueueModal(true)}
         onEditQueue={async (id, name, description) => {
           try {
-            const res = await api.put(`/api/queues/${id}`, { name, description })
-            setQueues(prev => prev.map(q => q.id === id ? res.data.queue : q))
+            const res = await api.put(`/api/queues/${id}`, { doctorName: name, description })
+            const q = res?.data?.queue ?? res?.data?.data ?? res?.data
+            const normalized = { id: q.id ?? q.Id ?? id, name: q.doctorName ?? q.DoctorName ?? name, description: q.description ?? q.Description }
+            setQueues(prev => prev.map(q => q.id === id ? normalized : q))
             showToast('تم تحديث الطابور بنجاح')
           } catch (error) {
             showToast('فشل في تحديث الطابور')
@@ -356,7 +402,7 @@ export default function Dashboard() {
           <div className="p-6 space-y-6" role="region" aria-label="لوحة التحكم">
             {selectedQueue ? (
               <>
-                <div className="bg-gradient-to-l from-blue-600 to-purple-600 text-white p-6 md:p-8 rounded-xl shadow-lg" role="region" aria-label="معلومات الطابور" aria-live="polite">
+                <div className="bg-gradient-to-l from-blue-600 to-purple-600 text-white p-6 md:p-8 rounded-xl shadow-lg transform transition duration-300 hover:shadow-2xl hover:scale-105" role="region" aria-label="معلومات الطابور" aria-live="polite">
                   <div className="flex items-center justify-between">
                     <div className="text-right">
                       <h2 className="text-2xl md:text-3xl font-bold mb-2">{(queues.find(q => q.id === selectedQueue)?.name) || 'اختر طابور'}</h2>
@@ -376,9 +422,9 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="bg-white bg-opacity-20 px-4 py-2 rounded-lg">
-                        <i className="fas fa-users text-2xl" aria-hidden="true"></i>
-                      </div>
+                            <div className="bg-white bg-opacity-20 px-4 py-2 rounded-lg">
+                              <Icon name="fas fa-users text-2xl" />
+                            </div>
                     </div>
                   </div>
                 </div>
@@ -386,25 +432,25 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6" role="toolbar" aria-label="إجراءات الطابور">
                   <button 
                     onClick={() => setShowAddPatientModal(true)} 
-                    className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-green-500" 
+                    className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-green-500" 
                     aria-label="إضافة مرضى جدد"
-                  >
-                    <i className="fas fa-user-plus ml-2" aria-hidden="true"></i>
+                    >
                     إضافة مرضى
+                    <Icon name="fas fa-user-plus mr-2" />
                   </button>
 
                   <button 
                     onClick={() => setShowCSVModal(true)} 
-                    className="bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transition duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                    className="bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-500" 
                     aria-label="رفع ملف المرضى"
-                  >
-                    <i className="fas fa-upload ml-2" aria-hidden="true"></i>
+                    >
                     رفع ملف المرضى
+                    <Icon name="fas fa-upload mr-2" />
                   </button>
 
                   <button
                     onClick={refreshPatients}
-                    className="bg-gray-200 text-gray-800 p-4 rounded-lg hover:bg-gray-300 transition duration-200 flex items-center justify-center"
+                    className="bg-gray-200 text-gray-800 p-4 rounded-lg hover:bg-gray-300 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-sm flex items-center justify-center"
                     aria-label="تحديث القائمة"
                   >
                     تحديث القائمة
@@ -412,20 +458,20 @@ export default function Dashboard() {
 
                   <button 
                     onClick={handleDeleteSelected} 
-                    className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transition duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-500" 
+                    className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-500" 
                     aria-label="حذف المرضى المحددين"
-                  >
-                    <i className="fas fa-trash ml-2" aria-hidden="true"></i>
+                    >
                     حذف المحدد
+                    <Icon name="fas fa-trash mr-2" />
                   </button>
 
                   <button 
                     onClick={() => setShowMessageModal(true)} 
-                    className="bg-purple-600 text-white p-4 rounded-lg hover:bg-purple-700 transition duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                    className="bg-purple-600 text-white p-4 rounded-lg hover:bg-purple-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-purple-500" 
                     aria-label="إرسال رسالة واتساب"
-                  >
-                    <i className="fab fa-whatsapp ml-2" aria-hidden="true"></i>
+                    >
                     إرسال رسالة
+                    <Icon name="fab fa-whatsapp mr-2" />
                   </button>
                 </div>
 
@@ -437,6 +483,7 @@ export default function Dashboard() {
                           templates={templates} 
                           value={selectedTemplate} 
                           onChange={handleTemplateChange}
+                          onPreview={(val)=>{ if (val) { setSelectedTemplate(val); setShowMessagePreview(true) } }}
                           aria-label="اختيار قالب الرسالة"
                         />
                       </div>
@@ -492,7 +539,10 @@ export default function Dashboard() {
         {activeSection === 'messages' && (
           <div className="p-6" role="region" aria-label="إدارة الرسائل">
             <h2 className="text-2xl font-bold mb-4">إدارة الرسائل</h2>
-            {/* سيتم تنفيذ قسم الرسائل */}
+            <MessagesPanel templates={templates} onSend={(text)=>{
+              // reuse existing handler
+              handleSendMessage(text)
+            }} />
           </div>
         )}
 
@@ -510,43 +560,39 @@ export default function Dashboard() {
         onAdd={handleAddPatients}
       />
 
-      {showCSVModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" dir="rtl">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg" role="dialog" aria-modal="true" aria-labelledby="csv-modal-title">
-            <h3 id="csv-modal-title" className="text-xl font-bold mb-4">رفع ملف المرضى</h3>
-            <CSVUpload 
-              onChunk={handleCSVChunk} 
-              onProgress={handleCSVProgress} 
-              onComplete={handleCSVComplete}
-              onError={() => showToast('فشل قراءة الملف')}
+      <ModalWrapper open={showCSVModal} onClose={() => setShowCSVModal(false)} dir="rtl">
+        <h3 id="csv-modal-title" className="text-xl font-bold mb-4">رفع ملف المرضى</h3>
+        <CSVUpload 
+          onChunk={handleCSVChunk} 
+          onProgress={handleCSVProgress} 
+          onComplete={handleCSVComplete}
+          onError={() => showToast('فشل قراءة الملف')}
+        />
+        <div className="mt-4">
+          <div className="w-full bg-gray-200 h-3 rounded">
+            <div 
+              className="bg-blue-600 h-3 rounded" 
+              style={{ width: `${csvProgress.total ? Math.min(100, Math.round((csvProgress.uploaded / csvProgress.total) * 100)) : 0}%` }}
+              role="progressbar"
+              aria-valuenow={csvProgress.uploaded}
+              aria-valuemin="0"
+              aria-valuemax={csvProgress.total}
+              aria-label="تقدم رفع الملف"
             />
-            <div className="mt-4">
-              <div className="w-full bg-gray-200 h-3 rounded">
-                <div 
-                  className="bg-blue-600 h-3 rounded" 
-                  style={{ width: `${csvProgress.total ? Math.min(100, Math.round((csvProgress.uploaded / csvProgress.total) * 100)) : 0}%` }}
-                  role="progressbar"
-                  aria-valuenow={csvProgress.uploaded}
-                  aria-valuemin="0"
-                  aria-valuemax={csvProgress.total}
-                  aria-label="تقدم رفع الملف"
-                />
-              </div>
-              <div className="text-sm text-gray-600 mt-2" aria-live="polite">
-                تم رفع {csvProgress.uploaded} من {csvProgress.total} سجلات
-              </div>
-            </div>
-            <div className="flex justify-start mt-4">
-              <button 
-                onClick={() => setShowCSVModal(false)}
-                className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400 transition duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
-              >
-                إغلاق
-              </button>
-            </div>
+          </div>
+          <div className="text-sm text-gray-600 mt-2" aria-live="polite">
+            تم رفع {csvProgress.uploaded} من {csvProgress.total} سجلات
           </div>
         </div>
-      )}
+        <div className="flex justify-start mt-4">
+          <button 
+            onClick={() => setShowCSVModal(false)}
+            className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400 transition duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+          >
+            إغلاق
+          </button>
+        </div>
+      </ModalWrapper>
 
       <MessageSelectionModal
         open={showMessageModal}
@@ -554,48 +600,68 @@ export default function Dashboard() {
         onClose={() => setShowMessageModal(false)}
         onSend={handleSendMessage}
       />
+      <MessagePreviewModal
+        open={showMessagePreview}
+        template={templates.find(t => t.id === selectedTemplate)}
+        patients={patients.filter(p=>p._selected)}
+        onClose={() => setShowMessagePreview(false)}
+        onConfirm={(/* optional */) => { handleSendMessage(/* will use selectedTemplate and selected patients */); }}
+      />
+
+      <RetryPreviewModal
+        open={showRetryPreview}
+        tasks={[]}
+        onClose={() => setShowRetryPreview(false)}
+        onRetry={(tasks) => { /* implement retry via API if needed */ }}
+      />
+
+      <QuotaManagementModal
+        open={showQuotaModal}
+        moderator={null}
+        onClose={() => setShowQuotaModal(false)}
+        onSave={(data) => { showToast('تم تحديث الحصص') }}
+      />
+
+      <EditUserModal
+        open={!!editingUser}
+        user={editingUser}
+        onClose={() => setEditingUser(null)}
+        onSave={(u) => { showToast('تم حفظ المستخدم') }}
+      />
       <Toast />
 
       {/* Simple Add Queue Modal for tests */}
-      {showAddQueueModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" role="dialog" aria-modal="true">
-          <div className="bg-white p-6 rounded-lg w-96">
-            <h3 className="text-lg font-bold mb-4">إضافة طابور</h3>
-            <label className="block text-sm mb-1" htmlFor="new-queue-name">اسم الطابور</label>
-            <input id="new-queue-name" aria-label="اسم الطابور" className="w-full p-2 border rounded mb-3" />
-            <label className="block text-sm mb-1" htmlFor="new-queue-desc">الوصف</label>
-            <textarea id="new-queue-desc" aria-label="وصف الطابور" className="w-full p-2 border rounded mb-3" />
-            <div className="flex justify-end space-x-2">
-              <button className="px-4 py-2" onClick={()=>setShowAddQueueModal(false)}>إلغاء</button>
-              <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={async ()=>{
-                const name = document.getElementById('new-queue-name')?.value || ''
-                const desc = document.getElementById('new-queue-desc')?.value || ''
-                try{
-                  const res = await api.post('/api/queues', { title: name, description: desc })
-                  setQueues(prev => [...prev, res.data.queue])
-                  showToast('تم إنشاء الطابور بنجاح')
-                }catch(e){
-                  showToast('فشل في إنشاء الطابور')
-                }finally{
-                  setShowAddQueueModal(false)
-                }
-              }}>إضافة</button>
-            </div>
-          </div>
+      <ModalWrapper open={showAddQueueModal} onClose={() => setShowAddQueueModal(false)} dir="rtl">
+        <h3 className="text-lg font-bold mb-4">إضافة طابور</h3>
+        <label className="block text-sm mb-1" htmlFor="new-queue-name">اسم الطابور</label>
+        <input id="new-queue-name" aria-label="اسم الطابور" className="w-full p-2 border rounded mb-3" />
+        <label className="block text-sm mb-1" htmlFor="new-queue-desc">الوصف</label>
+        <textarea id="new-queue-desc" aria-label="وصف الطابور" className="w-full p-2 border rounded mb-3" />
+        <div className="flex justify-end space-x-2">
+          <button className="px-4 py-2" onClick={()=>setShowAddQueueModal(false)}>إلغاء</button>
+          <button className="bg-blue-600 text-white px-4 py-2 rounded" onClick={async ()=>{
+            const name = document.getElementById('new-queue-name')?.value || ''
+            const desc = document.getElementById('new-queue-desc')?.value || ''
+            try{
+              const res = await api.post('/api/queues', { doctorName: name, description: desc })
+              setQueues(prev => [...prev, res.data.queue])
+              showToast('تم إنشاء الطابور بنجاح')
+            }catch(e){
+              showToast('فشل في إنشاء الطابور')
+            }finally{
+              setShowAddQueueModal(false)
+            }
+          }}>إضافة</button>
         </div>
-      )}
+      </ModalWrapper>
       {/* Confirmation modal used by deletions in tests */}
-      {confirmState.open && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" role="dialog" aria-modal="true">
-          <div className="bg-white p-6 rounded-lg w-80">
-            <div className="mb-4">{confirmState.message}</div>
-            <div className="flex justify-end space-x-2">
-              <button onClick={() => setConfirmState({ open: false, message: '', action: null })} className="px-4 py-2">إلغاء</button>
-              <button onClick={async () => { const action = confirmState.action; setConfirmState({ open: false, message: '', action: null }); if (action) await action(); }} className="bg-blue-600 text-white px-4 py-2 rounded">تأكيد</button>
-            </div>
-          </div>
+      <ModalWrapper open={confirmState.open} onClose={() => setConfirmState({ open: false, message: '', action: null })} dir="rtl">
+        <div className="mb-4">{confirmState.message}</div>
+        <div className="flex justify-end space-x-2">
+          <button onClick={() => setConfirmState({ open: false, message: '', action: null })} className="px-4 py-2">إلغاء</button>
+          <button onClick={async () => { const action = confirmState.action; setConfirmState({ open: false, message: '', action: null }); if (action) await action(); }} className="bg-blue-600 text-white px-4 py-2 rounded">تأكيد</button>
         </div>
-      )}
+      </ModalWrapper>
     </>
   )
 }

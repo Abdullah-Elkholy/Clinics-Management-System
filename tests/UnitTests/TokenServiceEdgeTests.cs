@@ -22,8 +22,8 @@ public class TokenServiceEdgeTests
     [Fact]
     public void CreateToken_WithShortKey_StillCreatesToken()
     {
-        var dict = new Dictionary<string,string> { { "Jwt:Key", "short" } };
-        IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    var dict = new Dictionary<string,string?> { { "Jwt:Key", "short" } };
+    IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
         var svc = new TokenService(config);
         Action act = () => svc.CreateToken(1, "bob", "user", "Bob");
         // Even with a short key the code will create a token; ensure it's not empty

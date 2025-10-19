@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Serilog;
+using Serilog.Events;
 using Microsoft.EntityFrameworkCore;
 using Clinics.Infrastructure;
 using Clinics.Domain;
@@ -16,13 +18,22 @@ using Hangfire.Dashboard;
 using Hangfire.MemoryStorage;
 using System.Security.Claims;
 
-var builder = WebApplication.CreateBuilder(args);
+// Configure Serilog early so startup logs are captured
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+    .Enrich.FromLogContext()
+    .WriteTo.File("logs/clinics-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14)
+    .CreateLogger();
+
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
+builder.Host.UseSerilog();
 
 // Add services
 builder.Services.AddControllers().AddJsonOptions(opt =>
 {
-    // Keep property naming as-is on serialization but accept case-insensitive property names from clients
-    opt.JsonSerializerOptions.PropertyNamingPolicy = null;
+    // Use camelCase serialization so API responses match frontend and test expectations
+    opt.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     opt.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
 builder.Services.AddEndpointsApiExplorer();
@@ -41,13 +52,21 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false;
     options.SaveToken = true;
+    // Use the same key derivation as TokenService: SHA-256 of configured Jwt:Key (or default) so signatures match
+    var defaultKey = "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!";
+    var baseKey = string.IsNullOrEmpty(builder.Configuration["Jwt:Key"]) ? defaultKey : builder.Configuration["Jwt:Key"]!;
+    byte[] signingKeyBytes;
+    using (var sha = System.Security.Cryptography.SHA256.Create())
+    {
+        signingKeyBytes = sha.ComputeHash(Encoding.UTF8.GetBytes(baseKey));
+    }
+
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = false,
         ValidateAudience = false,
         ValidateIssuerSigningKey = true,
-        // Read signing key from configuration at runtime to allow test overrides
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!"))
+        IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes)
     };
 });
 

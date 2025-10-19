@@ -24,9 +24,13 @@ export function resetMockData(){
 }
 
 export const handlers = [
-  // queues list
+  // queues list (returns new `data` shape matching QueueDto)
   rest.get(`${API_BASE}/api/queues`, (req, res, ctx) => {
-    return res(ctx.json({ success: true, queues: [ { id: 'q1', name: 'الطابور الأول' }, { id: 'q2', name: 'الطابور الثاني' } ] }))
+    const list = [
+      { id: 'q1', doctorName: 'الطابور الأول', description: 'وصف', createdBy: 1, currentPosition: 1, estimatedWaitMinutes: 15, patientCount: 2 },
+      { id: 'q2', doctorName: 'الطابور الثاني', description: '', createdBy: 1, currentPosition: 1, estimatedWaitMinutes: 10, patientCount: 0 }
+    ]
+    return res(ctx.json({ success: true, data: list }))
   }),
   // templates
   rest.get(`${API_BASE}/api/templates`, (req, res, ctx) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 
 let globalShow = null
 
@@ -34,13 +34,16 @@ export default function Toast(){
 
   if (!state.msg) return null
 
-  const bgClass = state.type === 'success' ? 'bg-green-500' : (state.type === 'error' ? 'bg-red-500' : 'bg-black')
+  const bgClass = state.type === 'success' ? 'bg-emerald-600' : (state.type === 'error' ? 'bg-rose-600' : 'bg-slate-800')
 
   return (
-    <div role="alert" aria-live="polite" className="fixed bottom-6 right-6 z-50" dir="rtl">
-      <div className={`px-4 py-2 rounded shadow text-white ${bgClass} flex items-center`}>
-        <div style={{ flex: 1 }}>{state.msg}</div>
-        <button aria-label="إغلاق" onClick={()=> setState({ msg: null, type: 'info' })} className="mr-2 p-1">
+    <div role="alert" aria-live="polite" className="fixed bottom-6 left-6 z-50" dir="rtl">
+      <div className={`max-w-md w-full px-4 py-3 rounded-xl shadow-lg text-white ${bgClass} flex items-start gap-3`}>
+        <div className="mt-0.5 text-lg">
+          {state.type === 'success' ? '✓' : (state.type === 'error' ? '⚠' : 'i')}
+        </div>
+        <div className="flex-1 text-sm leading-snug">{state.msg}</div>
+        <button aria-label="إغلاق" onClick={()=> setState({ msg: null, type: 'info' })} className="ml-2 p-1 opacity-80 hover:opacity-100">
           ✕
         </button>
       </div>

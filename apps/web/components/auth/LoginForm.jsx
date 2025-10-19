@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import api, { setAuth } from '../../lib/api'
 import { useRouter } from 'next/router'
+import Icon from '../Icon'
 
 export default function LoginForm() {
   const [username, setUsername] = useState('')
@@ -34,7 +35,7 @@ export default function LoginForm() {
       <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
         <div className="text-center mb-8">
           <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <i className="fas fa-clinic-medical text-blue-600 text-3xl" />
+            <Icon name="fas fa-clinic-medical text-blue-600 text-3xl" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">نظام إدارة العيادات</h1>
           <p className="text-gray-600">تسجيل الدخول إلى النظام</p>

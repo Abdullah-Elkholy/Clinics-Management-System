@@ -31,9 +31,18 @@ namespace Clinics.Api.Services
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
-            // Ensure a sufficiently long default key (32+ characters) to satisfy HMAC-SHA256 requirements
+            // Use configured Jwt:Key if present; otherwise a secure default.
             var defaultKey = "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!";
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"] ?? defaultKey));
+            var baseKey = string.IsNullOrEmpty(_config["Jwt:Key"]) ? defaultKey : _config["Jwt:Key"]!;
+
+            // Derive a stable 256-bit key via SHA-256 from the baseKey so HMAC-SHA256 signing requirements are satisfied
+            byte[] keyBytes;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            {
+                keyBytes = sha.ComputeHash(Encoding.UTF8.GetBytes(baseKey));
+            }
+
+            var key = new SymmetricSecurityKey(keyBytes);
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(

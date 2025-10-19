@@ -6,8 +6,9 @@ test('queues API and messages retry endpoints respond via MSW', async ()=>{
   const qRes = await fetch(base + '/api/queues')
   const qJson = await qRes.json()
   expect(qJson).toHaveProperty('success', true)
-  expect(Array.isArray(qJson.queues)).toBe(true)
-  expect(qJson.queues.some(q => q.name && q.name.includes('الطابور'))).toBe(true)
+  // new API returns queues under `data` and uses `doctorName`
+  expect(Array.isArray(qJson.data)).toBe(true)
+  expect(qJson.data.some(q => q.doctorName && q.doctorName.includes('الطابور'))).toBe(true)
 
   // Verify retry endpoint returns success
   const rRes = await fetch(base + '/api/messages/retry', { method: 'POST' })

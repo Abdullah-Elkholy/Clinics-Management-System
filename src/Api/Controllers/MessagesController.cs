@@ -48,5 +48,30 @@ namespace Clinics.Api.Controllers
 
             return Ok(new { success = true, queued = messages.Count });
         }
+
+        // Retry processing for failed messages/tasks - frontend posts to /api/messages/retry
+        [HttpPost("retry")]
+        public async Task<IActionResult> RetryAll()
+        {
+            // Simple operation: requeue any failed tasks' messages
+            var failed = await _db.FailedTasks.ToListAsync();
+            var requeued = 0;
+            foreach(var f in failed)
+            {
+                if (f.MessageId.HasValue)
+                {
+                    var msg = await _db.Messages.FindAsync(f.MessageId.Value);
+                    if (msg != null)
+                    {
+                        msg.Status = "queued";
+                        msg.Attempts = 0;
+                        _db.FailedTasks.Remove(f);
+                        requeued++;
+                    }
+                }
+            }
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, requeued });
+        }
     }
 }

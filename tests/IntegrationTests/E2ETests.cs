@@ -35,7 +35,7 @@ public class E2ETests : IClassFixture<WebApplicationFactory<Program>>
 
         var factory = _factory.WithWebHostBuilder(builder => {
             builder.ConfigureAppConfiguration((context, conf) => {
-                var dict = new System.Collections.Generic.Dictionary<string,string>() {
+                var dict = new System.Collections.Generic.Dictionary<string,string?>() {
                     ["USE_LOCAL_SQL"] = "true",
                     ["LocalSqlServer"] = conn,
                     ["SEED_ADMIN"] = "true",
@@ -53,7 +53,7 @@ public class E2ETests : IClassFixture<WebApplicationFactory<Program>>
         var resp = await client.PostAsync("/api/auth/login", new StringContent(loginBody, Encoding.UTF8, "application/json"));
         resp.EnsureSuccessStatusCode();
         var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-        var accessToken = json.RootElement.GetProperty("data").GetProperty("AccessToken").GetString();
+    var accessToken = json.RootElement.GetProperty("data").GetProperty("accessToken").GetString();
         accessToken.Should().NotBeNullOrEmpty();
 
         // Call users

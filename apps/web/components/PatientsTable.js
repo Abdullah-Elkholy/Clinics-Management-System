@@ -31,13 +31,18 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
   }
 
   return (
-    <div className="bg-white border rounded">
+    <div className="bg-white border rounded shadow-sm">
       <table className="w-full" role="table" aria-label="قائمة المرضى">
         <thead className="bg-gray-50">
           <tr>
             <th className="p-3 text-right">
               <div className="flex items-center">
-                <input aria-label="select-all-patients" type="checkbox" checked={!!selectAll} onChange={onToggleAll} />
+                {/* Render as controlled only when handlers are provided, otherwise use defaultChecked/readOnly to avoid React warnings in tests */}
+                {onToggleAll ? (
+                  <input aria-label="select-all-patients" type="checkbox" checked={!!selectAll} onChange={onToggleAll} />
+                ) : (
+                  <input aria-label="select-all-patients" type="checkbox" defaultChecked={!!selectAll} readOnly />
+                )}
                 <label className="text-sm text-gray-600 mr-2">تحديد الكل</label>
               </div>
             </th>
@@ -56,16 +61,32 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
           ) : (
             patients.map((p,i)=> (
               <tr key={p.id ?? `tmp-${i}`} className={`border-t ${p._optimistic ? 'opacity-70' : ''}`} draggable onDragStart={(e)=>handleDragStart(e,i)} onDragOver={(e)=>handleDragOver(e,i)} onDrop={(e)=>handleDrop(e,i)} tabIndex={0} onKeyDown={(e)=>handleKeyToggle(e,i)} role="row">
-                <td className="p-3 text-right"><input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} /></td>
-                <td className="p-3 text-right"><span className="drag-handle" aria-hidden>☰</span></td>
-                <td className="p-3 text-right" role="cell" title={p.fullName || ''}>{p.fullName}</td>
-                <td className="p-3 text-right" role="cell" title={p.phoneNumber || ''}>{p.phoneNumber}</td>
-                <td className="p-3 text-right" role="cell">{p.position}</td>
-                <td className="p-3 text-right">
-                  {onDeletePatient ? (
-                    <button aria-label={`حذف المريض ${p.fullName}`} onClick={()=> onDeletePatient(p.id)} className="text-red-600 hover:text-red-700">حذف</button>
-                  ) : null}
+                  <td className="p-3 text-right align-middle">
+                  {onToggle ? (
+                    <input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} />
+                  ) : (
+                    <input aria-label={`select-patient-${i}`} type="checkbox" defaultChecked={!!p._selected} readOnly />
+                  )}
                 </td>
+                  <td className="p-3 text-right align-middle" title="سحب لإعادة الترتيب">
+                    <span className="drag-handle inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 text-gray-600">☰</span>
+                  </td>
+                  <td className="p-3 text-right align-middle" role="cell" title={p.fullName || ''}>
+                    <div className="font-medium text-gray-800">{p.fullName}</div>
+                  </td>
+                  <td className="p-3 text-right align-middle" role="cell" title={p.phoneNumber || ''}>
+                    <div className="text-sm text-gray-600">{p.phoneNumber}</div>
+                  </td>
+                  <td className="p-3 text-right align-middle" role="cell">
+                    <div className="text-sm text-gray-700">{p.position}</div>
+                  </td>
+                  <td className="p-3 text-right align-middle">
+                    <div className="flex items-center justify-end gap-3">
+                      {onDeletePatient ? (
+                        <button aria-label={`حذف المريض ${p.fullName}`} onClick={()=> onDeletePatient(p.id)} className="text-red-600 hover:text-red-700 text-sm">حذف</button>
+                      ) : null}
+                    </div>
+                  </td>
               </tr>
             ))
           )}

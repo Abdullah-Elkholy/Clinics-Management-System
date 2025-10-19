@@ -78,12 +78,14 @@ export default function CSVUpload({ onChunk, onProgress, onComplete, onError, on
   return (
     <div>
       <label htmlFor={`csv-upload-${id}`} className="block text-sm mb-1">رفع ملف المرضى (CSV)</label>
-      <input aria-label="رفع ملف المرضى (CSV)" id={`csv-upload-${id}`} type="file" accept=".csv" onChange={handleFile} />
-      {error && <div className="text-red-500 text-sm" role="alert">{error}</div>}
-      <div className="mt-2 text-sm text-gray-600 bg-yellow-50 border border-yellow-200 p-2 rounded">
-        <div className="font-medium text-yellow-800">نموذج الملف المطلوب:</div>
-        <div>العمود الأول: الاسم الكامل — العمود الثاني: رقم الهاتف — العمود الثالث: الترتيب (اختياري)</div>
+      <div className="flex items-center gap-3">
+        <input aria-label="رفع ملف المرضى (CSV)" id={`csv-upload-${id}`} type="file" accept=".csv" onChange={handleFile} className="p-2" />
+        <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-200 p-3 rounded">
+          <div className="font-medium text-yellow-800">نموذج الملف المطلوب:</div>
+          <div>العمود الأول: الاسم الكامل — العمود الثاني: رقم الهاتف — العمود الثالث: الترتيب (اختياري)</div>
+        </div>
       </div>
+      {error && <div className="text-red-500 text-sm mt-2" role="alert">{error}</div>}
     </div>
   )
 }

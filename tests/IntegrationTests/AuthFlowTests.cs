@@ -22,7 +22,7 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
     {
         _factory = factory.WithWebHostBuilder(builder => {
             builder.ConfigureAppConfiguration((context, conf) => {
-                var dict = new Dictionary<string, string>
+                var dict = new Dictionary<string, string?>
                 {
                     ["USE_LOCAL_SQL"] = "false",
                     ["Jwt:Key"] = "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456"
@@ -59,7 +59,7 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
         var resp = await client.PostAsync("/api/auth/login", new StringContent(loginBody, Encoding.UTF8, "application/json"));
         resp.EnsureSuccessStatusCode();
         var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-        var accessToken = json.RootElement.GetProperty("data").GetProperty("AccessToken").GetString();
+    var accessToken = json.RootElement.GetProperty("data").GetProperty("accessToken").GetString();
         accessToken.Should().NotBeNullOrEmpty();
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);

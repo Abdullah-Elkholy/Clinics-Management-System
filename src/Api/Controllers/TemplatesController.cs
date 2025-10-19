@@ -7,7 +7,7 @@ namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin")]
     public class TemplatesController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -28,6 +28,29 @@ namespace Clinics.Api.Controllers
             _db.MessageTemplates.Add(req);
             await _db.SaveChangesAsync();
             return Ok(new { success = true, data = req });
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] MessageTemplate req)
+        {
+            var existing = await _db.MessageTemplates.FindAsync(id);
+            if (existing == null) return NotFound(new { success = false });
+            existing.Title = req.Title;
+            existing.Content = req.Content;
+            existing.IsShared = req.IsShared;
+            existing.Moderator = req.Moderator;
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, data = existing });
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var existing = await _db.MessageTemplates.FindAsync(id);
+            if (existing == null) return NotFound(new { success = false });
+            _db.MessageTemplates.Remove(existing);
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true });
         }
     }
 }

@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <!-- Centralize Serilog versions to avoid binding conflicts -->
+    <SerilogVersion>4.0.0</SerilogVersion>
+    <SerilogSinksFileVersion>6.0.0</SerilogSinksFileVersion>
+    <!-- Note: NoWarn has been intentionally removed so package version conflicts show during build if they remain. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Serilog" Version="$(SerilogVersion)" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="$(SerilogSinksFileVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Update existing Serilog PackageReferences across projects to the desired versions to avoid assembly binding conflicts -->
+    <PackageReference Update="Serilog" Version="$(SerilogVersion)" />
+    <PackageReference Update="Serilog.Sinks.File" Version="$(SerilogSinksFileVersion)" />
+  </ItemGroup>
+</Project>

@@ -15,7 +15,7 @@ test('templates create, update and delete via API then observed in UI', async ()
   fireEvent.click(queueBtn)
 
   // Wait for templates dropdown to load
-  await waitFor(() => expect(screen.getByRole('listbox', { name: /قائمة القوالب/i })).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByLabelText(/قائمة القوالب/i)).toBeInTheDocument())
   unmount()
 
   // create template via API

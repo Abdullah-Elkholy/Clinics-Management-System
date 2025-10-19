@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { login, setAuth } from '../lib/api'
 
 export default function DebugLogins() {

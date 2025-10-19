@@ -28,7 +28,10 @@ public class UsersControllerTests
         createResult.Should().NotBeNull();
         var getAll = await controller.GetAll() as Microsoft.AspNetCore.Mvc.OkObjectResult;
         getAll.Should().NotBeNull();
-    var data = ((dynamic)getAll.Value).data as System.Collections.Generic.List<Clinics.Domain.User>;
+        // Value is an anonymous object { success = true, data = ... }
+    var value = getAll!.Value!;
+    var dataProp = value.GetType().GetProperty("data")!;
+    var data = dataProp.GetValue(value) as System.Collections.Generic.List<Clinics.Domain.User>;
         data.Should().ContainSingle(u => u.Username == "u1");
     }
 }
