@@ -54,22 +54,19 @@ describe('PatientsTable Component', () => {
 
   test('handles drag and drop reordering', async () => {
     const reorder = jest.fn()
-    const { container } = renderWithProviders(
-      <PatientsTable patients={mockPatients} onToggle={() => {}} onReorder={reorder} />
-    )
+    const { container } = renderWithProviders(<PatientsTable patients={mockPatients} onReorder={reorder} />)
+    const rows = screen.getAllByRole('row')
 
-    const rows = screen.getAllByRole('row').slice(1) // Skip header row
+    // Simulate drag from first patient to third
     const dataTransfer = {
-      setData: jest.fn(),
-      getData: jest.fn(),
-      effectAllowed: 'move',
-      dropEffect: 'move'
+      data: {},
+      setData: function (key, value) { this.data[key] = value },
+      getData: function (key) { return this.data[key] }
     }
-
-    // Test drag and drop
-    fireEvent.dragStart(rows[0], { dataTransfer })
-    fireEvent.dragOver(rows[2], { dataTransfer })
-    fireEvent.drop(rows[2], { dataTransfer })
+    fireEvent.dragStart(rows[1], { dataTransfer })
+    fireEvent.dragEnter(rows[3], { dataTransfer })
+    fireEvent.dragOver(rows[3], { dataTransfer })
+    fireEvent.drop(rows[3], { dataTransfer })
 
     expect(reorder).toHaveBeenCalledWith(0, 2)
 

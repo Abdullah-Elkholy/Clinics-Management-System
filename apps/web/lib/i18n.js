@@ -8,22 +8,33 @@ const bundles = {
 const I18nContext = createContext()
 
 const getInitialLocale = () => {
+  // Always return 'ar' as the default to prevent hydration mismatches
+  // Client-side locale switching happens after hydration
   if (typeof window === 'undefined') return 'ar'
-  try {
-    const stored = localStorage.getItem('locale')
-    if (stored && bundles[stored]) {
-      return stored
-    }
-  } catch (e) {
-    // ignore
-  }
-  const nav = navigator.language || navigator.userLanguage || 'ar'
-  return nav.startsWith('en') ? 'en' : 'ar'
+  
+  // On client, still default to 'ar' initially to match server
+  // The locale will be updated after mount if needed
+  return 'ar'
 }
 
 export class I18nProvider extends React.Component {
-  state = {
-    locale: getInitialLocale(),
+  constructor(props){
+    super(props)
+    this.state = { locale: props.initialLocale || getInitialLocale() }
+  }
+
+  componentDidMount() {
+    // After hydration, check for stored locale preference
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('locale')
+        if (stored && bundles[stored] && stored !== this.state.locale) {
+          this.setState({ locale: stored })
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
   }
 
   setLocale = (locale) => {
@@ -38,8 +49,9 @@ export class I18nProvider extends React.Component {
 
   t = (key, defaultText, options) => {
     const { locale } = this.state
-    const bundle = bundles[locale] || bundles.en
-    let text = bundle[key] || defaultText || key
+    const bundle = bundles[locale] || bundles.ar
+    // Try current locale first, then fallback to Arabic, then defaultText, then key
+    let text = bundle[key] || bundles.ar[key] || defaultText || key
     if (options) {
       text = Object.entries(options).reduce(
         (acc, [optKey, optVal]) => acc.replace(`{${optKey}}`, optVal),

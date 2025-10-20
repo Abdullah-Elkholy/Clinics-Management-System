@@ -3,6 +3,7 @@ import api from '../../lib/api'
 import { useRouter } from 'next/router'
 import Icon from '../Icon'
 import { useI18n } from '../../lib/i18n'
+import { useAuth } from '../../lib/auth'
 
 export default function LoginForm() {
   const [username, setUsername] = useState('')
@@ -11,6 +12,7 @@ export default function LoginForm() {
   const [error, setError] = useState(null)
   const router = useRouter()
   const i18n = useI18n()
+  const { login } = useAuth()
 
   async function handleLogin(e) {
     if (e && e.preventDefault) e.preventDefault()
@@ -21,9 +23,8 @@ export default function LoginForm() {
       if (res?.data?.success) {
         const token = res.data.data?.accessToken ?? res.data.data?.AccessToken
         if (token) {
-          // The new useAuth hook handles this now
-          // localStorage.setItem('accessToken', token)
-          // setAuth(token)
+          // Inform auth provider about the new token so app state updates
+          try { login(token) } catch (e) {}
         }
         router.push('/dashboard')
       } else {

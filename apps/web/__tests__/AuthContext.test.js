@@ -1,7 +1,7 @@
 import React from 'react'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { useAuth } from '../lib/auth'
+import { AuthProvider, useAuth } from '../lib/auth'
 import { rest } from 'msw'
 import { server } from '../mocks/server'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
@@ -24,10 +24,15 @@ const TestComponent = () => {
 describe('AuthContext', () => {
   beforeEach(() => {
     localStorage.clear()
+    server.resetHandlers()
   })
 
   test('initial state is not authenticated', () => {
-    renderWithProviders(<TestComponent />)
+    renderWithProviders(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    )
     expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('false')
     expect(screen.getByTestId('isLoading')).toHaveTextContent('false')
     expect(screen.getByTestId('user')).toHaveTextContent('null')
@@ -35,12 +40,16 @@ describe('AuthContext', () => {
 
   test('login function sets token and fetches user', async () => {
     server.use(
-      rest.get(`${API_BASE}/api/auth/me`, (req, res, ctx) => {
+      rest.get(`${API_BASE}/api/Auth/me`, (req, res, ctx) => {
         return res(ctx.json({ data: { id: '1', name: 'Test User', role: 'Admin' } }))
       })
     )
 
-    renderWithProviders(<TestComponent />)
+    renderWithProviders(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    )
 
     act(() => {
       fireEvent.click(screen.getByText('Login'))
@@ -56,12 +65,16 @@ describe('AuthContext', () => {
 
   test('logout function clears token and user', async () => {
     server.use(
-      rest.get(`${API_BASE}/api/auth/me`, (req, res, ctx) => {
+      rest.get(`${API_BASE}/api/Auth/me`, (req, res, ctx) => {
         return res(ctx.json({ data: { id: '1', name: 'Test User', role: 'Admin' } }))
       })
     )
 
-    renderWithProviders(<TestComponent />)
+    renderWithProviders(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    )
 
     act(() => {
       fireEvent.click(screen.getByText('Login'))
@@ -85,14 +98,16 @@ describe('AuthContext', () => {
   test('initializes with token from localStorage', async () => {
     localStorage.setItem('token', 'existing-token')
     server.use(
-      rest.get(`${API_BASE}/api/auth/me`, (req, res, ctx) => {
+      rest.get(`${API_BASE}/api/Auth/me`, (req, res, ctx) => {
         return res(ctx.json({ data: { id: '1', name: 'Existing User', role: 'Admin' } }))
       })
     )
 
-    renderWithProviders(<TestComponent />, {
-      localStorage: { token: 'existing-token' },
-    })
+    renderWithProviders(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>
+    )
 
     await waitFor(() => {
       expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('true')

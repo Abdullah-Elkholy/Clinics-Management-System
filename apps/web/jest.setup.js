@@ -12,23 +12,98 @@ const testQueryClient = new QueryClient({
   },
 });
 
+// Mock localStorage
+// Create a proper localStorage mock
+const createStorageMock = () => {
+  let storage = {};
+  return {
+    getItem: jest.fn((key) => storage[key] || null),
+    setItem: jest.fn((key, value) => {
+      storage[key] = value;
+    }),
+    removeItem: jest.fn((key) => {
+      delete storage[key];
+    }),
+    clear: jest.fn(() => {
+      storage = {};
+    })
+  };
+};
+
+Object.defineProperty(window, 'localStorage', {
+  value: createStorageMock()
+});
+
+// Mock window.matchMedia (needed for responsive tests)
+window.matchMedia = window.matchMedia || function(query) {
+  return {
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  };
+};
+
+// Start MSW server before all tests
+beforeAll(() => server.listen())
+
+// Reset handlers and mock data after each test
+afterEach(() => {
+  server.resetHandlers()
+  resetMockData()
+  cleanup()
+  // Clear all localStorage mocks
+  localStorage.getItem.mockClear()
+  localStorage.setItem.mockClear()
+  localStorage.removeItem.mockClear()
+  localStorage.clear.mockClear()
+})
+
+// Close server after all tests
+afterAll(() => server.close())
+
 jest.mock('./lib/i18n', () => ({
   ...jest.requireActual('./lib/i18n'),
-  useI18n: () => ({
-    t: (key, defaultText, options) => {
-      if (defaultText && options) {
-        return Object.entries(options).reduce(
-          (acc, [optKey, optVal]) => acc.replace(`{${optKey}}`, optVal),
-          defaultText
-        );
-      }
-      return defaultText || key;
-    },
-    setLocale: jest.fn(),
-    getLocale: () => 'ar',
-    getDir: () => 'rtl',
-    initLocaleFromBrowser: jest.fn(),
-  }),
+  useI18n: () => {
+    // Load Arabic bundle for tests so components receive localized strings
+    // which many tests assert on.
+    const bundles = {
+      en: require('./locales/en.json'),
+      ar: require('./locales/ar.json'),
+    }
+    const locale = 'ar'
+    const bundle = bundles[locale]
+    return {
+      t: (key, defaultText, options) => {
+        // First try to get the translation from the bundle
+        let text = bundle[key]
+        // If no translation found and defaultText provided, use that
+        if (!text && defaultText) {
+          text = defaultText
+        }
+        // If still no text, use the key as fallback
+        if (!text) {
+          text = key
+        }
+        // Apply any interpolation options
+        if (options) {
+          text = Object.entries(options).reduce(
+            (acc, [optKey, optVal]) => acc.replace(`{${optKey}}`, optVal),
+            text
+          )
+        }
+        return text
+      },
+      setLocale: jest.fn(),
+      getLocale: () => locale,
+      getDir: () => 'rtl',
+      initLocaleFromBrowser: jest.fn(),
+    }
+  },
 }));
 
 // Start MSW before all tests and stop after

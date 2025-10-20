@@ -156,10 +156,12 @@ try
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 if (!db.Users.Any(u => u.Username == "admin"))
                 {
-                    var primaryRole = new Clinics.Domain.Role { Name = "primary_admin", DisplayName = "المدير الأساسي" };
-                    var moderatorRole = new Clinics.Domain.Role { Name = "المشرف", DisplayName = "المشرف" };
-                    var userRole = new Clinics.Domain.Role { Name = "user", DisplayName = "مستخدم" };
+                    var primaryRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.PrimaryAdmin.ToRoleName(), DisplayName = "المدير الأساسي" };
+                    var secondaryRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.SecondaryAdmin.ToRoleName(), DisplayName = "المدير الثانوي" };
+                    var moderatorRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.Moderator.ToRoleName(), DisplayName = "المشرف" };
+                    var userRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.User.ToRoleName(), DisplayName = "مستخدم" };
                     db.Roles.Add(primaryRole);
+                    db.Roles.Add(secondaryRole);
                     db.Roles.Add(moderatorRole);
                     db.Roles.Add(userRole);
                     db.SaveChanges();

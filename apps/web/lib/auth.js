@@ -8,22 +8,31 @@ const AuthContext = createContext()
 export const AuthProvider = ({ children, initialToken, initialUser }) => {
   const queryClient = useQueryClient()
   const router = useRouter()
-  const [token, setToken] = useState(initialToken || null)
-
-  // On app load, try to load token from storage
-  useEffect(() => {
-    const storedToken = localStorage.getItem('token')
-    if (storedToken) {
-      api.defaults.headers.Authorization = `Bearer ${storedToken}`
-      setToken(storedToken)
+  const [initializing, setInitializing] = useState(true)
+  
+  // Initialize token from localStorage or initialToken immediately (before first render)
+  const [token, setToken] = useState(() => {
+    if (initialToken) return initialToken
+    if (typeof window !== 'undefined') {
+      const storedToken = localStorage.getItem('token')
+      if (storedToken) {
+        api.defaults.headers.Authorization = `Bearer ${storedToken}`
+        return storedToken
+      }
     }
+    return null
+  })
+
+  // Mark initialization as complete after first render
+  useEffect(() => {
+    setInitializing(false)
   }, [])
 
   const { data: user, isLoading: userLoading } = useQuery({
     queryKey: ['user'],
     queryFn: async () => {
       try {
-        const res = await api.get('/api/auth/me')
+        const res = await api.get('/api/Auth/me')
         return res.data.data || res.data
       } catch (error) {
         // If fetching user fails, token is likely invalid
@@ -57,7 +66,7 @@ export const AuthProvider = ({ children, initialToken, initialUser }) => {
     login,
     logout,
     isAuthenticated: !!user,
-    isLoading: userLoading,
+    isLoading: initializing || userLoading || (!!token && !user),
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

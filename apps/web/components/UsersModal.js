@@ -3,6 +3,7 @@ import ModalWrapper from './ModalWrapper'
 import api from '../lib/api'
 import Icon from './Icon'
 import { showToast } from '../lib/toast'
+import { ROLES } from '../lib/roles'
 import PasswordResetModal from './PasswordResetModal'
 import { useI18n } from '../lib/i18n'
 
@@ -37,7 +38,7 @@ export default function UsersModal({ open, onClose }){
 
   function fetchUsers(p = page){
     setLoading(true)
-    api.get('/api/users', { params: { q: query || undefined, page: p, pageSize } })
+    api.get('/api/Users', { params: { q: query || undefined, page: p, pageSize } })
       .then(res => {
         const data = res?.data
         const list = data?.users ?? data?.data ?? data ?? []
@@ -50,7 +51,7 @@ export default function UsersModal({ open, onClose }){
   }
 
   function startCreate(){
-    setEditing({ id: null, username: '', role: 'user' })
+    setEditing({ id: null, username: '', role: ROLES.USER })
     setTimeout(()=> nameRef.current && nameRef.current.focus(), 10)
   }
 
@@ -58,14 +59,14 @@ export default function UsersModal({ open, onClose }){
   if (!u.username || !u.role) return showToast(i18n.t('users.fillRequired', 'الرجاء إدخال اسم المستخدم والدور'))
     try{
       if (!u.id){
-        const res = await api.post('/api/users', { username: u.username, role: u.role, password: u.password || null })
+        const res = await api.post('/api/Users', { username: u.username, role: u.role, password: u.password || null })
         const created = res?.data?.user ?? res?.data?.data ?? res?.data
         // if server returns list-paged shape, refetch; otherwise append
   if (created && created.id) setUsers(prev => [ ...(prev||[]), created ])
   else fetchUsers(1)
   showToast(i18n.t('users.added', 'تمت إضافة المستخدم بنجاح'))
       } else {
-        const res = await api.put(`/api/users/${u.id}`, { username: u.username, role: u.role })
+        const res = await api.put(`/api/Users/${u.id}`, { username: u.username, role: u.role })
         const updated = res?.data?.user ?? res?.data?.data ?? res?.data
   setUsers(prev => prev.map(x => x.id === u.id ? ({ ...x, ...updated }) : x))
   showToast(i18n.t('users.updated', 'تم تحديث المستخدم بنجاح'))
@@ -81,7 +82,7 @@ export default function UsersModal({ open, onClose }){
     const prev = users
     setUsers(u => u.map(x => x.id === userId ? ({ ...x, role: newRole }) : x))
     try{
-      await api.put(`/api/users/${userId}`, { role: newRole })
+      await api.put(`/api/Users/${userId}`, { role: newRole })
       showToast(i18n.t('users.updateRoleSuccess', 'تم تحديث الدور بنجاح'))
     }catch(e){
       setUsers(prev)
@@ -93,13 +94,13 @@ export default function UsersModal({ open, onClose }){
   async function resetPassword(userId, newPassword){
     try{
       // try dedicated endpoint first
-      await api.post(`/api/users/${userId}/reset-password`, { password: newPassword })
+      await api.post(`/api/Users/${userId}/reset-password`, { password: newPassword })
   showToast(i18n.t('users.resetSuccess', 'تم إعادة تعيين كلمة المرور بنجاح'))
       return true
     }catch(e){
       // fallback to generic users endpoint if server expects different shape
       try{
-        await api.put(`/api/users/${userId}`, { password: newPassword })
+        await api.put(`/api/Users/${userId}`, { password: newPassword })
   showToast(i18n.t('users.resetSuccess', 'تم إعادة تعيين كلمة المرور بنجاح'))
         return true
       }catch(e2){
@@ -112,7 +113,7 @@ export default function UsersModal({ open, onClose }){
   async function deleteUser(id){
     if (!confirm(i18n.t('users.deleteConfirm', 'هل أنت متأكد أنك تريد حذف هذا المستخدم؟'))) return
     try{
-      await api.delete(`/api/users/${id}`)
+      await api.delete(`/api/Users/${id}`)
       // if paged, refetch current page
       fetchUsers()
       showToast(i18n.t('users.deleted', 'تم حذف المستخدم بنجاح'))

@@ -4,6 +4,7 @@ import { renderWithProviders } from '../test-utils/renderWithProviders'
 import Dashboard from '../pages/dashboard'
 import { server } from '../mocks/server'
 import { rest } from 'msw'
+import { ROLES } from '../lib/roles'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
@@ -16,13 +17,13 @@ describe('Queue View Edge Cases', () => {
     }))
 
     server.use(
-      rest.get(`${API_BASE}/api/queues`, (req, res, ctx) => {
+      rest.get(`${API_BASE}/api/Queues`, (req, res, ctx) => {
         return res(ctx.json({ success: true, data: largeQueueList }))
       })
     )
 
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     await waitFor(() => {
@@ -36,13 +37,13 @@ describe('Queue View Edge Cases', () => {
 
   test('handles queue with zero patients correctly', async () => {
     server.use(
-      rest.get(`${API_BASE}/api/queues/q1/patients`, (req, res, ctx) => {
+      rest.get(`${API_BASE}/api/Queues/q1/patients`, (req, res, ctx) => {
         return res(ctx.json({ success: true, patients: [] }))
       })
     )
 
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     const queueBtn = await screen.findByText(/الطابور الأول/i)
@@ -60,14 +61,14 @@ describe('Queue View Edge Cases', () => {
 
   test('handles connection loss during patient fetch', async () => {
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     const queueBtn = await screen.findByText(/الطابور الأول/i)
     
     // Mock a network error for the patients fetch
     server.use(
-      rest.get(`${API_BASE}/api/queues/q1/patients`, (req, res, ctx) => {
+      rest.get(`${API_BASE}/api/Queues/q1/patients`, (req, res, ctx) => {
         return res.networkError('Failed to connect')
       })
     )
@@ -86,7 +87,7 @@ describe('Queue View Edge Cases', () => {
 
   test('handles concurrent queue modifications correctly', async () => {
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     const queueBtn = await screen.findByText(/الطابور الأول/i)
@@ -116,7 +117,7 @@ describe('Queue View Edge Cases', () => {
     const longQueueName = 'طابور المرضى المحولين من العيادة الخارجية إلى قسم الطوارئ مع حالات خاصة تحتاج لرعاية فورية'
     
     server.use(
-      rest.get(`${API_BASE}/api/queues`, (req, res, ctx) => {
+      rest.get(`${API_BASE}/api/Queues`, (req, res, ctx) => {
         return res(ctx.json({
           success: true,
           data: [{ id: 'q-long', doctorName: longQueueName, patientCount: 5 }]
@@ -125,7 +126,7 @@ describe('Queue View Edge Cases', () => {
     )
 
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     await waitFor(() => {

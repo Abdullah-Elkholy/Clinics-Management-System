@@ -1,11 +1,5 @@
 import { useAuth } from './auth'
-
-const ROLES = {
-  PRIMARY_ADMIN: 'primary_admin',
-  SECONDARY_ADMIN: 'secondary_admin',
-  MODERATOR: 'moderator',
-  USER: 'user',
-}
+import { ROLES } from './roles'
 
 export const useAuthorization = () => {
   const { user } = useAuth()

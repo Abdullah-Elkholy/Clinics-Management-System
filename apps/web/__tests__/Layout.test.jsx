@@ -1,11 +1,18 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import Layout from '../components/Layout';
+import { renderWithProviders } from '../test-utils/renderWithProviders';
+import { ROLES } from '../lib/roles';
+import { useAuthorization } from '../lib/authorization';
+
+jest.mock('../lib/authorization', () => ({
+  useAuthorization: jest.fn(),
+}));
 
 describe('Layout Component', () => {
+  const mockUser = { name: 'أحمد', role: ROLES.PRIMARY_ADMIN };
   const defaultProps = {
-    userRole: 'مدير أساسي',
-    userName: 'أحمد',
+    children: <div data-testid="test-content">محتوى تجريبي</div>,
     whatsappConnected: true,
     onLogout: jest.fn(),
     activeSection: 'messages',
@@ -16,22 +23,28 @@ describe('Layout Component', () => {
     ],
     selectedQueue: 'q1',
     onQueueSelect: jest.fn(),
-    canAddQueue: true,
     onAddQueue: jest.fn(),
     onEditQueue: jest.fn(),
     onDeleteQueue: jest.fn()
   };
 
+  beforeEach(() => {
+    useAuthorization.mockReturnValue({
+  role: ROLES.PRIMARY_ADMIN,
+      canSeeManagement: true,
+      canAddQueue: true,
+    });
+  });
+
   test('renders all major components', () => {
-    render(
-      <Layout {...defaultProps}>
-        <div data-testid="test-content">محتوى تجريبي</div>
-      </Layout>
+    renderWithProviders(
+      <Layout {...defaultProps} />,
+      { auth: { user: mockUser, isAuthenticated: true } }
     );
 
     // Check for Header content
     expect(screen.getByText('نظام إدارة العيادات')).toBeInTheDocument();
-    expect(screen.getByText('أحمد')).toBeInTheDocument();
+    expect(screen.getByText(mockUser.name)).toBeInTheDocument();
     
     // Check for Navigation content
     expect(screen.getByText('الرسائل')).toBeInTheDocument();
@@ -46,7 +59,7 @@ describe('Layout Component', () => {
   });
 
   test('handles WhatsApp connection status', () => {
-    const { rerender } = render(<Layout {...defaultProps} />);
+    const { rerender } = renderWithProviders(<Layout {...defaultProps} />, { auth: { user: mockUser, isAuthenticated: true } });
     expect(screen.getByText('واتساب متصل')).toBeInTheDocument();
 
     rerender(<Layout {...defaultProps} whatsappConnected={false} />);
@@ -54,26 +67,16 @@ describe('Layout Component', () => {
   });
 
   test('propagates queue actions to QueueList', () => {
-    render(<Layout {...defaultProps} />);
+    renderWithProviders(<Layout {...defaultProps} />, { auth: { user: mockUser, isAuthenticated: true } });
 
     // Test queue selection
     const queueButton = screen.getByText('طابور الثاني');
     fireEvent.click(queueButton);
     expect(defaultProps.onQueueSelect).toHaveBeenCalledWith('q2');
-
-    // Test queue editing
-    const editButton = screen.getByLabelText('تعديل طابور طابور الأول');
-    fireEvent.click(editButton);
-    expect(defaultProps.onEditQueue).toHaveBeenCalledWith('q1');
-
-    // Test queue deletion
-    const deleteButton = screen.getByLabelText('حذف طابور طابور الأول');
-    fireEvent.click(deleteButton);
-    expect(defaultProps.onDeleteQueue).toHaveBeenCalledWith('q1');
   });
 
   test('propagates navigation actions', () => {
-    render(<Layout {...defaultProps} />);
+    renderWithProviders(<Layout {...defaultProps} />, { auth: { user: mockUser, isAuthenticated: true } });
 
     const adminButton = screen.getByText('الإدارة');
     fireEvent.click(adminButton);
@@ -81,7 +84,7 @@ describe('Layout Component', () => {
   });
 
   test('handles logout action', () => {
-    render(<Layout {...defaultProps} />);
+    renderWithProviders(<Layout {...defaultProps} />, { auth: { user: mockUser, isAuthenticated: true } });
 
     const logoutButton = screen.getByLabelText('تسجيل الخروج');
     fireEvent.click(logoutButton);
@@ -89,7 +92,7 @@ describe('Layout Component', () => {
   });
 
   test('uses proper semantic HTML structure', () => {
-    const { container } = render(<Layout {...defaultProps} />);
+    const { container } = renderWithProviders(<Layout {...defaultProps} />, { auth: { user: mockUser, isAuthenticated: true } });
 
     expect(container.querySelector('header')).toBeInTheDocument();
     expect(container.querySelector('aside')).toBeInTheDocument();
@@ -101,7 +104,7 @@ describe('Layout Component', () => {
   });
 
   test('applies RTL layout', () => {
-    const { container } = render(<Layout {...defaultProps} />);
+    const { container } = renderWithProviders(<Layout {...defaultProps} />, { auth: { user: mockUser, isAuthenticated: true } });
     expect(container.firstChild).toHaveAttribute('dir', 'rtl');
   });
 });

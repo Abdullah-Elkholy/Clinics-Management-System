@@ -1,6 +1,7 @@
 import React from 'react'
 import { screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
+import { ROLES } from '../lib/roles'
 import Dashboard from '../pages/dashboard'
 import { server } from '../mocks/server'
 import { rest } from 'msw'
@@ -12,7 +13,7 @@ describe('CSV Edge Cases', () => {
 
   test('CSV large file processes without crashing and adds final rows', async () => {
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     // 1. Select the queue
@@ -59,7 +60,7 @@ describe('CSV Edge Cases', () => {
 
   test('CSV with empty lines between valid rows processes successfully', async () => {
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     const queueBtn = await screen.findByText(/الطابور الأول/i)
@@ -95,7 +96,7 @@ describe('CSV Edge Cases', () => {
   test('CSV with duplicate entries shows warning and adds unique entries', async () => {
     // Mock the API to return a 409 conflict for duplicates
     server.use(
-      rest.post(`${API_BASE}/api/queues/q1/patients`, async (req, res, ctx) => {
+      rest.post(`${API_BASE}/api/Queues/q1/patients`, async (req, res, ctx) => {
         const body = await req.json()
         if (body.fullName === 'DuplicateUser') {
           // Allow the first one, reject the second
@@ -109,7 +110,7 @@ describe('CSV Edge Cases', () => {
     )
 
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     const queueBtn = await screen.findByText(/الطابور الأول/i)
@@ -144,7 +145,7 @@ describe('CSV Edge Cases', () => {
 
   test('CSV with very long names and numbers processes correctly', async () => {
     renderWithProviders(<Dashboard />, {
-      localStorage: { currentUser: JSON.stringify({ id: 1, role: 'primary_admin' }) },
+  localStorage: { currentUser: JSON.stringify({ id: 1, role: ROLES.PRIMARY_ADMIN }) },
     })
 
     const queueBtn = await screen.findByText(/الطابور الأول/i)

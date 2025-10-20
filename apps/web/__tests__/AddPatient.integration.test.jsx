@@ -1,14 +1,28 @@
 import React from 'react'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
+import { ROLES } from '../lib/roles'
 import App from '../pages/_app'
 import Dashboard from '../pages/dashboard'
 
 test('add patient flow: opens modal and adds patient to queue', async ()=>{
-  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: 'primary_admin' }) } })
+  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { 
+  auth: { user: { id:1, role: ROLES.PRIMARY_ADMIN } }
+  })
 
-  // wait for queues list and click the first queue (الطابور الأول)
-  const queueBtn = await screen.findByText(/الطابور الأول/i)
+  // Wait for initial load and navigation
+  await waitFor(async () => {
+    // First the loading indicator should appear
+    expect(screen.getByText('Loading...')).toBeInTheDocument()
+  })
+
+  // Then wait for nav buttons to appear
+  await waitFor(async () => {
+    expect(screen.getByRole('button', { name: 'قسم الرسائل' })).toBeInTheDocument()
+  })
+
+  // Then wait for queue list
+  const queueBtn = await screen.findByRole('button', { name: /طابور.*الطابور الأول/i })
   fireEvent.click(queueBtn)
 
   // wait for patient 'Ali' to confirm queue loaded

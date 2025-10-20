@@ -10,7 +10,7 @@ function getGlobalManager() {
   return globalThis[GLOBAL_KEY]
 }
 
-export function enqueueToast(message, type = 'info', timeoutMs = 3000) {
+export function enqueueToast(message, type = 'success', timeoutMs = 3000) {
   const mgr = getGlobalManager()
   if (!mgr) return
   const entry = { id: Date.now() + Math.random(), message: String(message), type, timeoutMs }
@@ -29,7 +29,7 @@ export function enqueueToast(message, type = 'info', timeoutMs = 3000) {
   }
 }
 
-export function showToast(message, type = 'info', timeoutMs = 3000) {
+export function showToast(message, type = 'success', timeoutMs = 3000) {
   return enqueueToast(message, type, timeoutMs)
 }
 
@@ -74,21 +74,19 @@ export default function Toast() {
             role="alert"
             dir="rtl"
             className={`pointer-events-auto max-w-xs text-white px-4 py-3 rounded-lg shadow-lg ${
-              t.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+              t.type === 'error' ? 'bg-red-500' : 'bg-green-500'
             }`}
           >
             <div className="flex items-start space-x-3 space-x-reverse">
               <div className="flex-1 text-sm">{t.message}</div>
-              {t.type === 'error' && (
-                <button
-                  type="button"
-                  className="text-white"
-                  aria-label="إغلاق"
-                  onClick={() => setToasts((s) => s.filter(x => x.id !== t.id))}
-                >
-                  &times;
-                </button>
-              )}
+              <button
+                type="button"
+                className="text-white hover:text-gray-200 text-xl leading-none"
+                aria-label="إغلاق"
+                onClick={() => setToasts((s) => s.filter(x => x.id !== t.id))}
+              >
+                &times;
+              </button>
             </div>
           </div>
         ))}

@@ -37,6 +37,7 @@ export default function ModalWrapper({ open = true, title, actions = [], childre
                 <button
                   key={index}
                   onClick={action.onClick}
+                  type="button"
                   className={`px-4 py-2 rounded-md ${
                     action.variant === 'primary'
                       ? 'bg-blue-600 text-white hover:bg-blue-700'

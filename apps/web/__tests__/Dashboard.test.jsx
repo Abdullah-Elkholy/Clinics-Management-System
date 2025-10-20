@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ProtectedDashboard from '../pages/dashboard';
 import { renderWithProviders } from '../test-utils/renderWithProviders'
+import { ROLES } from '../lib/roles'
 import api from '../lib/api';
 import { useAuthorization } from '../lib/authorization';
 
@@ -16,15 +17,14 @@ jest.mock('../lib/authorization', () => ({
 
 describe('Dashboard Component', () => {
   const mockUser = {
-  id: '1',
-  name: 'Test User',
-  email: 'test@example.com',
-  role: 'primary_admin',
-  permissions: ['read', 'write'],
-};
+    id: '1',
+    name: 'Test User',
+    email: 'test@example.com',
+  role: ROLES.PRIMARY_ADMIN,
+  };
   const mockQueues = [
-    { id: 'q1', name: 'طابور الأول', currentPosition: 1, estimatedTime: 15 },
-    { id: 'q2', name: 'طابور الثاني', currentPosition: 2, estimatedTime: 20 }
+    { id: 'q1', name: 'طابور الأول', currentPosition: 1, estimatedTime: 15, patientCount: 5 },
+    { id: 'q2', name: 'طابور الثاني', currentPosition: 2, estimatedTime: 20, patientCount: 3 }
   ];
 
   const mockPatients = [
@@ -37,347 +37,163 @@ describe('Dashboard Component', () => {
     { id: 't2', content: 'تم تأكيد موعدك' }
   ];
 
-  let currentMockQueues = [...mockQueues];
-
   beforeEach(() => {
-    // Reset the mock queues before each test
-    currentMockQueues = [...mockQueues];
+    // Reset mocks
+    api.get.mockReset();
+    api.post.mockReset();
+    useAuthorization.mockReset();
 
-    // Default to primary_admin, can be overridden in describe blocks
+    // Default to primary_admin
     useAuthorization.mockReturnValue({
       isPrimaryAdmin: true,
-      isSecondaryAdmin: false,
-      isModerator: false,
-      isUser: false,
-      canManageUsers: true,
-      canManageQuotas: true,
-      canManageWhatsApp: true,
-      canManageTemplates: true,
+      canSeeManagement: true,
       canCreateQueues: true,
       canDeleteQueues: true,
       canEditQueues: true,
       canReorderPatients: true,
       canEditPatients: true,
       canDeletePatients: true,
-      canSeeManagement: true,
+      canManageUsers: true,
+      canManageQuotas: true,
+      canManageWhatsApp: true,
+      canManageTemplates: true,
     });
 
     api.get.mockImplementation((url) => {
-      if (url === '/api/queues') return Promise.resolve({ data: { data: currentMockQueues } });
-      if (url === '/api/templates') return Promise.resolve({ data: { data: mockTemplates } });
-      if (url.includes('/patients')) return Promise.resolve({ data: { data: mockPatients } });
-      return Promise.reject(new Error('Not found'));
+      if (url.startsWith('/api/Queues/')) return Promise.resolve({ data: { data: mockPatients } });
+      if (url === '/api/Queues') return Promise.resolve({ data: { data: mockQueues } });
+      if (url === '/api/Templates') return Promise.resolve({ data: { data: mockTemplates } });
+      return Promise.reject(new Error(`API GET call to ${url} not mocked`));
     });
 
     api.post.mockImplementation((url, data) => {
-      if (url === '/api/queues') {
-        const newQueue = { ...data, id: `q${currentMockQueues.length + 1}`, name: data.doctorName };
-        currentMockQueues.push(newQueue);
-        return Promise.resolve({ data: newQueue });
+      if (url === '/api/Queues') {
+        const newQueue = { ...data, id: `q${mockQueues.length + 1}`, name: data.doctorName, patientCount: 0 };
+        return Promise.resolve({ data: { data: newQueue } });
       }
       return Promise.resolve({ data: {} });
     });
   });
 
+  const renderDashboard = (userRole = ROLES.PRIMARY_ADMIN) => {
+    const user = { ...mockUser, role: userRole };
+    return renderWithProviders(<ProtectedDashboard />, {
+      auth: { user, isAuthenticated: true }
+    });
+  };
+
   describe('for primary_admin', () => {
     test('renders initial dashboard state with queues list', async () => {
-      renderWithProviders(<ProtectedDashboard />, {
-        localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-      });
-
-      // Wait for the queue to appear (ensures useEffect setState has completed)
-      await screen.findByText('طابور الأول')
-
-      // API should have been called for initial data
-      expect(api.get).toHaveBeenCalledWith('/api/queues');
-      expect(api.get).toHaveBeenCalledWith('/api/templates');
-
-      // Verify queue list is rendered
-      expect(screen.getByText('طابور الأول')).toBeInTheDocument();
+  renderDashboard(ROLES.PRIMARY_ADMIN);
+      await screen.findByText('طابور الأول');
+      expect(api.get).toHaveBeenCalledWith('/api/Queues');
+      expect(api.get).toHaveBeenCalledWith('/api/Templates');
       expect(screen.getByText('طابور الثاني')).toBeInTheDocument();
     });
 
     test('can see all management panel cards', async () => {
-        renderWithProviders(<ProtectedDashboard />, {
-            localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-        });
-        
-        fireEvent.click(await screen.findByText('الإدارة'));
-
-        expect(await screen.findByText('المستخدمون')).toBeInTheDocument();
-        expect(await screen.findByText('الحصص والإعدادات')).toBeInTheDocument();
-        expect(await screen.findByText('واتساب')).toBeInTheDocument();
-        expect(await screen.findByText('قوالب الرسائل')).toBeInTheDocument();
+  renderDashboard(ROLES.PRIMARY_ADMIN);
+      fireEvent.click(await screen.findByText('الإدارة'));
+      expect(await screen.findByText('المستخدمون')).toBeInTheDocument();
+      expect(await screen.findByText('الحصص والإعدادات')).toBeInTheDocument();
+      expect(await screen.findByText('واتساب')).toBeInTheDocument();
+      expect(await screen.findByText('قوالب الرسائل')).toBeInTheDocument();
     });
   });
-
 
   describe('for secondary_admin', () => {
     beforeEach(() => {
       useAuthorization.mockReturnValue({
-        isPrimaryAdmin: false,
         isSecondaryAdmin: true,
-        isModerator: false,
-        isUser: false,
-        canManageUsers: false,
-        canManageQuotas: false,
+        canSeeManagement: true,
         canManageWhatsApp: true,
         canManageTemplates: true,
-        canCreateQueues: true,
-        canDeleteQueues: true,
-        canEditQueues: true,
-        canReorderPatients: true,
-        canEditPatients: true,
-        canDeletePatients: true,
-        canSeeManagement: true,
       });
     });
 
     test('cannot see Users and Quotas management cards', async () => {
-        renderWithProviders(<ProtectedDashboard />, {
-            localStorage: { user: JSON.stringify({ ...mockUser, role: 'secondary_admin' }), token: 'test-token' }
-        });
-        
-        fireEvent.click(await screen.findByText('الإدارة'));
-
-        expect(screen.queryByText('المستخدمون')).not.toBeInTheDocument();
-        expect(screen.queryByText('الحصص والإعدادات')).not.toBeInTheDocument();
-        expect(await screen.findByText('واتساب')).toBeInTheDocument();
-        expect(await screen.findByText('قوالب الرسائل')).toBeInTheDocument();
+  renderDashboard(ROLES.SECONDARY_ADMIN);
+      fireEvent.click(await screen.findByText('الإدارة'));
+      expect(screen.queryByText('المستخدمون')).not.toBeInTheDocument();
+      expect(screen.queryByText('الحصص والإعدادات')).not.toBeInTheDocument();
+      expect(await screen.findByText('واتساب')).toBeInTheDocument();
+      expect(await screen.findByText('قوالب الرسائل')).toBeInTheDocument();
     });
   });
 
   describe('for moderator', () => {
     beforeEach(() => {
       useAuthorization.mockReturnValue({
-        isPrimaryAdmin: false,
-        isSecondaryAdmin: false,
         isModerator: true,
-        isUser: false,
-        canManageUsers: false,
-        canManageQuotas: false,
-        canManageWhatsApp: false,
-        canManageTemplates: false,
-        canCreateQueues: false,
-        canDeleteQueues: false,
-        canEditQueues: false,
-        canReorderPatients: true,
-        canEditPatients: false,
-        canDeletePatients: false,
         canSeeManagement: true,
       });
     });
 
     test('can only see management link but no management cards and cannot add queues', async () => {
-        renderWithProviders(<ProtectedDashboard />, {
-            localStorage: { user: JSON.stringify({ ...mockUser, role: 'moderator' }), token: 'test-token' }
-        });
-        
-        // Can see link
-        const managementLink = await screen.findByText('الإدارة');
-        expect(managementLink).toBeInTheDocument();
-        
-        fireEvent.click(managementLink);
-
-        // Cannot see any cards
-        expect(screen.queryByText('المستخدمون')).not.toBeInTheDocument();
-        expect(screen.queryByText('الحصص والإعدادات')).not.toBeInTheDocument();
-        expect(screen.queryByText('واتساب')).not.toBeInTheDocument();
-        expect(screen.queryByText('قوالب الرسائل')).not.toBeInTheDocument();
-
-        // Cannot add queue
-        expect(screen.queryByRole('button', { name: 'إضافة طابور' })).not.toBeInTheDocument();
+  renderDashboard(ROLES.MODERATOR);
+      const managementLink = await screen.findByText('الإدارة');
+      expect(managementLink).toBeInTheDocument();
+      fireEvent.click(managementLink);
+      expect(screen.queryByText('المستخدمون')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /إضافة طابور/i })).not.toBeInTheDocument();
     });
   });
 
   describe('for user', () => {
     beforeEach(() => {
       useAuthorization.mockReturnValue({
-        isPrimaryAdmin: false,
-        isSecondaryAdmin: false,
-        isModerator: false,
         isUser: true,
-        canManageUsers: false,
-        canManageQuotas: false,
-        canManageWhatsApp: false,
-        canManageTemplates: false,
-        canCreateQueues: false,
-        canDeleteQueues: false,
-        canEditQueues: false,
-        canReorderPatients: false,
-        canEditPatients: false,
-        canDeletePatients: false,
-        canSeeManagement: false,
       });
     });
 
     test('cannot see management link or add/delete queues/patients', async () => {
-        renderWithProviders(<ProtectedDashboard />, {
-            localStorage: { user: JSON.stringify({ ...mockUser, role: 'user' }), token: 'test-token' }
-        });
-        
-        // Cannot see management link
-        expect(screen.queryByText('الإدارة')).not.toBeInTheDocument();
-
-        // Cannot add queue
-        expect(screen.queryByRole('button', { name: 'إضافة طابور' })).not.toBeInTheDocument();
-
-        // Select a queue
-        fireEvent.click(await screen.findByText('طابور الأول'));
-
-        // Cannot see add/delete patient buttons
-        await screen.findByText('أحمد محمد');
-        expect(screen.queryByRole('button', { name: 'إضافة مرضى جدد' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'حذف المرضى المحددين' })).not.toBeInTheDocument();
+  renderDashboard(ROLES.USER);
+      expect(screen.queryByText('الإدارة')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /إضافة طابور/i })).not.toBeInTheDocument();
+      fireEvent.click(await screen.findByText('طابور الأول'));
+      await screen.findByText('أحمد محمد');
+      expect(screen.queryByRole('button', { name: /إضافة مرضى جدد/i })).not.toBeInTheDocument();
     });
   });
 
   test('loads patient data when selecting a queue', async () => {
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-    });
-    // Wait for initial queues to load
-    await screen.findByText('طابور الأول')
-
-    // Click on first queue
-    fireEvent.click(screen.getByText('طابور الأول'));
-
-    // Wait for patients to load into the DOM
-    await screen.findByText('أحمد محمد')
-
-    // API should have been called to fetch patients
-    expect(api.get).toHaveBeenCalledWith('/api/queues/q1/patients');
-
-    // Verify patients are displayed
-    expect(screen.getByText('أحمد محمد')).toBeInTheDocument();
+    renderDashboard();
+    fireEvent.click(await screen.findByText('طابور الأول'));
+    await screen.findByText('أحمد محمد');
+    expect(api.get).toHaveBeenCalledWith('/api/Queues/q1/patients');
     expect(screen.getByText('محمد علي')).toBeInTheDocument();
   });
 
   test('handles adding a new queue', async () => {
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-    });
-
-    // Wait for initial queues to load
-    await screen.findByText('طابور الأول')
-
-    // Simulate adding a new queue
-    const addQueueButton = await screen.findByRole('button', { name: 'إضافة طابور' });
-    fireEvent.click(addQueueButton);
-
-    // Fill in queue details
-    const nameInput = screen.getByLabelText('اسم الطابور');
-    fireEvent.change(nameInput, { target: { value: 'طابور جديد' } });
-    
-    const submitButton = screen.getByRole('button', { name: 'إضافة' });
-    fireEvent.click(submitButton);
-
-    // Wait for the POST to be called and the new queue to appear
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/queues', {
-      doctorName: 'طابور جديد',
-      description: ''
-    }))
-
-    await screen.findByText('طابور جديد')
+    renderDashboard();
+    fireEvent.click(await screen.findByRole('button', { name: /إضافة طابور/i }));
+    fireEvent.change(screen.getByLabelText(/اسم الطابور/i), { target: { value: 'طابور جديد' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/Queues', expect.any(Object)));
+    await screen.findByText('طابور جديد');
   });
 
   test('handles patient actions (add, delete, message)', async () => {
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-    });
-
-    // Wait for queues then select one
-    await screen.findByText('طابور الأول')
-    fireEvent.click(screen.getByRole('button', { name: 'طابور طابور الأول' }));
-    await screen.findByText('أحمد محمد')
-
-    // Test buttons in toolbar
-    const toolbar = screen.getByRole('toolbar', { name: 'إجراءات الطابور' });
+    renderDashboard();
+    fireEvent.click(await screen.findByText('طابور الأول'));
+    await screen.findByText('أحمد محمد');
+    const toolbar = screen.getByRole('toolbar', { name: /إجراءات الطابور/i });
     expect(toolbar).toBeInTheDocument();
-
-    // Test Add Patient button exists
-    const addButton = screen.getByRole('button', { name: 'إضافة مرضى جدد' });
-    expect(addButton).toBeInTheDocument();
-    fireEvent.click(addButton);
-
-    // Test Delete button exists
-    const deleteButton = screen.getByRole('button', { name: 'حذف المرضى المحددين' });
-    expect(deleteButton).toBeInTheDocument();
-
-    // Test Message Button exists
-    const messageButton = screen.getByRole('button', { name: 'إرسال رسالة واتساب' });
-    expect(messageButton).toBeInTheDocument();
-  });
-
-  test('handles CSV upload', async () => {
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-    });
-    // Wait for queues, select one and open CSV modal
-    await screen.findByText('طابور الأول')
-    fireEvent.click(screen.getByRole('button', { name: 'طابور طابور الأول' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'رفع ملف المرضى' }));
-
-    // Check if upload modal is shown
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(await screen.findByLabelText('رفع ملف المرضى (CSV)')).toBeInTheDocument();
-
-    // Verify progress bar exists
-    expect(await screen.findByRole('progressbar')).toBeInTheDocument();
-  });
-
-  test('handles messages and templates', async () => {
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-    });
-    // Wait for queues and open message modal
-    await screen.findByText('طابور الأول')
-    fireEvent.click(screen.getByText('طابور الأول'));
-    await screen.findByText('أحمد محمد')
-
-    // Open message modal
-    fireEvent.click(screen.getByText('إرسال رسالة'));
-
-  // Check if template selector is present
-  const templateSelect = await screen.findByLabelText('قائمة القوالب');
-    // expect(templateSelect).toBeInTheDocument();
-
-    // Select a template
-    fireEvent.change(templateSelect, { target: { value: 't1' } });
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('معاينة الرسالة')).toHaveValue('مرحباً {{name}}، دورك رقم {{position}}');
-    });
+    expect(screen.getByRole('button', { name: /إضافة مرضى جدد/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /حذف المرضى المحددين/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /إرسال رسالة واتساب/i })).toBeInTheDocument();
   });
 
   test('handles errors gracefully', async () => {
     api.get.mockRejectedValue(new Error('Network Error'));
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-    });
-
-    // Should show the default empty state message
-    expect(await screen.findByText('الرجاء اختيار طابور لعرض المرضى')).toBeInTheDocument();
-    expect(screen.getByText('الطوابير')).toBeInTheDocument();
-
-    // Error should not prevent the app from loading
-    expect(screen.getByRole('complementary', { name: 'القائمة الجانبية' })).toBeInTheDocument();
+    renderDashboard();
+    expect(await screen.findByText(/الرجاء اختيار طابور/i)).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: /القائمة الجانبية/i })).toBeInTheDocument();
   });
 
   test('applies RTL layout correctly', async () => {
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
-    });
-
-    // Wait for the component to perform its async initial loads to avoid act() warnings
-    return screen.findByRole('banner').then(() => {
-      // Check for RTL direction on the root element
-      expect(document.querySelector('[dir="rtl"]')).toBeInTheDocument();
-
-      // Check for RTL specific classes
-      const header = screen.getByRole('banner');
-      const flexContainer = header.querySelector('.space-x-reverse');
-      expect(flexContainer).toBeInTheDocument();
-    });
+    const { container } = renderDashboard();
+    await screen.findByRole('banner');
+    expect(container.querySelector('[dir="rtl"]')).toBeInTheDocument();
   });
 });

@@ -1,13 +1,13 @@
 import React from 'react'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
-import App from '../pages/_app'
+import { ROLES } from '../lib/roles'
 import Dashboard from '../pages/dashboard'
 import { server } from '../mocks/server'
 import { rest } from 'msw'
 
 test('CSV optimistic additions appear immediately and are not hidden by immediate refresh', async ()=>{
-  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: 'primary_admin' }) } })
+  renderWithProviders(<Dashboard />, { auth: { user: { id:1, role: ROLES.PRIMARY_ADMIN } } })
 
   const queueBtn = await screen.findByText(/الطابور الأول/i)
   fireEvent.click(queueBtn)
@@ -15,7 +15,7 @@ test('CSV optimistic additions appear immediately and are not hidden by immediat
 
   // intercept POST to simulate small delay but eventual success
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
-  server.use(rest.post(API_BASE + '/api/queues/:queueId/patients', async (req, res, ctx) => {
+  server.use(rest.post(API_BASE + '/api/Queues/:queueId/patients', async (req, res, ctx) => {
     const body = await req.json()
     // slight delay
     await new Promise(r => setTimeout(r, 50))
@@ -23,6 +23,9 @@ test('CSV optimistic additions appear immediately and are not hidden by immediat
   }))
 
   // Open CSV modal and get input
+  const addPatientButton = await screen.findByRole('button', { name: 'إضافة مرضى جدد' }, { timeout: 3000 })
+  fireEvent.click(addPatientButton)
+  
   const csvButton = screen.getByRole('button', { name: 'رفع ملف المرضى' })
   fireEvent.click(csvButton)
 

@@ -5,6 +5,7 @@ import queryClient from '../lib/queryClient'
 import '../styles/globals.css'
 import { I18nProvider } from '../lib/i18n'
 import { AuthProvider } from '../lib/auth'
+import Toast from '../components/Toast'
 
 export default function App({ Component, pageProps }) {
   return (
@@ -12,6 +13,7 @@ export default function App({ Component, pageProps }) {
       <I18nProvider>
         <AuthProvider>
           <Component {...pageProps} />
+          <Toast />
         </AuthProvider>
       </I18nProvider>
       <ReactQueryDevtools initialIsOpen={false} />

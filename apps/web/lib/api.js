@@ -28,7 +28,7 @@ export async function login(username, password) {
 }
 
 export async function logout() {
-  try { await api.post('/api/auth/logout') } catch (e) {}
+  try { await api.post('/api/Auth/logout') } catch (e) {}
   try { localStorage.removeItem('accessToken'); localStorage.removeItem('currentUser') } catch (e) {}
   setAuth(null)
 }
@@ -48,7 +48,10 @@ api.interceptors.response.use(
   },
   async err => {
     const original = err.config
-    if (err.response && err.response.status === 401 && !original._retry) {
+    // Don't try to refresh for login or refresh endpoints
+    const isAuthEndpoint = original.url && (original.url.includes('/login') || original.url.includes('/refresh'))
+    
+    if (err.response && err.response.status === 401 && !original._retry && !isAuthEndpoint) {
       // try refresh once
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -63,7 +66,7 @@ api.interceptors.response.use(
       original._retry = true
       isRefreshing = true
       try {
-        const r = await api.post('/api/auth/refresh')
+        const r = await api.post('/api/Auth/refresh')
         if (r?.data?.success && r.data.data?.accessToken) {
           const token = r.data.data.accessToken
           try { localStorage.setItem('accessToken', token) } catch (e) {}

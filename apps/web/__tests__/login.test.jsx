@@ -30,16 +30,34 @@ describe('LoginPage', () => {
   })
 
   test('shows loading state when login button is clicked', async () => {
+    // Add a delay to the login response so we can catch the loading state
+    server.use(
+      rest.post(`${API_BASE}/api/Auth/login`, async (req, res, ctx) => {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        const body = await req.json()
+        return res(ctx.json({ 
+          success: true, 
+          data: { 
+            accessToken: 'fake-token',
+            user: { id: 2, username: body.username, role: 'USER' }
+          } 
+        }))
+      })
+    )
+
     renderWithProviders(<LoginPage />)
     fireEvent.change(screen.getByLabelText(/اسم المستخدم/i), { target: { value: 'testuser' } })
     fireEvent.change(screen.getByLabelText(/كلمة المرور/i), { target: { value: 'password123' } })
     
     const loginButton = screen.getByRole('button', { name: /تسجيل الدخول/i })
+    
+    // Click and immediately check for loading state
     fireEvent.click(loginButton)
 
+    // Check within a shorter timeout to catch the loading state
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /جارٍ تسجيل الدخول/i })).toBeDisabled()
-    })
+    }, { timeout: 200 })
   })
 
   test('handles successful login and redirects', async () => {
@@ -60,8 +78,8 @@ describe('LoginPage', () => {
 
   test('handles failed login and shows error toast', async () => {
     server.use(
-      rest.post(`${API_BASE}/api/auth/login`, (req, res, ctx) => {
-        return res(ctx.status(401), ctx.json({ message: 'Invalid credentials' }))
+      rest.post(`${API_BASE}/api/Auth/login`, (req, res, ctx) => {
+        return res(ctx.status(401), ctx.json({ success: false, message: 'Invalid credentials' }))
       })
     )
 
@@ -71,7 +89,7 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByLabelText(/كلمة المرور/i), { target: { value: 'wrongpassword' } })
     fireEvent.click(screen.getByRole('button', { name: /تسجيل الدخول/i }))
 
-    const alert = await screen.findByRole('alert')
+    const alert = await screen.findByRole('alert', {}, { timeout: 3000 })
     expect(alert).toHaveTextContent('فشل تسجيل الدخول')
   })
 })

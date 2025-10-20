@@ -42,6 +42,14 @@ namespace Clinics.Domain
         [ForeignKey(nameof(RoleId))]
         public Role? Role { get; set; }
 
+    // Convenience property to expose role name (backwards-compatible with existing DB schema)
+    [NotMapped]
+    public string RoleName => Role?.Name ?? Clinics.Domain.UserRole.User.ToRoleName();
+
+    // Expose enum representation for server-side logic without changing DB layout
+    [NotMapped]
+    public Clinics.Domain.UserRole RoleEnum => Clinics.Domain.UserRoleExtensions.FromRoleName(Role?.Name);
+
         [StringLength(20)]
         [Phone]
         public string? PhoneNumber { get; set; }

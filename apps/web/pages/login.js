@@ -3,7 +3,6 @@ import { useRouter } from 'next/router'
 import { useLogin } from '../lib/hooks'
 import { showToast } from '../lib/toast'
 import { useI18n } from '../lib/i18n'
-import Toast from '../components/Toast'
 import { useAuth } from '../lib/auth'
 
 export default function LoginPage() {
@@ -81,10 +80,10 @@ export default function LoginPage() {
               <div>
                 <button
                   type="submit"
-                  disabled={loginMutation.isLoading}
+                  disabled={loginMutation.isPending}
                   className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                 >
-                  {loginMutation.isLoading
+                  {loginMutation.isPending
                     ? i18n.t('login.loading', 'جارٍ تسجيل الدخول...')
                     : i18n.t('login.submit', 'تسجيل الدخول')}
                 </button>
@@ -93,7 +92,6 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
-      <Toast />
     </>
   )
 }

@@ -74,8 +74,8 @@ describe('Dashboard API-invocation checks', () => {
   test('handleAddPatients calls api.post with each patient for selected queue', async ()=>{
     // mock initial loads
     api.get.mockImplementation((url)=>{
-      if (url === '/api/queues') return Promise.resolve({ data: [ { id: 'q1', doctorName: 'Q1' } ] })
-      if (url === '/api/templates') return Promise.resolve({ data: { templates: [] } })
+      if (url === '/api/Queues') return Promise.resolve({ data: [ { id: 'q1', doctorName: 'Q1' } ] })
+      if (url === '/api/Templates') return Promise.resolve({ data: { templates: [] } })
       if (url.includes('/patients')) return Promise.resolve({ data: { patients: [] } })
       return Promise.resolve({ data: {} })
     })
@@ -101,13 +101,13 @@ describe('Dashboard API-invocation checks', () => {
     // wait for api.post to be called
     await waitFor(()=> expect(api.post).toHaveBeenCalled())
     // ensure it was called with the queue endpoint
-    expect(api.post.mock.calls[0][0]).toMatch(`/api/queues/q1/patients`)
+    expect(api.post.mock.calls[0][0]).toMatch(`/api/Queues/q1/patients`)
   })
 
   test('CSV upload triggers api.post for each parsed row when Dashboard wires it', async ()=>{
     api.get.mockImplementation((url)=>{
-      if (url === '/api/queues') return Promise.resolve({ data: [ { id: 'q1', doctorName: 'Q1' } ] })
-      if (url === '/api/templates') return Promise.resolve({ data: { templates: [] } })
+      if (url === '/api/Queues') return Promise.resolve({ data: [ { id: 'q1', doctorName: 'Q1' } ] })
+      if (url === '/api/Templates') return Promise.resolve({ data: { templates: [] } })
       if (url.includes('/patients')) return Promise.resolve({ data: { patients: [] } })
       return Promise.resolve({ data: {} })
     })
@@ -131,6 +131,6 @@ describe('Dashboard API-invocation checks', () => {
 
     await waitFor(()=> expect(api.post).toHaveBeenCalled())
     // at least one call to queue patient endpoint should be present
-    expect(api.post.mock.calls.some(c => typeof c[0] === 'string' && c[0].includes('/api/queues/q1/patients'))).toBe(true)
+    expect(api.post.mock.calls.some(c => typeof c[0] === 'string' && c[0].includes('/api/Queues/q1/patients'))).toBe(true)
   })
 })

@@ -1,6 +1,7 @@
 import React from 'react'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
+import { ROLES } from '../lib/roles'
 import App from '../pages/_app'
 import Dashboard from '../pages/dashboard'
 
@@ -10,10 +11,15 @@ function makeCSVFile(content, name='patients.csv'){
 }
 
 test('CSV upload parse flow adds patients', async ()=>{
-  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: 'primary_admin' }) } })
+  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: ROLES.PRIMARY_ADMIN }) } })
 
-  // select queue
-  const queueBtn = await screen.findByText(/الطابور الأول/i)
+  // Wait for loading to finish and queue to appear
+  await waitFor(() => {
+    expect(screen.queryByText('Loading...')).not.toBeInTheDocument()
+  })
+  
+  // Select queue
+  const queueBtn = screen.getByRole('button', { name: /طابور.*الطابور الأول/i })
   fireEvent.click(queueBtn)
 
   // Click CSV button to show modal 

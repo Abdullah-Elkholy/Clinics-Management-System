@@ -1,8 +1,35 @@
-import Toast, { showToast, enqueueToast } from '../components/Toast'
+import Toast, { showToast as compShowToast, enqueueToast as compEnqueueToast } from '../components/Toast'
 
-// Re-export a single canonical entry point for toast usage across the app.
-// Importing from this module everywhere reduces the chance of multiple
-// module instances caused by differing import paths during tests/HMR.
+// Provide safe fallbacks so tests and runtime code can call showToast/enqueueToast
+// even when the components module is mocked incompletely. The fallback will
+// update the global manager and dispatch a DOM event so listeners/tests pick
+// up the toast.
+function ensureGlobalManager() {
+  if (typeof globalThis === 'undefined') return null
+  if (!globalThis.__CLINICS_TOAST__) globalThis.__CLINICS_TOAST__ = { pending: [], showImpl: null, _seq: 0, _last: null }
+  return globalThis.__CLINICS_TOAST__
+}
+
+function fallbackEnqueueToast(message, type = 'success', timeoutMs = 3000) {
+  const mgr = ensureGlobalManager()
+  if (!mgr) return
+  const entry = { id: Date.now() + Math.random(), message: String(message), type, timeoutMs }
+  mgr.pending.push(entry)
+  mgr._seq = (mgr._seq || 0) + 1
+  mgr._last = entry
+  // emit DOM event for listeners/tests
+  try { window.dispatchEvent(new CustomEvent('clinics:show-toast', { detail: entry })) } catch (e) {}
+  // notify any mounted React instance
+  try { if (typeof mgr.showImpl === 'function') mgr.showImpl(entry) } catch (e) {}
+}
+
+const enqueueToast = typeof compEnqueueToast === 'function' ? compEnqueueToast : fallbackEnqueueToast
+
+const showToast = typeof compShowToast === 'function'
+  ? compShowToast
+  : (message, type = 'success', timeoutMs = 3000) => enqueueToast(message, type, timeoutMs)
+
+// Re-export
 export { showToast, enqueueToast }
 
 // Helper used by tests: return a Promise that resolves on the next

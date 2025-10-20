@@ -1,7 +1,14 @@
 import React from 'react';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import Toast, { showToast } from '../lib/toast';
+
+// Reset modules and explicitly import the actual Toast component
+jest.resetModules();
+jest.unmock('../components/Toast');
+
+// Dynamically import the actual components after unmocking
+const Toast = require('../components/Toast').default;
+const { showToast } = require('../components/Toast');
 
 describe('Toast Component', () => {
   beforeEach(() => {
