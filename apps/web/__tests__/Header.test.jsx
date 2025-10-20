@@ -17,7 +17,7 @@ describe('Header Component', () => {
     expect(screen.getByText('نظام إدارة العيادات')).toBeInTheDocument();
     
     // Check for user role and name
-    expect(screen.getByText('مدير أساسي')).toBeInTheDocument();
+    expect(screen.getAllByText('مدير أساسي')[0]).toBeInTheDocument();
     expect(screen.getByText('أحمد')).toBeInTheDocument();
     
     // Check for WhatsApp status

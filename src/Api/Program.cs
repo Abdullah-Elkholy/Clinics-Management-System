@@ -52,9 +52,12 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false;
     options.SaveToken = true;
-    // Use the same key derivation as TokenService: SHA-256 of configured Jwt:Key (or default) so signatures match
-    var defaultKey = "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!";
-    var baseKey = string.IsNullOrEmpty(builder.Configuration["Jwt:Key"]) ? defaultKey : builder.Configuration["Jwt:Key"]!;
+    
+    var useTestKey = builder.Configuration["USE_TEST_KEY"] == "true";
+    var baseKey = useTestKey 
+        ? "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456" 
+        : (builder.Configuration["Jwt:Key"] ?? "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!");
+
     byte[] signingKeyBytes;
     using (var sha = System.Security.Cryptography.SHA256.Create())
     {
@@ -66,7 +69,9 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuer = false,
         ValidateAudience = false,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes)
+        IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes),
+        // For tests, we can relax clock skew
+        ClockSkew = TimeSpan.FromSeconds(30)
     };
 });
 
@@ -152,7 +157,7 @@ try
                 if (!db.Users.Any(u => u.Username == "admin"))
                 {
                     var primaryRole = new Clinics.Domain.Role { Name = "primary_admin", DisplayName = "المدير الأساسي" };
-                    var moderatorRole = new Clinics.Domain.Role { Name = "moderator", DisplayName = "المشرف" };
+                    var moderatorRole = new Clinics.Domain.Role { Name = "المشرف", DisplayName = "المشرف" };
                     var userRole = new Clinics.Domain.Role { Name = "user", DisplayName = "مستخدم" };
                     db.Roles.Add(primaryRole);
                     db.Roles.Add(moderatorRole);

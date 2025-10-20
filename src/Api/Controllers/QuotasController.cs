@@ -7,7 +7,7 @@ namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin")]
     public class QuotasController : ControllerBase
     {
         private readonly ApplicationDbContext _db;

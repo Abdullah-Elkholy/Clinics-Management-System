@@ -5,8 +5,6 @@ import QueueList from './QueueList'
 
 export default function Layout({ 
   children,
-  userRole,
-  userName,
   whatsappConnected,
   onLogout,
   activeSection,
@@ -18,15 +16,17 @@ export default function Layout({
   onAddQueue,
   onEditQueue,
   onDeleteQueue,
-  onRequestAddQueue
+  onRequestAddQueue,
+  onRequestAccount,
+  onRequestWhatsApp,
 }) {
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
       <Header 
-        userRole={userRole}
-        userName={userName}
         whatsappConnected={whatsappConnected}
         onLogout={onLogout}
+        onRequestAccount={onRequestAccount}
+        onRequestWhatsApp={onRequestWhatsApp}
       />
 
       <div className="flex min-h-screen pt-16">

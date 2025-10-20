@@ -3,11 +3,13 @@ using Clinics.Domain;
 using Clinics.Infrastructure;
 using Clinics.Api.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class QueuesController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -49,6 +51,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> Create([FromBody] QueueCreateRequest req)
         {
             if (!ModelState.IsValid) return BadRequest(new { success = false, errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
@@ -60,6 +63,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPut("{id}")]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> Update(int id, [FromBody] QueueUpdateRequest req)
         {
             var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == id);
@@ -73,6 +77,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> Delete(int id)
         {
             var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == id);
@@ -87,6 +92,7 @@ namespace Clinics.Api.Controllers
 
         // Reorder patients in a queue. Expects { positions: [ { id, position }, ... ] }
         [HttpPost("{id}/reorder")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<IActionResult> Reorder(int id, [FromBody] ReorderRequest req)
         {
             if (req?.Positions == null || req.Positions.Length == 0) return BadRequest(new { success = false });

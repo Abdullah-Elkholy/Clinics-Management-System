@@ -98,27 +98,33 @@ namespace Clinics.Api.Controllers
 
             var token = _tokenService.CreateToken(user.Id, user.Username, user.Role?.Name ?? "user", user.FullName);
             // create refresh token and set cookie
-            var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(30));
-            var cookieOptions = new Microsoft.AspNetCore.Http.CookieOptions
+            var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
+            Response.Cookies.Append("X-Refresh-Token", refreshToken, new CookieOptions { HttpOnly = true, Secure = !_env.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = DateTime.UtcNow.AddDays(7) });
+
+            return Ok(new { success = true, data = new { accessToken = token } });
+        }
+
+        [HttpGet("me")]
+        [Microsoft.AspNetCore.Authorization.Authorize]
+        public async Task<IActionResult> GetCurrentUser()
+        {
+            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
             {
-                HttpOnly = true,
-                SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None,
-                Expires = DateTime.UtcNow.AddDays(30),
-                Secure = !_env.IsDevelopment()
-            };
-            Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
+                return Unauthorized();
+            }
 
-            var res = new LoginResponse {
-                AccessToken = token,
-                ExpiresIn = 3600,
-                User = new UserDto { Id = user.Id, Username = user.Username, FullName = user.FullName, Role = user.Role?.Name ?? "user" }
-            };
+            var user = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null)
+            {
+                return NotFound();
+            }
 
-            return Ok(new { success = true, data = res });
+            return Ok(new { success = true, data = new { user.Id, user.Username, user.FullName, Role = user.Role?.Name } });
         }
 
         [HttpPost("refresh")]
-        public IActionResult Refresh()
+        public async Task<IActionResult> RefreshToken()
         {
             if (!Request.Cookies.TryGetValue("refreshToken", out var token))
                 return Unauthorized(new { success = false });

@@ -31,9 +31,10 @@ namespace Clinics.Api.Services
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
-            // Use configured Jwt:Key if present; otherwise a secure default.
-            var defaultKey = "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!";
-            var baseKey = string.IsNullOrEmpty(_config["Jwt:Key"]) ? defaultKey : _config["Jwt:Key"]!;
+            var useTestKey = _config["USE_TEST_KEY"] == "true";
+            var baseKey = useTestKey 
+                ? "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456" 
+                : (_config["Jwt:Key"] ?? "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!");
 
             // Derive a stable 256-bit key via SHA-256 from the baseKey so HMAC-SHA256 signing requirements are satisfied
             byte[] keyBytes;

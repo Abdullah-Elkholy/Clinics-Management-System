@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ModalWrapper from './ModalWrapper'
+import { useI18n } from '../lib/i18n'
 
 export default function AddMessageTemplateModal({ open = false, onClose = null, onSave = null }){
+  const i18n = useI18n()
   const nameRef = useRef(null)
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
@@ -16,8 +18,8 @@ export default function AddMessageTemplateModal({ open = false, onClose = null, 
 
   function validate(){
     const e = {}
-    if (!name || !name.toString().trim()) e.name = 'الاسم مطلوب'
-    if (!content || !content.toString().trim()) e.content = 'المحتوى مطلوب'
+    if (!name || !name.toString().trim()) e.name = i18n.t('templates.errors.name_required', 'الاسم مطلوب')
+    if (!content || !content.toString().trim()) e.content = i18n.t('templates.errors.content_required', 'المحتوى مطلوب')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -34,9 +36,9 @@ export default function AddMessageTemplateModal({ open = false, onClose = null, 
 
   return (
     <ModalWrapper open={open} onClose={onClose} dir="rtl" initialFocusRef={nameRef} labelId="add-template-title">
-      <h3 id="add-template-title" className="text-lg font-bold mb-4">إضافة قالب رسالة</h3>
+      <h3 id="add-template-title" className="text-lg font-bold mb-4">{i18n.t('templates.add.title', 'إضافة قالب رسالة')}</h3>
 
-      <label className="block text-sm mb-1" htmlFor="tmpl-name">اسم القالب</label>
+      <label className="block text-sm mb-1" htmlFor="tmpl-name">{i18n.t('templates.add.name_label', 'اسم القالب')}</label>
       <input
         id="tmpl-name"
         ref={nameRef}
@@ -47,7 +49,7 @@ export default function AddMessageTemplateModal({ open = false, onClose = null, 
       />
       {errors.name && <div className="text-red-600 text-sm mb-2">{errors.name}</div>}
 
-      <label className="block text-sm mb-1" htmlFor="tmpl-content">نص القالب</label>
+      <label className="block text-sm mb-1" htmlFor="tmpl-content">{i18n.t('templates.add.content_label', 'نص القالب')}</label>
       <textarea
         id="tmpl-content"
         value={content}
@@ -58,8 +60,8 @@ export default function AddMessageTemplateModal({ open = false, onClose = null, 
       {errors.content && <div className="text-red-600 text-sm mb-2">{errors.content}</div>}
 
       <div className="flex justify-end space-x-2">
-        <button onClick={()=>{ setName(''); setContent(''); onClose && onClose() }} className="px-4 py-2">إلغاء</button>
-        <button onClick={handleSave} disabled={!name.trim() || !content.trim()} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60">إضافة</button>
+        <button type="button" onClick={()=>{ setName(''); setContent(''); onClose && onClose() }} className="px-4 py-2">{i18n.t('common.cancel', 'إلغاء')}</button>
+        <button type="button" onClick={handleSave} disabled={!name.trim() || !content.trim()} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60">{i18n.t('common.add', 'إضافة')}</button>
       </div>
     </ModalWrapper>
   )

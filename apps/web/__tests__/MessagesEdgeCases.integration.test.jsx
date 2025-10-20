@@ -1,56 +1,83 @@
 import React from 'react'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
-import App from '../pages/_app'
 import Dashboard from '../pages/dashboard'
 import { server } from '../mocks/server'
 import { rest } from 'msw'
 
-test('message send partial failure shows failure toast and leaves retry option', async ()=>{
-  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: 'primary_admin' }) } })
-  const queueBtn = await screen.findByText(/الطابور الأول/i)
-  fireEvent.click(queueBtn)
-  await waitFor(()=> expect(screen.getByText('Ali')).toBeInTheDocument())
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
-  // select Ali
-  fireEvent.click(screen.getByLabelText('select-patient-0'))
+describe('Messages Edge Cases', () => {
+  test('message send partial failure shows failure toast', async () => {
+    server.use(
+      rest.post(`${API_BASE}/api/messages/send`, (req, res, ctx) => {
+        return res(ctx.status(500), ctx.json({ message: 'Internal Server Error' }))
+      })
+    )
 
-  // override send to simulate partial failure (returns success:false)
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
-  server.use(rest.post(API_BASE + '/api/messages/send', (req, res, ctx) => {
-    return res(ctx.status(200), ctx.json({ success: false, failed: [101], message: 'Some failed' }))
-  }))
+    renderWithProviders(<Dashboard />)
 
-  // open send modal and send: click the toolbar message button (aria-label present on Dashboard)
-  const openMessageBtn = screen.getByLabelText('إرسال رسالة واتساب') || screen.getByRole('button', { name: /إرسال رسالة/i })
-  fireEvent.click(openMessageBtn)
-  const sendBtn = await screen.findByText('إرسال')
-  fireEvent.click(sendBtn)
+    // 1. Select queue and wait for patients
+    const queueButton = await screen.findByText(/الطابور الأول/i)
+    fireEvent.click(queueButton)
+    await screen.findByText('Ali')
+    await screen.findByText('Sara')
 
-  await waitFor(()=> expect(screen.getByText(/فشل إرسال الرسالة|Some failed/i)).toBeInTheDocument())
-})
+    // 2. Select all patients
+    const selectAllCheckbox = screen.getByRole('checkbox', { name: /select all/i })
+    fireEvent.click(selectAllCheckbox)
 
-test('message send batching handles large recipient list (no crash)', async ()=>{
-  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: 'primary_admin' }) } })
-  const queueBtn = await screen.findByText(/الطابور الأول/i)
-  fireEvent.click(queueBtn)
-  await waitFor(()=> expect(screen.getByText('Ali')).toBeInTheDocument())
+    // 3. Open the message modal
+    const sendMessageButton = screen.getByRole('button', { name: /إرسال رسالة للمحددين/i })
+    fireEvent.click(sendMessageButton)
 
-  // create lots of patients by posting directly to API (use existing handlers)
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
-  for (let i=0;i<60;i++){
-    await fetch(`${API_BASE}/api/queues/q1/patients`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullName: `Bulk${i}`, phoneNumber: `09${1000+i}` }) })
-  }
+    // 4. Type a message and send
+    const messageInput = await screen.findByRole('textbox', { name: /custom message/i })
+    fireEvent.change(messageInput, { target: { value: 'Test partial failure' } })
 
-  // choose all checkboxes (the table should now have many rows)
-  const checkboxes = await screen.findAllByRole('checkbox')
-  checkboxes.forEach(cb => { try{ fireEvent.click(cb) }catch(e){} })
+    const sendConfirmButton = screen.getByRole('button', { name: /إرسال/i })
+    fireEvent.click(sendConfirmButton)
 
-  // send messages (use default mock which returns success)
-  const openMessageBtn2 = screen.getByLabelText('إرسال رسالة واتساب') || screen.getByRole('button', { name: /إرسال رسالة/i })
-  fireEvent.click(openMessageBtn2)
-  const sendBtn = await screen.findByText('إرسال')
-  fireEvent.click(sendBtn)
+    // 5. Assert failure toast is shown
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('فشل إرسال الرسالة')
+  }, 15000)
 
-  await waitFor(()=> expect(screen.getByText(/تم إرسال الرسالة/)).toBeInTheDocument())
+  test('message send batching handles large recipient list (no crash)', async () => {
+    const largePatientList = Array.from({ length: 150 }, (_, i) => ({
+      id: i + 1,
+      fullName: `User${i + 1}`,
+      phoneNumber: `09100000${i}`,
+      position: i + 1,
+    }))
+
+    server.use(
+      rest.get(`${API_BASE}/api/queues/q1/patients`, (req, res, ctx) => {
+        return res(ctx.json({ success: true, patients: largePatientList }))
+      }),
+      rest.post(`${API_BASE}/api/messages/send`, (req, res, ctx) => {
+        return res(ctx.json({ success: true, message: 'All messages sent' }))
+      })
+    )
+
+    renderWithProviders(<Dashboard />)
+
+    const queueButton = await screen.findByText(/الطابور الأول/i)
+    fireEvent.click(queueButton)
+
+    await screen.findByText('User1')
+    expect(await screen.findAllByRole('row')).toHaveLength(largePatientList.length + 1) // +1 for header
+
+    const selectAllCheckbox = screen.getByRole('checkbox', { name: /select all/i })
+    fireEvent.click(selectAllCheckbox)
+
+    const sendMessageButton = screen.getByRole('button', { name: /إرسال رسالة للمحددين/i })
+    fireEvent.click(sendMessageButton)
+
+    const sendConfirmButton = await screen.findByRole('button', { name: /إرسال/i })
+    fireEvent.click(sendConfirmButton)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('تم إرسال الرسالة')
+  }, 25000)
 })

@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ModalWrapper from './ModalWrapper'
-import { showToast } from './Toast'
+import { showToast } from '../lib/toast'
+import { useI18n } from '../lib/i18n'
 
 export default function EditPatientModal({ open = false, patient = null, onClose = null, onSave = null }){
+  const i18n = useI18n()
   const nameRef = useRef(null)
   const [fullName, setFullName] = useState(patient?.fullName || '')
   const [phoneNumber, setPhoneNumber] = useState(patient?.phoneNumber || '')
@@ -21,9 +23,9 @@ export default function EditPatientModal({ open = false, patient = null, onClose
 
   function validate(){
     const e = {}
-    if (!fullName || !fullName.toString().trim()) e.fullName = 'الاسم مطلوب'
+    if (!fullName || !fullName.toString().trim()) e.fullName = i18n.t('editPatient.errors.nameRequired', 'الاسم مطلوب')
     // phone number optional but basic sanity
-    if (phoneNumber && !/^[0-9+\-\s()]+$/.test(phoneNumber)) e.phoneNumber = 'رقم هاتف غير صالح'
+    if (phoneNumber && !/^[0-9+\-\s()]+$/.test(phoneNumber)) e.phoneNumber = i18n.t('editPatient.errors.invalidPhone', 'رقم هاتف غير صالح')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -33,10 +35,10 @@ export default function EditPatientModal({ open = false, patient = null, onClose
     if (!onSave) return onClose && onClose()
     try{
       await onSave({ id: patient.id, fullName: fullName.toString().trim(), phoneNumber: phoneNumber.toString().trim(), position })
-      showToast('تم حفظ بيانات المريض')
+      showToast(i18n.t('editPatient.saveSuccess', 'تم حفظ بيانات المريض'))
       onClose && onClose()
     }catch(e){
-      showToast('فشل في حفظ بيانات المريض')
+      showToast(i18n.t('editPatient.saveFailed', 'فشل في حفظ بيانات المريض'))
     }
   }
 
@@ -44,21 +46,21 @@ export default function EditPatientModal({ open = false, patient = null, onClose
 
   return (
     <ModalWrapper open={open} onClose={onClose} dir="rtl" initialFocusRef={nameRef} labelId="edit-patient-title">
-      <h3 id="edit-patient-title" className="text-lg font-bold mb-4">تعديل بيانات المريض</h3>
-      <label className="block text-sm mb-1">الاسم الكامل</label>
+      <h3 id="edit-patient-title" className="text-lg font-bold mb-4">{i18n.t('editPatient.title', 'تعديل بيانات المريض')}</h3>
+      <label className="block text-sm mb-1">{i18n.t('editPatient.fullName', 'الاسم الكامل')}</label>
       <input ref={nameRef} value={fullName} onChange={e=>setFullName(e.target.value)} className="w-full p-2 border rounded mb-2" aria-invalid={errors.fullName ? 'true' : 'false'} />
       {errors.fullName && <div className="text-red-600 text-sm mb-2">{errors.fullName}</div>}
 
-      <label className="block text-sm mb-1">رقم الهاتف</label>
+      <label className="block text-sm mb-1">{i18n.t('editPatient.phoneNumber', 'رقم الهاتف')}</label>
       <input value={phoneNumber} onChange={e=>setPhoneNumber(e.target.value)} className="w-full p-2 border rounded mb-2" aria-invalid={errors.phoneNumber ? 'true' : 'false'} />
       {errors.phoneNumber && <div className="text-red-600 text-sm mb-2">{errors.phoneNumber}</div>}
 
-      <label className="block text-sm mb-1">الموضع (اختياري)</label>
+      <label className="block text-sm mb-1">{i18n.t('editPatient.positionOptional', 'الموضع (اختياري)')}</label>
       <input value={position} onChange={e=>setPosition(e.target.value)} className="w-full p-2 border rounded mb-2" />
 
       <div className="flex justify-end space-x-2">
-        <button onClick={onClose} className="px-4 py-2">إلغاء</button>
-        <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded">حفظ</button>
+        <button type="button" onClick={onClose} className="px-4 py-2">{i18n.t('common.cancel', 'إلغاء')}</button>
+        <button type="button" onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded">{i18n.t('common.save', 'حفظ')}</button>
       </div>
     </ModalWrapper>
   )

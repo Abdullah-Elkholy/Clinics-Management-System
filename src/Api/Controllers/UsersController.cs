@@ -8,7 +8,7 @@ namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "primary_admin,secondary_admin")]
+    [Authorize(Roles = "primary_admin")]
     public class UsersController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -39,6 +39,21 @@ namespace Clinics.Api.Controllers
             _db.Users.Add(user);
             await _db.SaveChangesAsync();
             return Ok(new { success = true, data = user });
+        }
+
+        [HttpPost("{id}/reset-password")]
+        public async Task<IActionResult> ResetPassword(int id, [FromBody] ResetPasswordDTO req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.Password))
+                return BadRequest(new { success = false, error = "Password is required" });
+
+            var user = await _db.Users.FindAsync(id);
+            if (user == null) return NotFound(new { success = false, error = "User not found" });
+
+            var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+            user.PasswordHash = hasher.HashPassword(user, req.Password);
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true });
         }
     }
 }

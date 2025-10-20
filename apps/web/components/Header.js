@@ -1,7 +1,15 @@
 import React from 'react'
 import Icon from './Icon'
+import { useAuth } from '../lib/auth'
+import { useAuthorization } from '../lib/authorization'
 
-export default function Header({ userRole, userName, whatsappConnected, onLogout, onRequestAccount }) {
+export default function Header({ whatsappConnected, onLogout, onRequestAccount, onRequestWhatsApp }) {
+  const { user } = useAuth()
+  const { role } = useAuthorization()
+
+  const userName = user?.name || ''
+  const userRole = role || ''
+
   return (
     <header className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-br from-blue-600 to-purple-700 text-white shadow-md">
       <div className="flex items-center justify-between px-6 py-4">
@@ -27,16 +35,20 @@ export default function Header({ userRole, userName, whatsappConnected, onLogout
             </div>
           )}
 
+          <button type="button" onClick={() => onRequestWhatsApp && onRequestWhatsApp()} className="bg-white/10 hover:bg-white/20 p-2 rounded-full ml-2" aria-label="ربط واتساب">
+            <Icon name="fab fa-whatsapp text-white" />
+          </button>
+
           <div className="flex items-center space-x-3 space-x-reverse">
             <div className="text-right">
               <div className="text-sm font-medium">{userName}</div>
               <div className="text-xs text-white/80">{userRole}</div>
             </div>
             <div className="flex items-center space-x-2 space-x-reverse">
-              <button onClick={() => onRequestAccount && onRequestAccount()} className="bg-white/10 hover:bg-white/20 p-2 rounded-full" aria-label="معلومات الحساب">
+              <button type="button" onClick={() => onRequestAccount && onRequestAccount()} className="bg-white/10 hover:bg-white/20 p-2 rounded-full" aria-label="معلومات الحساب">
                 <Icon name="fas fa-user-circle text-white" />
               </button>
-              <button onClick={onLogout} className="bg-white/10 hover:bg-white/20 p-2 rounded-full" aria-label="تسجيل الخروج">
+              <button type="button" onClick={onLogout} className="bg-white/10 hover:bg-white/20 p-2 rounded-full" aria-label="تسجيل الخروج">
                 <Icon name="fas fa-sign-out-alt text-white" />
               </button>
             </div>

@@ -3,11 +3,13 @@ using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/queues/{queueId}/[controller]")]
+    [Authorize]
     public class PatientsController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -21,6 +23,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> Create(int queueId, [FromBody] PatientCreateRequest req)
         {
             if (!ModelState.IsValid) return BadRequest(new { success = false, errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });

@@ -22,7 +22,7 @@ export default function SidebarQueues(){
         <ul className="space-y-2">
           {queues.map(q=> (
             <li key={q.id}>
-              <button className="nav-item w-full text-right px-4 py-3 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition duration-200 flex items-center justify-between">
+              <button type="button" className="nav-item w-full text-right px-4 py-3 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition duration-200 flex items-center justify-between">
                 <span>{q.name}</span>
                 <Icon name="fas fa-angle-left" />
               </button>
