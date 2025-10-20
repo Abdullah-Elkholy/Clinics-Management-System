@@ -46,11 +46,11 @@ export default function LoginForm() {
         <form onSubmit={handleLogin} className="space-y-6" aria-describedby={error ? 'login-error' : undefined}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('login.username')}</label>
-            <input autoFocus value={username} onChange={e=>setUsername(e.target.value)} name="username" id="login-username" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-800" />
+            <input placeholder={i18n.t('login.placeholder.username')} autoFocus value={username} onChange={e=>setUsername(e.target.value)} name="username" id="login-username" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-800" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('login.password')}</label>
-            <input value={password} onChange={e=>setPassword(e.target.value)} name="password" id="login-password" type="password" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-800" />
+            <input placeholder={i18n.t('login.placeholder.password')} value={password} onChange={e=>setPassword(e.target.value)} name="password" id="login-password" type="password" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-800" />
           </div>
 
           <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-medium">

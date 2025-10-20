@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { act } from 'react-dom/test-utils'
 import '@testing-library/jest-dom';
 import Layout from '../components/Layout';
-import Toast, { showToast } from '../components/Toast';
+import Toast, { showToast } from '../lib/toast';
 import PatientsTable from '../components/PatientsTable';
 import Dashboard from '../pages/dashboard';
 import renderWithProviders from '../test-utils/renderWithProviders';
@@ -241,23 +241,21 @@ describe('Responsive Design Tests', () => {
         // Test success toast (wrap showToast in act so setState is inside act)
         act(() => showToast('تمت العملية بنجاح', 'success'))
         await waitFor(() => {
-          const successToast = screen.getByRole('alert');
+          const successToast = screen.getByText('تمت العملية بنجاح').closest('[role="alert"]');
           // In RTL mode, position from right: Toast element carries the positioning classes
-          expect(successToast).toHaveClass('fixed', 'bottom-6', 'right-6', 'z-50');
+          expect(successToast.parentElement.parentElement).toHaveClass('fixed', 'top-4', 'left-4', 'z-50');
           expect(successToast).toHaveTextContent('تمت العملية بنجاح');
-          // Background color is applied to the inner container
-          const inner = successToast.firstElementChild;
-          expect(inner).toHaveClass('bg-green-500'); // Success color
+          // Background color is applied to the toast element itself
+          expect(successToast).toHaveClass('bg-green-500'); // Success color
           expect(successToast).toHaveAttribute('dir', 'rtl');
         });
 
         // Test error toast
         act(() => showToast('حدث خطأ', 'error'))
         await waitFor(() => {
-          const errorToast = screen.getByRole('alert');
+          const errorToast = screen.getByText('حدث خطأ').closest('[role="alert"]');
           expect(errorToast).toHaveTextContent('حدث خطأ');
-          const innerErr = errorToast.firstElementChild;
-          expect(innerErr).toHaveClass('bg-red-500'); // Error color
+          expect(errorToast).toHaveClass('bg-red-500'); // Error color
 
           // Verify close button accessibility
           const closeButton = within(errorToast).getByRole('button', { name: 'إغلاق' });
@@ -265,7 +263,7 @@ describe('Responsive Design Tests', () => {
 
           // Test toast dismissal
           fireEvent.click(closeButton);
-          expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+          expect(screen.queryByText('حدث خطأ')).not.toBeInTheDocument();
         });
       }
     );

@@ -35,4 +35,4 @@ export function initLocaleFromBrowser(){
   }catch(e){}
 }
 
-export default { t, setLocale, getLocale, initLocaleFromBrowser }
+export default { t, setLocale, getLocale, initLocaleFromBrowser, getDir }

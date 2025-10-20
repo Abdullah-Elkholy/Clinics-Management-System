@@ -1,52 +1,97 @@
 import React, { useEffect, useState, useRef } from 'react'
-import i18n from '../lib/i18n'
 
-let globalShow = null
+const GLOBAL_KEY = '__CLINICS_TOAST__'
 
-// showToast(message, type = 'info'|'success'|'error', timeoutMs = 3000)
-export function showToast(message, type = 'info', timeoutMs = 3000){
-  if (!globalShow) return
-  try{
-    // allow callers to pass (message, timeout) when they used the old signature
-    if (typeof type === 'number') {
-      globalShow(message, 'info', type)
-    } else {
-      globalShow(message, type, timeoutMs)
-    }
-  }catch(e){ }
+function getGlobalManager() {
+  if (typeof globalThis === 'undefined') return null
+  if (!globalThis[GLOBAL_KEY]) {
+    globalThis[GLOBAL_KEY] = { pending: [], showImpl: null, _seq: 0, _last: null }
+  }
+  return globalThis[GLOBAL_KEY]
 }
 
-export default function Toast(){
-  const [state, setState] = useState({ msg: null, type: 'info' })
-  const timerRef = useRef(null)
+export function enqueueToast(message, type = 'info', timeoutMs = 3000) {
+  const mgr = getGlobalManager()
+  if (!mgr) return
+  const entry = { id: Date.now() + Math.random(), message: String(message), type, timeoutMs }
+  mgr.pending.push(entry)
+  mgr._seq = (mgr._seq || 0) + 1
+  mgr._last = entry
 
-  useEffect(()=>{
-    globalShow = (m, t="info", timeout=3000) => {
-      // signature compatibility: globalShow(message, type, timeout)
-      clearTimeout(timerRef.current)
-      setState({ msg: m, type: t })
-      timerRef.current = setTimeout(()=> setState({ msg: null, type: 'info' }), timeout)
+  // emit DOM event for tests and listeners
+  if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
+    try { window.dispatchEvent(new CustomEvent('clinics:show-toast', { detail: entry })) } catch (e) {}
+  }
+
+  // notify React instance if mounted
+  if (typeof mgr.showImpl === 'function') {
+    try { mgr.showImpl(entry) } catch (e) {}
+  }
+}
+
+export function showToast(message, type = 'info', timeoutMs = 3000) {
+  return enqueueToast(message, type, timeoutMs)
+}
+
+export default function Toast() {
+  const [toasts, setToasts] = useState([])
+  const mgrRef = useRef(null)
+
+  useEffect(() => {
+    const mgr = getGlobalManager()
+    if (!mgr) return
+    mgrRef.current = mgr
+
+    const handler = (entry) => setToasts((s) => [...s, entry])
+    mgr.showImpl = handler
+
+    if (mgr.pending && mgr.pending.length) {
+      const queued = mgr.pending.splice(0)
+      queued.forEach(p => { try { handler(p) } catch (e) {} })
     }
-    return ()=>{
-      globalShow = null
-      clearTimeout(timerRef.current)
+
+    return () => {
+      if (mgr.showImpl === handler) mgr.showImpl = null
     }
   }, [])
 
-  if (!state.msg) return null
+  useEffect(() => {
+    toasts.forEach(t => {
+      if (t._timeoutScheduled) return
+      t._timeoutScheduled = true
+      setTimeout(() => setToasts((s) => s.filter(x => x.id !== t.id)), t.timeoutMs || 3000)
+    })
+  }, [toasts])
 
-  const bgClass = state.type === 'success' ? 'bg-emerald-600' : (state.type === 'error' ? 'bg-rose-600' : 'bg-slate-800')
+  if (!toasts.length) return null
 
   return (
-    <div role="status" aria-live="polite" aria-atomic="true" className="fixed bottom-6 left-6 z-50" dir="rtl">
-      <div className={`max-w-md w-full px-4 py-3 rounded-xl shadow-lg text-white ${bgClass} flex items-start gap-3`}>
-        <div className="mt-0.5 text-lg">
-          {state.type === 'success' ? '✓' : (state.type === 'error' ? '⚠' : 'i')}
-        </div>
-        <div className="flex-1 text-sm leading-snug">{state.msg}</div>
-        <button type="button" aria-label={i18n.t('modal.close')} onClick={()=> setState({ msg: null, type: 'info' })} className="ml-2 p-1 opacity-80 hover:opacity-100">
-          ✕
-        </button>
+    <div aria-live="polite" aria-atomic="true" className="fixed top-4 left-4 z-50 pointer-events-none" style={{ direction: 'rtl' }}>
+      <div className="flex flex-col space-y-2">
+        {toasts.map(t => (
+          <div
+            key={t.id}
+            role="alert"
+            dir="rtl"
+            className={`pointer-events-auto max-w-xs text-white px-4 py-3 rounded-lg shadow-lg ${
+              t.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+            }`}
+          >
+            <div className="flex items-start space-x-3 space-x-reverse">
+              <div className="flex-1 text-sm">{t.message}</div>
+              {t.type === 'error' && (
+                <button
+                  type="button"
+                  className="text-white"
+                  aria-label="إغلاق"
+                  onClick={() => setToasts((s) => s.filter(x => x.id !== t.id))}
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

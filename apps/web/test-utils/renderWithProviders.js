@@ -1,5 +1,6 @@
 import React from 'react'
 import { render } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // Provide a jest.mock for next/router that reads a global test router object.
 // This factory is hoisted by Jest and must not reference out-of-scope variables.
@@ -72,13 +73,38 @@ export function renderWithProviders(ui, { localStorage = {}, router = createMock
   root.id = 'test-root';
   document.body.appendChild(root);
 
+  const testQueryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        // ✅ turns retries off
+        retry: false,
+        // ✅ makes sure data is considered fresh forever
+        staleTime: Infinity,
+      },
+    },
+  })
+
   function Wrapper({ children }){
-    const base = (<>{children}</>);
+    const base = (
+      <QueryClientProvider client={testQueryClient}>
+        {children}
+      </QueryClientProvider>
+    );
     if (WrapperComponent) return <WrapperComponent>{base}</WrapperComponent>;
     return base;
   }
 
   return render(ui, { wrapper: Wrapper, container: root, ...options });
+}
+
+export async function waitForMSW(server, method, url) {
+  return new Promise((resolve) => {
+    server.events.on('request:end', (req) => {
+      if (req.method.toLowerCase() === method.toLowerCase() && req.url.pathname === url) {
+        resolve(req)
+      }
+    })
+  })
 }
 
 export default renderWithProviders

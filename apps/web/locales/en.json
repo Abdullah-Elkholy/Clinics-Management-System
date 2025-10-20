@@ -1,12 +1,14 @@
 {
   "app.title": "Clinics Management System",
   "app.localeName.en": "English",
-  "app.localeName.ar": "Arabic",
+  "app.localeName.ar": "العريية",
 
   "login.title": "Sign in to your account",
   "login.subtitle": "Use your credentials to access the dashboard",
   "login.username": "Email or username",
   "login.password": "Password",
+  "login.placeholder.username": "Enter username",
+  "login.placeholder.password": "Enter password",
   "login.submit": "Sign in",
   "login.loading": "Signing in...",
   "login.error": "Sign in failed",

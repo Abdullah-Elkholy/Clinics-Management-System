@@ -43,7 +43,9 @@ function onRefreshed(token) {
 function subscribeRefresh(cb) { refreshSubscribers.push(cb) }
 
 api.interceptors.response.use(
-  r => r,
+  r => {
+    return r
+  },
   async err => {
     const original = err.config
     if (err.response && err.response.status === 401 && !original._retry) {

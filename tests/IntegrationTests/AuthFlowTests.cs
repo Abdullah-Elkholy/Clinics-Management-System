@@ -11,6 +11,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using Clinics.Infrastructure;
 
 namespace IntegrationTests;
 
@@ -18,14 +19,34 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
 
-        public AuthFlowTests(WebApplicationFactory<Program> factory)
+    public AuthFlowTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory.WithWebHostBuilder(builder => {
-            builder.ConfigureAppConfiguration((context, conf) => {
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                // Remove the app's ApplicationDbContext registration.
+                var descriptor = services.SingleOrDefault(
+                    d => d.ServiceType ==
+                        typeof(DbContextOptions<ApplicationDbContext>));
+
+                if (descriptor != null)
+                {
+                    services.Remove(descriptor);
+                }
+
+                // Add ApplicationDbContext using an in-memory database for testing.
+                services.AddDbContext<ApplicationDbContext>(options =>
+                {
+                    options.UseInMemoryDatabase("InMemoryDbForTesting");
+                });
+            });
+
+            builder.ConfigureAppConfiguration((context, conf) =>
+            {
                 var dict = new Dictionary<string, string?>
                 {
-                    ["USE_LOCAL_SQL"] = "false",
-                    ["Jwt:Key"] = "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456"
+                    ["USE_TEST_KEY"] = "true"
                 };
                 conf.AddInMemoryCollection(dict);
             });
@@ -37,29 +58,31 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var client = _factory.CreateClient();
 
-        // Ensure SEED_ADMIN is true for tests via environment (we can't easily set env here, so create admin user directly via DbContext)
+        // Seed the database with a test user
         using (var scope = _factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<Clinics.Infrastructure.ApplicationDbContext>();
-            if (!db.Roles.Any(r => r.Name == "primary_admin"))
-            {
-                var r = new Clinics.Domain.Role { Name = "primary_admin", DisplayName = "admin" };
-                db.Roles.Add(r);
-                db.SaveChanges();
-                var admin = new Clinics.Domain.User { Username = "testadmin", FullName = "Test Admin", RoleId = r.Id };
-                var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<Clinics.Domain.User>();
-                admin.PasswordHash = hasher.HashPassword(admin, "Admin123!");
-                db.Users.Add(admin);
-                db.SaveChanges();
-            }
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.Database.EnsureCreated();
+            
+            var r = new Clinics.Domain.Role { Name = "primary_admin", DisplayName = "admin" };
+            db.Roles.Add(r);
+            db.SaveChanges();
+            
+            var admin = new Clinics.Domain.User { Username = "testadmin", FullName = "Test Admin", RoleId = r.Id };
+            var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<Clinics.Domain.User>();
+            admin.PasswordHash = hasher.HashPassword(admin, "Admin123!");
+            db.Users.Add(admin);
+            db.SaveChanges();
         }
 
         // Login
         var loginBody = JsonSerializer.Serialize(new { username = "testadmin", password = "Admin123!" });
         var resp = await client.PostAsync("/api/auth/login", new StringContent(loginBody, Encoding.UTF8, "application/json"));
+        
         resp.EnsureSuccessStatusCode();
+        
         var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-    var accessToken = json.RootElement.GetProperty("data").GetProperty("accessToken").GetString();
+        var accessToken = json.RootElement.GetProperty("data").GetProperty("accessToken").GetString();
         accessToken.Should().NotBeNullOrEmpty();
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);

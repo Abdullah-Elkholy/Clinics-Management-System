@@ -5,11 +5,11 @@ import React from 'react'
 export default function Icon({ name, className = '', ariaHidden = true, ariaLabel = '' }){
   // name should be the FontAwesome class fragment like 'fa-users' or 'fab fa-whatsapp'
   const classes = `${name} ${className} transition-transform duration-200 transform`;
-  return (
-    <i
-      className={classes}
-      aria-hidden={ariaHidden}
-      {...(!ariaHidden ? { 'aria-label': ariaLabel || undefined, role: 'img' } : {})}
-    />
-  )
+  // ensure icons are aria-hidden by default unless an ariaLabel is provided
+  const hidden = ariaLabel ? false : ariaHidden;
+  // Do not render empty aria-label attribute when ariaLabel is falsy
+  const props = { className: classes }
+  if (hidden) props['aria-hidden'] = true
+  else { props['aria-label'] = ariaLabel; props['role'] = 'img' }
+  return <i {...props} />;
 }

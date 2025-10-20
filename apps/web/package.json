@@ -10,6 +10,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.5",
     "@testing-library/user-event": "^14.6.1",
     "axios": "^1.12.2",
     "focus-trap-react": "^11.0.4",

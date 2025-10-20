@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
 import Papa from 'papaparse'
+import { useI18n } from '../lib/i18n'
 
 // CSVUpload now streams parsing using PapaParse and calls onChunk(parsedRows) repeatedly
 export default function CSVUpload({ onChunk, onProgress, onComplete, onError, onParsed }){
+  const i18n = useI18n()
   const [error, setError] = useState(null)
   
   const id = React.useId()
@@ -52,7 +54,7 @@ export default function CSVUpload({ onChunk, onProgress, onComplete, onError, on
         }catch(e){ /* swallow - onChunk will handle errors */ }
         if (onProgress) onProgress({ rowsParsed: rowCount })
       },
-      error: function(err){ setError('فشل قراءة الملف'); onError && onError(err) },
+      error: function(err){ setError(i18n.t('csv.errors.read_failed', 'فشل قراءة الملف')); onError && onError(err) },
       complete: function(results){
         // If chunk was never called (small file), results.data contains all rows
         if (rowCount === 0 && results && Array.isArray(results.data)){
@@ -77,12 +79,12 @@ export default function CSVUpload({ onChunk, onProgress, onComplete, onError, on
 
   return (
     <div>
-      <label htmlFor={`csv-upload-${id}`} className="block text-sm mb-1">رفع ملف المرضى (CSV)</label>
+      <label htmlFor={`csv-upload-${id}`} className="block text-sm mb-1">{i18n.t('csv.upload_label', 'رفع ملف المرضى (CSV)')}</label>
       <div className="flex items-center gap-3">
-        <input aria-label="رفع ملف المرضى (CSV)" id={`csv-upload-${id}`} type="file" accept=".csv" onChange={handleFile} className="p-2" />
+        <input aria-label={i18n.t('csv.upload_label', 'رفع ملف المرضى (CSV)')} id={`csv-upload-${id}`} type="file" accept=".csv" onChange={handleFile} className="p-2" />
         <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-200 p-3 rounded">
-          <div className="font-medium text-yellow-800">نموذج الملف المطلوب:</div>
-          <div>العمود الأول: الاسم الكامل — العمود الثاني: رقم الهاتف — العمود الثالث: الترتيب (اختياري)</div>
+          <div className="font-medium text-yellow-800">{i18n.t('csv.template_label', 'نموذج الملف المطلوب:')}</div>
+          <div>{i18n.t('csv.template_desc', 'العمود الأول: الاسم الكامل — العمود الثاني: رقم الهاتف — العمود الثالث: الترتيب (اختياري)')}</div>
         </div>
       </div>
       {error && <div className="text-red-500 text-sm mt-2" role="alert">{error}</div>}

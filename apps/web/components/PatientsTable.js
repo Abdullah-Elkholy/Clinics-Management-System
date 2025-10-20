@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react'
+import { useI18n } from '../lib/i18n'
 
 export default function PatientsTable({ patients, onToggle, onReorder, onDeletePatient, onToggleAll, selectAll, onEditPatient }){
+  const i18n = useI18n()
   const [dragIndex, setDragIndex] = useState(null)
   const [hoverIndex, setHoverIndex] = useState(null)
   const draggingRef = useRef(null)
@@ -38,31 +40,31 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
 
   return (
     <div className="bg-white border rounded shadow-sm">
-      <table className="w-full" role="table" aria-label="قائمة المرضى">
+      <table className="w-full" role="table" aria-label={i18n.t('patients.table.label', 'قائمة المرضى')}>
         <thead className="bg-gray-50">
           <tr>
             <th className="p-3 text-right">
               <div className="flex items-center">
                 {/* Render as controlled only when handlers are provided, otherwise use defaultChecked/readOnly to avoid React warnings in tests */}
                 {onToggleAll ? (
-                  <input aria-label="select-all-patients" type="checkbox" checked={!!selectAll} onChange={onToggleAll} />
+                  <input aria-label={i18n.t('patients.table.select_all', 'select-all-patients')} type="checkbox" checked={!!selectAll} onChange={onToggleAll} />
                 ) : (
-                  <input aria-label="select-all-patients" type="checkbox" defaultChecked={!!selectAll} readOnly />
+                  <input aria-label={i18n.t('patients.table.select_all', 'select-all-patients')} type="checkbox" defaultChecked={!!selectAll} readOnly />
                 )}
-                <label className="text-sm text-gray-600 mr-2">تحديد الكل</label>
+                <label className="text-sm text-gray-600 mr-2">{i18n.t('patients.table.select_all_label', 'تحديد الكل')}</label>
               </div>
             </th>
-            <th className="p-3 text-right">سحب</th>
-            <th className="p-3 text-right">الترتيب</th>
-            <th className="p-3 text-right">الاسم الكامل</th>
-            <th className="p-3 text-right">رقم الهاتف</th>
-            <th className="p-3 text-right">الإجراءات</th>
+            <th className="p-3 text-right">{i18n.t('patients.table.drag', 'سحب')}</th>
+            <th className="p-3 text-right">{i18n.t('patients.table.order', 'الترتيب')}</th>
+            <th className="p-3 text-right">{i18n.t('patients.table.full_name', 'الاسم الكامل')}</th>
+            <th className="p-3 text-right">{i18n.t('patients.table.phone', 'رقم الهاتف')}</th>
+            <th className="p-3 text-right">{i18n.t('patients.table.actions', 'الإجراءات')}</th>
           </tr>
         </thead>
         <tbody>
           {(!patients || patients.length === 0) ? (
             <tr>
-              <td colSpan="5" className="p-6 text-center text-gray-500">لا يوجد مرضى في هذا الطابور</td>
+              <td colSpan="5" className="p-6 text-center text-gray-500">{i18n.t('patients.table.empty', 'لا يوجد مرضى في هذا الطابور')}</td>
             </tr>
           ) : (
             patients.map((p,i)=> (
@@ -80,12 +82,12 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
               >
                   <td className="p-3 text-right align-middle">
                   {onToggle ? (
-                    <input aria-label={`select-patient-${i}`} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} />
+                    <input aria-label={i18n.t('patients.table.select_patient', 'select-patient-{i}', { i })} type="checkbox" checked={!!p._selected} onChange={()=>onToggle(i)} />
                   ) : (
-                    <input aria-label={`select-patient-${i}`} type="checkbox" defaultChecked={!!p._selected} readOnly />
+                    <input aria-label={i18n.t('patients.table.select_patient', 'select-patient-{i}', { i })} type="checkbox" defaultChecked={!!p._selected} readOnly />
                   )}
                 </td>
-                  <td className="p-3 text-right align-middle" title="سحب لإعادة الترتيب">
+                  <td className="p-3 text-right align-middle" title={i18n.t('patients.table.drag_to_reorder', 'سحب لإعادة الترتيب')}>
                     <span className="drag-handle inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 text-gray-600 cursor-grab" aria-hidden onMouseDown={()=>{ try{ document.body.classList.add('dragging') }catch(e){} }} onMouseUp={()=>{ try{ document.body.classList.remove('dragging') }catch(e){} }}>☰</span>
                   </td>
                   <td className="p-3 text-right align-middle" role="cell" title={p.fullName || ''}>
@@ -100,10 +102,10 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
                   <td className="p-3 text-right align-middle">
                     <div className="flex items-center justify-end gap-3">
                       {onEditPatient ? (
-                        <button type="button" aria-label={`تعديل المريض ${p.fullName}`} onClick={()=> onEditPatient(p)} className="text-blue-600 hover:text-blue-700 text-sm">تعديل</button>
+                        <button type="button" aria-label={i18n.t('patients.table.edit_patient', 'تعديل المريض {name}', { name: p.fullName })} onClick={()=> onEditPatient(p)} className="text-blue-600 hover:text-blue-700 text-sm">{i18n.t('common.edit', 'تعديل')}</button>
                       ) : null}
                       {onDeletePatient ? (
-                        <button type="button" aria-label={`حذف المريض ${p.fullName}`} onClick={()=> onDeletePatient(p.id)} className="text-red-600 hover:text-red-700 text-sm">حذف</button>
+                        <button type="button" aria-label={i18n.t('patients.table.delete_patient', 'حذف المريض {name}', { name: p.fullName })} onClick={()=> onDeletePatient(p.id)} className="text-red-600 hover:text-red-700 text-sm">{i18n.t('common.delete', 'حذف')}</button>
                       ) : null}
                     </div>
                   </td>

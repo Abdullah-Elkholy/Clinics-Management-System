@@ -31,7 +31,7 @@ export default function QueueList({ queues = [], selectedQueue, onSelect = () =>
                 className={`w-full text-right p-4 rounded-xl border transition duration-200 flex items-center justify-between shadow-sm ${selectedQueue === itemId ? 'bg-gradient-to-l from-blue-50 to-white border-blue-300 ring-2 ring-blue-100' : 'bg-white border-gray-100 hover:shadow-md hover:from-blue-50 hover:to-white'}`}
               >
                 <div className="flex items-center gap-3 flex-1">
-                  <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-semibold text-sm">{(displayName || '?').slice(0,2)}</div>
+                  <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-semibold text-sm">{(displayName || '?').slice(0,1)}</div>
                   <div className="flex-1 text-right">
                     <div className="font-medium text-gray-800">{displayName}</div>
                     {q.description && (<div className="text-xs text-gray-500 mt-1">{q.description}</div>)}
@@ -50,7 +50,7 @@ export default function QueueList({ queues = [], selectedQueue, onSelect = () =>
                   {selectedQueue === itemId && (
                     <Icon name="fas fa-check-circle text-blue-600 text-lg" />
                   )}
-                  <Icon name="fas fa-angle-left text-gray-400" />
+                  <Icon name="fas fa-angle-left text-gray-400" ariaLabel="details" />
                 </div>
               </button>
 

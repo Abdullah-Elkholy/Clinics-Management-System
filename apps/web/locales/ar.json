@@ -4,9 +4,11 @@
   "app.localeName.ar": "العربية",
 
   "login.title": "تسجيل الدخول إلى حسابك",
-  "login.subtitle": "استخدم بيانات الاعتماد الخاصة بك للوصول إلى لوحة المعلومات",
+  "login.subtitle": "استخدم بيانات الاعتماد الخاصة بك للوصول إلى لوحة التحكم",
   "login.username": "البريد الإلكتروني أو اسم المستخدم",
   "login.password": "كلمة المرور",
+  "login.placeholder.username": "أدخل اسم المستخدم",
+  "login.placeholder.password": "أدخل كلمة المرور",
   "login.submit": "تسجيل الدخول",
   "login.loading": "جارٍ تسجيل الدخول...",
   "login.error": "فشل تسجيل الدخول",

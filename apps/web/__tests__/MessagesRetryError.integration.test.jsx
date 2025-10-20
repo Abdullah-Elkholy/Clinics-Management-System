@@ -1,39 +1,54 @@
 import React from 'react'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
-import App from '../pages/_app'
 import Dashboard from '../pages/dashboard'
 import { server } from '../mocks/server'
 import { rest } from 'msw'
 
-test('message send error and retry flow', async ()=>{
-  renderWithProviders(<App Component={Dashboard} pageProps={{}} />, { localStorage: { currentUser: JSON.stringify({ id:1, role: 'primary_admin' }) } })
-  const queueBtn = await screen.findByText(/الطابور الأول/i)
-  fireEvent.click(queueBtn)
-  await waitFor(()=> expect(screen.getByText('Ali')).toBeInTheDocument())
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
-  // select patient
-  fireEvent.click(screen.getByLabelText('select-patient-0'))
+test('message send error and retry flow', async () => {
+  let requestCount = 0
+  // First send fails with a 500 error
+  server.use(
+    rest.post(`${API_BASE}/api/messages/send`, (req, res, ctx) => {
+      requestCount++
+      if (requestCount === 1) {
+        return res(ctx.status(500), ctx.json({ message: 'Internal Server Error' }))
+      }
+      return res(ctx.json({ success: true, message: 'Messages sent successfully' }))
+    })
+  )
 
-  // override messages/send to fail
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
-  const failHandler = rest.post(API_BASE + '/api/messages/send', (req, res, ctx) => res(ctx.status(500), ctx.json({ success: false })))
-  server.use(failHandler)
+  renderWithProviders(<Dashboard />)
 
-  // open modal and send
-  fireEvent.click(screen.getByText('إرسال رسالة'))
-  const sendBtn = await screen.findByText('إرسال')
-  fireEvent.click(sendBtn)
+  // 1. Select queue and wait for patients
+  const queueButton = await screen.findByText(/الطابور الأول/i)
+  fireEvent.click(queueButton)
+  await screen.findByText('Ali')
 
-  // expect failure toast
-  await waitFor(()=> expect(screen.getByText('فشل إرسال الرسالة')).toBeInTheDocument())
+  // 2. Select patients
+  const selectAllCheckbox = screen.getByRole('checkbox', { name: /select all/i })
+  fireEvent.click(selectAllCheckbox)
 
-  // restore default handler (server is configured with success by default)
-  server.resetHandlers()
+  // 3. Open modal and attempt to send (will fail)
+  const sendMessageButton = screen.getByRole('button', { name: /إرسال رسالة للمحددين/i })
+  fireEvent.click(sendMessageButton)
+  const sendConfirmButton = await screen.findByRole('button', { name: /إرسال/i })
+  fireEvent.click(sendConfirmButton)
 
-  // open modal and send again
-  fireEvent.click(screen.getByText('إرسال رسالة'))
-  const sendBtn2 = await screen.findByText('إرسال')
-  fireEvent.click(sendBtn2)
-  await waitFor(()=> expect(screen.getByText('تم إرسال الرسالة')).toBeInTheDocument())
-})
+  // 4. Assert failure toast
+  const failAlert = await screen.findByRole('alert')
+  expect(failAlert).toHaveTextContent('فشل إرسال الرسالة')
+  expect(requestCount).toBe(1)
+
+  // 5. Re-open modal and retry (will succeed)
+  fireEvent.click(sendMessageButton)
+  const retrySendButton = await screen.findByRole('button', { name: /إرسال/i })
+  fireEvent.click(retrySendButton)
+
+  // 6. Assert success toast
+  const successAlert = await screen.findByRole('alert')
+  expect(successAlert).toHaveTextContent('تم إرسال الرسالة')
+  expect(requestCount).toBe(2)
+}, 15000)
