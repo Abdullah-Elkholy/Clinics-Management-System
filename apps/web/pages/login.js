@@ -4,10 +4,12 @@ import { useLogin } from '../lib/hooks'
 import { showToast } from '../lib/toast'
 import { useI18n } from '../lib/i18n'
 import Toast from '../components/Toast'
+import { useAuth } from '../lib/auth'
 
 export default function LoginPage() {
   const router = useRouter()
   const i18n = useI18n()
+  const { login } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const loginMutation = useLogin()
@@ -19,7 +21,7 @@ export default function LoginPage() {
       {
         onSuccess: (data) => {
           if (data?.data?.accessToken) {
-            // In a real app, you'd store the token securely
+            login(data.data.accessToken)
             showToast(i18n.t('login.success', 'تم تسجيل الدخول بنجاح'))
             router.push('/dashboard')
           } else {

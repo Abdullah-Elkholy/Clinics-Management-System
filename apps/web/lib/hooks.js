@@ -23,6 +23,27 @@ export const useAddQueue = () => {
   })
 }
 
+export const useUpdateQueue = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (queue) => api.put(`/api/queues/${queue.id}`, queue),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['queues'] })
+      queryClient.invalidateQueries({ queryKey: ['queues', variables.id] })
+    }
+  })
+}
+
+export const useDeleteQueue = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (queueId) => api.delete(`/api/queues/${queueId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['queues'] })
+    }
+  })
+}
+
 // --- Patients ---
 export const usePatients = (queueId) => useQuery({
   queryKey: ['patients', queueId],

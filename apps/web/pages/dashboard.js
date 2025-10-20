@@ -3,6 +3,7 @@ import Layout from '../components/Layout'
 import QueueList from '../components/QueueList'
 import PatientsTable from '../components/PatientsTable'
 import { showToast } from '../lib/toast'
+import Toast from '../components/Toast'
 import TemplatesSelect from '../components/TemplatesSelect'
 import AddMessageTemplateModal from '../components/AddMessageTemplateModal'
 import AddPatientsModal from '../components/AddPatientsModal'
@@ -15,12 +16,13 @@ import EditUserModal from '../components/EditUserModal'
 import EditPatientModal from '../components/EditPatientModal'
 import MessagesPanel from '../components/MessagesPanel'
 import Icon from '../components/Icon'
-import ModalWrapper from '../components/ModalWrapper'
 import AccountInfoModal from '../components/AccountInfoModal'
 import WhatsAppAuthModal from '../components/WhatsAppAuthModal'
 import ManagementPanel from '../components/ManagementPanel'
-import UsersModal from '../components/UsersModal'
+import AddQueueModal from '../components/AddQueueModal'
 import { useI18n } from '../lib/i18n'
+import { useAuth } from '../lib/auth'
+import ProtectedRoute from '../components/ProtectedRoute'
 import {
   useQueues,
   usePatients,
@@ -33,18 +35,19 @@ import {
   useDeleteQueue,
   useSendMessage,
   useAddTemplate,
-  useLogout,
 } from '../lib/hooks'
 
-export default function Dashboard() {
+function Dashboard() {
   const i18n = useI18n()
+  const { user, logout } = useAuth()
+
   // Navigation & Layout State
   const [activeSection, setActiveSection] = useState('dashboard')
-  const [userInfo, setUserInfo] = useState({
-    role: i18n.t('roles.manager_primary', 'مدير أساسي'),
-    name: i18n.t('roles.manager_primary', 'المدير الأساسي'),
+  const userInfo = user || {
+    role: '',
+    name: '',
     whatsappConnected: false,
-  })
+  }
 
   // Queue Management State
   const [selectedQueue, setSelectedQueue] = useState(null)
@@ -90,7 +93,6 @@ export default function Dashboard() {
   const deleteQueueMutation = useDeleteQueue()
   const sendMessageMutation = useSendMessage()
   const addTemplateMutation = useAddTemplate()
-  const logoutMutation = useLogout()
 
   // Load persisted selected template from localStorage
   useEffect(() => {
@@ -179,13 +181,8 @@ export default function Dashboard() {
     })
   }
 
-  const handleLogout = async () => {
-    try {
-      await logoutMutation.mutateAsync()
-      window.location.href = '/login'
-    } catch (error) {
-      showToast(i18n.t('dashboard.logout.fail', 'فشل في تسجيل الخروج'))
-    }
+  const handleLogout = () => {
+    logout()
   }
 
   // NOTE: CSV Upload logic is complex and uses optimistic updates.
@@ -218,7 +215,7 @@ export default function Dashboard() {
         queues={queues}
         selectedQueue={selectedQueue}
         onQueueSelect={handleQueueSelect}
-        canAddQueue={userInfo.role === i18n.t('roles.manager_primary', 'مدير أساسي')}
+        canAddQueue={['primary_admin', 'secondary_admin'].includes(userInfo.role)}
         onAddQueue={async (name, description) => {
           try {
             await addQueueMutation.mutateAsync({ doctorName: name, description })
@@ -317,11 +314,11 @@ export default function Dashboard() {
                     <Icon name="fas fa-trash mr-2" />
                   </button>
 
-                  <button 
-                    onClick={() => setShowMessageModal(true)} 
-                    className="bg-purple-600 text-white p-4 rounded-lg hover:bg-purple-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                  <button
+                    onClick={() => setShowMessageModal(true)}
+                    className="bg-purple-600 text-white p-4 rounded-lg hover:bg-purple-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-purple-500"
                     aria-label={i18n.t('dashboard.send_whatsapp', 'إرسال رسالة واتساب')}
-                    >
+                  >
                     {i18n.t('dashboard.send_message', 'إرسال رسالة')}
                     <Icon name="fab fa-whatsapp mr-2" />
                   </button>
@@ -447,8 +444,45 @@ export default function Dashboard() {
         }}
       />
       
+      <AddQueueModal
+        open={showAddQueueModal}
+        onClose={() => setShowAddQueueModal(false)}
+        onAdd={async (name, description) => {
+          try {
+            await addQueueMutation.mutateAsync({ doctorName: name, description });
+            showToast(i18n.t('dashboard.queues.add.success', 'تم إنشاء الطابور بنجاح'));
+          } catch (error) {
+            showToast(i18n.t('dashboard.queues.add.fail', 'فشل في إنشاء الطابور'));
+          } finally {
+            setShowAddQueueModal(false);
+          }
+        }}
+      />
+
+      <CSVUpload
+        open={showCSVModal}
+        onClose={() => setShowCSVModal(false)}
+        onChunk={handleCSVChunk}
+        onComplete={handleCSVComplete}
+        queueId={selectedQueue}
+      />
+
+      <MessagePreviewModal
+        open={showMessagePreview}
+        onClose={() => setShowMessagePreview(false)}
+        template={templates.find(t => t.id === selectedTemplate)}
+      />
+
       {/* ... Other modals ... */}
       <Toast />
     </>
+  )
+}
+
+export default function ProtectedDashboard() {
+  return (
+    <ProtectedRoute>
+      <Dashboard />
+    </ProtectedRoute>
   )
 }

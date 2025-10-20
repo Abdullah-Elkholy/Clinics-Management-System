@@ -1,6 +1,9 @@
 import React from 'react'
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { I18nProvider } from '../lib/i18n'
+import { AuthProvider } from '../lib/auth'
+import { RouterContext } from 'next/dist/shared/lib/router-context.shared-runtime'
 
 // Provide a jest.mock for next/router that reads a global test router object.
 // This factory is hoisted by Jest and must not reference out-of-scope variables.
@@ -85,10 +88,17 @@ export function renderWithProviders(ui, { localStorage = {}, router = createMock
   })
 
   function Wrapper({ children }){
+    const initialToken = localStorage.token;
+    const initialUser = localStorage.user ? JSON.parse(localStorage.user) : undefined;
+
     const base = (
-      <QueryClientProvider client={testQueryClient}>
-        {children}
-      </QueryClientProvider>
+      <RouterContext.Provider value={router}>
+        <QueryClientProvider client={testQueryClient}>
+          <I18nProvider>
+            <AuthProvider initialToken={initialToken} initialUser={initialUser}>{children}</AuthProvider>
+          </I18nProvider>
+        </QueryClientProvider>
+      </RouterContext.Provider>
     );
     if (WrapperComponent) return <WrapperComponent>{base}</WrapperComponent>;
     return base;

@@ -1,13 +1,21 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import Dashboard from '../pages/dashboard';
+import ProtectedDashboard from '../pages/dashboard';
+import { renderWithProviders } from '../test-utils/renderWithProviders'
 import api from '../lib/api';
 
 // Mock api module
 jest.mock('../lib/api');
 
 describe('Dashboard Component', () => {
+  const mockUser = {
+  id: '1',
+  name: 'Test User',
+  email: 'test@example.com',
+  role: 'primary_admin',
+  permissions: ['read', 'write'],
+};
   const mockQueues = [
     { id: 'q1', name: 'طابور الأول', currentPosition: 1, estimatedTime: 15 },
     { id: 'q2', name: 'طابور الثاني', currentPosition: 2, estimatedTime: 20 }
@@ -23,21 +31,33 @@ describe('Dashboard Component', () => {
     { id: 't2', content: 'تم تأكيد موعدك' }
   ];
 
-  beforeEach(() => {
-    // Reset all mocks
-    jest.clearAllMocks();
+  let currentMockQueues = [...mockQueues];
 
-    // Setup default api responses
+  beforeEach(() => {
+    // Reset the mock queues before each test
+    currentMockQueues = [...mockQueues];
+
     api.get.mockImplementation((url) => {
-      if (url === '/api/queues') return Promise.resolve({ data: { queues: mockQueues } });
-      if (url === '/api/templates') return Promise.resolve({ data: { templates: mockTemplates } });
-      if (url.includes('/patients')) return Promise.resolve({ data: { patients: mockPatients } });
+      if (url === '/api/queues') return Promise.resolve({ data: { data: currentMockQueues } });
+      if (url === '/api/templates') return Promise.resolve({ data: { data: mockTemplates } });
+      if (url.includes('/patients')) return Promise.resolve({ data: { data: mockPatients } });
       return Promise.reject(new Error('Not found'));
+    });
+
+    api.post.mockImplementation((url, data) => {
+      if (url === '/api/queues') {
+        const newQueue = { ...data, id: `q${currentMockQueues.length + 1}`, name: data.doctorName };
+        currentMockQueues.push(newQueue);
+        return Promise.resolve({ data: newQueue });
+      }
+      return Promise.resolve({ data: {} });
     });
   });
 
   test('renders initial dashboard state with queues list', async () => {
-    render(<Dashboard />);
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+    });
 
     // Wait for the queue to appear (ensures useEffect setState has completed)
     await screen.findByText('طابور الأول')
@@ -52,7 +72,9 @@ describe('Dashboard Component', () => {
   });
 
   test('loads patient data when selecting a queue', async () => {
-    render(<Dashboard />);
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+    });
     // Wait for initial queues to load
     await screen.findByText('طابور الأول')
 
@@ -71,10 +93,9 @@ describe('Dashboard Component', () => {
   });
 
   test('handles adding a new queue', async () => {
-    const newQueue = { id: 'q3', title: 'طابور جديد', currentPosition: 1, estimatedTime: 10 };
-    api.post.mockResolvedValueOnce({ data: { queue: newQueue } });
-
-    render(<Dashboard />);
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+    });
 
     // Wait for initial queues to load
     await screen.findByText('طابور الأول')
@@ -92,7 +113,7 @@ describe('Dashboard Component', () => {
 
     // Wait for the POST to be called and the new queue to appear
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/queues', {
-      title: 'طابور جديد',
+      doctorName: 'طابور جديد',
       description: ''
     }))
 
@@ -100,7 +121,9 @@ describe('Dashboard Component', () => {
   });
 
   test('handles patient actions (add, delete, message)', async () => {
-    render(<Dashboard />);
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+    });
 
     // Wait for queues then select one
     await screen.findByText('طابور الأول')
@@ -126,7 +149,9 @@ describe('Dashboard Component', () => {
   });
 
   test('handles CSV upload', async () => {
-    render(<Dashboard />);
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+    });
     // Wait for queues, select one and open CSV modal
     await screen.findByText('طابور الأول')
     fireEvent.click(screen.getByRole('button', { name: 'طابور طابور الأول' }));
@@ -141,7 +166,9 @@ describe('Dashboard Component', () => {
   });
 
   test('handles messages and templates', async () => {
-    render(<Dashboard />);
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+    });
     // Wait for queues and open message modal
     await screen.findByText('طابور الأول')
     fireEvent.click(screen.getByText('طابور الأول'));
@@ -163,15 +190,10 @@ describe('Dashboard Component', () => {
   });
 
   test('handles errors gracefully', async () => {
-    // Mock API error for initial data loading
-    api.get.mockImplementation((url) => {
-      if (url === '/api/queues') {
-        return Promise.reject(new Error('Failed to load'));
-      }
-      return Promise.resolve({ data: {} });
+    api.get.mockRejectedValue(new Error('Network Error'));
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
     });
-
-    render(<Dashboard />);
 
     // Should show the default empty state message
     expect(await screen.findByText('الرجاء اختيار طابور لعرض المرضى')).toBeInTheDocument();
@@ -181,8 +203,10 @@ describe('Dashboard Component', () => {
     expect(screen.getByRole('complementary', { name: 'القائمة الجانبية' })).toBeInTheDocument();
   });
 
-  test('applies RTL layout correctly', () => {
-    render(<Dashboard />);
+  test('applies RTL layout correctly', async () => {
+    renderWithProviders(<ProtectedDashboard />, {
+      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+    });
 
     // Wait for the component to perform its async initial loads to avoid act() warnings
     return screen.findByRole('banner').then(() => {

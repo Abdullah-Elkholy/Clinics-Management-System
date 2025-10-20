@@ -1,38 +1,74 @@
-const en = require('../locales/en.json')
-const ar = require('../locales/ar.json')
+import React, { createContext, useContext } from 'react'
 
-const bundles = { en, ar }
-
-// default language used on the server until the client initializes
-let current = 'ar'
-
-export function setLocale(l){
-  if (!bundles[l]) return
-  current = l
-  try{ localStorage.setItem('locale', l) }catch(e){}
+const bundles = {
+  en: require('../locales/en.json'),
+  ar: require('../locales/ar.json'),
 }
 
-export function getLocale(){ return current }
+const I18nContext = createContext()
 
-export function t(key, vars){
-  const buf = bundles[current] && bundles[current][key] ? bundles[current][key] : (bundles['en'][key] ?? key)
-  if (!vars) return buf
-  return buf.replace(/\{\{(.*?)\}\}/g, (_, k)=> vars[k.trim()] ?? '')
-}
-
-export function getDir(){ return current === 'ar' ? 'rtl' : 'ltr' }
-
-// Client-only init to read navigator/localStorage safely and avoid
-// changing `current` at module-evaluation time which causes hydration
-// mismatches between server and client HTML.
-export function initLocaleFromBrowser(){
-  try{
-    if (typeof window === 'undefined') return
+const getInitialLocale = () => {
+  if (typeof window === 'undefined') return 'ar'
+  try {
     const stored = localStorage.getItem('locale')
-    if (stored && bundles[stored]) { current = stored; return }
-    const nav = navigator.language || navigator.userLanguage || 'ar'
-    current = nav.startsWith('en') ? 'en' : 'ar'
-  }catch(e){}
+    if (stored && bundles[stored]) {
+      return stored
+    }
+  } catch (e) {
+    // ignore
+  }
+  const nav = navigator.language || navigator.userLanguage || 'ar'
+  return nav.startsWith('en') ? 'en' : 'ar'
 }
 
-export default { t, setLocale, getLocale, initLocaleFromBrowser, getDir }
+export class I18nProvider extends React.Component {
+  state = {
+    locale: getInitialLocale(),
+  }
+
+  setLocale = (locale) => {
+    if (!bundles[locale]) return
+    this.setState({ locale })
+    try {
+      localStorage.setItem('locale', locale)
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  t = (key, defaultText, options) => {
+    const { locale } = this.state
+    const bundle = bundles[locale] || bundles.en
+    let text = bundle[key] || defaultText || key
+    if (options) {
+      text = Object.entries(options).reduce(
+        (acc, [optKey, optVal]) => acc.replace(`{${optKey}}`, optVal),
+        text
+      )
+    }
+    return text
+  }
+
+  getDir = () => (this.state.locale === 'ar' ? 'rtl' : 'ltr')
+
+  getLocale = () => this.state.locale
+
+  render() {
+    const value = {
+      t: this.t,
+      setLocale: this.setLocale,
+      getLocale: this.getLocale,
+      getDir: this.getDir,
+      locale: this.state.locale,
+    }
+    return (
+      <I18nContext.Provider value={value}>
+        {this.props.children}
+      </I18nContext.Provider>
+    )
+  }
+}
+
+export const useI18n = () => {
+  return useContext(I18nContext)
+}

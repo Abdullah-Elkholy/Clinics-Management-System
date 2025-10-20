@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import { FocusTrap } from 'focus-trap-react'
 
-export default function ModalWrapper({ open = true, children, className = '', onClose = null, dir = 'rtl', initialFocusRef = null, labelId = null, backdropBlur = true }){
+export default function ModalWrapper({ open = true, title, actions = [], children, className = '', onClose = null, dir = 'rtl', initialFocusRef = null, labelId = 'modal-title', backdropBlur = true }){
   const modalRef = useRef(null)
   const previouslyFocused = useRef(null)
 
@@ -29,7 +29,25 @@ export default function ModalWrapper({ open = true, children, className = '', on
         }}
       >
         <div ref={modalRef} tabIndex={-1} className={`bg-white rounded-xl p-6 w-full max-w-lg transform transition-all duration-300 scale-95 opacity-0 animate-modal-in ${className}`} role="dialog" aria-modal="true" {...(labelId ? { 'aria-labelledby': labelId } : {})}>
+          {title && <h2 id={labelId} className="text-xl font-bold mb-4">{title}</h2>}
           {children}
+          {actions.length > 0 && (
+            <div className="flex justify-end space-x-4 mt-6">
+              {actions.map((action, index) => (
+                <button
+                  key={index}
+                  onClick={action.onClick}
+                  className={`px-4 py-2 rounded-md ${
+                    action.variant === 'primary'
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+                  }`}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </FocusTrap>
     </div>

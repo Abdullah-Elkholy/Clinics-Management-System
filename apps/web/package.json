@@ -21,6 +21,7 @@
   "devDependencies": {
     "@babel/preset-env": "^7.28.3",
     "@babel/preset-react": "^7.27.1",
+    "@tanstack/react-query-devtools": "^5.90.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^14.3.1",
     "autoprefixer": "10.4.13",

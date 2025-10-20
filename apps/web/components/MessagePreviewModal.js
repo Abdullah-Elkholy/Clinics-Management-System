@@ -17,7 +17,15 @@ export default function MessagePreviewModal({ open, template, patients = [], onC
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <div className="text-sm text-gray-600 mb-2">{i18n.t('message_preview.template_label', 'القالب:')} <strong>{template?.title || i18n.t('message_preview.default_template_name', 'رسالة')}</strong></div>
-            <div className="bg-gray-50 border rounded p-4 text-gray-800 min-h-[160px]">{content}</div>
+            <div className="bg-gray-50 border rounded p-4 text-gray-800 min-h-[160px]">
+              <label htmlFor="message-preview" className="sr-only">{i18n.t('message_preview.preview_label', 'معاينة الرسالة')}</label>
+              <textarea
+                id="message-preview"
+                readOnly
+                value={content}
+                className="w-full h-full bg-transparent border-none resize-none focus:ring-0"
+              />
+            </div>
             <div className="text-xs text-gray-500 mt-2">{i18n.t('message_preview.supported_variables', 'المتغيرات المدعومة: {PN}, {PQP}, {CQP}, {ETR}')}</div>
           </div>
           <div>

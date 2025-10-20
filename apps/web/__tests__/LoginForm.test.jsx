@@ -18,19 +18,29 @@ jest.mock('../lib/api', () => ({
 }))
 import LoginForm from '../components/auth/LoginForm'
 import { renderWithProviders } from '../test-utils/renderWithProviders'
+import { useAuth } from '../lib/auth'
 
-describe('LoginForm', ()=>{
-  test('renders and logs in successfully', async ()=>{
+jest.mock('../lib/auth', () => ({
+  ...jest.requireActual('../lib/auth'),
+  useAuth: () => ({
+    login: jest.fn(),
+  }),
+}))
+
+describe('LoginForm', () => {
+  test('renders and logs in successfully', async () => {
     const { container } = renderWithProviders(<LoginForm />)
-    const userInput = screen.getByPlaceholderText('أدخل اسم المستخدم')
-    const passInput = screen.getByPlaceholderText('أدخل كلمة المرور')
+    const userInput = screen.getByPlaceholderText(/أدخل اسم المستخدم/i)
+    const passInput = screen.getByPlaceholderText(/أدخل كلمة المرور/i)
     const btn = screen.getByRole('button', { name: /تسجيل الدخول/i })
 
     fireEvent.change(userInput, { target: { value: 'admin' } })
     fireEvent.change(passInput, { target: { value: 'admin123' } })
     fireEvent.click(btn)
 
-    await waitFor(()=> expect(localStorage.getItem('accessToken')).toBe('fake-token'))
+    await waitFor(() => {
+      expect(useAuth().login).toHaveBeenCalledWith('fake-token')
+    })
 
     // a11y: quick axe check for regressions
     const results = await global.axe(container)

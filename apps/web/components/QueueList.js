@@ -1,7 +1,9 @@
 import React from 'react'
 import Icon from './Icon'
 
-export default function QueueList({ queues = [], selectedQueue, onSelect = () => {}, canAddQueue, onAddQueue, onEditQueue, onDeleteQueue, onRequestAddQueue }){
+export default function QueueList({ queues: queuesProp = [], selectedQueue, onSelect = () => {}, canAddQueue, onAddQueue, onEditQueue, onDeleteQueue, onRequestAddQueue }){
+  const queues = Array.isArray(queuesProp) ? queuesProp : (queuesProp?.data || []);
+
   return (
     <div className="p-4 border-t border-gray-200">
       <div className="flex items-center justify-between mb-4">

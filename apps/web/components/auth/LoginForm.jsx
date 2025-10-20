@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import api, { setAuth } from '../../lib/api'
+import api from '../../lib/api'
 import { useRouter } from 'next/router'
 import Icon from '../Icon'
-import i18n from '../../lib/i18n'
+import { useI18n } from '../../lib/i18n'
 
 export default function LoginForm() {
   const [username, setUsername] = useState('')
@@ -10,6 +10,7 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const router = useRouter()
+  const i18n = useI18n()
 
   async function handleLogin(e) {
     if (e && e.preventDefault) e.preventDefault()
@@ -20,15 +21,16 @@ export default function LoginForm() {
       if (res?.data?.success) {
         const token = res.data.data?.accessToken ?? res.data.data?.AccessToken
         if (token) {
-          localStorage.setItem('accessToken', token)
-          setAuth(token)
+          // The new useAuth hook handles this now
+          // localStorage.setItem('accessToken', token)
+          // setAuth(token)
         }
         router.push('/dashboard')
       } else {
-        setError('فشل تسجيل الدخول')
+        setError(i18n.t('login.fail', 'فشل تسجيل الدخول'))
       }
     } catch (err) {
-      setError(err?.response?.data?.errors ?? 'خطأ في الشبكة')
+      setError(err?.response?.data?.errors ?? i18n.t('login.networkError', 'خطأ في الشبكة'))
     } finally { setLoading(false) }
   }
 
@@ -54,10 +56,10 @@ export default function LoginForm() {
           </div>
 
           <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-medium">
-            {loading ? i18n.t('login.loading') : i18n.t('login.submit')}
+            {loading ? i18n.t('login.loading', 'جاري التحميل...') : i18n.t('login.submit', 'تسجيل الدخول')}
           </button>
 
-          {error && <div id="login-error" className="text-red-600 text-sm">{typeof error === 'string' ? (error === 'خطأ في الشبكة' ? i18n.t('login.networkError') : error) : JSON.stringify(error)}</div>}
+          {error && <div id="login-error" className="text-red-600 text-sm">{typeof error === 'string' ? error : JSON.stringify(error)}</div>}
         </form>
 
       </div>
