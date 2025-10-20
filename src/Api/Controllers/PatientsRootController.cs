@@ -2,11 +2,13 @@ using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class PatientsRootController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -14,6 +16,7 @@ namespace Clinics.Api.Controllers
 
         // DELETE /api/patients/{id}
         [HttpDelete("{id}")]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> Delete(int id)
         {
             var p = await _db.Patients.FindAsync(id);
@@ -33,4 +36,4 @@ namespace Clinics.Api.Controllers
         }
     }
 }
- 
+

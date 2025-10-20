@@ -10,7 +10,13 @@ const customJestConfig = {
   moduleNameMapper: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
   },
-  transform: {},
+  transform: {
+    '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }],
+  },
+  testMatch: [
+    '**/__tests__/**/*.test.[jt]s?(x)',
+    '**/__tests__/**/*.spec.[jt]s?(x)',
+  ],
 };
 
 export default createJestConfig(customJestConfig);

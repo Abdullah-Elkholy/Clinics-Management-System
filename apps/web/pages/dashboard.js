@@ -22,6 +22,7 @@ import ManagementPanel from '../components/ManagementPanel'
 import AddQueueModal from '../components/AddQueueModal'
 import { useI18n } from '../lib/i18n'
 import { useAuth } from '../lib/auth'
+import { useAuthorization } from '../lib/authorization'
 import ProtectedRoute from '../components/ProtectedRoute'
 import {
   useQueues,
@@ -40,6 +41,11 @@ import {
 function Dashboard() {
   const i18n = useI18n()
   const { user, logout } = useAuth()
+  const {
+    canManageUsers,
+    canCreateQueues,
+    isModerator,
+  } = useAuthorization()
 
   // Navigation & Layout State
   const [activeSection, setActiveSection] = useState('dashboard')
@@ -206,16 +212,13 @@ function Dashboard() {
   return (
     <>
       <Layout
-        userRole={userInfo.role}
-        userName={userInfo.name}
-        whatsappConnected={userInfo.whatsappConnected}
         onLogout={handleLogout}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
         queues={queues}
         selectedQueue={selectedQueue}
         onQueueSelect={handleQueueSelect}
-        canAddQueue={['primary_admin', 'secondary_admin'].includes(userInfo.role)}
+        canAddQueue={canCreateQueues}
         onAddQueue={async (name, description) => {
           try {
             await addQueueMutation.mutateAsync({ doctorName: name, description })
@@ -278,24 +281,28 @@ function Dashboard() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6" role="toolbar" aria-label={i18n.t('dashboard.queue_actions_label', 'إجراءات الطابور')}>
-                  <button 
-                    onClick={() => setShowAddPatientModal(true)} 
-                    className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-green-500" 
-                    aria-label={i18n.t('dashboard.add_patients_label', 'إضافة مرضى جدد')}
-                    >
-                    {i18n.t('dashboard.add_patients_button', 'إضافة مرضى')}
-                    <Icon name="fas fa-user-plus mr-2" />
-                  </button>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6" role="toolbar" aria-label={i18n.t('dashboard.queue_actions_label', 'إجراءات الطابور')}>
+                  {canCreateQueues && (
+                    <button 
+                      onClick={() => setShowAddPatientModal(true)} 
+                      className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-green-500" 
+                      aria-label={i18n.t('dashboard.add_patients_label', 'إضافة مرضى جدد')}
+                      >
+                      {i18n.t('dashboard.add_patients_button', 'إضافة مرضى')}
+                      <Icon name="fas fa-user-plus mr-2" />
+                    </button>
+                  )}
 
-                  <button 
-                    onClick={() => setShowCSVModal(true)} 
-                    className="bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-500" 
-                    aria-label={i18n.t('dashboard.upload_csv_label', 'رفع ملف المرضى')}
-                    >
-                    {i18n.t('dashboard.upload_csv_button', 'رفع ملف المرضى')}
-                    <Icon name="fas fa-upload mr-2" />
-                  </button>
+                  {canCreateQueues && (
+                    <button 
+                      onClick={() => setShowCSVModal(true)} 
+                      className="bg-blue-600 text-white p-4 rounded-lg hover:bg-blue-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                      aria-label={i18n.t('dashboard.upload_csv_label', 'رفع ملف المرضى')}
+                      >
+                      {i18n.t('dashboard.upload_csv_button', 'رفع ملف المرضى')}
+                      <Icon name="fas fa-upload mr-2" />
+                    </button>
+                  )}
 
                   <button
                     onClick={refreshPatients}
@@ -305,14 +312,16 @@ function Dashboard() {
                     {i18n.t('dashboard.refresh_list_button', 'تحديث القائمة')}
                   </button>
 
-                  <button 
-                    onClick={handleDeleteSelected} 
-                    className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-500" 
-                    aria-label={i18n.t('dashboard.delete_selected_label', 'حذف المرضى المحددين')}
-                    >
-                    {i18n.t('dashboard.delete_selected_button', 'حذف المحدد')}
-                    <Icon name="fas fa-trash mr-2" />
-                  </button>
+                  {canCreateQueues && (
+                    <button 
+                      onClick={handleDeleteSelected} 
+                      className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transform transition duration-200 hover:scale-105 hover:-translate-y-1 hover:shadow-md flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-500" 
+                      aria-label={i18n.t('dashboard.delete_selected_label', 'حذف المرضى المحددين')}
+                      >
+                      {i18n.t('dashboard.delete_selected_button', 'حذف المحدد')}
+                      <Icon name="fas fa-trash mr-2" />
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setShowMessageModal(true)}
@@ -398,6 +407,8 @@ function Dashboard() {
           <div className="p-6" role="region" aria-label={i18n.t('dashboard.system_management_label', 'إدارة النظام')}>
             <h2 className="text-2xl font-bold mb-4">{i18n.t('dashboard.system_management_title', 'إدارة النظام')}</h2>
             <ManagementPanel
+              canManageUsers={canManageUsers}
+              isModerator={isModerator}
               onOpenQuotas={() => setShowQuotaModal(true)}
               onOpenWhatsApp={() => setShowWhatsAppModal(true)}
               onOpenTemplates={() => setShowAddTemplateModal(true)}

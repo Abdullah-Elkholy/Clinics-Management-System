@@ -7,7 +7,7 @@ namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
     public class TemplatesController : ControllerBase
     {
         private readonly ApplicationDbContext _db;

@@ -8,7 +8,7 @@ namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "primary_admin,secondary_admin")]
+    [Authorize(Roles = "primary_admin")]
     public class UsersController : ControllerBase
     {
         private readonly ApplicationDbContext _db;

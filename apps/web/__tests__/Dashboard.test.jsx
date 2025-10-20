@@ -4,9 +4,15 @@ import '@testing-library/jest-dom';
 import ProtectedDashboard from '../pages/dashboard';
 import { renderWithProviders } from '../test-utils/renderWithProviders'
 import api from '../lib/api';
+import { useAuthorization } from '../lib/authorization';
 
 // Mock api module
 jest.mock('../lib/api');
+
+// Mock the authorization hook
+jest.mock('../lib/authorization', () => ({
+  useAuthorization: jest.fn(),
+}));
 
 describe('Dashboard Component', () => {
   const mockUser = {
@@ -37,6 +43,25 @@ describe('Dashboard Component', () => {
     // Reset the mock queues before each test
     currentMockQueues = [...mockQueues];
 
+    // Default to primary_admin, can be overridden in describe blocks
+    useAuthorization.mockReturnValue({
+      isPrimaryAdmin: true,
+      isSecondaryAdmin: false,
+      isModerator: false,
+      isUser: false,
+      canManageUsers: true,
+      canManageQuotas: true,
+      canManageWhatsApp: true,
+      canManageTemplates: true,
+      canCreateQueues: true,
+      canDeleteQueues: true,
+      canEditQueues: true,
+      canReorderPatients: true,
+      canEditPatients: true,
+      canDeletePatients: true,
+      canSeeManagement: true,
+    });
+
     api.get.mockImplementation((url) => {
       if (url === '/api/queues') return Promise.resolve({ data: { data: currentMockQueues } });
       if (url === '/api/templates') return Promise.resolve({ data: { data: mockTemplates } });
@@ -54,21 +79,157 @@ describe('Dashboard Component', () => {
     });
   });
 
-  test('renders initial dashboard state with queues list', async () => {
-    renderWithProviders(<ProtectedDashboard />, {
-      localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+  describe('for primary_admin', () => {
+    test('renders initial dashboard state with queues list', async () => {
+      renderWithProviders(<ProtectedDashboard />, {
+        localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+      });
+
+      // Wait for the queue to appear (ensures useEffect setState has completed)
+      await screen.findByText('طابور الأول')
+
+      // API should have been called for initial data
+      expect(api.get).toHaveBeenCalledWith('/api/queues');
+      expect(api.get).toHaveBeenCalledWith('/api/templates');
+
+      // Verify queue list is rendered
+      expect(screen.getByText('طابور الأول')).toBeInTheDocument();
+      expect(screen.getByText('طابور الثاني')).toBeInTheDocument();
     });
 
-    // Wait for the queue to appear (ensures useEffect setState has completed)
-    await screen.findByText('طابور الأول')
+    test('can see all management panel cards', async () => {
+        renderWithProviders(<ProtectedDashboard />, {
+            localStorage: { user: JSON.stringify(mockUser), token: 'test-token' }
+        });
+        
+        fireEvent.click(await screen.findByText('الإدارة'));
 
-    // API should have been called for initial data
-    expect(api.get).toHaveBeenCalledWith('/api/queues');
-    expect(api.get).toHaveBeenCalledWith('/api/templates');
+        expect(await screen.findByText('المستخدمون')).toBeInTheDocument();
+        expect(await screen.findByText('الحصص والإعدادات')).toBeInTheDocument();
+        expect(await screen.findByText('واتساب')).toBeInTheDocument();
+        expect(await screen.findByText('قوالب الرسائل')).toBeInTheDocument();
+    });
+  });
 
-    // Verify queue list is rendered
-    expect(screen.getByText('طابور الأول')).toBeInTheDocument();
-    expect(screen.getByText('طابور الثاني')).toBeInTheDocument();
+
+  describe('for secondary_admin', () => {
+    beforeEach(() => {
+      useAuthorization.mockReturnValue({
+        isPrimaryAdmin: false,
+        isSecondaryAdmin: true,
+        isModerator: false,
+        isUser: false,
+        canManageUsers: false,
+        canManageQuotas: false,
+        canManageWhatsApp: true,
+        canManageTemplates: true,
+        canCreateQueues: true,
+        canDeleteQueues: true,
+        canEditQueues: true,
+        canReorderPatients: true,
+        canEditPatients: true,
+        canDeletePatients: true,
+        canSeeManagement: true,
+      });
+    });
+
+    test('cannot see Users and Quotas management cards', async () => {
+        renderWithProviders(<ProtectedDashboard />, {
+            localStorage: { user: JSON.stringify({ ...mockUser, role: 'secondary_admin' }), token: 'test-token' }
+        });
+        
+        fireEvent.click(await screen.findByText('الإدارة'));
+
+        expect(screen.queryByText('المستخدمون')).not.toBeInTheDocument();
+        expect(screen.queryByText('الحصص والإعدادات')).not.toBeInTheDocument();
+        expect(await screen.findByText('واتساب')).toBeInTheDocument();
+        expect(await screen.findByText('قوالب الرسائل')).toBeInTheDocument();
+    });
+  });
+
+  describe('for moderator', () => {
+    beforeEach(() => {
+      useAuthorization.mockReturnValue({
+        isPrimaryAdmin: false,
+        isSecondaryAdmin: false,
+        isModerator: true,
+        isUser: false,
+        canManageUsers: false,
+        canManageQuotas: false,
+        canManageWhatsApp: false,
+        canManageTemplates: false,
+        canCreateQueues: false,
+        canDeleteQueues: false,
+        canEditQueues: false,
+        canReorderPatients: true,
+        canEditPatients: false,
+        canDeletePatients: false,
+        canSeeManagement: true,
+      });
+    });
+
+    test('can only see management link but no management cards and cannot add queues', async () => {
+        renderWithProviders(<ProtectedDashboard />, {
+            localStorage: { user: JSON.stringify({ ...mockUser, role: 'moderator' }), token: 'test-token' }
+        });
+        
+        // Can see link
+        const managementLink = await screen.findByText('الإدارة');
+        expect(managementLink).toBeInTheDocument();
+        
+        fireEvent.click(managementLink);
+
+        // Cannot see any cards
+        expect(screen.queryByText('المستخدمون')).not.toBeInTheDocument();
+        expect(screen.queryByText('الحصص والإعدادات')).not.toBeInTheDocument();
+        expect(screen.queryByText('واتساب')).not.toBeInTheDocument();
+        expect(screen.queryByText('قوالب الرسائل')).not.toBeInTheDocument();
+
+        // Cannot add queue
+        expect(screen.queryByRole('button', { name: 'إضافة طابور' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('for user', () => {
+    beforeEach(() => {
+      useAuthorization.mockReturnValue({
+        isPrimaryAdmin: false,
+        isSecondaryAdmin: false,
+        isModerator: false,
+        isUser: true,
+        canManageUsers: false,
+        canManageQuotas: false,
+        canManageWhatsApp: false,
+        canManageTemplates: false,
+        canCreateQueues: false,
+        canDeleteQueues: false,
+        canEditQueues: false,
+        canReorderPatients: false,
+        canEditPatients: false,
+        canDeletePatients: false,
+        canSeeManagement: false,
+      });
+    });
+
+    test('cannot see management link or add/delete queues/patients', async () => {
+        renderWithProviders(<ProtectedDashboard />, {
+            localStorage: { user: JSON.stringify({ ...mockUser, role: 'user' }), token: 'test-token' }
+        });
+        
+        // Cannot see management link
+        expect(screen.queryByText('الإدارة')).not.toBeInTheDocument();
+
+        // Cannot add queue
+        expect(screen.queryByRole('button', { name: 'إضافة طابور' })).not.toBeInTheDocument();
+
+        // Select a queue
+        fireEvent.click(await screen.findByText('طابور الأول'));
+
+        // Cannot see add/delete patient buttons
+        await screen.findByText('أحمد محمد');
+        expect(screen.queryByRole('button', { name: 'إضافة مرضى جدد' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'حذف المرضى المحددين' })).not.toBeInTheDocument();
+    });
   });
 
   test('loads patient data when selecting a queue', async () => {

@@ -1,13 +1,16 @@
 import React, { useState, useRef } from 'react'
 import { useI18n } from '../lib/i18n'
+import { useAuthorization } from '../lib/authorization'
 
 export default function PatientsTable({ patients, onToggle, onReorder, onDeletePatient, onToggleAll, selectAll, onEditPatient }){
   const i18n = useI18n()
+  const { canDeletePatients, canEditPatients, canReorderPatients } = useAuthorization()
   const [dragIndex, setDragIndex] = useState(null)
   const [hoverIndex, setHoverIndex] = useState(null)
   const draggingRef = useRef(null)
 
   function handleDragStart(e, idx){
+    if (!canReorderPatients) return
     setDragIndex(idx)
     draggingRef.current = idx
     e.dataTransfer.effectAllowed = 'move'
@@ -71,7 +74,7 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
               <tr
                 key={p.id ?? `tmp-${i}`}
                 className={`border-t transition-transform duration-150 ${p._optimistic ? 'opacity-70' : ''} ${hoverIndex === i ? 'bg-blue-50 border-blue-200 -translate-y-1 shadow-md animate-slide-in' : ''}`}
-                draggable
+                draggable={canReorderPatients}
                 onDragStart={(e)=>handleDragStart(e,i)}
                 onDragOver={(e)=>handleDragOver(e,i)}
                 onDrop={(e)=>handleDrop(e,i)}
@@ -88,7 +91,7 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
                   )}
                 </td>
                   <td className="p-3 text-right align-middle" title={i18n.t('patients.table.drag_to_reorder', 'سحب لإعادة الترتيب')}>
-                    <span className="drag-handle inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 text-gray-600 cursor-grab" aria-hidden onMouseDown={()=>{ try{ document.body.classList.add('dragging') }catch(e){} }} onMouseUp={()=>{ try{ document.body.classList.remove('dragging') }catch(e){} }}>☰</span>
+                    {canReorderPatients && <span className="drag-handle inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 text-gray-600 cursor-grab" aria-hidden onMouseDown={()=>{ try{ document.body.classList.add('dragging') }catch(e){} }} onMouseUp={()=>{ try{ document.body.classList.remove('dragging') }catch(e){} }}>☰</span>}
                   </td>
                   <td className="p-3 text-right align-middle" role="cell" title={p.fullName || ''}>
                     <div className="font-medium text-gray-800">{p.fullName}</div>
@@ -97,16 +100,9 @@ export default function PatientsTable({ patients, onToggle, onReorder, onDeleteP
                     <div className="text-sm text-gray-600">{p.phoneNumber}</div>
                   </td>
                   <td className="p-3 text-right align-middle" role="cell">
-                    <div className="text-sm text-gray-700">{p.position}</div>
-                  </td>
-                  <td className="p-3 text-right align-middle">
-                    <div className="flex items-center justify-end gap-3">
-                      {onEditPatient ? (
-                        <button type="button" aria-label={i18n.t('patients.table.edit_patient', 'تعديل المريض {name}', { name: p.fullName })} onClick={()=> onEditPatient(p)} className="text-blue-600 hover:text-blue-700 text-sm">{i18n.t('common.edit', 'تعديل')}</button>
-                      ) : null}
-                      {onDeletePatient ? (
-                        <button type="button" aria-label={i18n.t('patients.table.delete_patient', 'حذف المريض {name}', { name: p.fullName })} onClick={()=> onDeletePatient(p.id)} className="text-red-600 hover:text-red-700 text-sm">{i18n.t('common.delete', 'حذف')}</button>
-                      ) : null}
+                    <div className="flex items-center space-x-2">
+                      {canEditPatients && <button onClick={() => onEditPatient(p)} className="text-blue-500 hover:text-blue-700" aria-label={i18n.t('patients.table.edit_patient', 'Edit {name}', { name: p.fullName })}>✏️</button>}
+                      {canDeletePatients && <button onClick={() => onDeletePatient(p.id)} className="text-red-500 hover:text-red-700" aria-label={i18n.t('patients.table.delete_patient', 'Delete {name}', { name: p.fullName })}>🗑️</button>}
                     </div>
                   </td>
               </tr>

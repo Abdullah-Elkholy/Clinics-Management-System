@@ -98,7 +98,7 @@ namespace Clinics.Api.Controllers
 
             var token = _tokenService.CreateToken(user.Id, user.Username, user.Role?.Name ?? "user", user.FullName);
             // create refresh token and set cookie
-            var refreshToken = _sessionService.CreateRefreshToken(user.Id);
+            var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
             Response.Cookies.Append("X-Refresh-Token", refreshToken, new CookieOptions { HttpOnly = true, Secure = !_env.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = DateTime.UtcNow.AddDays(7) });
 
             return Ok(new { success = true, data = new { accessToken = token } });

@@ -1,7 +1,10 @@
 import React from 'react'
 import Icon from './Icon'
+import { useAuthorization } from '../lib/authorization'
 
 export default function Navigation({ activeSection, onSectionChange }) {
+  const { canSeeManagement } = useAuthorization()
+
   return (
     <nav className="p-4" role="navigation" aria-label="التنقل الرئيسي">
       <ul className="space-y-2" role="list">
@@ -25,25 +28,27 @@ export default function Navigation({ activeSection, onSectionChange }) {
             <Icon name="fas fa-comments" />
           </button>
         </li>
-        <li role="listitem">
-          <button
-            type="button"
-            onClick={() => onSectionChange('management')}
-            className={`nav-item w-full text-right px-4 py-3 rounded-lg transition duration-200 flex items-center justify-between
-              ${activeSection === 'management' 
-                ? 'bg-blue-50 text-blue-600' 
-                : 'hover:bg-blue-50 hover:text-blue-600'
-              }`}
-            aria-current={activeSection === 'management' ? 'page' : undefined}
-            aria-pressed={activeSection === 'management' ? 'true' : 'false'}
-            aria-label="قسم الإدارة"
-            title="الإدارة"
-            onKeyDown={() => {}}
-          >
-            <span>الإدارة</span>
-            <Icon name="fas fa-cog" />
-          </button>
-        </li>
+        {canSeeManagement && (
+          <li role="listitem">
+            <button
+              type="button"
+              onClick={() => onSectionChange('management')}
+              className={`nav-item w-full text-right px-4 py-3 rounded-lg transition duration-200 flex items-center justify-between
+                ${activeSection === 'management' 
+                  ? 'bg-blue-50 text-blue-600' 
+                  : 'hover:bg-blue-50 hover:text-blue-600'
+                }`}
+              aria-current={activeSection === 'management' ? 'page' : undefined}
+              aria-pressed={activeSection === 'management' ? 'true' : 'false'}
+              aria-label="قسم الإدارة"
+              title="الإدارة"
+              onKeyDown={() => {}}
+            >
+              <span>الإدارة</span>
+              <Icon name="fas fa-cog" />
+            </button>
+          </li>
+        )}
       </ul>
       <style jsx>{`
         .nav-item:focus {

@@ -5,8 +5,6 @@ import QueueList from './QueueList'
 
 export default function Layout({ 
   children,
-  userRole,
-  userName,
   whatsappConnected,
   onLogout,
   activeSection,
@@ -25,8 +23,6 @@ export default function Layout({
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
       <Header 
-        userRole={userRole}
-        userName={userName}
         whatsappConnected={whatsappConnected}
         onLogout={onLogout}
         onRequestAccount={onRequestAccount}

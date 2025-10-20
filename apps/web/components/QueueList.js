@@ -1,7 +1,9 @@
 import React from 'react'
 import Icon from './Icon'
+import { useAuthorization } from '../lib/authorization'
 
-export default function QueueList({ queues: queuesProp = [], selectedQueue, onSelect = () => {}, canAddQueue, onAddQueue, onEditQueue, onDeleteQueue, onRequestAddQueue }){
+export default function QueueList({ queues: queuesProp = [], selectedQueue, onSelect = () => {}, onAddQueue, onEditQueue, onDeleteQueue, onRequestAddQueue }){
+  const { canCreateQueues } = useAuthorization()
   const queues = Array.isArray(queuesProp) ? queuesProp : (queuesProp?.data || []);
 
   return (
@@ -76,7 +78,7 @@ export default function QueueList({ queues: queuesProp = [], selectedQueue, onSe
         })}
       </div>
 
-      {canAddQueue && (
+      {canCreateQueues && (
         <div className="mt-4 text-center">
           <button 
             type="button"

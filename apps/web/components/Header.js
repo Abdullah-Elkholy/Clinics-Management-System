@@ -1,7 +1,15 @@
 import React from 'react'
 import Icon from './Icon'
+import { useAuth } from '../lib/auth'
+import { useAuthorization } from '../lib/authorization'
 
-export default function Header({ userRole, userName, whatsappConnected, onLogout, onRequestAccount, onRequestWhatsApp }) {
+export default function Header({ whatsappConnected, onLogout, onRequestAccount, onRequestWhatsApp }) {
+  const { user } = useAuth()
+  const { role } = useAuthorization()
+
+  const userName = user?.name || ''
+  const userRole = role || ''
+
   return (
     <header className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-br from-blue-600 to-purple-700 text-white shadow-md">
       <div className="flex items-center justify-between px-6 py-4">
