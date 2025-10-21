@@ -81,7 +81,7 @@ namespace Clinics.Api.Controllers
                 return BadRequest(new { success = false, errors = new[] { new { code = "InvalidRequest", message = "Invalid or missing request body. Expected JSON { \"username\":..., \"password\":... } or form-encoded username=...&password=..." } } });
             }
 
-            var user = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Username == req.Username);
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
             if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
             // For scaffold: PasswordHash may be null (seeded). Accept 'admin' without hash for demo
