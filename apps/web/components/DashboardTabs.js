@@ -33,28 +33,29 @@ export default function DashboardTabs({ activeTab, onTabChange, counts = {} }) {
   ]
 
   return (
-    <div className="border-b border-gray-200 mb-6" role="tablist" aria-label={i18n.t('tabs.main_navigation', 'التنقل الرئيسي')}>
-      <div className="flex space-x-4 space-x-reverse">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            aria-controls={`${tab.id}-panel`}
-            id={`${tab.id}-tab`}
-            aria-label={tab.ariaLabel}
-            onClick={() => onTabChange(tab.id)}
-            className={`
-              relative px-6 py-3 font-medium text-sm transition-all duration-200
-              border-b-2 flex items-center space-x-2 space-x-reverse
-              ${
-                activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
-              }
-            `}
-          >
+    <>
+      <div className="border-b border-gray-200 mb-6" role="tablist" aria-label={i18n.t('tabs.main_navigation', 'التنقل الرئيسي')}>
+        <div className="flex space-x-4 space-x-reverse">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              aria-controls={`${tab.id}-panel`}
+              id={`${tab.id}-tab`}
+              aria-label={tab.ariaLabel}
+              onClick={() => onTabChange(tab.id)}
+              className={`
+                relative px-6 py-3 font-medium text-sm transition-all duration-200
+                border-b-2 flex items-center space-x-2 space-x-reverse
+                ${
+                  activeTab === tab.id
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300'
+                }
+              `}
+            >
             <Icon name={tab.icon} className={activeTab === tab.id ? 'text-blue-600' : 'text-gray-500'} />
             <span>{tab.label}</span>
             {tab.count !== undefined && tab.count > 0 && (
@@ -72,9 +73,15 @@ export default function DashboardTabs({ activeTab, onTabChange, counts = {} }) {
                 {tab.count}
               </span>
             )}
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
+      
+      {/* Tab Panels - these elements must exist for aria-controls to be valid */}
+      <div id="dashboard-panel" role="tabpanel" aria-labelledby="dashboard-tab" style={{ display: 'none' }} />
+      <div id="ongoing-panel" role="tabpanel" aria-labelledby="ongoing-tab" style={{ display: 'none' }} />
+      <div id="failed-panel" role="tabpanel" aria-labelledby="failed-tab" style={{ display: 'none' }} />
+    </>
   )
 }

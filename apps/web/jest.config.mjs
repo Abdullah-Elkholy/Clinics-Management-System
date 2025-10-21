@@ -10,6 +10,8 @@ const customJestConfig = {
   moduleNameMapper: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
     '^../components/Toast$': '<rootDir>/__mocks__/components/Toast.js',
+    '^./QuotaDisplay$': '<rootDir>/__mocks__/components/QuotaDisplay.js',
+    '^@heroicons/react/24/outline$': '<rootDir>/__mocks__/heroicons.js',
   },
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }],

@@ -19,6 +19,10 @@ import AccountInfoModal from '../components/AccountInfoModal'
 import WhatsAppAuthModal from '../components/WhatsAppAuthModal'
 import ManagementPanel from '../components/ManagementPanel'
 import AddQueueModal from '../components/AddQueueModal'
+import DashboardTabs from '../components/DashboardTabs'
+import OngoingTab from '../components/OngoingTab'
+import FailedTab from '../components/FailedTab'
+import QuotaDisplay from '../components/QuotaDisplay'
 import { useI18n } from '../lib/i18n'
 import { useAuth } from '../lib/auth'
 import { useAuthorization } from '../lib/authorization'
@@ -35,6 +39,13 @@ import {
   useDeleteQueue,
   useSendMessage,
   useAddTemplate,
+  useOngoingSessions,
+  useFailedTasks,
+  useRetryTasks,
+  usePauseSession,
+  useResumeSession,
+  useDeleteSession,
+  useDeleteFailedTasks,
 } from '../lib/hooks'
 
 function Dashboard() {
@@ -48,6 +59,7 @@ function Dashboard() {
 
   // Navigation & Layout State
   const [activeSection, setActiveSection] = useState('dashboard')
+  const [activeTab, setActiveTab] = useState('dashboard') // For Dashboard/Ongoing/Failed tabs
   const userInfo = user || {
     role: '',
     name: '',
@@ -82,13 +94,24 @@ function Dashboard() {
   const { data: templates = [], isLoading: templatesLoading } = useTemplates()
   const [patients, setPatients] = useState([])
 
+  // Keep patients array in sync with data, but preserve any mutations (_selected field)
   useEffect(() => {
-    if (patientsData) {
+    if (patientsData && patients.length === 0) {
+      // Initial load
       setPatients(patientsData)
+    } else if (patientsData) {
+      // Update existing patients while preserving their _selected state
+      setPatients(prev => {
+        const prevMap = new Map(prev.map(p => [p.id, p._selected]))
+        return patientsData.map(p => ({
+          ...p,
+          _selected: prevMap.get(p.id) || false
+        }))
+      })
     } else {
       setPatients([])
     }
-  }, [patientsData])
+  }, [patientsData?.length]) // Only react to length changes to avoid infinite loop
 
 
   // Mutations
@@ -101,6 +124,15 @@ function Dashboard() {
   const sendMessageMutation = useSendMessage()
   const addTemplateMutation = useAddTemplate()
 
+  // Ongoing Sessions & Failed Tasks
+  const { data: ongoingSessions = [] } = useOngoingSessions()
+  const { data: failedTasks = [] } = useFailedTasks()
+  const retryTasksMutation = useRetryTasks()
+  const pauseSessionMutation = usePauseSession()
+  const resumeSessionMutation = useResumeSession()
+  const deleteSessionMutation = useDeleteSession()
+  const deleteFailedTasksMutation = useDeleteFailedTasks()
+
   // Load persisted selected template from localStorage
   useEffect(() => {
     try {
@@ -111,6 +143,8 @@ function Dashboard() {
 
   function handleQueueSelect(id) {
     setSelectedQueue(id)
+    // Switch back to dashboard section when a queue is selected
+    setActiveSection('dashboard')
   }
 
   // persist template selection
@@ -262,7 +296,18 @@ function Dashboard() {
       >
         {activeSection === 'dashboard' && (
           <div className="p-6 space-y-6" role="region" aria-label={i18n.t('dashboard.main_panel_label', 'لوحة التحكم')}>
-            {selectedQueue ? (
+            {/* Dashboard Tabs - Dashboard/Ongoing/Failed */}
+            <DashboardTabs 
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+              counts={{
+                ongoing: ongoingSessions.length,
+                failed: failedTasks.length,
+              }}
+            />
+
+            {/* Dashboard Tab Content */}
+            {activeTab === 'dashboard' && selectedQueue ? (
               <>
                 <div className="bg-gradient-to-l from-blue-600 to-purple-600 text-white p-6 md:p-8 rounded-xl shadow-lg" role="region" aria-label={i18n.t('dashboard.queue_info_label', 'معلومات الطابور')} aria-live="polite">
                   <div className="flex items-center justify-between">
@@ -404,6 +449,78 @@ function Dashboard() {
               <div className="text-center text-gray-500 py-12 bg-white rounded-lg shadow-lg" role="alert">
                 {queuesLoading ? 'Loading queues...' : i18n.t('dashboard.select_queue_prompt', 'الرجاء اختيار طابور لعرض المرضى')}
               </div>
+            )}
+
+            {/* Ongoing Tab Content */}
+            {activeTab === 'ongoing' && (
+              <OngoingTab 
+                sessions={ongoingSessions}
+                onPause={async (sessionId) => {
+                  try {
+                    await pauseSessionMutation.mutateAsync(sessionId)
+                    showToast(i18n.t('ongoing.paused', 'تم إيقاف الجلسة مؤقتاً'), 'success')
+                  } catch (error) {
+                    showToast(i18n.t('ongoing.pause_failed', 'فشل إيقاف الجلسة'), 'error')
+                  }
+                }}
+                onResume={async (sessionId) => {
+                  try {
+                    await resumeSessionMutation.mutateAsync(sessionId)
+                    showToast(i18n.t('ongoing.resumed', 'تم استئناف الجلسة'), 'success')
+                  } catch (error) {
+                    showToast(i18n.t('ongoing.resume_failed', 'فشل استئناف الجلسة'), 'error')
+                  }
+                }}
+                onDelete={async (sessionId) => {
+                  try {
+                    await deleteSessionMutation.mutateAsync(sessionId)
+                    showToast(i18n.t('ongoing.deleted', 'تم حذف الجلسة'), 'success')
+                  } catch (error) {
+                    showToast(i18n.t('ongoing.delete_failed', 'فشل حذف الجلسة'), 'error')
+                  }
+                }}
+              />
+            )}
+
+            {/* Failed Tab Content */}
+            {activeTab === 'failed' && (
+              <FailedTab 
+                failedTasks={failedTasks}
+                onRetry={async (taskIds) => {
+                  try {
+                    await retryTasksMutation.mutateAsync(taskIds)
+                    showToast(
+                      i18n.t('failed.retry_success', 'تم إعادة محاولة {count} مهمة بنجاح', { count: taskIds.length }),
+                      'success'
+                    )
+                  } catch (error) {
+                    showToast(i18n.t('failed.retry_failed', 'فشل في إعادة المحاولة'), 'error')
+                  }
+                }}
+                onRetryAll={async () => {
+                  try {
+                    const allTaskIds = failedTasks.map(t => t.taskId)
+                    await retryTasksMutation.mutateAsync(allTaskIds)
+                    showToast(
+                      i18n.t('failed.retry_all_success', 'تم إعادة محاولة جميع المهام'),
+                      'success'
+                    )
+                  } catch (error) {
+                    showToast(i18n.t('failed.retry_all_failed', 'فشل في إعادة محاولة المهام'), 'error')
+                  }
+                }}
+                onDelete={async (taskIds) => {
+                  try {
+                    await deleteFailedTasksMutation.mutateAsync(taskIds)
+                    showToast(
+                      i18n.t('failed.delete_success', 'تم حذف {count} مهمة', { count: taskIds.length }),
+                      'success'
+                    )
+                  } catch (error) {
+                    showToast(i18n.t('failed.delete_failed', 'فشل في حذف المهام'), 'error')
+                  }
+                }}
+              />
             )}
           </div>
         )}

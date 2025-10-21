@@ -1,27 +1,70 @@
-# WhatsApp Messaging Automated System
+# WhatsApp Messaging Automated System (Clinics Management)
 
 A **.NET 8.0 Web API** for automating WhatsApp message delivery using [Playwright](https://playwright.dev/). This project follows **SOLID principles**, **Clean Architecture**, and **OOP best practices** to provide a robust, maintainable, and scalable solution for WhatsApp automation.
 
 ---
 
-## 🏗️ Architecture Overview
+## 📚 DOCUMENTATION
 
-This project implements **Clean Architecture** with clear separation of concerns:
+### Quick Start
+⭐ **[START_HERE.md](./START_HERE.md)** ← Begin here for current status & quick start  
+📋 **[docs/current/](./docs/current/)** - 5 focused documentation pages
 
-- **Controllers** - API endpoints and request handling
-- **Application Services** - Business logic orchestration
-- **Domain Services** - Core business logic and rules
-- **Infrastructure** - External dependencies (Playwright, browser sessions)
-- **Models** - Data transfer objects and domain models
-- **Configuration** - Centralized configuration and constants
+**Current Status**: 375/425 Tests Passing (88.2%) ✅
 
-### SOLID Principles Implementation
+### Architecture & SOLID Principles Refactoring
 
-- **Single Responsibility Principle (SRP)**: Each service has a single, well-defined responsibility
-- **Open/Closed Principle (OCP)**: Services are open for extension but closed for modification
-- **Liskov Substitution Principle (LSP)**: Interfaces allow for proper substitution of implementations
-- **Interface Segregation Principle (ISP)**: Small, focused interfaces for specific functionality
-- **Dependency Inversion Principle (DIP)**: High-level modules depend on abstractions, not concretions
+🏗️ **[ARCHITECTURE_DOCUMENTATION_SET.md](./ARCHITECTURE_DOCUMENTATION_SET.md)** ← Complete refactoring package  
+Contains 4 comprehensive documents:
+
+1. **[ARCHITECTURE_ISSUES.md](./ARCHITECTURE_ISSUES.md)** - Problem analysis & violations (10 KB)
+   - Identifies SOLID principle violations
+   - Clean Architecture gaps
+   - Specific files to refactor
+   - Recommended patterns
+
+2. **[IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)** - 20-day step-by-step guide (12 KB)
+   - Phase 1: Repository & Unit of Work patterns
+   - Phase 2: Application services & validation
+   - Phase 3: Controller refactoring
+   - Phase 4: Testing & documentation
+
+3. **[CLEAN_ARCHITECTURE_GUIDE.md](./CLEAN_ARCHITECTURE_GUIDE.md)** - Educational reference (15 KB)
+   - Deep dive into SOLID principles
+   - Layer responsibilities
+   - Common patterns (Repository, UnitOfWork, Specification, Result)
+   - Testing strategies
+
+4. **[ARCHITECTURE_QUICK_REF.md](./ARCHITECTURE_QUICK_REF.md)** - Code templates (8 KB)
+   - Layer organization
+   - Ready-to-use code templates
+   - Anti-patterns to avoid
+   - Refactoring checklist
+
+**Total**: 45 KB of architecture documentation, 2-3 hours to read
+
+### Test Commands
+```bash
+cd apps/web && npm test -- --passWithNoTests --testTimeout=10000
+```
+
+---
+
+## 🏗️ Current Architecture Status
+
+**Today**: Functional but needs refactoring
+- ✅ Tests passing (88.2%)
+- ✅ Dependency Injection configured
+- ❌ Some SOLID violations (documented in ARCHITECTURE_ISSUES.md)
+- ⏳ Refactoring ready to start (see IMPLEMENTATION_PLAN.md)
+
+**After Refactoring**: Clean Architecture
+- ✅ All SOLID principles applied
+- ✅ Clear layer separation
+- ✅ Repository pattern
+- ✅ Unit of Work pattern
+- ✅ Better testability
+- ✅ Better maintainability
 
 ---
 

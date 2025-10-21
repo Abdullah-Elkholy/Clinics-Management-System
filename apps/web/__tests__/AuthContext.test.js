@@ -96,7 +96,6 @@ describe('AuthContext', () => {
   })
 
   test('initializes with token from localStorage', async () => {
-    localStorage.setItem('token', 'existing-token')
     server.use(
       rest.get(`${API_BASE}/api/Auth/me`, (req, res, ctx) => {
         return res(ctx.json({ data: { id: '1', name: 'Existing User', role: 'Admin' } }))
@@ -106,7 +105,8 @@ describe('AuthContext', () => {
     renderWithProviders(
       <AuthProvider>
         <TestComponent />
-      </AuthProvider>
+      </AuthProvider>,
+      { localStorage: { token: 'existing-token' } }
     )
 
     await waitFor(() => {

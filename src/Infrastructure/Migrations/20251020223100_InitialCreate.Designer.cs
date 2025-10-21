@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20251019010718_InitialMigration")]
-    partial class InitialMigration
+    [Migration("20251020223100_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -62,6 +62,12 @@ namespace Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("MessageId");
+
+                    b.HasIndex("PatientId");
+
+                    b.HasIndex("QueueId");
 
                     b.HasIndex("RetryCount");
 
@@ -131,6 +137,49 @@ namespace Infrastructure.Migrations
                     b.HasIndex("Status", "CreatedAt");
 
                     b.ToTable("Messages");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.MessageSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("EndTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LastUpdated")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("QueueId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SentMessages")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("TotalMessages")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QueueId");
+
+                    b.HasIndex("Status", "StartTime");
+
+                    b.ToTable("MessageSessions");
                 });
 
             modelBuilder.Entity("Clinics.Domain.MessageTemplate", b =>
@@ -277,32 +326,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("Quotas");
                 });
 
-            modelBuilder.Entity("Clinics.Domain.Role", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("Roles");
-                });
-
             modelBuilder.Entity("Clinics.Domain.Session", b =>
                 {
                     b.Property<Guid>("Id")
@@ -355,6 +378,9 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<int?>("ModeratorId")
+                        .HasColumnType("int");
+
                     b.Property<string>("PasswordHash")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
@@ -363,8 +389,10 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<int>("RoleId")
-                        .HasColumnType("int");
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Username")
                         .IsRequired()
@@ -373,7 +401,7 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoleId");
+                    b.HasIndex("ModeratorId");
 
                     b.HasIndex("Username")
                         .IsUnique();
@@ -417,6 +445,38 @@ namespace Infrastructure.Migrations
                     b.ToTable("WhatsAppSessions");
                 });
 
+            modelBuilder.Entity("Clinics.Domain.FailedTask", b =>
+                {
+                    b.HasOne("Clinics.Domain.Message", "Message")
+                        .WithMany()
+                        .HasForeignKey("MessageId");
+
+                    b.HasOne("Clinics.Domain.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId");
+
+                    b.HasOne("Clinics.Domain.Queue", "Queue")
+                        .WithMany()
+                        .HasForeignKey("QueueId");
+
+                    b.Navigation("Message");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Queue");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.MessageSession", b =>
+                {
+                    b.HasOne("Clinics.Domain.Queue", "Queue")
+                        .WithMany()
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Queue");
+                });
+
             modelBuilder.Entity("Clinics.Domain.Patient", b =>
                 {
                     b.HasOne("Clinics.Domain.Queue", "Queue")
@@ -428,15 +488,24 @@ namespace Infrastructure.Migrations
                     b.Navigation("Queue");
                 });
 
-            modelBuilder.Entity("Clinics.Domain.User", b =>
+            modelBuilder.Entity("Clinics.Domain.Quota", b =>
                 {
-                    b.HasOne("Clinics.Domain.Role", "Role")
+                    b.HasOne("Clinics.Domain.User", "Moderator")
                         .WithMany()
-                        .HasForeignKey("RoleId")
+                        .HasForeignKey("ModeratorUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Role");
+                    b.Navigation("Moderator");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.User", b =>
+                {
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorId");
+
+                    b.Navigation("Moderator");
                 });
 #pragma warning restore 612, 618
         }

@@ -41,9 +41,12 @@ builder.Services.AddSwaggerGen();
 
 // (DbContext registration will be configured after we resolve the connection string below)
 
-// JWT Auth
+// Services
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
+builder.Services.AddScoped<QuotaService>();
+
+// JWT Auth
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -156,18 +159,13 @@ try
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 if (!db.Users.Any(u => u.Username == "admin"))
                 {
-                    var primaryRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.PrimaryAdmin.ToRoleName(), DisplayName = "المدير الأساسي" };
-                    var secondaryRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.SecondaryAdmin.ToRoleName(), DisplayName = "المدير الثانوي" };
-                    var moderatorRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.Moderator.ToRoleName(), DisplayName = "المشرف" };
-                    var userRole = new Clinics.Domain.Role { Name = Clinics.Domain.UserRole.User.ToRoleName(), DisplayName = "مستخدم" };
-                    db.Roles.Add(primaryRole);
-                    db.Roles.Add(secondaryRole);
-                    db.Roles.Add(moderatorRole);
-                    db.Roles.Add(userRole);
-                    db.SaveChanges();
-
                     // Seed admin user with hashed password (development convenience).
-                    var adminUser = new Clinics.Domain.User { Username = "admin", FullName = "المدير الأساسي", RoleId = primaryRole.Id };
+                    var adminUser = new Clinics.Domain.User 
+                    { 
+                        Username = "admin", 
+                        FullName = "المدير الأساسي", 
+                        Role = Clinics.Domain.UserRole.PrimaryAdmin.ToRoleName() 
+                    };
                     var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<Clinics.Domain.User>();
                     var seedPw = app.Configuration["SEED_ADMIN_PASSWORD"] ?? Environment.GetEnvironmentVariable("SEED_ADMIN_PASSWORD") ?? "Admin123!";
                     adminUser.PasswordHash = hasher.HashPassword(adminUser, seedPw);

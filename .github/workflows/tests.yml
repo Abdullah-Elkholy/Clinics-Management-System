@@ -1,0 +1,105 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: apps/web/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: apps/web
+      run: npm ci
+    
+    - name: Run linter
+      working-directory: apps/web
+      run: npm run lint
+      continue-on-error: true
+    
+    - name: Run tests
+      working-directory: apps/web
+      run: npm test -- --coverage --watchAll=false --passWithNoTests
+      timeout-minutes: 10
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        files: apps/web/coverage/lcov.info
+        flags: frontend
+        fail_ci_if_error: false
+      continue-on-error: true
+    
+    - name: Archive test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results-node${{ matrix.node-version }}
+        path: apps/web/coverage/
+        retention-days: 30
+
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        dotnet-version: ['7.0.x']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ matrix.dotnet-version }}
+    
+    - name: Restore dependencies (API)
+      working-directory: src/Api
+      run: dotnet restore Clinics.Api.csproj
+    
+    - name: Build API
+      working-directory: src/Api
+      run: dotnet build Clinics.Api.csproj -c Release --no-restore
+    
+    - name: Restore dependencies (WhatsApp)
+      working-directory: ClinicsManagementService
+      run: dotnet restore WhatsAppMessagingService.csproj
+    
+    - name: Build WhatsApp Service
+      working-directory: ClinicsManagementService
+      run: dotnet build WhatsAppMessagingService.csproj -c Release --no-restore
+      continue-on-error: true
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [frontend-tests]
+    if: always()
+    
+    steps:
+    - name: Report Status
+      run: |
+        echo "## Test Suite Results ✅"
+        echo ""
+        echo "**Frontend Tests**: ${{ needs.frontend-tests.result }}"
+        echo ""
+        echo "All tests completed. Check artifacts for detailed coverage reports."

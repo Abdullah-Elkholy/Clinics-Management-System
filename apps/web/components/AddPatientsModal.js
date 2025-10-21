@@ -36,9 +36,14 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
       // map desiredPosition to int? and pass through
       const payload = toAdd.map(s => ({ fullName: s.fullName, phoneNumber: s.phoneNumber, desiredPosition: s.desiredPosition ? parseInt(s.desiredPosition,10) : undefined }))
       await onAdd(payload)
-    }finally{ setSubmitting(false) }
-  setSlots([{ fullName: '', countryCode: '+20', phoneNumber: '', desiredPosition: '' }])
-    onClose()
+      setSlots([{ fullName: '', countryCode: '+20', phoneNumber: '', desiredPosition: '' }])
+      onClose()
+    }catch(error){
+      // Error occurred - keep form data visible and don't close modal
+      // Error is handled by parent component via onAdd
+    }finally{ 
+      setSubmitting(false) 
+    }
   }
 
   if (!open) return null
@@ -58,25 +63,25 @@ export default function AddPatientsModal({ open, onClose, onAdd }){
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('add_patients.full_name_label', 'الاسم الكامل')}</label>
-                  <input value={s.fullName} onChange={e=>updateSlot(i,'fullName',e.target.value)} type="text" className="w-full px-3 py-2 border rounded-lg" placeholder={i18n.t('add_patients.full_name_placeholder', 'أدخل الاسم الكامل')} />
+                  <label htmlFor={`fullName-${i}`} className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('add_patients.full_name_label', 'الاسم الكامل')}</label>
+                  <input id={`fullName-${i}`} value={s.fullName} onChange={e=>updateSlot(i,'fullName',e.target.value)} type="text" className="w-full px-3 py-2 border rounded-lg" placeholder={i18n.t('add_patients.full_name_placeholder', 'أدخل الاسم الكامل')} />
                   {errors[i] && errors[i].fullName && <div role="alert" className="text-sm text-red-600 mt-1">{errors[i].fullName}</div>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('add_patients.phone_number_label', 'رقم الهاتف')}</label>
+                  <label htmlFor={`phone-${i}`} className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('add_patients.phone_number_label', 'رقم الهاتف')}</label>
                   <div className="flex">
                     <select value={s.countryCode} onChange={e=>updateSlot(i,'countryCode',e.target.value)} className="country-code px-2 py-2 border border-gray-300 rounded-r-lg bg-gray-50">
                       <option value="+20">{i18n.t('countries.eg', '+20 (مصر)')}</option>
                       <option value="+966">{i18n.t('countries.sa', '+966 (السعودية)')}</option>
                       <option value="+971">{i18n.t('countries.ae', '+971 (الإمارات)')}</option>
                     </select>
-                    <input value={s.phoneNumber} onChange={e=>updateSlot(i,'phoneNumber',e.target.value)} type="tel" className="phone-input flex-1 px-3 py-2 border border-gray-300 rounded-l-lg" placeholder={i18n.t('add_patients.phone_number_placeholder', 'رقم الهاتف')} />
+                    <input id={`phone-${i}`} value={s.phoneNumber} onChange={e=>updateSlot(i,'phoneNumber',e.target.value)} type="tel" className="phone-input flex-1 px-3 py-2 border border-gray-300 rounded-l-lg" placeholder={i18n.t('add_patients.phone_number_placeholder', 'رقم الهاتف')} />
                   </div>
                   {errors[i] && errors[i].phoneNumber && <div role="alert" className="text-sm text-red-600 mt-1">{errors[i].phoneNumber}</div>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('add_patients.desired_position_label', 'الموقع المرغوب (اختياري)')}</label>
-                  <input value={s.desiredPosition} onChange={e=>updateSlot(i,'desiredPosition',e.target.value)} type="number" min="1" className="w-full px-3 py-2 border rounded-lg" placeholder={i18n.t('add_patients.desired_position_placeholder', 'مثال: 3')} />
+                  <label htmlFor={`position-${i}`} className="block text-sm font-medium text-gray-700 mb-2">{i18n.t('add_patients.desired_position_label', 'الموقع المرغوب (اختياري)')}</label>
+                  <input id={`position-${i}`} value={s.desiredPosition} onChange={e=>updateSlot(i,'desiredPosition',e.target.value)} type="number" min="1" className="w-full px-3 py-2 border rounded-lg" placeholder={i18n.t('add_patients.desired_position_placeholder', 'مثال: 3')} />
                 </div>
               </div>
             </div>

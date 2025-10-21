@@ -8,9 +8,9 @@ import { ROLES } from '../lib/roles';
 
 jest.mock('../lib/authorization', () => ({
   useAuthorization: jest.fn(() => ({
-    canAddQueue: true,
-    canDeleteQueue: true,
-    canEditQueue: true
+    canCreateQueues: true,
+    canDeleteQueues: true,
+    canEditQueues: true
   })),
 }));
 
@@ -30,9 +30,9 @@ describe('QueueList Component', () => {
 
   beforeEach(() => {
     useAuthorization.mockReturnValue({
-      canAddQueue: true,
-      canEditQueue: true,
-      canDeleteQueue: true,
+      canCreateQueues: true,
+      canEditQueues: true,
+      canDeleteQueues: true,
     });
   });
 
@@ -72,19 +72,19 @@ describe('QueueList Component', () => {
   test('renders add button when canAddQueue is true', () => {
     renderWithProviders(<QueueList {...defaultProps} />, { auth: { user: mockUser } });
     
-    const addButton = screen.getByLabelText('إضافة طابور');
+    const addButton = screen.getByRole('button', { name: /إضافة طابور/i });
     expect(addButton).toBeInTheDocument();
     
     fireEvent.click(addButton);
     expect(defaultProps.onAddQueue).toHaveBeenCalled();
   });
 
-  test('hides add button when canAddQueue is false', () => {
+  test('hides add button when canCreateQueues is false', () => {
     useAuthorization.mockReturnValue({
-      canAddQueue: false,
+      canCreateQueues: false,
     });
     renderWithProviders(<QueueList {...defaultProps} />, { auth: { user: mockUser } });
-    expect(screen.queryByLabelText('إضافة طابور')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /إضافة طابور/i })).not.toBeInTheDocument();
   });
 
   test('shows edit and delete controls', () => {
