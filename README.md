@@ -1,6 +1,8 @@
 # 📋 Clinics Management System - Complete Documentation
 
-> **Complete guide to the Clinics Management System project, including current state, architecture, testing, and development roadmap.**
+> **⚠️ SINGLE SOURCE OF TRUTH**: This README.md is the official, always-updated documentation for the project's current state. All other documentation must reference this file. For supplementary materials only, see `/docs` folder.
+
+**Complete guide to the Clinics Management System project, including current state, architecture, testing, and development roadmap.**
 
 ## 🗂️ Quick Navigation
 
