@@ -96,8 +96,8 @@ namespace Clinics.Api.Controllers
 
             if (!valid) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
-            // Use RoleName convenience property to ensure enum-backed naming is used when available
-            var token = _tokenService.CreateToken(user.Id, user.Username, user.RoleName, user.FullName);
+            // Use Role property directly (now stores the role name string)
+            var token = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FullName);
             // create refresh token and set cookie
             var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
             Response.Cookies.Append("X-Refresh-Token", refreshToken, new CookieOptions { HttpOnly = true, Secure = !_env.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = DateTime.UtcNow.AddDays(7) });
@@ -115,13 +115,23 @@ namespace Clinics.Api.Controllers
                 return Unauthorized();
             }
 
-            var user = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == userId);
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
             if (user == null)
             {
                 return NotFound();
             }
 
-            return Ok(new { success = true, data = new { user.Id, user.Username, user.FullName, Role = user.RoleName } });
+            var roleDisplayName = Clinics.Domain.UserRoleExtensions.GetDisplayNameFromRoleName(user.Role);
+            return Ok(new { 
+                success = true, 
+                data = new { 
+                    user.Id, 
+                    user.Username, 
+                    user.FullName, 
+                    Role = user.Role,
+                    RoleDisplayName = roleDisplayName
+                } 
+            });
         }
 
         [HttpPost("refresh")]
@@ -151,7 +161,7 @@ namespace Clinics.Api.Controllers
             };
             Response.Cookies.Append("refreshToken", newRefresh, cookieOptions);
 
-            var newAccess = _tokenService.CreateToken(user.Id, user.Username, user.RoleName, user.FullName);
+            var newAccess = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FullName);
             return Ok(new { success = true, data = new { accessToken = newAccess, expiresIn = 3600 } });
         }
 

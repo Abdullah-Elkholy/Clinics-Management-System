@@ -174,3 +174,118 @@ export const useLogout = () => {
     },
   })
 }
+
+// --- Ongoing Sessions ---
+export const useOngoingSessions = () => useQuery({
+  queryKey: ['sessions', 'ongoing'],
+  queryFn: () => api.get('/api/Sessions/ongoing').then(res => res.data.data || []),
+  refetchInterval: 5000, // Poll every 5 seconds for real-time updates
+})
+
+export const usePauseSession = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (sessionId) => api.post(`/api/Sessions/${sessionId}/pause`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'ongoing'] })
+    },
+  })
+}
+
+export const useResumeSession = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (sessionId) => api.post(`/api/Sessions/${sessionId}/resume`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'ongoing'] })
+    },
+  })
+}
+
+export const useDeleteSession = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (sessionId) => api.delete(`/api/Sessions/${sessionId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'ongoing'] })
+    },
+  })
+}
+
+// --- Failed Tasks ---
+export const useFailedTasks = () => useQuery({
+  queryKey: ['tasks', 'failed'],
+  queryFn: () => api.get('/api/Tasks/failed').then(res => res.data.data || []),
+})
+
+export const useRetryTasks = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskIds) => api.post('/api/Tasks/retry', { taskIds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', 'failed'] })
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'ongoing'] })
+    },
+  })
+}
+
+export const useDeleteFailedTasks = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (taskIds) => api.delete('/api/Tasks/failed', { data: { taskIds } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks', 'failed'] })
+    },
+  })
+}
+
+// ========================================
+// Quota Management Hooks
+// ========================================
+
+/**
+ * Get current user's quota (their moderator's quota if they're a user)
+ */
+export const useMyQuota = () => useQuery({
+  queryKey: ['quota', 'me'],
+  queryFn: () => api.get('/api/Quotas/me').then(res => res.data.data),
+  refetchInterval: 30000, // Refresh every 30 seconds
+})
+
+/**
+ * Get all quotas (admin only)
+ */
+export const useAllQuotas = () => useQuery({
+  queryKey: ['quotas', 'all'],
+  queryFn: () => api.get('/api/Quotas').then(res => res.data.data || []),
+})
+
+/**
+ * Add quota to moderator (admin only)
+ */
+export const useAddQuota = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ moderatorId, addMessages, addQueues }) => 
+      api.post(`/api/Quotas/${moderatorId}/add`, { addMessages, addQueues }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotas'] })
+      queryClient.invalidateQueries({ queryKey: ['quota', 'me'] })
+    },
+  })
+}
+
+/**
+ * Update moderator quota (admin only)
+ */
+export const useUpdateQuota = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ moderatorId, messagesQuota, queuesQuota }) => 
+      api.put(`/api/Quotas/${moderatorId}`, { messagesQuota, queuesQuota }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['quotas'] })
+      queryClient.invalidateQueries({ queryKey: ['quota', 'me'] })
+    },
+  })
+}

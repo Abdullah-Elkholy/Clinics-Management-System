@@ -22,6 +22,24 @@ namespace Clinics.Domain
             };
         }
 
+        public static string ToDisplayName(this UserRole r)
+        {
+            return r switch
+            {
+                UserRole.PrimaryAdmin => "مدير أساسي",
+                UserRole.SecondaryAdmin => "مدير ثانوي",
+                UserRole.Moderator => "مشرف",
+                UserRole.User => "مستخدم",
+                _ => "مستخدم",
+            };
+        }
+
+        public static string GetDisplayNameFromRoleName(string? roleName)
+        {
+            var role = FromRoleName(roleName);
+            return role.ToDisplayName();
+        }
+
         public static UserRole FromRoleName(string? name)
         {
             if (string.IsNullOrWhiteSpace(name)) return UserRole.User;

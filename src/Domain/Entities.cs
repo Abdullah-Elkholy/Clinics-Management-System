@@ -4,21 +4,6 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Clinics.Domain
 {
-    [Table("Roles")]
-    public class Role
-    {
-        [Key]
-        public int Id { get; set; }
-
-        [Required]
-        [StringLength(50)]
-        public string Name { get; set; } = null!;
-
-        [Required]
-        [StringLength(100)]
-        public string DisplayName { get; set; } = null!;
-    }
-
     [Table("Users")]
     public class User
     {
@@ -37,18 +22,22 @@ namespace Clinics.Domain
         public string FullName { get; set; } = null!;
 
         [Required]
-        public int RoleId { get; set; }
+        [StringLength(50)]
+        public string Role { get; set; } = "user"; // Stores: primary_admin, secondary_admin, moderator, user
 
-        [ForeignKey(nameof(RoleId))]
-        public Role? Role { get; set; }
+        /// <summary>
+        /// For 'user' role: References the moderator who supervises this user.
+        /// Users share their moderator's quota, queues, WhatsApp session, and all data.
+        /// For moderator/admin roles: This should be null.
+        /// </summary>
+        public int? ModeratorId { get; set; }
 
-    // Convenience property to expose role name (backwards-compatible with existing DB schema)
-    [NotMapped]
-    public string RoleName => Role?.Name ?? Clinics.Domain.UserRole.User.ToRoleName();
+        [ForeignKey(nameof(ModeratorId))]
+        public User? Moderator { get; set; }
 
-    // Expose enum representation for server-side logic without changing DB layout
-    [NotMapped]
-    public Clinics.Domain.UserRole RoleEnum => Clinics.Domain.UserRoleExtensions.FromRoleName(Role?.Name);
+        // Expose enum representation for server-side logic
+        [NotMapped]
+        public UserRole RoleEnum => UserRoleExtensions.FromRoleName(Role);
 
         [StringLength(20)]
         [Phone]
@@ -189,9 +178,18 @@ namespace Clinics.Domain
 
         public long? MessageId { get; set; }
 
+        [ForeignKey(nameof(MessageId))]
+        public Message? Message { get; set; }
+
         public int? PatientId { get; set; }
 
+        [ForeignKey(nameof(PatientId))]
+        public Patient? Patient { get; set; }
+
         public int? QueueId { get; set; }
+
+        [ForeignKey(nameof(QueueId))]
+        public Queue? Queue { get; set; }
 
         [StringLength(500)]
         public string? Reason { get; set; }
@@ -217,6 +215,9 @@ namespace Clinics.Domain
         [Required]
         public int ModeratorUserId { get; set; }
 
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
         [Required]
         public int MessagesQuota { get; set; }
 
@@ -231,6 +232,27 @@ namespace Clinics.Domain
 
         [Required]
         public DateTime UpdatedAt { get; set; }
+
+        /// <summary>
+        /// Remaining messages quota
+        /// </summary>
+        [NotMapped]
+        public int RemainingMessages => MessagesQuota - ConsumedMessages;
+
+        /// <summary>
+        /// Remaining queues quota
+        /// </summary>
+        [NotMapped]
+        public int RemainingQueues => QueuesQuota - ConsumedQueues;
+
+        /// <summary>
+        /// Check if quota is low (less than 10%)
+        /// </summary>
+        [NotMapped]
+        public bool IsMessagesQuotaLow => MessagesQuota > 0 && (RemainingMessages * 100.0 / MessagesQuota) < 10;
+
+        [NotMapped]
+        public bool IsQueuesQuotaLow => QueuesQuota > 0 && (RemainingQueues * 100.0 / QueuesQuota) < 10;
     }
 
 
@@ -282,5 +304,38 @@ namespace Clinics.Domain
 
         [Required]
         public DateTime CreatedAt { get; set; }
+    }
+
+    [Table("MessageSessions")]
+    public class MessageSession
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        [Required]
+        public int QueueId { get; set; }
+
+        [ForeignKey(nameof(QueueId))]
+        public Queue? Queue { get; set; }
+
+        [Required]
+        public int UserId { get; set; }
+
+        [Required]
+        [StringLength(20)]
+        public string Status { get; set; } = "active"; // active, paused, completed, cancelled
+
+        [Required]
+        public int TotalMessages { get; set; }
+
+        [Required]
+        public int SentMessages { get; set; }
+
+        [Required]
+        public DateTime StartTime { get; set; }
+
+        public DateTime? EndTime { get; set; }
+
+        public DateTime? LastUpdated { get; set; }
     }
 }

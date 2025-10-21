@@ -185,6 +185,114 @@ export const handlers = [
   rest.post(`${API_BASE}/api/Messages/retry`, (req, res, ctx) => {
     return res(ctx.json({ success: true, retried: 1 }))
   }),
+
+  // --- Ongoing Sessions ---
+  rest.get(`${API_BASE}/api/Sessions/ongoing`, (req, res, ctx) => {
+    // Mock ongoing sessions data
+    const sessions = [
+      {
+        sessionId: 'session-001',
+        queueName: 'د. أحمد محمد',
+        startTime: '10:30 AM',
+        total: 50,
+        sent: 23,
+        patients: [
+          { id: 1, position: 1, name: 'محمد علي', phone: '+966501234567', message: 'رسالة تذكير بموعدك غداً', status: 'sent' },
+          { id: 2, position: 2, name: 'فاطمة أحمد', phone: '+966501234568', message: 'رسالة تذكير بموعدك غداً', status: 'sent' },
+          { id: 3, position: 3, name: 'علي محمد', phone: '+966501234569', message: 'رسالة تذكير بموعدك غداً', status: 'pending' },
+        ]
+      },
+      {
+        sessionId: 'session-002',
+        queueName: 'د. سارة خالد',
+        startTime: '11:00 AM',
+        total: 30,
+        sent: 15,
+        patients: [
+          { id: 4, position: 1, name: 'خالد أحمد', phone: '+966501234570', message: 'رسالة تذكير', status: 'sent' },
+          { id: 5, position: 2, name: 'نورة عبدالله', phone: '+966501234571', message: 'رسالة تذكير', status: 'pending' },
+        ]
+      }
+    ]
+    return res(ctx.json({ success: true, data: sessions }))
+  }),
+
+  rest.post(`${API_BASE}/api/Sessions/:sessionId/pause`, (req, res, ctx) => {
+    return res(ctx.json({ success: true }))
+  }),
+
+  rest.post(`${API_BASE}/api/Sessions/:sessionId/resume`, (req, res, ctx) => {
+    return res(ctx.json({ success: true }))
+  }),
+
+  rest.delete(`${API_BASE}/api/Sessions/:sessionId`, (req, res, ctx) => {
+    return res(ctx.json({ success: true }))
+  }),
+
+  // --- Failed Tasks ---
+  rest.get(`${API_BASE}/api/Tasks/failed`, (req, res, ctx) => {
+    // Mock failed tasks data
+    const failedTasks = [
+      {
+        taskId: 'task-001',
+        queueName: 'د. أحمد محمد',
+        patientName: 'محمد علي',
+        phone: '+966501234567',
+        message: 'رسالة تذكير بموعدك غداً الساعة 3 مساءً',
+        error: 'فشل الاتصال بخادم WhatsApp',
+        errorDetails: 'Connection timeout after 30 seconds. The WhatsApp Business API server did not respond.',
+        retryCount: 2,
+        failedAt: '10:45 AM',
+        retryHistory: [
+          { time: '10:30 AM', result: 'فشل - Connection timeout' },
+          { time: '10:40 AM', result: 'فشل - Connection timeout' },
+        ]
+      },
+      {
+        taskId: 'task-002',
+        queueName: 'د. سارة خالد',
+        patientName: 'فاطمة أحمد',
+        phone: '+966501234568',
+        message: 'رسالة تذكير بموعدك',
+        error: 'رقم الهاتف غير صالح',
+        errorDetails: 'Invalid phone number format. Expected format: +966XXXXXXXXX',
+        retryCount: 1,
+        failedAt: '11:15 AM',
+        retryHistory: [
+          { time: '11:10 AM', result: 'فشل - Invalid phone number' },
+        ]
+      },
+      {
+        taskId: 'task-003',
+        queueName: 'د. أحمد محمد',
+        patientName: 'علي حسن',
+        phone: '+966501234569',
+        message: 'رسالة تذكير',
+        error: 'تم تجاوز حد الإرسال اليومي',
+        errorDetails: 'Daily sending limit exceeded. Current limit: 1000 messages/day',
+        retryCount: 3,
+        failedAt: '12:00 PM',
+        retryHistory: [
+          { time: '11:00 AM', result: 'فشل - Rate limit exceeded' },
+          { time: '11:30 AM', result: 'فشل - Rate limit exceeded' },
+          { time: '11:50 AM', result: 'فشل - Rate limit exceeded' },
+        ]
+      }
+    ]
+    return res(ctx.json({ success: true, data: failedTasks }))
+  }),
+
+  rest.post(`${API_BASE}/api/Tasks/retry`, async (req, res, ctx) => {
+    const body = await req.json()
+    const taskIds = body.taskIds || []
+    return res(ctx.json({ success: true, data: { retriedCount: taskIds.length } }))
+  }),
+
+  rest.delete(`${API_BASE}/api/Tasks/failed`, async (req, res, ctx) => {
+    const body = await req.json()
+    const taskIds = body.taskIds || []
+    return res(ctx.json({ success: true, data: { deletedCount: taskIds.length } }))
+  }),
 ]
 
 export default handlers

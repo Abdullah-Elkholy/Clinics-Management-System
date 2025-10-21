@@ -1,5 +1,6 @@
 import React from 'react'
 import Icon from './Icon'
+import QuotaDisplay from './QuotaDisplay'
 import { useAuth } from '../lib/auth'
 import { useAuthorization } from '../lib/authorization'
 
@@ -38,6 +39,11 @@ export default function Header({ whatsappConnected, onLogout, onRequestAccount, 
           <button type="button" onClick={() => onRequestWhatsApp && onRequestWhatsApp()} className="bg-white/10 hover:bg-white/20 p-2 rounded-full ml-2" aria-label="ربط واتساب">
             <Icon name="fab fa-whatsapp text-white" />
           </button>
+
+          {/* Quota Display - Shows for non-admin users */}
+          <div className="mx-2">
+            <QuotaDisplay />
+          </div>
 
           <div className="flex items-center space-x-3 space-x-reverse">
             <div className="text-right">
