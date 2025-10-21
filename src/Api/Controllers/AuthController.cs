@@ -68,7 +68,7 @@ namespace Clinics.Api.Controllers
                                 var parsed = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(bodyStr);
                                 var username = parsed.TryGetValue("username", out var u) ? u.ToString() : parsed.TryGetValue("Username", out var U) ? U.ToString() : null;
                                 var password = parsed.TryGetValue("password", out var p) ? p.ToString() : parsed.TryGetValue("Password", out var P) ? P.ToString() : null;
-                                if (!string.IsNullOrEmpty(username)) req = new LoginRequest { Username = username, Password = password };
+                                if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password)) req = new LoginRequest { Username = username, Password = password };
                             }
                             catch { /* ignore */ }
                         }
@@ -81,7 +81,7 @@ namespace Clinics.Api.Controllers
                 return BadRequest(new { success = false, errors = new[] { new { code = "InvalidRequest", message = "Invalid or missing request body. Expected JSON { \"username\":..., \"password\":... } or form-encoded username=...&password=..." } } });
             }
 
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
+            var user = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Username == req.Username);
             if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
             // For scaffold: PasswordHash may be null (seeded). Accept 'admin' without hash for demo
@@ -135,7 +135,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("refresh")]
-        public async Task<IActionResult> RefreshToken()
+        public IActionResult RefreshToken()
         {
             if (!Request.Cookies.TryGetValue("refreshToken", out var token))
                 return Unauthorized(new { success = false });
@@ -146,7 +146,7 @@ namespace Clinics.Api.Controllers
             var session = _db.Sessions.FirstOrDefault(s => s.Id == sessionId);
             if (session == null || session.ExpiresAt <= DateTime.UtcNow) return Unauthorized(new { success = false });
 
-            var user = _db.Users.Include(u => u.Role).FirstOrDefault(u => u.Id == session.UserId);
+            var user = _db.Users.FirstOrDefault(u => u.Id == session.UserId);
             if (user == null) return Unauthorized(new { success = false });
 
             // rotate refresh token: revoke old session and create a new one
