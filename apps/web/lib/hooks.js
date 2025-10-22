@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from './api'
+import { useAuth } from './auth'
 
 // --- Queues ---
 export const useQueues = () => useQuery({
@@ -245,12 +246,26 @@ export const useDeleteFailedTasks = () => {
 
 /**
  * Get current user's quota (their moderator's quota if they're a user)
+ * Only fetches if user is authenticated AND auth initialization is complete
  */
-export const useMyQuota = () => useQuery({
-  queryKey: ['quota', 'me'],
-  queryFn: () => api.get('/api/Quotas/me').then(res => res.data.data),
-  refetchInterval: 30000, // Refresh every 30 seconds
-})
+export const useMyQuota = () => {
+  const { user, isLoading: userIsLoading, isReady: authReady } = useAuth()
+  
+  // Don't fetch until:
+  // 1. Auth provider has determined if there's a user or not (authReady)
+  // 2. User is actually authenticated (!!user)
+  // 3. User query is not still loading
+  const shouldFetch = authReady && !!user && !userIsLoading
+  
+  return useQuery({
+    queryKey: ['quota', 'me'],
+    queryFn: () => api.get('/api/Quotas/me').then(res => res.data.data),
+    refetchInterval: 30000, // Refresh every 30 seconds
+    enabled: shouldFetch,
+    retry: 2, // Retry twice on failure
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+  })
+}
 
 /**
  * Get all quotas (admin only)

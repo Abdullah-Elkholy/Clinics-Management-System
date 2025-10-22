@@ -5,7 +5,11 @@ import queryClient from '../lib/queryClient'
 import '../styles/globals.css'
 import { I18nProvider } from '../lib/i18n'
 import { AuthProvider } from '../lib/auth'
+import { initAuth } from '../lib/api'
 import Toast from '../components/Toast'
+
+// Initialize auth from localStorage on app startup
+initAuth()
 
 export default function App({ Component, pageProps }) {
   return (

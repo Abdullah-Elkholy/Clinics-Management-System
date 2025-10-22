@@ -1,6 +1,12 @@
 # 📋 Clinics Management System - Complete Documentation
 
-> **⚠️ SINGLE SOURCE OF TRUTH**: This README.md is the official, always-updated documentation for the project's current state. All other documentation must reference this file. For supplementary materials only, see `/docs` folder.
+> **📚 DOCUMENTATION**: All project documentation is located in the `/docs` folder:
+> - **Implementation Guides**: `/docs/implementation/`
+> - **API Specifications**: `/docs/implementation/api/`
+> - **Screen Specifications**: `/docs/implementation/screens/`
+> - **Prototype Analysis**: `/docs/prototype-docs/`
+>
+> This README provides project overview. For detailed implementation guides, see `/docs` folder.
 
 **Complete guide to the Clinics Management System project, including current state, architecture, testing, and development roadmap.**
 
@@ -41,6 +47,13 @@
 - **Messaging**: WhatsApp via Playwright
 - **Authentication**: JWT tokens
 - **Job Queue**: Hangfire for background jobs
+
+### CI/CD Status
+- ✅ **GitHub Actions**: All workflows fixed and ready
+  - `tests.yml`: Main test suite (frontend + backend)
+  - `ci-web.yml`: Quick web tests
+  - `frontend-tests.yml`: Frontend with caching
+  - See `/docs/GITHUB-ACTIONS-FIXES.md` for details
 
 ---
 

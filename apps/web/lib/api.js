@@ -75,7 +75,10 @@ api.interceptors.response.use(
           return api(original)
         }
       } catch (e) {
-        // refresh failed
+        console.error('[API] Refresh token failed:', e.response?.status)
+        // Refresh failed, clear auth
+        setAuth(null)
+        try { localStorage.removeItem('accessToken') } catch (e2) {}
       } finally {
         isRefreshing = false
       }

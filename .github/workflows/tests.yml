@@ -2,9 +2,9 @@ name: Test Suite
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master ]
   workflow_dispatch:
 
 jobs:
@@ -12,17 +12,13 @@ jobs:
     name: Frontend Tests
     runs-on: ubuntu-latest
     
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-    
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+    - name: Use Node.js 18
+      uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: '18'
         cache: 'npm'
         cache-dependency-path: apps/web/package-lock.json
     
@@ -41,7 +37,7 @@ jobs:
       timeout-minutes: 10
     
     - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         files: apps/web/coverage/lcov.info
         flags: frontend
@@ -50,9 +46,9 @@ jobs:
     
     - name: Archive test results
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: test-results-node${{ matrix.node-version }}
+        name: frontend-test-results
         path: apps/web/coverage/
         retention-days: 30
 
@@ -60,17 +56,13 @@ jobs:
     name: Backend Tests
     runs-on: ubuntu-latest
     
-    strategy:
-      matrix:
-        dotnet-version: ['7.0.x']
-    
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+    - name: Setup .NET 8.x
+      uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: ${{ matrix.dotnet-version }}
+        dotnet-version: '8.0.x'
     
     - name: Restore dependencies (API)
       working-directory: src/Api
@@ -92,7 +84,7 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [frontend-tests]
+    needs: [frontend-tests, backend-tests]
     if: always()
     
     steps:
@@ -101,5 +93,6 @@ jobs:
         echo "## Test Suite Results ✅"
         echo ""
         echo "**Frontend Tests**: ${{ needs.frontend-tests.result }}"
+        echo "**Backend Tests**: ${{ needs.backend-tests.result }}"
         echo ""
         echo "All tests completed. Check artifacts for detailed coverage reports."
