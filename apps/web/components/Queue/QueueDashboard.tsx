@@ -2,27 +2,34 @@
 
 import { useQueue } from '../../contexts/QueueContext';
 import { useModal } from '../../contexts/ModalContext';
+import { useUI } from '../../contexts/UIContext';
 import { useState } from 'react';
+import SharedHeader from './SharedHeader';
+import StatsSection from './StatsSection';
 
 // Sample patient data
 const SAMPLE_PATIENTS = [
-  { id: 1, name: 'أحمد محمد', phone: '+201012345678', queue: 3 },
-  { id: 2, name: 'فاطمة علي', phone: '+201087654321', queue: 5 },
-  { id: 3, name: 'محمود حسن', phone: '+201098765432', queue: 2 },
-  { id: 4, name: 'نور الدين', phone: '+201011223344', queue: 7 },
-  { id: 5, name: 'سارة إبراهيم', phone: '+201055667788', queue: 1 },
+  { id: 1, name: 'أحمد محمد', phone: '+201012345678', countryCode: '+20', queue: 3 },
+  { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 5 },
+  { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 2 },
+  { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 7 },
+  { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 1 },
 ];
 
 export default function QueueDashboard() {
   const { selectedQueueId, queues } = useQueue();
   const { openModal } = useModal();
+  const { addToast } = useUI();
   const [isEditingName, setIsEditingName] = useState(false);
   const [doctorName, setDoctorName] = useState('');
   const [isEditingCQP, setIsEditingCQP] = useState(false);
   const [currentCQP, setCurrentCQP] = useState('3');
   const [isEditingETS, setIsEditingETS] = useState(false);
   const [currentETS, setCurrentETS] = useState('15');
+  const [patients, setPatients] = useState(SAMPLE_PATIENTS);
   const [selectedPatients, setSelectedPatients] = useState<number[]>([]);
+  const [editingQueueId, setEditingQueueId] = useState<number | null>(null);
+  const [editingQueueValue, setEditingQueueValue] = useState('');
   const queue = queues.find((q) => q.id === selectedQueueId);
 
   const handleEditName = () => {
@@ -68,147 +75,112 @@ export default function QueueDashboard() {
   };
 
   const toggleAllPatients = () => {
-    if (selectedPatients.length === SAMPLE_PATIENTS.length) {
+    if (selectedPatients.length === patients.length) {
       setSelectedPatients([]);
     } else {
-      setSelectedPatients(SAMPLE_PATIENTS.map((p) => p.id));
+      setSelectedPatients(patients.map((p) => p.id));
     }
+  };
+
+  const startEditingQueue = (patientId: number, currentQueue: number) => {
+    setEditingQueueId(patientId);
+    setEditingQueueValue(currentQueue.toString());
+  };
+
+  const saveQueueEdit = (patientId: number) => {
+    const newQueue = parseInt(editingQueueValue, 10);
+    if (!isNaN(newQueue) && newQueue > 0) {
+      setPatients((prev) => {
+        // Find the patient being edited
+        const editingPatient = prev.find((p) => p.id === patientId);
+        if (!editingPatient) return prev;
+
+        const oldQueue = editingPatient.queue;
+
+        // Check if the new queue number already exists
+        const conflictingPatient = prev.find((p) => p.id !== patientId && p.queue === newQueue);
+
+        if (conflictingPatient) {
+          // If there's a conflict, we need to shift all patients
+          // If new queue is less than old queue, shift down from old to new
+          // If new queue is greater than old queue, shift up from old to new
+          return prev.map((p) => {
+            if (p.id === patientId) {
+              // Update the editing patient
+              return { ...p, queue: newQueue };
+            }
+            // If the patient's queue is between oldQueue and newQueue, shift them
+            if (oldQueue < newQueue) {
+              // Shifting right: move patients from oldQueue to newQueue-1 one position left
+              if (p.queue > oldQueue && p.queue <= newQueue) {
+                return { ...p, queue: p.queue - 1 };
+              }
+            } else {
+              // Shifting left: move patients from newQueue to oldQueue-1 one position right
+              if (p.queue >= newQueue && p.queue < oldQueue) {
+                return { ...p, queue: p.queue + 1 };
+              }
+            }
+            return p;
+          });
+        } else {
+          // No conflict, just update the queue
+          return prev.map((p) => (p.id === patientId ? { ...p, queue: newQueue } : p));
+        }
+      });
+      setEditingQueueId(null);
+    }
+  };
+
+  const cancelQueueEdit = () => {
+    setEditingQueueId(null);
+    setEditingQueueValue('');
   };
 
   return (
     <div className="p-6">
-      <div className="bg-gradient-to-l from-blue-600 to-purple-600 text-white p-6 rounded-xl mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              {isEditingName ? (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={doctorName}
-                    onChange={(e) => setDoctorName(e.target.value)}
-                    className="px-3 py-1 text-gray-800 rounded"
-                    autoFocus
-                  />
-                  <button
-                    onClick={handleSaveName}
-                    className="bg-green-500 hover:bg-green-600 px-3 py-1 rounded text-sm"
-                  >
-                    ✓
-                  </button>
-                  <button
-                    onClick={() => setIsEditingName(false)}
-                    className="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <h2 className="text-2xl font-bold">{queue?.doctorName}</h2>
-                  <button
-                    onClick={handleEditName}
-                    className="bg-white bg-opacity-20 hover:bg-opacity-30 px-2 py-1 rounded text-sm"
-                  >
-                    <i className="fas fa-edit"></i>
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="grid grid-cols-3 gap-4 text-blue-100">
-              <div>
-                <p className="text-sm">عدد المرضى</p>
-                <p className="text-xl font-bold">15</p>
-              </div>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm">الموضع الحالي (CQP)</p>
-                  {isEditingCQP ? (
-                    <div className="flex gap-1 mt-1">
-                      <input
-                        type="number"
-                        value={currentCQP}
-                        onChange={(e) => setCurrentCQP(e.target.value)}
-                        className="w-16 px-2 py-1 text-gray-800 rounded text-sm"
-                        autoFocus
-                      />
-                      <button
-                        onClick={handleSaveCQP}
-                        className="bg-green-500 hover:bg-green-600 px-2 py-1 rounded text-xs"
-                      >
-                        ✓
-                      </button>
-                      <button
-                        onClick={() => setIsEditingCQP(false)}
-                        className="bg-red-500 hover:bg-red-600 px-2 py-1 rounded text-xs"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xl font-bold">{currentCQP}</p>
-                      <button
-                        onClick={handleEditCQP}
-                        className="bg-white bg-opacity-20 hover:bg-opacity-30 px-1 py-0.5 rounded text-xs"
-                        title="تعديل CQP"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm">الوقت المقدر للجلسة (ETS)</p>
-                  {isEditingETS ? (
-                    <div className="flex gap-1 mt-1 items-center">
-                      <input
-                        type="number"
-                        value={currentETS}
-                        onChange={(e) => setCurrentETS(e.target.value)}
-                        className="w-16 px-2 py-1 text-gray-800 rounded text-sm"
-                        autoFocus
-                      />
-                      <span className="text-sm">دقيقة</span>
-                      <button
-                        onClick={handleSaveETS}
-                        className="bg-green-500 hover:bg-green-600 px-2 py-1 rounded text-xs"
-                      >
-                        ✓
-                      </button>
-                      <button
-                        onClick={() => setIsEditingETS(false)}
-                        className="bg-red-500 hover:bg-red-600 px-2 py-1 rounded text-xs"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xl font-bold">{currentETS}</p>
-                      <span className="text-sm">دقيقة</span>
-                      <button
-                        onClick={handleEditETS}
-                        className="bg-white bg-opacity-20 hover:bg-opacity-30 px-1 py-0.5 rounded text-xs"
-                        title="تعديل ETS"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="text-left">
-            <div className="bg-white bg-opacity-20 px-4 py-2 rounded-lg">
-              <i className="fas fa-users text-2xl"></i>
-            </div>
-          </div>
-        </div>
-      </div>
+      <SharedHeader 
+        title="لوحة التحكم الرئيسية" 
+        description="إدارة قائمة انتظار العيادة والمرضى"
+      />
+
+      <StatsSection 
+        gradient="bg-gradient-to-r from-purple-500 to-purple-600"
+        stats={[
+          {
+            label: 'الموضع الحالي (CQP)',
+            value: currentCQP,
+            icon: 'arrow-right',
+            editButton: {
+              isEditing: isEditingCQP,
+              currentValue: currentCQP,
+              onEdit: handleEditCQP,
+              onSave: handleSaveCQP,
+              onCancel: () => setIsEditingCQP(false),
+              onChange: setCurrentCQP
+            }
+          },
+          {
+            label: 'الوقت المقدر (ETS)',
+            value: currentETS,
+            icon: 'clock',
+            editButton: {
+              isEditing: isEditingETS,
+              currentValue: currentETS,
+              onEdit: handleEditETS,
+              onSave: handleSaveETS,
+              onCancel: () => setIsEditingETS(false),
+              onChange: setCurrentETS,
+              suffix: 'دقيقة'
+            }
+          },
+          {
+            label: 'عدد المرضى',
+            value: '15',
+            icon: 'users'
+          }
+        ]}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <button 
@@ -227,17 +199,40 @@ export default function QueueDashboard() {
           <span>رفع ملف المرضى</span>
         </button>
         
-        <button className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse">
+        <button 
+          onClick={() => {
+            if (selectedPatients.length === 0) {
+              addToast('يرجى تحديد مريض واحد على الأقل', 'error');
+              return;
+            }
+            const ok = window.confirm(`هل أنت متأكد من حذف ${selectedPatients.length} مريض؟`);
+            if (ok) {
+              setPatients((prev) => prev.filter((p) => !selectedPatients.includes(p.id)));
+              setSelectedPatients([]);
+              addToast(`تم حذف ${selectedPatients.length} مريض`, 'success');
+            }
+          }}
+          className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse"
+        >
           <i className="fas fa-trash"></i>
-          <span>حذف المحدد</span>
+          <span>حذف المحدد ({selectedPatients.length})</span>
         </button>
         
         <button 
-          onClick={() => openModal('messagePreview')}
+          onClick={() => {
+            if (selectedPatients.length === 0) {
+              addToast('يرجى تحديد مريض واحد على الأقل لإرسال الرسالة', 'error');
+              return;
+            }
+            openModal('messagePreview', {
+              selectedPatients: selectedPatients,
+              selectedPatientCount: selectedPatients.length,
+            });
+          }}
           className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse"
         >
           <i className="fab fa-whatsapp"></i>
-          <span>إرسال للمحدد</span>
+          <span>إرسال للمحدد ({selectedPatients.length})</span>
         </button>
       </div>
 
@@ -249,10 +244,11 @@ export default function QueueDashboard() {
         </div>
         <button 
           onClick={() => openModal('messageSelection')}
-          className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center ml-4 flex-shrink-0"
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 ml-4 flex-shrink-0"
           title="تغيير الرسالة"
         >
           <i className="fas fa-edit"></i>
+          <span className="text-sm font-medium">تغيير الرسالة</span>
         </button>
       </div>
 
@@ -287,13 +283,16 @@ export default function QueueDashboard() {
                     className="w-4 h-4 rounded cursor-pointer"
                   />
                 </th>
+                <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">ترتيب الانتظار</th>
                 <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الاسم</th>
                 <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">رقم الجوال</th>
-                <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">ترتيب الانتظار</th>
+                <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الإجراءات</th>
               </tr>
             </thead>
             <tbody>
-              {SAMPLE_PATIENTS.map((patient, idx) => (
+              {patients
+                .sort((a, b) => a.queue - b.queue)
+                .map((patient, idx) => (
                 <tr
                   key={patient.id}
                   className={`border-b hover:bg-gray-50 transition-colors ${
@@ -308,12 +307,95 @@ export default function QueueDashboard() {
                       className="w-4 h-4 rounded cursor-pointer"
                     />
                   </td>
-                  <td className="px-6 py-3 text-sm text-gray-900 font-medium">{patient.name}</td>
-                  <td className="px-6 py-3 text-sm text-gray-600">{patient.phone}</td>
                   <td className="px-6 py-3 text-sm">
-                    <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium">
-                      #{patient.queue}
-                    </span>
+                    {editingQueueId === patient.id ? (
+                      <div className="flex gap-1 items-center">
+                        <input
+                          type="number"
+                          value={editingQueueValue}
+                          onChange={(e) => setEditingQueueValue(e.target.value)}
+                          className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => saveQueueEdit(patient.id)}
+                          className="bg-green-500 hover:bg-green-600 px-1 py-0.5 rounded text-xs text-white"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={cancelQueueEdit}
+                          className="bg-red-500 hover:bg-red-600 px-1 py-0.5 rounded text-xs text-white"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 items-center">
+                        <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium">
+                          #{patient.queue}
+                        </span>
+                        <button
+                          onClick={() => startEditingQueue(patient.id, patient.queue)}
+                          title="تعديل ترتيب الانتظار"
+                          className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded text-xs"
+                        >
+                          <i className="fas fa-edit"></i>
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-3 text-sm text-gray-900 font-medium">{patient.name}</td>
+                  <td className="px-6 py-3 text-sm text-gray-600">{patient.countryCode} {patient.phone}</td>
+                  {/* Actions column */}
+                  <td className="px-6 py-3 text-sm text-left">
+                    <div className="flex gap-2 justify-start">
+                      {/* WhatsApp button - opens wa.me link */}
+                      <button
+                        onClick={() => {
+                          // normalize phone (remove + and spaces)
+                          const num = (patient.countryCode + patient.phone).replace(/[^0-9]/g, '');
+                          const url = `https://wa.me/${num}`;
+                          window.open(url, '_blank');
+                        }}
+                        title="فتح في واتساب"
+                        className="bg-green-50 text-green-600 hover:bg-green-100 px-2 py-1 rounded"
+                      >
+                        <i className="fab fa-whatsapp"></i>
+                      </button>
+
+                      {/* Edit button - open EditPatient modal with data and onSave callback */}
+                      <button
+                        onClick={() =>
+                          openModal('editPatient', {
+                            patient,
+                            onSave: (updated: any) => {
+                              setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+                              // Also update selectedPatients if needed (optional)
+                            },
+                          })
+                        }
+                        title="تعديل"
+                        className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded"
+                      >
+                        <i className="fas fa-edit"></i>
+                      </button>
+
+                      {/* Delete button - confirm then remove */}
+                      <button
+                        onClick={() => {
+                          const ok = window.confirm(`هل أنت متأكد من حذف ${patient.name}؟`);
+                          if (ok) {
+                            setPatients((prev) => prev.filter((p) => p.id !== patient.id));
+                            setSelectedPatients((prev) => prev.filter((id) => id !== patient.id));
+                          }
+                        }}
+                        title="حذف"
+                        className="bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

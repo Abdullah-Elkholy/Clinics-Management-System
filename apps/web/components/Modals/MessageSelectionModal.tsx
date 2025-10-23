@@ -68,15 +68,6 @@ export default function MessageSelectionModal() {
           </div>
         )}
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex-shrink-0">
-          <h4 className="font-medium text-blue-800 mb-2">نصائح الاستخدام:</h4>
-          <div className="text-sm text-blue-700 space-y-1">
-            <p>• استخدم المتغيرات مثل {'{PN}'} لإدراج اسم المريض</p>
-            <p>• استخدم {'{PQP}'} لموضع المريض و {'{ETR}'} للوقت المتبقي</p>
-            <p>• يمكنك إضافة شروط اختيارية أدناه</p>
-          </div>
-        </div>
-
         <div className="flex gap-3 pt-4 border-t flex-shrink-0">
           <button
             onClick={handleApply}

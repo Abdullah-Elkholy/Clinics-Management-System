@@ -36,21 +36,21 @@ export default function ToastContainer() {
   };
 
   return (
-    <div id="toastContainer" className="fixed top-4 left-4 z-50 space-y-2 max-w-sm">
+    <div id="toastContainer" className="fixed top-4 left-4 z-50 flex flex-col gap-2">
       {toasts.map((toast) => {
         const colors = getToastColors(toast.type);
         return (
           <div
             key={toast.id}
-            className={`toast ${colors.bg} border ${colors.border} ${colors.text} p-4 rounded-lg shadow-lg flex items-center justify-between gap-3 animate-slideIn`}
+            className={`toast ${colors.bg} border ${colors.border} ${colors.text} px-4 py-3 rounded-lg shadow-lg flex items-center justify-between gap-3 animate-slideIn max-w-xs`}
           >
-            <div className="flex items-center gap-3">
-              <i className={`fas ${colors.icon}`}></i>
-              <span className="text-sm font-medium">{toast.message}</span>
+            <div className="flex items-center gap-3 min-w-0">
+              <i className={`fas ${colors.icon} flex-shrink-0`}></i>
+              <span className="text-sm font-medium break-words">{toast.message}</span>
             </div>
             <button
               onClick={() => removeToast(toast.id)}
-              className="hover:opacity-70 transition-opacity"
+              className="hover:opacity-70 transition-opacity flex-shrink-0 ml-2"
             >
               <i className="fas fa-times"></i>
             </button>

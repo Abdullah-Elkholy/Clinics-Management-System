@@ -92,6 +92,17 @@ export default function Navigation() {
               <i className="fas fa-exclamation-circle ml-2"></i>
               المهام الفاشلة
             </button>
+            <button
+              onClick={() => setCurrentPanel('done')}
+              className={`w-full text-right px-4 py-2 rounded-lg transition-colors text-sm ${
+                currentPanel === 'done'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-blue-100'
+              }`}
+            >
+              <i className="fas fa-check-circle ml-2"></i>
+              المهام المكتملة
+            </button>
           </div>
         </nav>
       )}

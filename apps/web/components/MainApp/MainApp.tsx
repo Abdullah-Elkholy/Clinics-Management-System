@@ -10,6 +10,7 @@ import ToastContainer from '../Common/ToastContainer';
 import QueueDashboard from '../Queue/QueueDashboard';
 import OngoingTasksPanel from '../Queue/OngoingTasksPanel';
 import FailedTasksPanel from '../Queue/FailedTasksPanel';
+import CompletedTasksPanel from '../Queue/CompletedTasksPanel';
 import MessagesPanel from '../Content/MessagesPanel';
 import ManagementPanel from '../Content/ManagementPanel';
 import * as Modals from '../Modals';
@@ -27,16 +28,20 @@ function MainAppContent() {
         <Navigation />
         
         <div className="flex-1 bg-white overflow-y-auto">
-          {isQueueSelected && currentPanel !== 'welcome' ? (
-            <QueueDashboard />
+          {isQueueSelected ? (
+            currentPanel === 'ongoing' ? (
+              <OngoingTasksPanel />
+            ) : currentPanel === 'failed' ? (
+              <FailedTasksPanel />
+            ) : currentPanel === 'done' ? (
+              <CompletedTasksPanel />
+            ) : (
+              <QueueDashboard />
+            )
           ) : currentPanel === 'messages' ? (
             <MessagesPanel />
           ) : currentPanel === 'management' ? (
             <ManagementPanel />
-          ) : currentPanel === 'ongoing' ? (
-            <OngoingTasksPanel />
-          ) : currentPanel === 'failed' ? (
-            <FailedTasksPanel />
           ) : (
             <WelcomeScreen />
           )}

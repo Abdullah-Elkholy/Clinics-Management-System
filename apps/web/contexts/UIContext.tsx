@@ -7,8 +7,8 @@ interface UIContextType {
   toasts: Toast[];
   addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   removeToast: (id: string) => void;
-  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed';
-  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed') => void;
+  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done';
+  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done') => void;
   selectedQueueId: string | null;
   setSelectedQueueId: (id: string | null) => void;
 }
@@ -17,7 +17,7 @@ const UIContext = createContext<UIContextType | null>(null);
 
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed'>('welcome');
+  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done'>('welcome');
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning') => {
