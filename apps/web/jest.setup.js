@@ -1,4 +1,5 @@
-import '@testing-library/jest-dom'
+import '@testing-library/jest-dom';
+
 import { server } from './mocks/server'
 import { resetMockData } from './mocks/handlers'
 import { cleanup } from '@testing-library/react';

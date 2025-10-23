@@ -1,5 +1,6 @@
-// Minimal Next.js config (ES module)
-export default {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   reactStrictMode: true,
-  // Keep default experimental flags minimal. Add customizations here if needed.
 };
+
+export default nextConfig;
