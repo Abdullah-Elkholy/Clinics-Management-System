@@ -165,6 +165,7 @@ class ModeratorsService {
         isActive: true,
         createdAt: now,
         updatedAt: now,
+        moderatorId: undefined,
       };
 
       // Add to mock data

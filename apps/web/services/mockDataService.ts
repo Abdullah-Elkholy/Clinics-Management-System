@@ -4,7 +4,15 @@
  * Used for frontend development before backend integration
  */
 
-import { v4 as uuidv4 } from 'crypto';
+// Helper function to generate session IDs
+const generateSessionId = (): string => {
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = now.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+  const year = now.getFullYear();
+  const sequence = String(Math.floor(Math.random() * 999)).padStart(3, '0');
+  return `SES-${day}-${month}-${sequence}`;
+};
 
 // Types matching backend DTOs
 export interface User {
@@ -629,7 +637,7 @@ export const MOCK_WHATSAPP_SESSIONS: WhatsAppSession[] = [
  */
 export const MOCK_MESSAGE_SESSIONS: MessageSession[] = [
   {
-    id: uuidv4(),
+    id: generateSessionId(),
     queueId: 1,
     userId: 2,
     status: 'active',
@@ -639,7 +647,7 @@ export const MOCK_MESSAGE_SESSIONS: MessageSession[] = [
     lastUpdated: new Date('2024-02-16T15:30:00'),
   },
   {
-    id: uuidv4(),
+    id: generateSessionId(),
     queueId: 2,
     userId: 3,
     status: 'completed',
@@ -650,7 +658,7 @@ export const MOCK_MESSAGE_SESSIONS: MessageSession[] = [
     lastUpdated: new Date('2024-02-15T14:30:00'),
   },
   {
-    id: uuidv4(),
+    id: generateSessionId(),
     queueId: 4,
     userId: 7,
     status: 'active',
