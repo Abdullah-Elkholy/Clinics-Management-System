@@ -129,6 +129,9 @@ export default function ManagementPanel() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterRole, setFilterRole] = useState<UserRole | 'all'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const [selectedModeratorId, setSelectedModeratorId] = useState<string | null>(null);
   const [quotaForm, setQuotaForm] = useState({
@@ -141,6 +144,12 @@ export default function ManagementPanel() {
     role: UserRole.User,
     assignedModerator: '',
   });
+  const [showBulkQuotaModal, setShowBulkQuotaModal] = useState(false);
+  const [bulkQuotaForm, setBulkQuotaForm] = useState({
+    messagesQuota: 0,
+    queuesQuota: 0,
+  });
+  const [showAuditLogs, setShowAuditLogs] = useState(false);
 
   const canViewUsers = useCanAccess(Feature.VIEW_USERS);
   const canCreateUser = useCanAccess(Feature.CREATE_USER);
@@ -228,16 +237,25 @@ export default function ManagementPanel() {
   }, []);
 
   /**
-   * Filter users based on search term - memoized
+   * Filter users based on search term, role, and status - memoized with advanced filtering
    */
   const filteredUsers = useMemo(
     () =>
-      displayUsers.filter(
-        (user) =>
+      displayUsers.filter((user) => {
+        // Text search filter
+        const searchMatch =
           user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          user.email.toLowerCase().includes(searchTerm.toLowerCase())
-      ),
-    [displayUsers, searchTerm]
+          user.email.toLowerCase().includes(searchTerm.toLowerCase());
+
+        // Role filter
+        const roleMatch = filterRole === 'all' || user.role === filterRole;
+
+        // Status filter
+        const statusMatch = filterStatus === 'all' || (filterStatus === 'active' ? user.isActive : !user.isActive);
+
+        return searchMatch && roleMatch && statusMatch;
+      }),
+    [displayUsers, searchTerm, filterRole, filterStatus]
   );
 
   /**
@@ -358,6 +376,94 @@ export default function ManagementPanel() {
     ),
     [displayUsers, handleEditUser, handleDeleteUser]
   );
+
+  /**
+   * Toggle user selection for bulk operations - memoized
+   */
+  const handleToggleUserSelection = useCallback((userId: string) => {
+    setSelectedUsers((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  /**
+   * Select all visible users - memoized
+   */
+  const handleSelectAllUsers = useCallback(() => {
+    if (selectedUsers.size === filteredUsers.length) {
+      setSelectedUsers(new Set());
+    } else {
+      setSelectedUsers(new Set(filteredUsers.map((u) => u.id)));
+    }
+  }, [filteredUsers, selectedUsers]);
+
+  /**
+   * Export users to CSV - memoized
+   */
+  const handleExportUsers = useCallback(() => {
+    const headers = ['الاسم', 'البريد الإلكتروني', 'الدور', 'حالة النشاط', 'تاريخ الإنشاء'];
+    const data = filteredUsers.map((user) => [
+      user.name,
+      user.email,
+      getRoleDisplayName(user.role),
+      user.isActive ? 'نشط' : 'معطّل',
+      new Date(user.createdAt).toLocaleDateString('ar-SA'),
+    ]);
+
+    // Create CSV content
+    const csvContent = [headers, ...data].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+
+    // Download CSV
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `users_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [filteredUsers, getRoleDisplayName]);
+
+  /**
+   * Bulk delete users - memoized
+   */
+  const handleBulkDeleteUsers = useCallback(async () => {
+    if (selectedUsers.size === 0) return;
+
+    if (confirm(`هل أنت متأكد من حذف ${selectedUsers.size} مستخدم؟`)) {
+      for (const userId of selectedUsers) {
+        await actions.deleteUser(userId);
+      }
+      setSelectedUsers(new Set());
+    }
+  }, [selectedUsers, actions]);
+
+  /**
+   * Apply bulk quota update to selected moderators - memoized
+   */
+  const handleBulkQuotaUpdate = useCallback(async () => {
+    if (selectedUsers.size === 0) return;
+
+    // Update quotas for selected moderators
+    for (const moderatorId of selectedUsers) {
+      const moderator = MOCK_MODERATORS.find((m) => m.id === moderatorId);
+      if (moderator) {
+        moderator.messagesQuota = bulkQuotaForm.messagesQuota;
+        moderator.queuesQuota = bulkQuotaForm.queuesQuota;
+      }
+    }
+
+    setShowBulkQuotaModal(false);
+    setSelectedUsers(new Set());
+    setBulkQuotaForm({ messagesQuota: 0, queuesQuota: 0 });
+  }, [selectedUsers, bulkQuotaForm]);
 
   return (
     <PanelWrapper isLoading={state.loading && !showCreateForm}>
@@ -492,16 +598,78 @@ export default function ManagementPanel() {
             </FormSection>
           )}
 
-          {/* Search */}
-          <div className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 px-4 py-2">
-            <i className="fas fa-search text-gray-400"></i>
-            <input
-              type="text"
-              placeholder="ابحث عن مستخدم..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1 px-0 py-1 border-0 focus:outline-none focus:ring-0 bg-transparent"
-            />
+          {/* Advanced Filters & Search */}
+          <div className="space-y-4 bg-white rounded-lg border border-gray-200 p-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Search */}
+              <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2">
+                <i className="fas fa-search text-gray-400"></i>
+                <input
+                  type="text"
+                  placeholder="ابحث عن مستخدم..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 px-0 py-1 border-0 focus:outline-none focus:ring-0 bg-transparent text-sm"
+                />
+              </div>
+
+              {/* Role Filter */}
+              <select
+                value={filterRole}
+                onChange={(e) => setFilterRole(e.target.value as UserRole | 'all')}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="all">جميع الأدوار</option>
+                <option value={UserRole.PrimaryAdmin}>مدير أساسي</option>
+                <option value={UserRole.SecondaryAdmin}>مدير ثانوي</option>
+                <option value={UserRole.Moderator}>مشرف</option>
+                <option value={UserRole.User}>مستخدم</option>
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as 'all' | 'active' | 'inactive')}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="all">جميع الحالات</option>
+                <option value="active">نشط</option>
+                <option value="inactive">معطّل</option>
+              </select>
+
+              {/* Actions */}
+              <button
+                onClick={handleExportUsers}
+                className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm"
+              >
+                <i className="fas fa-download"></i>
+                تصدير CSV
+              </button>
+            </div>
+
+            {/* Bulk Actions Bar */}
+            {selectedUsers.size > 0 && (
+              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <span className="text-sm text-blue-800 font-medium">
+                  {selectedUsers.size} مستخدم محدد
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleBulkDeleteUsers}
+                    className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors flex items-center gap-1"
+                  >
+                    <i className="fas fa-trash"></i>
+                    حذف
+                  </button>
+                  <button
+                    onClick={() => setSelectedUsers(new Set())}
+                    className="bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-400 transition-colors"
+                  >
+                    إلغاء التحديد
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Empty State */}
@@ -515,15 +683,84 @@ export default function ManagementPanel() {
             />
           )}
 
-          {/* Users Table */}
+          {/* Users Table with Checkboxes */}
           {!state.loading && filteredUsers.length > 0 && !showCreateForm && (
-            <ResponsiveTable
-              columns={userTableColumns}
-              data={userTableData}
-              keyField="id"
-              rowActions={(row) => renderUserActions(row)}
-              emptyMessage="لا توجد مستخدمين"
-            />
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-8">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.size === filteredUsers.length && filteredUsers.length > 0}
+                          onChange={handleSelectAllUsers}
+                          className="rounded cursor-pointer"
+                        />
+                      </th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الاسم</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">البريد الإلكتروني</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الدور</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الحالة</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-24">آخر دخول</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700 w-20">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredUsers.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.has(user.id)}
+                            onChange={() => handleToggleUserSelection(user.id)}
+                            className="rounded cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{user.name}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{user.email}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <Badge label={getRoleDisplayName(user.role)} color={getRoleColor(user.role)} />
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                            user.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            <div className={`w-2 h-2 rounded-full ${user.isActive ? 'bg-green-600' : 'bg-gray-600'}`}></div>
+                            {user.isActive ? 'نشط' : 'معطّل'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-gray-600">
+                          {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('ar-SA') : 'لم يسجل'}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex gap-1 justify-center">
+                            <RequireFeature feature={Feature.EDIT_USER}>
+                              <button
+                                onClick={() => handleEditUser(user)}
+                                className="text-blue-600 hover:text-blue-800 p-1 transition-colors"
+                                title="تعديل"
+                              >
+                                <i className="fas fa-edit text-sm"></i>
+                              </button>
+                            </RequireFeature>
+                            <RequireFeature feature={Feature.DELETE_USER}>
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="text-red-600 hover:text-red-800 p-1 transition-colors"
+                                title="حذف"
+                              >
+                                <i className="fas fa-trash text-sm"></i>
+                              </button>
+                            </RequireFeature>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -531,6 +768,30 @@ export default function ManagementPanel() {
       {/* Moderators Tab */}
       {activeTab === 'moderators' && (
         <div className="space-y-6">
+          {/* Bulk Operations */}
+          {selectedUsers.size > 0 && (
+            <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <span className="text-sm text-blue-800 font-medium">
+                {selectedUsers.size} مشرف محدد
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowBulkQuotaModal(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <i className="fas fa-chart-bar"></i>
+                  تحديث الحصص
+                </button>
+                <button
+                  onClick={() => setSelectedUsers(new Set())}
+                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-400 transition-colors"
+                >
+                  إلغاء التحديد
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Moderators Table */}
           {MOCK_MODERATORS.length > 0 && (
             <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -538,11 +799,25 @@ export default function ManagementPanel() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b">
                     <tr>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-8">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.size === MOCK_MODERATORS.length && MOCK_MODERATORS.length > 0}
+                          onChange={() => {
+                            if (selectedUsers.size === MOCK_MODERATORS.length) {
+                              setSelectedUsers(new Set());
+                            } else {
+                              setSelectedUsers(new Set(MOCK_MODERATORS.map((m) => m.id)));
+                            }
+                          }}
+                          className="rounded cursor-pointer"
+                        />
+                      </th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-24">الحالة</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الاسم</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">البريد الإلكتروني</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">حالة واتساب</th>
-                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-32">الحصة</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الحصة (الرسائل/الطوابير)</th>
                       <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-32">آخر دخول</th>
                       <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700 w-20">الإجراءات</th>
                     </tr>
@@ -553,6 +828,14 @@ export default function ManagementPanel() {
                       const queuesPercent = (moderator.consumedQueues / moderator.queuesQuota) * 100;
                       return (
                         <tr key={moderator.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <input
+                              type="checkbox"
+                              checked={selectedUsers.has(moderator.id)}
+                              onChange={() => handleToggleUserSelection(moderator.id)}
+                              className="rounded cursor-pointer"
+                            />
+                          </td>
                           <td className="px-6 py-4 text-sm">
                             <div className="flex items-center gap-2">
                               <div className={`w-2.5 h-2.5 rounded-full ${moderator.isActive ? 'bg-green-500' : 'bg-gray-300'}`}></div>
@@ -579,8 +862,8 @@ export default function ManagementPanel() {
                             <div className="space-y-2">
                               <div>
                                 <div className="flex justify-between mb-1">
-                                  <span className="text-gray-700 font-medium">الرسائل</span>
-                                  <span className="text-gray-600">{messagesPercent.toFixed(0)}%</span>
+                                  <span className="text-gray-700 font-medium text-xs">الرسائل</span>
+                                  <span className="text-gray-600 text-xs">{messagesPercent.toFixed(0)}%</span>
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                                   <div
@@ -588,12 +871,12 @@ export default function ManagementPanel() {
                                     style={{ width: `${Math.min(messagesPercent, 100)}%` }}
                                   ></div>
                                 </div>
-                                <div className="text-xs text-gray-600 mt-1">{moderator.consumedMessages}/{moderator.messagesQuota}</div>
+                                <div className="text-xs text-gray-600 mt-0.5">{moderator.consumedMessages}/{moderator.messagesQuota}</div>
                               </div>
                               <div>
                                 <div className="flex justify-between mb-1">
-                                  <span className="text-gray-700 font-medium">الطوابير</span>
-                                  <span className="text-gray-600">{queuesPercent.toFixed(0)}%</span>
+                                  <span className="text-gray-700 font-medium text-xs">الطوابير</span>
+                                  <span className="text-gray-600 text-xs">{queuesPercent.toFixed(0)}%</span>
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                                   <div
@@ -601,7 +884,7 @@ export default function ManagementPanel() {
                                     style={{ width: `${Math.min(queuesPercent, 100)}%` }}
                                   ></div>
                                 </div>
-                                <div className="text-xs text-gray-600 mt-1">{moderator.consumedQueues}/{moderator.queuesQuota}</div>
+                                <div className="text-xs text-gray-600 mt-0.5">{moderator.consumedQueues}/{moderator.queuesQuota}</div>
                               </div>
                             </div>
                           </td>
@@ -639,7 +922,67 @@ export default function ManagementPanel() {
             </div>
           )}
 
-          {/* Quota Modal */}
+          {/* Bulk Quota Modal */}
+          {showBulkQuotaModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900">تحديث الحصص للمشرفين المحددين</h3>
+                  <button
+                    onClick={() => setShowBulkQuotaModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-blue-800">سيتم تطبيق الحصة على {selectedUsers.size} مشرف</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">حصة الرسائل</label>
+                    <input
+                      type="number"
+                      value={bulkQuotaForm.messagesQuota}
+                      onChange={(e) => setBulkQuotaForm({ ...bulkQuotaForm, messagesQuota: parseInt(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="أدخل حصة الرسائل"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">حصة الطوابير</label>
+                    <input
+                      type="number"
+                      value={bulkQuotaForm.queuesQuota}
+                      onChange={(e) => setBulkQuotaForm({ ...bulkQuotaForm, queuesQuota: parseInt(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="أدخل حصة الطوابير"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-6">
+                  <button
+                    onClick={handleBulkQuotaUpdate}
+                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    تطبيق
+                  </button>
+                  <button
+                    onClick={() => setShowBulkQuotaModal(false)}
+                    className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Individual Quota Modal */}
           {showQuotaModal && selectedModeratorId && (
             <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
               <div className="bg-white rounded-xl p-6 w-full max-w-md">

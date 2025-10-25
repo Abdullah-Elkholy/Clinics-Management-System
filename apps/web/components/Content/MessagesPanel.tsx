@@ -110,8 +110,13 @@ export default function MessagesPanel() {
   const [showPreview, setShowPreview] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedConditionTemplate, setSelectedConditionTemplate] = useState<string | null>(null);
   const [messageConditions, setMessageConditions] = useState<MessageCondition[]>([]);
+  const [selectedTemplates, setSelectedTemplates] = useState<Set<string>>(new Set());
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [showCloneModal, setShowCloneModal] = useState(false);
+  const [cloneSourceId, setCloneSourceId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -139,16 +144,24 @@ export default function MessagesPanel() {
   ], []);
 
   /**
-   * Filter templates based on search
+   * Filter templates based on search and status - memoized
    */
   const filteredTemplates = useMemo(
     () =>
-      displayTemplates.filter(
-        (template) =>
+      displayTemplates.filter((template: any) => {
+        // Search filter
+        const searchMatch =
           template.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          template.content.toLowerCase().includes(searchTerm.toLowerCase())
-      ),
-    [displayTemplates, searchTerm]
+          template.content.toLowerCase().includes(searchTerm.toLowerCase());
+
+        // Status filter
+        const statusMatch = 
+          filterStatus === 'all' || 
+          (filterStatus === 'active' ? template.isActive : !template.isActive);
+
+        return searchMatch && statusMatch;
+      }),
+    [displayTemplates, searchTerm, filterStatus]
   );
 
   /**
@@ -237,6 +250,82 @@ export default function MessagesPanel() {
   const removeCondition = useCallback((id: string) => {
     setMessageConditions(messageConditions.filter((c) => c.id !== id));
   }, [messageConditions]);
+
+  /**
+   * Toggle template selection for bulk operations
+   */
+  const handleToggleTemplate = useCallback((templateId: string) => {
+    setSelectedTemplates((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(templateId)) {
+        newSet.delete(templateId);
+      } else {
+        newSet.add(templateId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  /**
+   * Select all templates
+   */
+  const handleSelectAllTemplates = useCallback(() => {
+    if (selectedTemplates.size === filteredTemplates.length) {
+      setSelectedTemplates(new Set());
+    } else {
+      setSelectedTemplates(new Set(filteredTemplates.map((t: any) => t.id)));
+    }
+  }, [filteredTemplates, selectedTemplates]);
+
+  /**
+   * Bulk delete templates
+   */
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedTemplates.size === 0) return;
+
+    if (confirm(`هل أنت متأكد من حذف ${selectedTemplates.size} قالب؟`)) {
+      for (const templateId of selectedTemplates) {
+        await actions.deleteTemplate(templateId);
+      }
+      setSelectedTemplates(new Set());
+      setShowBulkDelete(false);
+    }
+  }, [selectedTemplates, actions]);
+
+  /**
+   * Clone template
+   */
+  const handleCloneTemplate = useCallback(async () => {
+    if (!cloneSourceId) return;
+
+    const sourceTemplate = displayTemplates.find((t: any) => t.id === cloneSourceId);
+    if (sourceTemplate) {
+      await actions.createTemplate({
+        title: `${sourceTemplate.title} (نسخة)`,
+        content: sourceTemplate.content,
+        variables: (sourceTemplate as any).variables,
+        createdBy: 'current_user',
+      });
+      setShowCloneModal(false);
+      setCloneSourceId(null);
+    }
+  }, [cloneSourceId, displayTemplates, actions]);
+
+  /**
+   * Export templates to JSON
+   */
+  const handleExportTemplates = useCallback(() => {
+    const data = JSON.stringify(filteredTemplates, null, 2);
+    const blob = new Blob([data], { type: 'application/json;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `templates_${new Date().toISOString().split('T')[0]}.json`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [filteredTemplates]);
 
   /**
    * Table columns for templates
@@ -435,17 +524,73 @@ export default function MessagesPanel() {
             </FormSection>
           )}
 
-          {/* Search */}
+          {/* Search & Filters */}
           {!showCreateForm && (
-            <div className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 px-4 py-2">
-              <i className="fas fa-search text-gray-400"></i>
-              <input
-                type="text"
-                placeholder="ابحث عن رسالة..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="flex-1 px-0 py-1 border-0 focus:outline-none focus:ring-0 bg-transparent"
-              />
+            <div className="space-y-4 bg-white rounded-lg border border-gray-200 p-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* Search */}
+                <div className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2">
+                  <i className="fas fa-search text-gray-400"></i>
+                  <input
+                    type="text"
+                    placeholder="ابحث عن رسالة..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="flex-1 px-0 py-1 border-0 focus:outline-none focus:ring-0 bg-transparent text-sm"
+                  />
+                </div>
+
+                {/* Status Filter */}
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as 'all' | 'active' | 'inactive')}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="all">جميع الحالات</option>
+                  <option value="active">نشط فقط</option>
+                  <option value="inactive">معطّل فقط</option>
+                </select>
+
+                {/* Results Count */}
+                <div className="flex items-center px-3 py-2 bg-gray-50 rounded-lg border border-gray-300">
+                  <span className="text-sm text-gray-700">
+                    {filteredTemplates.length} من {displayTemplates.length} رسالة
+                  </span>
+                </div>
+
+                {/* Export Button */}
+                <button
+                  onClick={handleExportTemplates}
+                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm"
+                >
+                  <i className="fas fa-download"></i>
+                  تصدير JSON
+                </button>
+              </div>
+
+              {/* Bulk Actions Bar */}
+              {selectedTemplates.size > 0 && (
+                <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <span className="text-sm text-blue-800 font-medium">
+                    {selectedTemplates.size} رسالة محددة
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowBulkDelete(true)}
+                      className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors flex items-center gap-1"
+                    >
+                      <i className="fas fa-trash"></i>
+                      حذف
+                    </button>
+                    <button
+                      onClick={() => setSelectedTemplates(new Set())}
+                      className="bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-400 transition-colors"
+                    >
+                      إلغاء التحديد
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -460,15 +605,161 @@ export default function MessagesPanel() {
             />
           )}
 
-          {/* Templates Table */}
+          {/* Templates Table/List */}
           {!state.loading && filteredTemplates.length > 0 && !showCreateForm && (
-            <ResponsiveTable
-              columns={tableColumns}
-              data={tableRows}
-              keyField="id"
-              rowActions={(row) => renderRowActions(row)}
-              emptyMessage="لا توجد رسائل"
-            />
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-8">
+                        <input
+                          type="checkbox"
+                          checked={selectedTemplates.size === filteredTemplates.length && filteredTemplates.length > 0}
+                          onChange={handleSelectAllTemplates}
+                          className="rounded cursor-pointer"
+                        />
+                      </th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الحالة</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">العنوان</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">المحتوى</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الأداء</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700 w-20">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredTemplates.map((template: any) => (
+                      <tr key={template.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedTemplates.has(template.id)}
+                            onChange={() => handleToggleTemplate(template.id)}
+                            className="rounded cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <div className="flex items-center gap-1">
+                            <i className={`fas fa-circle text-xs ${template.isActive ? 'text-green-500' : 'text-gray-400'}`}></i>
+                            <span className="text-xs text-gray-600">{template.isActive ? 'نشط' : 'معطّل'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900">{template.title}</td>
+                        <td className="px-6 py-4 text-sm text-gray-700 max-w-xs line-clamp-2">{template.content}</td>
+                        <td className="px-6 py-4 text-xs">
+                          <div className="space-y-1">
+                            <div className="text-gray-600">استخدام: {template.usageCount || 0}</div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-green-600 font-medium">{template.successRate || 0}%</span>
+                              <div className="w-12 h-1 bg-gray-200 rounded overflow-hidden">
+                                <div
+                                  className="h-full bg-green-500 transition-all"
+                                  style={{ width: `${template.successRate || 0}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex gap-1 justify-center">
+                            <button
+                              onClick={() => setShowPreview(true)}
+                              className="text-blue-600 hover:text-blue-800 p-1 transition-colors"
+                              title="معاينة"
+                            >
+                              <i className="fas fa-eye text-sm"></i>
+                            </button>
+                            <RequireFeature feature={Feature.EDIT_MESSAGE_TEMPLATE}>
+                              <button
+                                onClick={() => handleEdit(template)}
+                                className="text-green-600 hover:text-green-800 p-1 transition-colors"
+                                title="تعديل"
+                              >
+                                <i className="fas fa-edit text-sm"></i>
+                              </button>
+                            </RequireFeature>
+                            <button
+                              onClick={() => {
+                                setCloneSourceId(template.id);
+                                setShowCloneModal(true);
+                              }}
+                              className="text-purple-600 hover:text-purple-800 p-1 transition-colors"
+                              title="نسخ"
+                            >
+                              <i className="fas fa-copy text-sm"></i>
+                            </button>
+                            <RequireFeature feature={Feature.DELETE_MESSAGE_TEMPLATE}>
+                              <button
+                                onClick={() => handleDelete(template.id)}
+                                className="text-red-600 hover:text-red-800 p-1 transition-colors"
+                                title="حذف"
+                              >
+                                <i className="fas fa-trash text-sm"></i>
+                              </button>
+                            </RequireFeature>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Delete Confirmation Modal */}
+          {showBulkDelete && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">تأكيد الحذف</h3>
+                <p className="text-gray-700 mb-6">
+                  هل أنت متأكد من حذف {selectedTemplates.size} قالب رسالة؟ لا يمكن التراجع عن هذا الإجراء.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleBulkDelete}
+                    className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    حذف
+                  </button>
+                  <button
+                    onClick={() => setShowBulkDelete(false)}
+                    className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Clone Confirmation Modal */}
+          {showCloneModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">نسخ القالب</h3>
+                <p className="text-gray-700 mb-6">
+                  هل تريد نسخ هذا القالب؟ ستتم إضافة النسخة الجديدة إلى قائمة الرسائل.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleCloneTemplate}
+                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    نسخ
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowCloneModal(false);
+                      setCloneSourceId(null);
+                    }}
+                    className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

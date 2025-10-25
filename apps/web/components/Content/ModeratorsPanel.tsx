@@ -1,0 +1,682 @@
+'use client';
+
+import React, { useState, useCallback, useEffect } from 'react';
+import { ModeratorDetails, CreateModeratorRequest, UpdateModeratorRequest, AddUserToModeratorRequest } from '@/types/moderator';
+import moderatorsService from '@/services/moderatorsService';
+import { PanelWrapper } from '@/components/Common/PanelWrapper';
+import { PanelHeader } from '@/components/Common/PanelHeader';
+import { EmptyState } from '@/components/Common/EmptyState';
+
+interface ModeratorsState {
+  moderators: ModeratorDetails[];
+  loading: boolean;
+  error: string | null;
+  selectedModerator: ModeratorDetails | null;
+}
+
+/**
+ * ModeratorsPanel - Complete moderator management interface
+ * Features:
+ * - View all moderators with stats
+ * - Create new moderators
+ * - Edit moderator details
+ * - Manage moderator users
+ * - View quota usage
+ * - Check WhatsApp status
+ */
+export default function ModeratorsPanel() {
+  const [state, setState] = useState<ModeratorsState>({
+    moderators: [],
+    loading: true,
+    error: null,
+    selectedModerator: null,
+  });
+
+  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'users' | 'quota'>('overview');
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const [formData, setFormData] = useState<CreateModeratorRequest>({
+    fullName: '',
+    email: '',
+    username: '',
+    phoneNumber: '',
+    messagesQuota: 1000,
+    queuesQuota: 10,
+    whatsAppPhoneNumber: '',
+  });
+
+  const [editFormData, setEditFormData] = useState<UpdateModeratorRequest>({});
+  const [userFormData, setUserFormData] = useState<AddUserToModeratorRequest>({
+    fullName: '',
+    email: '',
+    username: '',
+    phoneNumber: '',
+  });
+
+  // Fetch moderators on mount
+  useEffect(() => {
+    fetchModerators();
+  }, []);
+
+  const fetchModerators = useCallback(async () => {
+    setState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const response = await moderatorsService.getAllModerators();
+      if (response.success && response.data) {
+        setState((prev) => ({
+          ...prev,
+          moderators: response.data as ModeratorDetails[],
+          loading: false,
+        }));
+      } else {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: response.error || 'Failed to fetch moderators',
+        }));
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to fetch moderators',
+      }));
+    }
+  }, []);
+
+  const handleCreateModerator = useCallback(async () => {
+    if (!formData.fullName || !formData.email || !formData.username) {
+      setState((prev) => ({
+        ...prev,
+        error: 'Please fill in all required fields',
+      }));
+      return;
+    }
+
+    try {
+      const response = await moderatorsService.createModerator(formData);
+      if (response.success) {
+        await fetchModerators();
+        setShowCreateForm(false);
+        setFormData({
+          fullName: '',
+          email: '',
+          username: '',
+          phoneNumber: '',
+          messagesQuota: 1000,
+          queuesQuota: 10,
+          whatsAppPhoneNumber: '',
+        });
+      } else {
+        setState((prev) => ({
+          ...prev,
+          error: response.error || 'Failed to create moderator',
+        }));
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: 'Failed to create moderator',
+      }));
+    }
+  }, [formData, fetchModerators]);
+
+  const handleUpdateModerator = useCallback(async () => {
+    if (!state.selectedModerator) return;
+
+    try {
+      const response = await moderatorsService.updateModerator(
+        state.selectedModerator.id,
+        editFormData
+      );
+      if (response.success) {
+        await fetchModerators();
+        setShowEditForm(false);
+        setState((prev) => ({ ...prev, selectedModerator: null }));
+      } else {
+        setState((prev) => ({
+          ...prev,
+          error: response.error || 'Failed to update moderator',
+        }));
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: 'Failed to update moderator',
+      }));
+    }
+  }, [state.selectedModerator, editFormData, fetchModerators]);
+
+  const handleDeleteModerator = useCallback(async (moderatorId: number) => {
+    if (!confirm('Are you sure you want to delete this moderator?')) return;
+
+    try {
+      const response = await moderatorsService.deleteModerator(moderatorId);
+      if (response.success) {
+        await fetchModerators();
+      } else {
+        setState((prev) => ({
+          ...prev,
+          error: response.error || 'Failed to delete moderator',
+        }));
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: 'Failed to delete moderator',
+      }));
+    }
+  }, [fetchModerators]);
+
+  const handleAddUserToModerator = useCallback(async () => {
+    if (!state.selectedModerator || !userFormData.fullName || !userFormData.email || !userFormData.username) {
+      setState((prev) => ({
+        ...prev,
+        error: 'Please fill in all required fields',
+      }));
+      return;
+    }
+
+    try {
+      const response = await moderatorsService.addUserToModerator(
+        state.selectedModerator.id,
+        userFormData
+      );
+      if (response.success) {
+        await fetchModerators();
+        setShowAddUserModal(false);
+        setUserFormData({
+          fullName: '',
+          email: '',
+          username: '',
+          phoneNumber: '',
+        });
+      } else {
+        setState((prev) => ({
+          ...prev,
+          error: response.error || 'Failed to add user',
+        }));
+      }
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        error: 'Failed to add user',
+      }));
+    }
+  }, [state.selectedModerator, userFormData, fetchModerators]);
+
+  const filteredModerators = state.moderators.filter((m) =>
+    m.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <PanelWrapper isLoading={state.loading}>
+      <PanelHeader
+        title="إدارة المشرفين"
+        icon="fa-user-tie"
+        description="إنشاء وإدارة المشرفين ومستخدميهم"
+        stats={[
+          {
+            label: 'إجمالي المشرفين',
+            value: state.moderators.length.toString(),
+            icon: 'fa-user-tie',
+          },
+          {
+            label: 'إجمالي المستخدمين',
+            value: state.moderators.reduce((sum, m) => sum + m.managedUsersCount, 0).toString(),
+            icon: 'fa-users',
+          },
+        ]}
+      />
+
+      {/* Error Alert */}
+      {state.error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-semibold text-red-900">خطأ</h3>
+              <p className="text-sm text-red-700">{state.error}</p>
+            </div>
+            <button
+              onClick={() => setState((prev) => ({ ...prev, error: null }))}
+              className="text-red-400 hover:text-red-600"
+            >
+              <i className="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-4 mb-6 border-b">
+        {(['overview', 'details', 'users', 'quota'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 font-medium transition-colors ${
+              activeTab === tab
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            {tab === 'overview' && '📋 نظرة عامة'}
+            {tab === 'details' && '📝 التفاصيل'}
+            {tab === 'users' && '👥 المستخدمون'}
+            {tab === 'quota' && '📊 الحصة'}
+          </button>
+        ))}
+      </div>
+
+      {/* Overview Tab */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Search and Create */}
+          <div className="flex justify-between items-center gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <i className="fas fa-search absolute right-3 top-3 text-gray-400"></i>
+                <input
+                  type="text"
+                  placeholder="ابحث عن مشرف..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pr-10 pl-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <i className="fas fa-plus"></i>
+              إضافة مشرف
+            </button>
+          </div>
+
+          {/* Create Form */}
+          {showCreateForm && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="font-bold text-lg mb-4">إضافة مشرف جديد</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  placeholder="الاسم الكامل"
+                  value={formData.fullName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, fullName: e.target.value })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="email"
+                  placeholder="البريد الإلكتروني"
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="اسم المستخدم"
+                  value={formData.username}
+                  onChange={(e) =>
+                    setFormData({ ...formData, username: e.target.value })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="tel"
+                  placeholder="رقم الهاتف"
+                  value={formData.phoneNumber}
+                  onChange={(e) =>
+                    setFormData({ ...formData, phoneNumber: e.target.value })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="tel"
+                  placeholder="رقم WhatsApp"
+                  value={formData.whatsAppPhoneNumber}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      whatsAppPhoneNumber: e.target.value,
+                    })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="number"
+                  placeholder="حصة الرسائل"
+                  value={formData.messagesQuota}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      messagesQuota: parseInt(e.target.value),
+                    })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="number"
+                  placeholder="حصة الرتب"
+                  value={formData.queuesQuota}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      queuesQuota: parseInt(e.target.value),
+                    })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={handleCreateModerator}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  إنشاء
+                </button>
+                <button
+                  onClick={() => setShowCreateForm(false)}
+                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Moderators Grid */}
+          {filteredModerators.length === 0 ? (
+            <EmptyState
+              icon="fa-user-tie"
+              title="لا توجد مشرفين"
+              message="ابدأ بإضافة مشرف جديد للنظام"
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredModerators.map((moderator) => (
+                <div
+                  key={moderator.id}
+                  className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow"
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-bold text-gray-900">{moderator.fullName}</h3>
+                      <p className="text-sm text-gray-500">{moderator.email}</p>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      moderator.isActive 
+                        ? 'bg-blue-100 text-blue-800' 
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {moderator.isActive ? 'نشط' : 'معطل'}
+                    </span>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="space-y-3 mb-4 pb-4 border-b">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">المستخدمون:</span>
+                      <span className="font-semibold">{moderator.managedUsersCount}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">الرتب:</span>
+                      <span className="font-semibold">{moderator.queuesCount}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">القوالب:</span>
+                      <span className="font-semibold">{moderator.templatesCount}</span>
+                    </div>
+                  </div>
+
+                  {/* WhatsApp Status */}
+                  <div className="mb-4 pb-4 border-b">
+                    <div className="flex items-center gap-2">
+                      <i className="fab fa-whatsapp text-green-600"></i>
+                      <span className="text-sm">
+                        {moderator.whatsappSession?.status === 'connected'
+                          ? '✅ متصل'
+                          : moderator.whatsappSession?.status === 'pending'
+                          ? '⏳ في الانتظار'
+                          : '❌ غير متصل'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setState((prev) => ({
+                          ...prev,
+                          selectedModerator: moderator,
+                        }));
+                        setShowEditForm(true);
+                      }}
+                      className="flex-1 text-blue-600 hover:text-blue-800 py-2 rounded border border-blue-200 hover:bg-blue-50 transition-colors"
+                    >
+                      <i className="fas fa-edit mr-2"></i>
+                      تعديل
+                    </button>
+                    <button
+                      onClick={() => {
+                        setState((prev) => ({
+                          ...prev,
+                          selectedModerator: moderator,
+                        }));
+                        setActiveTab('users');
+                      }}
+                      className="flex-1 text-green-600 hover:text-green-800 py-2 rounded border border-green-200 hover:bg-green-50 transition-colors"
+                    >
+                      <i className="fas fa-users mr-2"></i>
+                      المستخدمون
+                    </button>
+                    <button
+                      onClick={() => handleDeleteModerator(moderator.id)}
+                      className="flex-1 text-red-600 hover:text-red-800 py-2 rounded border border-red-200 hover:bg-red-50 transition-colors"
+                    >
+                      <i className="fas fa-trash mr-2"></i>
+                      حذف
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quota Tab */}
+      {activeTab === 'quota' && (
+        <div className="space-y-6">
+          <h3 className="font-bold text-lg">استخدام الحصة</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredModerators.map((moderator) => {
+              const messagesPercent =
+                (moderator.quota.consumedMessages / moderator.quota.messagesQuota) * 100;
+              const queuesPercent =
+                (moderator.quota.consumedQueues / moderator.quota.queuesQuota) * 100;
+
+              return (
+                <div
+                  key={moderator.id}
+                  className="bg-white border border-gray-200 rounded-lg p-6"
+                >
+                  <h4 className="font-bold text-gray-900 mb-4">{moderator.fullName}</h4>
+
+                  {/* Messages Quota */}
+                  <div className="mb-6">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">الرسائل</span>
+                      <span className="text-sm font-semibold">
+                        {moderator.quota.consumedMessages} / {moderator.quota.messagesQuota}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${
+                          messagesPercent > 80
+                            ? 'bg-red-500'
+                            : messagesPercent > 60
+                            ? 'bg-yellow-500'
+                            : 'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.min(messagesPercent, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Queues Quota */}
+                  <div>
+                    <div className="flex justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">الرتب</span>
+                      <span className="text-sm font-semibold">
+                        {moderator.quota.consumedQueues} / {moderator.quota.queuesQuota}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                      <div
+                        className={`h-full transition-all ${
+                          queuesPercent > 80
+                            ? 'bg-red-500'
+                            : queuesPercent > 60
+                            ? 'bg-yellow-500'
+                            : 'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.min(queuesPercent, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Users Tab */}
+      {activeTab === 'users' && state.selectedModerator && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="font-bold text-lg">
+              مستخدمو {state.selectedModerator.fullName}
+            </h3>
+            <button
+              onClick={() => setShowAddUserModal(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <i className="fas fa-plus mr-2"></i>
+              إضافة مستخدم
+            </button>
+          </div>
+
+          {/* Add User Modal */}
+          {showAddUserModal && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h4 className="font-bold text-lg mb-4">إضافة مستخدم جديد</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <input
+                  type="text"
+                  placeholder="الاسم الكامل"
+                  value={userFormData.fullName}
+                  onChange={(e) =>
+                    setUserFormData({ ...userFormData, fullName: e.target.value })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="email"
+                  placeholder="البريد الإلكتروني"
+                  value={userFormData.email}
+                  onChange={(e) =>
+                    setUserFormData({ ...userFormData, email: e.target.value })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="اسم المستخدم"
+                  value={userFormData.username}
+                  onChange={(e) =>
+                    setUserFormData({ ...userFormData, username: e.target.value })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="tel"
+                  placeholder="رقم الهاتف"
+                  value={userFormData.phoneNumber}
+                  onChange={(e) =>
+                    setUserFormData({
+                      ...userFormData,
+                      phoneNumber: e.target.value,
+                    })
+                  }
+                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddUserToModerator}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  إضافة
+                </button>
+                <button
+                  onClick={() => setShowAddUserModal(false)}
+                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Users Table */}
+          {state.selectedModerator.managedUsersCount === 0 ? (
+            <EmptyState
+              icon="fa-user"
+              title="لا يوجد مستخدمون"
+              message="لم يتم إضافة أي مستخدمين لهذا المشرف بعد"
+            />
+          ) : (
+            <div className="bg-white rounded-lg overflow-hidden border border-gray-200">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الاسم</th>
+                    <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">البريد الإلكتروني</th>
+                    <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">اسم المستخدم</th>
+                    <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {state.selectedModerator.managedUsersCount > 0 && (
+                    <tr className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm">عينة مستخدم</td>
+                      <td className="px-6 py-4 text-sm">user@clinic.com</td>
+                      <td className="px-6 py-4 text-sm">user_name</td>
+                      <td className="px-6 py-4 text-center">
+                        <button className="text-red-600 hover:text-red-800">
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </PanelWrapper>
+  );
+}

@@ -17,6 +17,7 @@ namespace Clinics.Infrastructure
         public DbSet<Session> Sessions => Set<Session>();
         public DbSet<WhatsAppSession> WhatsAppSessions => Set<WhatsAppSession>();
         public DbSet<MessageSession> MessageSessions => Set<MessageSession>();
+        public DbSet<ModeratorSettings> ModeratorSettings => Set<ModeratorSettings>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -24,6 +25,7 @@ namespace Clinics.Infrastructure
 
             modelBuilder.Entity<User>().HasIndex(u => u.Username).IsUnique();
             modelBuilder.Entity<Queue>().HasIndex(q => q.DoctorName);
+            modelBuilder.Entity<Queue>().HasIndex(q => q.ModeratorId);
             modelBuilder.Entity<Patient>().HasIndex(p => new { p.QueueId, p.Position });
 
             modelBuilder.Entity<Patient>()
@@ -32,11 +34,45 @@ namespace Clinics.Infrastructure
                 .HasForeignKey(p => p.QueueId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            modelBuilder.Entity<Queue>()
+                .HasOne(q => q.Moderator)
+                .WithMany()
+                .HasForeignKey(q => q.ModeratorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<MessageTemplate>().HasIndex(t => t.CreatedBy);
+            modelBuilder.Entity<MessageTemplate>().HasIndex(t => t.ModeratorId);
+            modelBuilder.Entity<MessageTemplate>()
+                .HasOne(t => t.Moderator)
+                .WithMany()
+                .HasForeignKey(t => t.ModeratorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<Message>().HasIndex(m => new { m.Status, m.CreatedAt });
+            modelBuilder.Entity<Message>().HasIndex(m => m.ModeratorId);
+            modelBuilder.Entity<Message>()
+                .HasOne(m => m.Moderator)
+                .WithMany()
+                .HasForeignKey(m => m.ModeratorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<FailedTask>().HasIndex(f => f.RetryCount);
             modelBuilder.Entity<Quota>().HasIndex(q => q.ModeratorUserId);
             modelBuilder.Entity<MessageSession>().HasIndex(s => new { s.Status, s.StartTime });
+
+            modelBuilder.Entity<User>()
+                .HasOne(u => u.Moderator)
+                .WithMany(u => u.ManagedUsers)
+                .HasForeignKey(u => u.ModeratorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ModeratorSettings>()
+                .HasOne(m => m.Moderator)
+                .WithMany()
+                .HasForeignKey(m => m.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ModeratorSettings>().HasIndex(m => m.ModeratorUserId).IsUnique();
 
             modelBuilder.Entity<MessageTemplate>().Property(t => t.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<Message>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
@@ -45,6 +81,8 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<Session>().Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<WhatsAppSession>().Property(w => w.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<MessageSession>().Property(s => s.StartTime).HasDefaultValueSql("SYSUTCDATETIME()");
+            modelBuilder.Entity<ModeratorSettings>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            modelBuilder.Entity<ModeratorSettings>().Property(m => m.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
         }
     }
 }

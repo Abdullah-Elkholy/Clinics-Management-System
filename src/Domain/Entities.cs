@@ -35,6 +35,11 @@ namespace Clinics.Domain
         [ForeignKey(nameof(ModeratorId))]
         public User? Moderator { get; set; }
 
+        /// <summary>
+        /// For moderator/admin roles: Collection of users managed by this moderator.
+        /// </summary>
+        public ICollection<User> ManagedUsers { get; set; } = new List<User>();
+
         // Expose enum representation for server-side logic
         [NotMapped]
         public UserRole RoleEnum => UserRoleExtensions.FromRoleName(Role);
@@ -63,6 +68,16 @@ namespace Clinics.Domain
 
         [Required]
         public int CreatedBy { get; set; }
+
+        /// <summary>
+        /// The moderator who owns this queue.
+        /// All users under this moderator can access and use this queue.
+        /// </summary>
+        [Required]
+        public int ModeratorId { get; set; }
+
+        [ForeignKey(nameof(ModeratorId))]
+        public User? Moderator { get; set; }
 
         [Required]
         public int CurrentPosition { get; set; }
@@ -116,11 +131,21 @@ namespace Clinics.Domain
         [Required]
         public int CreatedBy { get; set; }
 
-        [StringLength(100)]
-        public string? Moderator { get; set; }
+        /// <summary>
+        /// The moderator who owns this message template.
+        /// All queues under this moderator can use these templates.
+        /// </summary>
+        [Required]
+        public int ModeratorId { get; set; }
+
+        [ForeignKey(nameof(ModeratorId))]
+        public User? Moderator { get; set; }
 
         [Required]
         public bool IsShared { get; set; }
+
+        [Required]
+        public bool IsActive { get; set; } = true;
 
         [Required]
         public DateTime CreatedAt { get; set; }
@@ -139,6 +164,16 @@ namespace Clinics.Domain
         public int? QueueId { get; set; }
 
         public int? SenderUserId { get; set; }
+
+        /// <summary>
+        /// The moderator associated with this message.
+        /// Tracks quota consumption and session usage per moderator.
+        /// </summary>
+        [Required]
+        public int ModeratorId { get; set; }
+
+        [ForeignKey(nameof(ModeratorId))]
+        public User? Moderator { get; set; }
 
         [StringLength(100)]
         public string? ProviderMessageId { get; set; }
@@ -337,5 +372,39 @@ namespace Clinics.Domain
         public DateTime? EndTime { get; set; }
 
         public DateTime? LastUpdated { get; set; }
+    }
+
+    /// <summary>
+    /// Settings and configuration specific to each moderator
+    /// </summary>
+    [Table("ModeratorSettings")]
+    public class ModeratorSettings
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// WhatsApp phone number associated with this moderator
+        /// </summary>
+        [StringLength(20)]
+        [Phone]
+        public string? WhatsAppPhoneNumber { get; set; }
+
+        /// <summary>
+        /// Whether this moderator's settings are active
+        /// </summary>
+        public bool IsActive { get; set; } = true;
+
+        [Required]
+        public DateTime CreatedAt { get; set; }
+
+        [Required]
+        public DateTime UpdatedAt { get; set; }
     }
 }

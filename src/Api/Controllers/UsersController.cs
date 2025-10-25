@@ -4,59 +4,324 @@ using Clinics.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Clinics.Api.DTOs;
+using System.Security.Claims;
+
 namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "primary_admin")]
+    [Authorize]
     public class UsersController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
-        public UsersController(ApplicationDbContext db) { _db = db; }
+        private readonly ILogger<UsersController> _logger;
 
+        public UsersController(ApplicationDbContext db, ILogger<UsersController> logger)
+        {
+            _db = db;
+            _logger = logger;
+        }
+
+        /// <summary>
+        /// Get all users - Admins see all, Moderators see their managed users
+        /// </summary>
         [HttpGet]
-        public async Task<IActionResult> GetAll() => Ok(new { success = true, data = await _db.Users.ToListAsync() });
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> GetAll()
+        {
+            try
+            {
+                var user = User.FindFirst(ClaimTypes.NameIdentifier);
+                var currentUserId = int.Parse(user?.Value ?? "0");
+                var currentUser = await _db.Users.FindAsync(currentUserId);
 
+                IQueryable<User> query = _db.Users;
+
+                // Admins see all users
+                if (currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin")
+                {
+                    // All users
+                }
+                // Moderators see only their managed users
+                else if (currentUser?.Role == "moderator")
+                {
+                    query = query.Where(u => u.ModeratorId == currentUserId);
+                }
+                else
+                {
+                    return Forbid();
+                }
+
+                var users = await query.ToListAsync();
+                return Ok(new { success = true, data = users });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching users");
+                return StatusCode(500, new { success = false, error = "Error fetching users" });
+            }
+        }
+
+        /// <summary>
+        /// Get specific user
+        /// </summary>
         [HttpGet("{id}")]
-        public async Task<IActionResult> Get(int id) => Ok(new { success = true, data = await _db.Users.FindAsync(id) });
+        public async Task<IActionResult> Get(int id)
+        {
+            try
+            {
+                var user = User.FindFirst(ClaimTypes.NameIdentifier);
+                var currentUserId = int.Parse(user?.Value ?? "0");
+                var currentUser = await _db.Users.FindAsync(currentUserId);
 
+                var targetUser = await _db.Users.FindAsync(id);
+                if (targetUser == null)
+                    return NotFound(new { success = false, error = "User not found" });
+
+                // User can view themselves
+                if (currentUserId == id)
+                {
+                    return Ok(new { success = true, data = targetUser });
+                }
+
+                // Admin can view anyone
+                if (currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin")
+                {
+                    return Ok(new { success = true, data = targetUser });
+                }
+
+                // Moderator can view their managed users
+                if (currentUser?.Role == "moderator" && targetUser.ModeratorId == currentUserId)
+                {
+                    return Ok(new { success = true, data = targetUser });
+                }
+
+                return Forbid();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching user");
+                return StatusCode(500, new { success = false, error = "Error fetching user" });
+            }
+        }
+
+        /// <summary>
+        /// Create a new user (must specify moderator for regular users)
+        /// </summary>
         [HttpPost]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> Create([FromBody] CreateUserRequest req)
         {
-            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FullName))
-                return BadRequest(new { success = false, error = "Username and FullName required" });
-
-            // Determine desired role name (use enum mapping on server side for consistency)
-            var desiredRoleName = string.IsNullOrWhiteSpace(req.Role)
-                ? Clinics.Domain.UserRole.User.ToRoleName()
-                : Clinics.Domain.UserRoleExtensions.FromRoleName(req.Role).ToRoleName();
-
-            var user = new User { Username = req.Username, FullName = req.FullName, Role = desiredRoleName };
-
-            if (!string.IsNullOrEmpty(req.Password))
+            try
             {
-                var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
-                user.PasswordHash = hasher.HashPassword(user, req.Password);
-            }
+                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FullName))
+                    return BadRequest(new { success = false, error = "Username and FullName required" });
 
-            _db.Users.Add(user);
-            await _db.SaveChangesAsync();
-            return Ok(new { success = true, data = user });
+                // Check if username exists
+                var existingUser = await _db.Users
+                    .Where(u => u.Username == req.Username)
+                    .FirstOrDefaultAsync();
+
+                if (existingUser != null)
+                    return BadRequest(new { success = false, error = "Username already exists" });
+
+                // Determine desired role name
+                var desiredRoleName = string.IsNullOrWhiteSpace(req.Role)
+                    ? Clinics.Domain.UserRole.User.ToRoleName()
+                    : Clinics.Domain.UserRoleExtensions.FromRoleName(req.Role).ToRoleName();
+
+                // If creating a regular user, moderator must be specified
+                if (desiredRoleName == "user" && !req.ModeratorId.HasValue)
+                    return BadRequest(new { success = false, error = "ModeratorId required for user role" });
+
+                // Validate moderator exists if specified
+                if (req.ModeratorId.HasValue)
+                {
+                    var moderator = await _db.Users
+                        .Where(u => u.Id == req.ModeratorId.Value && u.Role == "moderator")
+                        .FirstOrDefaultAsync();
+
+                    if (moderator == null)
+                        return BadRequest(new { success = false, error = "Invalid moderator" });
+                }
+
+                var user = new User
+                {
+                    Username = req.Username,
+                    FullName = req.FullName,
+                    Role = desiredRoleName,
+                    ModeratorId = req.ModeratorId,
+                    Email = req.Email,
+                    PhoneNumber = req.PhoneNumber
+                };
+
+                if (!string.IsNullOrEmpty(req.Password))
+                {
+                    var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+                    user.PasswordHash = hasher.HashPassword(user, req.Password);
+                }
+
+                _db.Users.Add(user);
+                await _db.SaveChangesAsync();
+
+                return Ok(new { success = true, data = user });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating user");
+                return StatusCode(500, new { success = false, error = "Error creating user" });
+            }
         }
 
+        /// <summary>
+        /// Update a user
+        /// </summary>
+        [HttpPut("{id}")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateUserRequest req)
+        {
+            try
+            {
+                var user = User.FindFirst(ClaimTypes.NameIdentifier);
+                var currentUserId = int.Parse(user?.Value ?? "0");
+                var currentUser = await _db.Users.FindAsync(currentUserId);
+
+                var targetUser = await _db.Users.FindAsync(id);
+                if (targetUser == null)
+                    return NotFound(new { success = false, error = "User not found" });
+
+                // Only admin can update, or moderator can update their managed users
+                if (currentUser?.Role != "primary_admin" && currentUser?.Role != "secondary_admin")
+                {
+                    if (currentUser?.Role != "moderator" || targetUser.ModeratorId != currentUserId)
+                        return Forbid();
+                }
+
+                if (!string.IsNullOrEmpty(req.FullName))
+                    targetUser.FullName = req.FullName;
+
+                if (!string.IsNullOrEmpty(req.Email))
+                    targetUser.Email = req.Email;
+
+                if (!string.IsNullOrEmpty(req.PhoneNumber))
+                    targetUser.PhoneNumber = req.PhoneNumber;
+
+                await _db.SaveChangesAsync();
+                return Ok(new { success = true, data = targetUser });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user");
+                return StatusCode(500, new { success = false, error = "Error updating user" });
+            }
+        }
+
+        /// <summary>
+        /// Delete a user
+        /// </summary>
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            try
+            {
+                var user = User.FindFirst(ClaimTypes.NameIdentifier);
+                var currentUserId = int.Parse(user?.Value ?? "0");
+                var currentUser = await _db.Users.FindAsync(currentUserId);
+
+                var targetUser = await _db.Users.FindAsync(id);
+                if (targetUser == null)
+                    return NotFound(new { success = false, error = "User not found" });
+
+                // Only admin can delete, or moderator can delete their managed users
+                if (currentUser?.Role != "primary_admin" && currentUser?.Role != "secondary_admin")
+                {
+                    if (currentUser?.Role != "moderator" || targetUser.ModeratorId != currentUserId)
+                        return Forbid();
+                }
+
+                // Cannot delete if user has sub-users
+                var hasManagedUsers = await _db.Users
+                    .Where(u => u.ModeratorId == id)
+                    .AnyAsync();
+
+                if (hasManagedUsers)
+                    return BadRequest(new { success = false, error = "Cannot delete user with managed users" });
+
+                _db.Users.Remove(targetUser);
+                await _db.SaveChangesAsync();
+
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting user");
+                return StatusCode(500, new { success = false, error = "Error deleting user" });
+            }
+        }
+
+        /// <summary>
+        /// Reset user password
+        /// </summary>
         [HttpPost("{id}/reset-password")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<IActionResult> ResetPassword(int id, [FromBody] ResetPasswordDTO req)
         {
-            if (req == null || string.IsNullOrWhiteSpace(req.Password))
-                return BadRequest(new { success = false, error = "Password is required" });
+            try
+            {
+                if (req == null || string.IsNullOrWhiteSpace(req.Password))
+                    return BadRequest(new { success = false, error = "Password is required" });
 
-            var user = await _db.Users.FindAsync(id);
-            if (user == null) return NotFound(new { success = false, error = "User not found" });
+                var user = User.FindFirst(ClaimTypes.NameIdentifier);
+                var currentUserId = int.Parse(user?.Value ?? "0");
+                var currentUser = await _db.Users.FindAsync(currentUserId);
 
-            var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
-            user.PasswordHash = hasher.HashPassword(user, req.Password);
-            await _db.SaveChangesAsync();
-            return Ok(new { success = true });
+                var targetUser = await _db.Users.FindAsync(id);
+                if (targetUser == null)
+                    return NotFound(new { success = false, error = "User not found" });
+
+                // Only admin can reset, or moderator can reset their managed users
+                if (currentUser?.Role != "primary_admin" && currentUser?.Role != "secondary_admin")
+                {
+                    if (currentUser?.Role != "moderator" || targetUser.ModeratorId != currentUserId)
+                        return Forbid();
+                }
+
+                var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+                targetUser.PasswordHash = hasher.HashPassword(targetUser, req.Password);
+                await _db.SaveChangesAsync();
+
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting password");
+                return StatusCode(500, new { success = false, error = "Error resetting password" });
+            }
         }
+    }
+
+    /// <summary>
+    /// Request to create a user
+    /// </summary>
+    public class CreateUserRequest
+    {
+        public string Username { get; set; } = null!;
+        public string FullName { get; set; } = null!;
+        public string? Email { get; set; }
+        public string? PhoneNumber { get; set; }
+        public string? Password { get; set; }
+        public string? Role { get; set; }
+        public int? ModeratorId { get; set; }
+    }
+
+    /// <summary>
+    /// Request to update a user
+    /// </summary>
+    public class UpdateUserRequest
+    {
+        public string? FullName { get; set; }
+        public string? Email { get; set; }
+        public string? PhoneNumber { get; set; }
     }
 }
