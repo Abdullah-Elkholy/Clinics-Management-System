@@ -2,8 +2,13 @@
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { COUNTRY_CODES } from '@/constants';
+import { validateCountryCode } from '@/utils/validation';
 import Modal from './Modal';
 import { useState } from 'react';
+import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
+import CustomCountryCodeInput from '@/components/Common/CustomCountryCodeInput';
+import { getEffectiveCountryCode } from '@/utils/core.utils';
 
 export default function EditPatientModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -12,13 +17,12 @@ export default function EditPatientModal() {
 
   const initialName = data?.patient?.name ?? '';
   const initialPhone = data?.patient?.phone ?? '';
-  const initialQueue = data?.patient?.queue ?? 1;
   const initialCountryCode = data?.patient?.countryCode ?? '+20';
 
   const [name, setName] = useState(initialName);
   const [phone, setPhone] = useState(initialPhone);
-  const [queue, setQueue] = useState(initialQueue.toString());
   const [countryCode, setCountryCode] = useState(initialCountryCode);
+  const [customCountryCode, setCustomCountryCode] = useState('');
 
   const isOpen = openModals.has('editPatient');
 
@@ -28,9 +32,6 @@ export default function EditPatientModal() {
   }
   if (isOpen && (phone === '' && initialPhone !== '')) {
     setPhone(initialPhone);
-  }
-  if (isOpen && queue === '' && initialQueue) {
-    setQueue(initialQueue.toString());
   }
   if (isOpen && countryCode === initialCountryCode && initialCountryCode !== data?.patient?.countryCode) {
     setCountryCode(data?.patient?.countryCode ?? '+20');
@@ -44,9 +45,13 @@ export default function EditPatientModal() {
       return;
     }
 
-    const queueNum = parseInt(queue, 10);
-    if (isNaN(queueNum) || queueNum <= 0) {
-      addToast('يرجى إدخال ترتيب انتظار صحيح', 'error');
+    // Get effective country code (handle "OTHER" option)
+    const effectiveCountryCode = getEffectiveCountryCode(countryCode, customCountryCode);
+
+    // Validate country code
+    const countryCodeError = validateCountryCode(effectiveCountryCode, true);
+    if (countryCodeError) {
+      addToast(`خطأ في كود الدولة: ${countryCodeError}`, 'error');
       return;
     }
 
@@ -54,8 +59,7 @@ export default function EditPatientModal() {
       ...data?.patient,
       name: name.trim(),
       phone: phone.trim(),
-      countryCode: countryCode,
-      queue: queueNum,
+      countryCode: effectiveCountryCode,
     };
 
     // call onSave callback if provided
@@ -82,18 +86,6 @@ export default function EditPatientModal() {
       <form onSubmit={handleSubmit} className="space-y-4">
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">ترتيب الانتظار</label>
-          <input
-            type="number"
-            value={queue}
-            onChange={(e) => setQueue(e.target.value)}
-            placeholder="أدخل ترتيب الانتظار"
-            min="1"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
           <input
             type="text"
@@ -106,26 +98,24 @@ export default function EditPatientModal() {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">كود الدولة</label>
-          <select
+          <CountryCodeSelector
             value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="+20">مصر (+20)</option>
-            <option value="+966">السعودية (+966)</option>
-            <option value="+971">الإمارات (+971)</option>
-            <option value="+974">قطر (+974)</option>
-            <option value="+965">الكويت (+965)</option>
-            <option value="+968">عمان (+968)</option>
-            <option value="+973">البحرين (+973)</option>
-            <option value="+962">الأردن (+962)</option>
-            <option value="+963">سوريا (+963)</option>
-            <option value="+961">لبنان (+961)</option>
-            <option value="+212">المغرب (+212)</option>
-            <option value="+216">تونس (+216)</option>
-            <option value="+213">الجزائر (+213)</option>
-          </select>
+            onChange={setCountryCode}
+            size="md"
+            showOptgroups={true}
+          />
         </div>
+
+        {/* Custom Country Code Input */}
+        {countryCode === 'OTHER' && (
+          <CustomCountryCodeInput
+            value={customCountryCode}
+            onChange={setCustomCountryCode}
+            size="md"
+            placeholder="مثال: +44 (بريطانيا) أو +1 (أمريكا) أو +86 (الصين)"
+            showFullInfo={true}
+          />
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف</label>

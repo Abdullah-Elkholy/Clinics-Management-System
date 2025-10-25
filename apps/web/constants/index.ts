@@ -30,9 +30,16 @@ export const TEST_CREDENTIALS = {
 };
 
 export const COUNTRY_CODES = [
-  { code: '+20', country: 'مصر' },
-  { code: '+966', country: 'السعودية' },
-  { code: '+971', country: 'الإمارات' },
+  { code: '+20', country: 'مصر (Egypt)', countryName: 'Egypt', flag: '🇪🇬' },
+  { code: '+966', country: 'السعودية (Saudi Arabia)', countryName: 'Saudi Arabia', flag: '🇸🇦' },
+  { code: '+971', country: 'الإمارات (UAE)', countryName: 'United Arab Emirates', flag: '🇦🇪' },
+  { code: '+968', country: 'عمان (Oman)', countryName: 'Oman', flag: '🇴🇲' },
+  { code: '+965', country: 'الكويت (Kuwait)', countryName: 'Kuwait', flag: '🇰🇼' },
+  { code: '+974', country: 'قطر (Qatar)', countryName: 'Qatar', flag: '🇶🇦' },
+  { code: '+973', country: 'البحرين (Bahrain)', countryName: 'Bahrain', flag: '🇧🇭' },
+  { code: '+212', country: 'المغرب (Morocco)', countryName: 'Morocco', flag: '🇲🇦' },
+  { code: '+216', country: 'تونس (Tunisia)', countryName: 'Tunisia', flag: '🇹🇳' },
+  { code: '+213', country: 'الجزائر (Algeria)', countryName: 'Algeria', flag: '🇩🇿' },
 ];
 
 export const ROLE_NAMES = {

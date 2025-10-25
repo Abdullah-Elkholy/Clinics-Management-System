@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import SharedHeader from './SharedHeader';
-import StatsSection from './StatsSection';
+import { useState, useCallback, useMemo } from 'react';
+import { MOCK_COMPLETED_SESSIONS } from '@/constants/mockData';
+import { PanelWrapper } from '@/components/Common/PanelWrapper';
+import { PanelHeader } from '@/components/Common/PanelHeader';
+import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
+import { EmptyState } from '@/components/Common/EmptyState';
+import { Badge } from '@/components/Common/ResponsiveUI';
 
 interface Patient {
   id: number;
@@ -29,40 +33,12 @@ interface Session {
 export default function CompletedTasksPanel() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<number>>>(new Map());
-  const [showMessage, setShowMessage] = useState(true);
-  const [sessions, setSessions] = useState<Session[]>([
-    {
-      id: '1',
-      sessionId: 'SES-15-JAN-003',
-      clinicName: 'عيادة محمد الشرقاوي',
-      doctorName: 'د. محمد الشرقاوي',
-      createdAt: '2025-01-14 10:30:00',
-      completedAt: '2025-01-14 12:45:25',
-      totalPatients: 25,
-      sentCount: 25,
-      patients: [
-        { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 12:30:15' },
-        { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 12:35:42' },
-        { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 3, status: 'تم', completedAt: '2025-01-14 12:42:08' },
-      ],
-    },
-    {
-      id: '2',
-      sessionId: 'SES-15-JAN-004',
-      clinicName: 'عيادة سارة إبراهيم',
-      doctorName: 'د. سارة إبراهيم',
-      createdAt: '2025-01-14 14:00:00',
-      completedAt: '2025-01-14 15:30:50',
-      totalPatients: 18,
-      sentCount: 18,
-      patients: [
-        { id: 4, name: 'علي حسن', phone: '01055667788', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 15:15:33' },
-        { id: 5, name: 'ليلى محمد', phone: '01011223344', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 15:28:47' },
-      ],
-    },
-  ]);
+  const [sessions, setSessions] = useState<Session[]>(MOCK_COMPLETED_SESSIONS as Session[]);
 
-  const toggleSessionExpand = (sessionId: string) => {
+  /**
+   * Toggle session expand - memoized
+   */
+  const toggleSessionExpand = useCallback((sessionId: string) => {
     setExpandedSessions((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(sessionId)) {
@@ -72,9 +48,12 @@ export default function CompletedTasksPanel() {
       }
       return newSet;
     });
-  };
+  }, []);
 
-  const togglePatientSelection = (sessionId: string, patientId: number) => {
+  /**
+   * Toggle patient selection - memoized
+   */
+  const togglePatientSelection = useCallback((sessionId: string, patientId: number) => {
     setSelectedPatients((prev) => {
       const newMap = new Map(prev);
       if (!newMap.has(sessionId)) {
@@ -88,9 +67,31 @@ export default function CompletedTasksPanel() {
       }
       return newMap;
     });
-  };
+  }, []);
 
-  const deleteSelectedPatients = (sessionId: string) => {
+  /**
+   * Toggle all patients - memoized
+   */
+  const toggleAllPatients = useCallback((sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const selectedSet = selectedPatients.get(sessionId) || new Set();
+    setSelectedPatients((prev) => {
+      const newMap = new Map(prev);
+      if (selectedSet.size === session.patients.length) {
+        newMap.delete(sessionId);
+      } else {
+        newMap.set(sessionId, new Set(session.patients.map((p) => p.id)));
+      }
+      return newMap;
+    });
+  }, [selectedPatients, sessions]);
+
+  /**
+   * Delete selected patients - memoized
+   */
+  const deleteSelectedPatients = useCallback((sessionId: string) => {
     const selected = selectedPatients.get(sessionId) || new Set();
     if (selected.size === 0) return;
 
@@ -112,227 +113,276 @@ export default function CompletedTasksPanel() {
       newMap.delete(sessionId);
       return newMap;
     });
-  };
+  }, [selectedPatients]);
 
-  const fullMessage = 'مرحباً {PN}، ترتيبك {PQP}، الموضع الحالي {CQP}، الوقت المتبقي {ETR} دقيقة';
+  /**
+   * Memoize computed stats
+   */
+  const stats = useMemo(() => [
+    {
+      label: 'إجمالي الجلسات المكتملة',
+      value: sessions.length.toString(),
+      icon: 'fa-check-double',
+    },
+    {
+      label: 'الرسائل المرسلة بنجاح',
+      value: sessions.reduce((sum, s) => sum + s.sentCount, 0).toString(),
+      icon: 'fa-check-circle',
+    },
+    {
+      label: 'إجمالي المرضى في الجلسة',
+      value: sessions.reduce((sum, s) => sum + s.patients.length, 0).toString(),
+      icon: 'fa-users',
+    },
+  ], [sessions]);
+
+  /**
+   * Memoize table columns
+   */
+  const tableColumns = useMemo(() => [
+    { key: 'checkbox', label: '', width: '5%' },
+    { key: 'name', label: 'الاسم', width: '25%' },
+    { key: 'phone', label: 'رقم الجوال', width: '20%' },
+    { key: 'completedAt', label: 'وقت الإكمال', width: '25%' },
+    { key: 'status', label: 'الحالة', width: '25%' },
+  ], []);
+
+  /**
+   * Render patient row
+   */
+  const renderPatientRow = useCallback((patient: Patient, sessionId: string) => ({
+    id: patient.id,
+    checkbox: (
+      <input
+        type="checkbox"
+        checked={selectedPatients.get(sessionId)?.has(patient.id) || false}
+        onChange={() => togglePatientSelection(sessionId, patient.id)}
+        className="w-4 h-4 rounded cursor-pointer"
+      />
+    ),
+    name: patient.name,
+    phone: `${patient.countryCode || '+966'} ${patient.phone}`,
+    completedAt: patient.completedAt || 'غير معروف',
+    status: (
+      <Badge color="green" label="✓ مكتملة" />
+    ),
+  }), [selectedPatients, togglePatientSelection]);
+
+  if (sessions.length === 0) {
+    return (
+      <PanelWrapper>
+        <PanelHeader
+          title="المهام المكتملة"
+          icon="fa-check-double"
+          description={`عرض جميع المهام المكتملة والمرسلة بنجاح - 0 جلسة`}
+          stats={stats}
+        />
+        <EmptyState
+          icon="fa-inbox"
+          title="لا توجد مهام مكتملة"
+          message="جميع المهام قيد المعالجة أو لم تبدأ بعد"
+          actionLabel="العودة للصفحة الرئيسية"
+          onAction={() => window.history.back()}
+        />
+      </PanelWrapper>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <SharedHeader 
-        title="المهام المكتملة" 
-        description="عرض جميع المهام المكتملة والمرسلة بنجاح"
+    <PanelWrapper>
+      <PanelHeader
+        title={`المهام المكتملة ${sessions.length > 0 ? `- ${sessions[0].doctorName}` : ''}`}
+        icon="fa-check-double"
+        description={`عرض جميع المهام المكتملة والمرسلة بنجاح - ${sessions.length} جلسة`}
+        stats={stats}
       />
 
-      <StatsSection 
-        gradient="bg-gradient-to-br from-green-500 to-green-600"
-        stats={[
-          {
-            label: 'إجمالي الجلسات المكتملة',
-            value: sessions.length,
-            icon: 'check-double'
-          },
-          {
-            label: 'إجمالي الرسائل المرسلة',
-            value: sessions.reduce((sum, s) => sum + s.sentCount, 0),
-            icon: 'envelope'
-          },
-          {
-            label: 'إجمالي المرضى المرسل إليهم',
-            value: sessions.reduce((sum, s) => sum + s.patients.length, 0),
-            icon: 'users'
-          }
-        ]}
-      />
-
+      {/* Sessions List */}
       <div className="space-y-4">
         {sessions.map((session) => {
           const isExpanded = expandedSessions.has(session.id);
           const selectedCount = selectedPatients.get(session.id)?.size || 0;
+          const progressPercent = Math.round((session.sentCount / session.totalPatients) * 100);
 
           return (
-            <div key={session.id} className="bg-white rounded-lg shadow overflow-hidden">
-              {/* Session Header */}
+            <div
+              key={session.id}
+              className="bg-white rounded-lg shadow overflow-hidden border border-green-200"
+            >
+              {/* Session Header - Fully Clickable */}
               <div
-                className="px-6 py-4 bg-gradient-to-r from-green-50 to-emerald-50 border-b cursor-pointer hover:bg-green-100 transition-colors flex items-center justify-between"
+                className="px-6 py-4 border-b bg-gradient-to-r from-green-50 to-emerald-50 cursor-pointer hover:from-green-100 hover:to-emerald-100 transition-colors"
                 onClick={() => toggleSessionExpand(session.id)}
               >
-                <div className="flex items-center gap-4 flex-1">
-                  <button className="text-green-600 hover:text-green-800 text-xl">
-                    <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
-                  </button>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
-                    <div className="flex gap-6 mt-2 text-sm text-gray-600">
-                      <span>
-                        <span className="font-medium">جلسة الإرسال:</span> {session.sessionId}
-                      </span>
-                      <span>
-                        <span className="font-medium">وقت الإنشاء:</span> {session.createdAt}
-                      </span>
-                      <span>
-                        <span className="font-medium">وقت الانتهاء:</span> {session.completedAt}
-                      </span>
+                <div className="flex items-center gap-4 justify-between">
+                  <div className="flex items-center gap-4 flex-1">
+                    {/* Collapse Button with Improved UI */}
+                    <div className="flex items-center gap-2">
+                      <button className="text-green-600 text-xl transition-transform duration-300">
+                        <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
+                      </button>
+                      <span className="text-sm font-medium text-green-600 whitespace-nowrap">القائمة</span>
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
+                        <Badge color="green" label="✓ مكتملة" />
+                      </div>
+                      <div className="text-sm text-gray-600 mt-2">
+                        <span>جلسة: <strong>{session.sessionId}</strong></span>
+                        <span className="mx-4">تاريخ الإنشاء: <strong>{session.createdAt}</strong></span>
+                        <span className="mx-4">تاريخ الإكمال: <strong>{session.completedAt}</strong></span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-bold">
-                    ✓ مكتمل
+
+                  <div className="flex items-center gap-4">
+                    {/* Completion Summary */}
+                    <div className="text-right">
+                      <div className="text-sm font-medium text-gray-700 mb-1">نسبة الإكمال</div>
+                      <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-green-500"
+                          style={{ width: `${progressPercent}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">{progressPercent}%</div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Expanded Content */}
+              {/* Session Content (Expandable) */}
               {isExpanded && (
-                <>
-                  {/* Selected Patients Info & Delete Button */}
-                  {session.patients.length > 0 && (
-                    <div className="px-6 py-3 bg-gray-50 border-b flex items-center justify-between">
-                      <span className="text-sm text-gray-600">
-                        {selectedCount > 0 ? `تم تحديد ${selectedCount} مريض` : ''}
-                      </span>
-                      <button
-                        onClick={() => deleteSelectedPatients(session.id)}
-                        disabled={selectedCount === 0}
-                        className="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1 rounded text-sm disabled:bg-gray-100 disabled:text-gray-400 transition-colors"
-                      >
-                        <i className="fas fa-trash ml-1"></i>
-                        حذف {selectedCount} مريض محدد
-                      </button>
+                <div className="p-6 bg-gray-50">
+                  {/* Session Stats */}
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="text-sm text-gray-600">إجمالي المرضى</div>
+                      <div className="text-2xl font-bold text-green-600">{session.totalPatients}</div>
                     </div>
-                  )}
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="text-sm text-gray-600">الرسائل المرسلة</div>
+                      <div className="text-2xl font-bold text-green-600">{session.sentCount}</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-4 border border-green-200">
+                      <div className="text-sm text-gray-600">معدل النجاح</div>
+                      <div className="text-2xl font-bold text-green-600">
+                        {Math.round((session.sentCount / session.totalPatients) * 100)}%
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Patients Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 border-b">
-                        <tr>
-                          <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-12">
-                            <input
-                              type="checkbox"
-                              checked={
-                                selectedCount > 0 &&
-                                selectedCount === session.patients.length
-                              }
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedPatients((prev) => {
-                                    const newMap = new Map(prev);
-                                    newMap.set(
-                                      session.id,
-                                      new Set(session.patients.map((p) => p.id))
-                                    );
-                                    return newMap;
-                                  });
-                                } else {
-                                  setSelectedPatients((prev) => {
-                                    const newMap = new Map(prev);
-                                    newMap.delete(session.id);
-                                    return newMap;
-                                  });
-                                }
-                              }}
-                              className="w-4 h-4 rounded cursor-pointer"
-                            />
-                          </th>
-                          <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
-                            الاسم
-                          </th>
-                          <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
-                            رقم الجوال
-                          </th>
-                          {showMessage && (
-                            <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
-                              <div className="flex items-center justify-between gap-2">
-                                <button
-                                  onClick={() => setShowMessage(false)}
-                                  className="text-gray-400 hover:text-gray-600 transition"
-                                  title="إخفاء الرسالة"
-                                >
-                                  ✕
-                                </button>
-                                <span>الرسالة</span>
-                              </div>
-                            </th>
-                          )}
-                          <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
-                            <div className="flex items-center justify-between gap-2">
-                              <button
-                                onClick={() => setShowMessage(true)}
-                                className={`text-gray-400 hover:text-gray-600 transition ${showMessage ? 'hidden' : ''}`}
-                                title="عرض الرسالة"
-                              >
-                                ⊕
-                              </button>
-                              <span>الحالة</span>
+                  <div className="bg-white rounded-lg overflow-hidden border">
+                    <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div
+                          onClick={() => toggleAllPatients(session.id)}
+                          className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
+                          style={{
+                            borderColor: selectedCount === 0 ? '#d1d5db' : selectedCount === session.patients.length ? '#3b82f6' : '#f59e0b',
+                            backgroundColor: selectedCount === 0 ? 'white' : selectedCount === session.patients.length ? '#3b82f6' : '#fef3c7',
+                          }}
+                          title={selectedCount === 0 ? 'تحديد الكل' : selectedCount === session.patients.length ? 'إلغاء التحديد' : 'تحديد الكل'}
+                        >
+                          {selectedCount > 0 && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <i
+                                className={`fas text-white text-xs ${
+                                  selectedCount === session.patients.length ? 'fa-check' : 'fa-minus'
+                                }`}
+                              ></i>
                             </div>
-                          </th>
-                          <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
-                            وقت الإنجاز
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {session.patients
-                          .sort((a, b) => (a.queue ?? 0) - (b.queue ?? 0))
-                          .map((patient) => (
-                          <tr
-                            key={patient.id}
-                            className={`border-b hover:bg-gray-50 transition-colors ${
-                              selectedPatients.get(session.id)?.has(patient.id)
-                                ? 'bg-green-50'
-                                : ''
-                            }`}
-                          >
-                            <td className="px-6 py-3">
-                              <input
-                                type="checkbox"
-                                checked={
-                                  selectedPatients.get(session.id)?.has(patient.id) || false
-                                }
-                                onChange={() =>
-                                  togglePatientSelection(session.id, patient.id)
-                                }
-                                className="w-4 h-4 rounded cursor-pointer"
-                              />
-                            </td>
-                            <td className="px-6 py-3 text-sm font-medium text-gray-900">
-                              {patient.name}
-                            </td>
-                            <td className="px-6 py-3 text-sm text-gray-600">
-                              {patient.countryCode} {patient.phone}
-                            </td>
-                            {showMessage && (
-                              <td className="px-6 py-3 text-sm text-gray-600 max-w-xs">
-                                {fullMessage}
-                              </td>
-                            )}
-                            <td className="px-6 py-3 text-sm">
-                              <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-xs font-medium">
-                                {patient.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-3 text-sm text-gray-600">
-                              {patient.completedAt}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                          )}
+                        </div>
+                        <h4 className="font-bold text-gray-800">قائمة المرضى</h4>
+                        <span className="text-sm text-gray-600">
+                          {selectedCount} من {session.patients.length} محدد
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        {selectedCount > 0 && (
+                          <>
+                            <button
+                              onClick={() => setSelectedPatients(new Map(selectedPatients).set(session.id, new Set()))}
+                              className="text-sm text-red-600 hover:text-red-800"
+                            >
+                              إلغاء التحديد
+                            </button>
+                            <button
+                              onClick={() => deleteSelectedPatients(session.id)}
+                              className="text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                            >
+                              حذف ({selectedCount})
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {session.patients.length === 0 ? (
+                      <div className="p-8 text-center text-gray-600">
+                        <i className="fas fa-inbox text-3xl mb-2 opacity-50"></i>
+                        <p>لا يوجد مرضى في هذه الجلسة</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b">
+                            <tr>
+                              {tableColumns.map((col) => (
+                                <th
+                                  key={col.key}
+                                  style={{ width: col.width }}
+                                  className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                                >
+                                  {col.label}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {session.patients.map((patient) => {
+                              const row = renderPatientRow(patient, session.id);
+                              return (
+                                <tr
+                                  key={patient.id}
+                                  className="border-b hover:bg-gray-50 transition-colors"
+                                >
+                                  <td className="px-6 py-3 text-sm">{row.checkbox}</td>
+                                  <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
+                                  <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                                  <td className="px-6 py-3 text-sm text-gray-600">{row.completedAt}</td>
+                                  <td className="px-6 py-3 text-sm">{row.status}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
-                </>
+                </div>
               )}
             </div>
           );
         })}
-
-        {sessions.length === 0 && (
-          <div className="p-8 text-center text-gray-500 bg-white rounded-lg">
-            <i className="fas fa-check-double text-4xl text-green-500 mb-4"></i>
-            <p className="text-lg">لا توجد مهام مكتملة بعد</p>
-          </div>
-        )}
       </div>
-    </div>
+
+      {/* Info Box */}
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2 mt-6">
+        <h4 className="font-semibold text-green-900 flex items-center gap-2">
+          <i className="fas fa-info-circle"></i>
+          معلومات:
+        </h4>
+        <ul className="text-sm text-green-800 space-y-1">
+          <li>• هنا تجد جميع الجلسات التي تمت معالجتها بنجاح</li>
+          <li>• يمكنك عرض تفاصيل كل جلسة والمرضى المرسل إليهم</li>
+          <li>• يتم حفظ كل البيانات المكتملة للمراجعة والتقارير</li>
+          <li>• نسبة النجاح توضح فعالية كل جلسة</li>
+        </ul>
+      </div>
+    </PanelWrapper>
   );
 }

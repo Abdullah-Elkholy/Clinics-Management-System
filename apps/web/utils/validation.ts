@@ -192,3 +192,168 @@ export const validationRules = {
     category: (value: string) => validateRequired(value, 'الفئة'),
   },
 };
+
+// Number validation for queue parameters
+export const validateNumber = (
+  value: string | number,
+  fieldName: string = 'الرقم',
+  min?: number,
+  max?: number
+): string | null => {
+  if (value === '' || value === null || value === undefined) {
+    return `${fieldName} مطلوب`;
+  }
+  
+  const num = typeof value === 'string' ? parseInt(value, 10) : value;
+  
+  if (isNaN(num)) {
+    return `${fieldName} يجب أن يكون رقماً`;
+  }
+  
+  if (min !== undefined && num < min) {
+    return `${fieldName} يجب أن يكون ${min} على الأقل`;
+  }
+  
+  if (max !== undefined && num > max) {
+    return `${fieldName} يجب أن لا يتجاوز ${max}`;
+  }
+  
+  return null;
+};
+
+// Phone country code validation
+export const validateCountryCode = (code: string, allowCustom: boolean = true): string | null => {
+  if (!code || !code.trim()) {
+    return 'كود الدولة مطلوب';
+  }
+  
+  const trimmedCode = code.trim();
+  
+  // Must start with +
+  if (!trimmedCode.startsWith('+')) {
+    return 'كود الدولة يجب أن يبدأ بـ +';
+  }
+  
+  // Get digits only
+  const digitsOnly = trimmedCode.substring(1);
+  
+  // Must contain only digits
+  if (!/^\d+$/.test(digitsOnly)) {
+    return 'كود الدولة يجب أن يحتوي على أرقام فقط بعد +';
+  }
+  
+  // Check length (1-4 digits allowed for custom, 1-3 for predefined)
+  const maxLength = allowCustom ? 4 : 3;
+  if (digitsOnly.length < 1 || digitsOnly.length > maxLength) {
+    return `كود الدولة يجب أن يكون 1-${maxLength} أرقام`;
+  }
+  
+  return null;
+};
+
+// Excel cell value validation
+export const validateCellValue = (
+  value: string | number,
+  columnName: string,
+  rowIndex: number,
+  columnIndex: number
+): string | null => {
+  // Convert to string
+  const strValue = String(value).trim();
+  
+  if (!strValue) {
+    return `الخلية في الصف ${rowIndex}, العمود ${columnIndex} فارغة`;
+  }
+  
+  // Column-specific validations
+  if (columnName === 'الاسم الكامل' || columnIndex === 1) {
+    return validateName(strValue, 'الاسم');
+  }
+  
+  if (columnName === 'رقم الهاتف' || columnIndex === 3) {
+    return validatePhone(strValue);
+  }
+  
+  if (columnName === 'كود الدولة' || columnIndex === 2) {
+    return validateCountryCode(strValue);
+  }
+  
+  return null;
+};
+
+// Batch validation for multiple cells
+export const validateExcelRow = (
+  row: (string | number)[],
+  headers: string[]
+): { hasErrors: boolean; errors: (string | null)[] } => {
+  const errors = row.map((value, idx) => {
+    // Skip order column (first column, optional)
+    if (idx === 0) return null;
+    
+    const header = headers[idx];
+    return validateCellValue(value, header, 0, idx);
+  });
+  
+  return {
+    hasErrors: errors.some((err) => err !== null),
+    errors,
+  };
+};
+
+// Sanitize input (remove dangerous characters)
+export const sanitizeInput = (input: string): string => {
+  return input
+    .trim()
+    .replace(/[<>]/g, '') // Remove HTML tags
+    .replace(/"/g, '"'); // Normalize quotes
+};
+
+// Validate file name
+export const validateFileName = (fileName: string): string | null => {
+  if (!fileName) return 'اسم الملف مطلوب';
+  
+  const invalidChars = /[<>:"|?*/\\]/g;
+  if (invalidChars.test(fileName)) {
+    return 'اسم الملف يحتوي على أحرف غير صالحة';
+  }
+  
+  return null;
+};
+
+// String length validation
+export const validateLength = (
+  value: string,
+  fieldName: string = 'النص',
+  minLength?: number,
+  maxLength?: number
+): string | null => {
+  if (!value && (minLength && minLength > 0)) {
+    return `${fieldName} مطلوب`;
+  }
+  
+  if (minLength && value.length < minLength) {
+    return `${fieldName} يجب أن يكون ${minLength} أحرف على الأقل`;
+  }
+  
+  if (maxLength && value.length > maxLength) {
+    return `${fieldName} يجب أن لا يتجاوز ${maxLength} حرف`;
+  }
+  
+  return null;
+};
+
+// Extended validation rules
+export const extendedValidationRules = {
+  // For CQP (Current Queue Position)
+  cqp: (value: string | number) => validateNumber(value, 'الموضع الحالي', 1, 1000),
+  
+  // For ETS (Estimated Time Per Session)
+  ets: (value: string | number) => validateNumber(value, 'الوقت المقدر لكل كشف', 1, 600),
+  
+  // For cell editing in tables
+  cellEdit: (value: string, columnIndex: number) => {
+    if (!value.trim()) return 'القيمة مطلوبة';
+    return null;
+  },
+};
+

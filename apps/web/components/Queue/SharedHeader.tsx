@@ -3,18 +3,29 @@
 import { useQueue } from '../../contexts/QueueContext';
 import { useState } from 'react';
 import { useUI } from '../../contexts/UIContext';
+import { useRouter } from 'next/navigation';
+import { validateName, validateLength, sanitizeInput } from '../../utils/validation';
 
 interface SharedHeaderProps {
   title: string;
   description?: string;
+  colorTheme?: 'blue' | 'red' | 'green' | 'purple'; // Theme-descriptive colors
 }
 
-export default function SharedHeader({ title, description }: SharedHeaderProps) {
-  const { selectedQueueId, queues, updateQueue, deleteQueue } = useQueue();
-  const { addToast } = useUI();
+export default function SharedHeader({ title, description, colorTheme = 'blue' }: SharedHeaderProps) {
+  const { selectedQueueId, queues, updateQueue, deleteQueue, setSelectedQueueId, patients } = useQueue();
+  const { addToast, setCurrentPanel } = useUI();
   const [isEditing, setIsEditing] = useState(false);
   const [editingName, setEditingName] = useState('');
   const queue = queues.find((q) => q.id === selectedQueueId);
+
+  // Color theme mapping
+  const themeColors = {
+    blue: 'from-blue-600 to-blue-700',
+    red: 'from-red-600 to-red-700',
+    green: 'from-green-600 to-green-700',
+    purple: 'from-purple-600 to-purple-700',
+  };
 
   const handleEditStart = () => {
     setEditingName(queue?.doctorName || '');
@@ -22,14 +33,34 @@ export default function SharedHeader({ title, description }: SharedHeaderProps) 
   };
 
   const handleEditSave = () => {
-    if (!editingName.trim()) {
+    const trimmedName = editingName.trim();
+    
+    // Validate name is not empty
+    if (!trimmedName) {
       addToast('يرجى إدخال اسم الطبيب', 'error');
       return;
     }
+    
+    // Validate name format
+    const nameError = validateName(trimmedName);
+    if (nameError) {
+      addToast(nameError, 'error');
+      return;
+    }
+    
+    // Validate name length (2-100 characters)
+    const lengthError = validateLength(trimmedName, 'اسم الطبيب', 2, 100);
+    if (lengthError) {
+      addToast(lengthError, 'error');
+      return;
+    }
+    
+    // Sanitize input before saving
+    const sanitizedName = sanitizeInput(trimmedName);
 
     if (queue) {
       try {
-        updateQueue(queue.id, { doctorName: editingName.trim() });
+        updateQueue(queue.id, { doctorName: sanitizedName });
         addToast('تم تحديث اسم الطبيب بنجاح', 'success');
       } catch (err) {
         addToast('حدث خطأ في تحديث اسم الطبيب', 'error');
@@ -41,9 +72,19 @@ export default function SharedHeader({ title, description }: SharedHeaderProps) 
   const handleDeleteQueue = () => {
     if (!queue) return;
     
-    if (confirm(`هل أنت متأكد من حذف الصف: ${queue.doctorName}؟`)) {
+    const confirmDelete = confirm(
+      `⚠️ تحذير: حذف الصف\n\n` +
+      `اسم الطبيب: ${queue.doctorName}\n` +
+      `القسم: ${title}\n` +
+      `عدد المرضى: ${patients.length}\n\n` +
+      `هل أنت متأكد من رغبتك في حذف هذا الصف بالكامل؟ لا يمكن التراجع عن هذه العملية.`
+    );
+    
+    if (confirmDelete) {
       try {
         deleteQueue(queue.id);
+        setSelectedQueueId(null);
+        setCurrentPanel('welcome');
         addToast('تم حذف الصف بنجاح', 'success');
       } catch (err) {
         addToast('حدث خطأ في حذف الصف', 'error');
@@ -52,7 +93,7 @@ export default function SharedHeader({ title, description }: SharedHeaderProps) 
   };
 
   return (
-    <div className="bg-gradient-to-l from-blue-600 to-purple-600 text-white p-6 rounded-xl mb-6">
+    <div className={`bg-gradient-to-l ${themeColors[colorTheme]} text-white p-6 rounded-xl mb-6`}>
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
