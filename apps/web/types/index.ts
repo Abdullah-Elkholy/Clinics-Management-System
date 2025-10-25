@@ -1,12 +1,13 @@
-// User Types
-export type UserRole = 'admin' | 'admin2' | 'moderator' | 'user';
+// User Types - Import from centralized roles definition
+export { UserRole, Feature, ActionType } from './roles';
+export type { } from './roles';
 
 export interface User {
   id: string;
   username: string;
   firstName: string;
   lastName: string;
-  role: UserRole;
+  role: string; // Will be validated as UserRole at runtime
   moderatorId?: string;
 }
 
