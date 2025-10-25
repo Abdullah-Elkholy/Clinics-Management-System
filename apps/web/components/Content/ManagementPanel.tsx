@@ -71,17 +71,57 @@ const MOCK_USERS: User[] = [
 ];
 
 /**
- * Management Panel - Admin features for system management
- * SOLID: Single Responsibility - Orchestrates admin/management UI
- * SOLID: Open/Closed - Extensible for new admin features
- * 
- * Features by role:
- * - Primary Admin: Full user management, settings, audit logs
- * - Secondary Admin: Moderator management, quotas
- * - Moderator: Profile settings only
- * - User: Profile settings only
- * 
- * Enhanced with responsive components and improved UX
+ * Mock moderator data
+ */
+interface ModeratorExtended {
+  id: string;
+  name: string;
+  email: string;
+  messagesQuota: number;
+  queuesQuota: number;
+  consumedMessages: number;
+  consumedQueues: number;
+  whatsappStatus: 'متصل' | 'غير متصل' | 'في الانتظار';
+  lastAuth?: string;
+  isActive: boolean;
+}
+
+const MOCK_MODERATORS: ModeratorExtended[] = [
+  {
+    id: '2',
+    name: 'أحمد علي',
+    email: 'ahmed@clinic.com',
+    messagesQuota: 500,
+    queuesQuota: 10,
+    consumedMessages: 340,
+    consumedQueues: 8,
+    whatsappStatus: 'متصل',
+    lastAuth: '2025-01-25 02:15 PM',
+    isActive: true,
+  },
+  {
+    id: '3',
+    name: 'فاطمة محمد',
+    email: 'fatima@clinic.com',
+    messagesQuota: 450,
+    queuesQuota: 10,
+    consumedMessages: 280,
+    consumedQueues: 6,
+    whatsappStatus: 'متصل',
+    lastAuth: '2025-01-24 11:30 PM',
+    isActive: true,
+  },
+];
+
+/**
+ * Management Panel - Enhanced admin features
+ * Features:
+ * - User management with full CRUD
+ * - Moderator management and monitoring
+ * - Quota management with visual progress
+ * - WhatsApp connection status
+ * - Audit logs and permissions
+ * - System settings
  */
 export default function ManagementPanel() {
   const [state, actions] = useUserManagement();
@@ -89,6 +129,12 @@ export default function ManagementPanel() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const [selectedModeratorId, setSelectedModeratorId] = useState<string | null>(null);
+  const [quotaForm, setQuotaForm] = useState({
+    messagesQuota: 0,
+    queuesQuota: 0,
+  });
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -484,20 +530,250 @@ export default function ManagementPanel() {
 
       {/* Moderators Tab */}
       {activeTab === 'moderators' && (
-        <EmptyState
-          icon="fa-user-tie"
-          title="إدارة المشرفين"
-          message="إدارة تعيين المشرفين للمستخدمين وإدارة مسؤولياتهم"
-        />
+        <div className="space-y-6">
+          {/* Moderators Table */}
+          {MOCK_MODERATORS.length > 0 && (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-24">الحالة</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">الاسم</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">البريد الإلكتروني</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">حالة واتساب</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-32">الحصة</th>
+                      <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700 w-32">آخر دخول</th>
+                      <th className="px-6 py-3 text-center text-sm font-semibold text-gray-700 w-20">الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {MOCK_MODERATORS.map((moderator) => {
+                      const messagesPercent = (moderator.consumedMessages / moderator.messagesQuota) * 100;
+                      const queuesPercent = (moderator.consumedQueues / moderator.queuesQuota) * 100;
+                      return (
+                        <tr key={moderator.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 text-sm">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2.5 h-2.5 rounded-full ${moderator.isActive ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                              <span className="text-xs text-gray-600">{moderator.isActive ? 'نشط' : 'معطّل'}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-medium text-gray-900">{moderator.name}</td>
+                          <td className="px-6 py-4 text-sm text-gray-600">{moderator.email}</td>
+                          <td className="px-6 py-4 text-sm">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                              moderator.whatsappStatus === 'متصل' ? 'bg-green-100 text-green-800' :
+                              moderator.whatsappStatus === 'في الانتظار' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              <i className={`fas fa-circle text-xs ${
+                                moderator.whatsappStatus === 'متصل' ? 'text-green-600' :
+                                moderator.whatsappStatus === 'في الانتظار' ? 'text-yellow-600' :
+                                'text-gray-600'
+                              }`}></i>
+                              {moderator.whatsappStatus}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-xs">
+                            <div className="space-y-2">
+                              <div>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-gray-700 font-medium">الرسائل</span>
+                                  <span className="text-gray-600">{messagesPercent.toFixed(0)}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className={`h-full ${messagesPercent > 80 ? 'bg-red-500' : messagesPercent > 60 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                                    style={{ width: `${Math.min(messagesPercent, 100)}%` }}
+                                  ></div>
+                                </div>
+                                <div className="text-xs text-gray-600 mt-1">{moderator.consumedMessages}/{moderator.messagesQuota}</div>
+                              </div>
+                              <div>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-gray-700 font-medium">الطوابير</span>
+                                  <span className="text-gray-600">{queuesPercent.toFixed(0)}%</span>
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className={`h-full ${queuesPercent > 80 ? 'bg-red-500' : queuesPercent > 60 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                                    style={{ width: `${Math.min(queuesPercent, 100)}%` }}
+                                  ></div>
+                                </div>
+                                <div className="text-xs text-gray-600 mt-1">{moderator.consumedQueues}/{moderator.queuesQuota}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-xs text-gray-600">{moderator.lastAuth}</td>
+                          <td className="px-6 py-4 text-center">
+                            <div className="flex gap-1 justify-center">
+                              <button
+                                onClick={() => {
+                                  setSelectedModeratorId(moderator.id);
+                                  setQuotaForm({
+                                    messagesQuota: moderator.messagesQuota,
+                                    queuesQuota: moderator.queuesQuota,
+                                  });
+                                  setShowQuotaModal(true);
+                                }}
+                                className="text-blue-600 hover:text-blue-800 p-1 transition-colors"
+                                title="تعديل الحصة"
+                              >
+                                <i className="fas fa-chart-bar text-sm"></i>
+                              </button>
+                              <button
+                                className="text-gray-600 hover:text-gray-800 p-1 transition-colors"
+                                title="عرض تقارير"
+                              >
+                                <i className="fas fa-file-chart-line text-sm"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Quota Modal */}
+          {showQuotaModal && selectedModeratorId && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+              <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900">تعديل الحصة</h3>
+                  <button
+                    onClick={() => setShowQuotaModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">حصة الرسائل</label>
+                    <input
+                      type="number"
+                      value={quotaForm.messagesQuota}
+                      onChange={(e) => setQuotaForm({ ...quotaForm, messagesQuota: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">حصة الطوابير</label>
+                    <input
+                      type="number"
+                      value={quotaForm.queuesQuota}
+                      onChange={(e) => setQuotaForm({ ...quotaForm, queuesQuota: parseInt(e.target.value) })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-6">
+                  <button
+                    onClick={() => setShowQuotaModal(false)}
+                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    حفظ
+                  </button>
+                  <button
+                    onClick={() => setShowQuotaModal(false)}
+                    className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Quotas Tab */}
       {activeTab === 'quotas' && (
-        <EmptyState
-          icon="fa-chart-bar"
-          title="إدارة الحصص"
-          message="تحديد حدود الطوابير اليومية والشهرية لكل مستخدم"
-        />
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {MOCK_MODERATORS.map((moderator) => {
+              const messagesPercent = (moderator.consumedMessages / moderator.messagesQuota) * 100;
+              const queuesPercent = (moderator.consumedQueues / moderator.queuesQuota) * 100;
+              return (
+                <div key={moderator.id} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-shadow">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-gray-900">{moderator.name}</h3>
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">مشرف</span>
+                  </div>
+
+                  <div className="space-y-6">
+                    {/* Messages Quota */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                          <i className="fas fa-envelope text-blue-600"></i>
+                          الرسائل
+                        </label>
+                        <span className="text-sm font-semibold text-gray-900">{moderator.consumedMessages} / {moderator.messagesQuota}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${
+                            messagesPercent > 80 ? 'bg-red-500' :
+                            messagesPercent > 60 ? 'bg-yellow-500' :
+                            'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(messagesPercent, 100)}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">{messagesPercent.toFixed(1)}% مستخدم</div>
+                    </div>
+
+                    {/* Queues Quota */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                          <i className="fas fa-layer-group text-purple-600"></i>
+                          الطوابير
+                        </label>
+                        <span className="text-sm font-semibold text-gray-900">{moderator.consumedQueues} / {moderator.queuesQuota}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${
+                            queuesPercent > 80 ? 'bg-red-500' :
+                            queuesPercent > 60 ? 'bg-yellow-500' :
+                            'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(queuesPercent, 100)}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-gray-600 mt-1">{queuesPercent.toFixed(1)}% مستخدم</div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setSelectedModeratorId(moderator.id);
+                      setQuotaForm({
+                        messagesQuota: moderator.messagesQuota,
+                        queuesQuota: moderator.queuesQuota,
+                      });
+                      setShowQuotaModal(true);
+                    }}
+                    className="w-full mt-6 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <i className="fas fa-edit"></i>
+                    تعديل الحصة
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* Settings Tab */}
