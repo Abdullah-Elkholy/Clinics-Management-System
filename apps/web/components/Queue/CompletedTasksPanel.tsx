@@ -371,12 +371,12 @@ export default function CompletedTasksPanel() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2 mt-6">
-        <h4 className="font-semibold text-green-900 flex items-center gap-2">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
+        <h4 className="font-semibold text-blue-900 flex items-center gap-2">
           <i className="fas fa-info-circle"></i>
-          معلومات:
+          نصائح للاستخدام الأمثل:
         </h4>
-        <ul className="text-sm text-green-800 space-y-1">
+        <ul className="text-blue-800 text-sm space-y-1 mr-6">
           <li>• هنا تجد جميع الجلسات التي تمت معالجتها بنجاح</li>
           <li>• يمكنك عرض تفاصيل كل جلسة والمرضى المرسل إليهم</li>
           <li>• يتم حفظ كل البيانات المكتملة للمراجعة والتقارير</li>

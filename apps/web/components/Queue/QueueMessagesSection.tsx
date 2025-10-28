@@ -1,85 +1,29 @@
-/**
- * Queue Messages Section Component
- * File: apps/web/components/Queue/QueueMessagesSection.tsx
- * 
- * Displays message templates and conditions for a specific queue
- * Features:
- * - Grouped templates display
- * - Add/Edit/Delete buttons for templates
- * - Template conditions display
- * - Template preview
- * - Active/Inactive status toggle
- */
-
 'use client';
 
-import React, { useState, useCallback } from 'react';
-import { useQueueMessageTemplates } from '@/hooks/useQueueMessageTemplates';
-import { useQueueMessageConfig } from '@/hooks/useQueueMessageConfig';
-import { MessageTemplate } from '@/services/messageTemplateService';
-import { MessageCondition } from '@/types/messageCondition';
+import React, { useState } from 'react';
+import { useModal } from '@/contexts/ModalContext';
+import { MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
 
 interface QueueMessagesSectionProps {
   queueId: string;
   queueName: string;
-  conditions?: MessageCondition[];
-  onEdit?: (template: MessageTemplate) => void;
-  onDelete?: (templateId: string) => void;
   onAdd?: () => void;
 }
 
 const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
   queueId,
   queueName,
-  conditions = [],
-  onEdit,
-  onDelete,
   onAdd,
 }) => {
-  const { templates, loading, error, toggleStatus, duplicate } = useQueueMessageTemplates({
-    queueId,
-    queueName,
-    autoLoad: true,
-  });
-
+  const { openModal } = useModal();
+  
+  // Use mock data for now
+  const templates = MOCK_MESSAGE_TEMPLATES;
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
   const activeTemplates = templates.filter((t) => t.isActive);
   const inactiveTemplates = templates.filter((t) => !t.isActive);
-
-  const handleToggleStatus = useCallback(
-    async (templateId: string) => {
-      await toggleStatus(templateId);
-    },
-    [toggleStatus]
-  );
-
-  const handleDuplicate = useCallback(
-    async (templateId: string) => {
-      const template = templates.find((t) => t.id === templateId);
-      if (template) {
-        await duplicate(templateId, `${template.title} (نسخة)`);
-      }
-    },
-    [templates, duplicate]
-  );
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-800">{error}</p>
-      </div>
-    );
-  }
 
   if (templates.length === 0) {
     return (
@@ -124,15 +68,17 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
                 template={template}
                 isSelected={selectedTemplate === template.id}
                 onSelect={() => setSelectedTemplate(template.id)}
-                onEdit={() => onEdit?.(template)}
-                onDelete={() => onDelete?.(template.id)}
-                onToggleStatus={() => handleToggleStatus(template.id)}
-                onDuplicate={() => handleDuplicate(template.id)}
-                onPreview={() => {
-                  setSelectedTemplate(template.id);
-                  setShowPreview(true);
+                onManageConditions={() => {
+                  openModal('manageConditions', {
+                    queueId,
+                    queueName,
+                    templates,
+                    templateId: template.id,
+                  });
                 }}
-                conditionsCount={conditions.filter((c) => c.template === template.id).length}
+                conditionsCount={MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
+                  (c) => c.template === template.id
+                ).length}
               />
             ))}
           </div>
@@ -153,15 +99,17 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
                 template={template}
                 isSelected={selectedTemplate === template.id}
                 onSelect={() => setSelectedTemplate(template.id)}
-                onEdit={() => onEdit?.(template)}
-                onDelete={() => onDelete?.(template.id)}
-                onToggleStatus={() => handleToggleStatus(template.id)}
-                onDuplicate={() => handleDuplicate(template.id)}
-                onPreview={() => {
-                  setSelectedTemplate(template.id);
-                  setShowPreview(true);
+                onManageConditions={() => {
+                  openModal('manageConditions', {
+                    queueId,
+                    queueName,
+                    templates,
+                    templateId: template.id,
+                  });
                 }}
-                conditionsCount={conditions.filter((c) => c.template === template.id).length}
+                conditionsCount={MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
+                  (c) => c.template === template.id
+                ).length}
                 disabled
               />
             ))}
@@ -174,7 +122,7 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
         <TemplatePreviewModal
           template={templates.find((t) => t.id === selectedTemplate)!}
           onClose={() => setShowPreview(false)}
-          conditions={conditions}
+          conditions={MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.template === selectedTemplate)}
         />
       )}
     </div>
@@ -182,14 +130,10 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
 };
 
 interface TemplateCardProps {
-  template: MessageTemplate;
+  template: any;
   isSelected: boolean;
   onSelect: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onToggleStatus: () => void;
-  onDuplicate: () => void;
-  onPreview: () => void;
+  onManageConditions: () => void;
   conditionsCount: number;
   disabled?: boolean;
 }
@@ -198,16 +142,10 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
   template,
   isSelected,
   onSelect,
-  onEdit,
-  onDelete,
-  onToggleStatus,
-  onDuplicate,
-  onPreview,
+  onManageConditions,
   conditionsCount,
   disabled = false,
 }) => {
-  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-
   return (
     <div
       onClick={onSelect}
@@ -237,99 +175,39 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
         {template.content}
       </p>
 
-      {/* Metadata */}
-      <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
-        <div className="flex gap-4">
-          <span>
-            {template.createdAt && (
-              new Date(template.createdAt).toLocaleDateString('ar-SA')
-            )}
+      {/* Category Badge */}
+      {template.category && (
+        <div className="flex gap-2 mb-3">
+          <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+            {template.category}
           </span>
           {conditionsCount > 0 && (
-            <span className="text-blue-600 font-medium">
-              {conditionsCount} شرط{conditionsCount > 1 ? 'ة' : ''}
+            <span className="inline-block px-2 py-1 bg-amber-100 text-amber-800 text-xs rounded">
+              {conditionsCount} شرط
             </span>
           )}
         </div>
-      </div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
         <button
-          onClick={onPreview}
-          className="flex-1 px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition"
-          title="معاينة"
-        >
-          👁️ معاينة
-        </button>
-        <button
-          onClick={onEdit}
+          onClick={onManageConditions}
           disabled={disabled}
-          className="flex-1 px-3 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition disabled:opacity-50"
-          title="تعديل"
+          className="flex-1 px-3 py-2 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition disabled:opacity-50"
+          title="إدارة الشروط"
         >
-          ✏️ تعديل
-        </button>
-        <button
-          onClick={onDuplicate}
-          disabled={disabled}
-          className="flex-1 px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition disabled:opacity-50"
-          title="نسخ"
-        >
-          📋 نسخ
-        </button>
-        <button
-          onClick={onToggleStatus}
-          className={`flex-1 px-3 py-1 text-xs rounded transition ${
-            template.isActive
-              ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              : 'bg-green-100 text-green-700 hover:bg-green-200'
-          }`}
-          title={template.isActive ? 'تعطيل' : 'تفعيل'}
-        >
-          {template.isActive ? '⊘ تعطيل' : '✓ تفعيل'}
-        </button>
-        <button
-          onClick={() => setShowConfirmDelete(true)}
-          disabled={disabled}
-          className="flex-1 px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition disabled:opacity-50"
-          title="حذف"
-        >
-          🗑️ حذف
+          ⚙️ إدارة الشروط
         </button>
       </div>
-
-      {/* Delete Confirmation */}
-      {showConfirmDelete && (
-        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
-          <p className="text-sm text-red-800 mb-2">هل أنت متأكد من حذف هذه الرسالة؟</p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                onDelete();
-                setShowConfirmDelete(false);
-              }}
-              className="flex-1 px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-            >
-              نعم، احذفها
-            </button>
-            <button
-              onClick={() => setShowConfirmDelete(false)}
-              className="flex-1 px-3 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-            >
-              إلغاء
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 interface TemplatePreviewModalProps {
-  template: MessageTemplate;
+  template: any;
   onClose: () => void;
-  conditions: MessageCondition[];
+  conditions: any[];
 }
 
 const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({

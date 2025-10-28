@@ -597,12 +597,12 @@ export default function FailedTasksPanel() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2 mt-6">
-        <h4 className="font-semibold text-red-900 flex items-center gap-2">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
+        <h4 className="font-semibold text-blue-900 flex items-center gap-2">
           <i className="fas fa-info-circle"></i>
-          معلومات:
+          نصائح للاستخدام الأمثل:
         </h4>
-        <ul className="text-sm text-red-800 space-y-1">
+        <ul className="text-blue-800 text-sm space-y-1 mr-6">
           <li>• كل محاولة إعادة تزيد عداد المحاولات</li>
           <li>• يمكنك تحديد عدد من المرضى برسائلهم وإعادة محاولة جميعها</li>
           <li>• حذف المريض يزيل الفشل النهائي من السجل</li>

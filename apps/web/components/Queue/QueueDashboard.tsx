@@ -5,7 +5,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { validateNumber } from '@/utils/validation';
-import { MOCK_QUEUE_PATIENTS } from '@/constants/mockData';
+import { MOCK_QUEUE_PATIENTS, MOCK_MESSAGE_TEMPLATES } from '@/constants/mockData';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
@@ -497,7 +497,20 @@ export default function QueueDashboard() {
           {/* Disclaimer Message */}
         {/* Message Conditions Control Button */}
         <button
-          onClick={() => openModal('messageConditions')}
+          onClick={() => openModal('manageConditions', {
+            templateId: null,
+            queueId: selectedQueueId,
+            queueName: queue?.doctorName || 'طابور',
+            currentConditions: messageConfig?.conditions || [],
+            allConditions: messageConfig?.conditions || [],
+            allTemplates: MOCK_MESSAGE_TEMPLATES.map(t => ({ 
+              id: t.id, 
+              title: t.title 
+            })),
+            onSave: (conditions: any) => {
+              console.log('Conditions updated:', conditions);
+            },
+          })}
           className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-medium flex-shrink-0"
           title="إدارة شروط الرسالة"
         >
@@ -602,9 +615,9 @@ export default function QueueDashboard() {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
         <h4 className="font-semibold text-blue-900 flex items-center gap-2">
           <i className="fas fa-info-circle"></i>
-          نصائح:
+          نصائح للاستخدام الأمثل:
         </h4>
-        <ul className="text-sm text-blue-800 space-y-1">
+        <ul className="text-blue-800 text-sm space-y-1 mr-6">
           <li>• CQP: الموضع الحالي في قائمة الانتظار</li>
           <li>• ETS: المدة المتوقعة لكل كشف طبي بالدقائق</li>
           <li>• يمكنك تعديل ترتيب المرضى بالنقر على أيقونة التعديل</li>

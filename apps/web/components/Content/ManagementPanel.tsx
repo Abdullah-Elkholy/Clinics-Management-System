@@ -1479,7 +1479,7 @@ export default function ManagementPanel() {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
         <h4 className="font-semibold text-blue-900 flex items-center gap-2">
           <i className="fas fa-info-circle"></i>
-          نصائح:
+          نصائح للاستخدام الأمثل:
         </h4>
         <ul className="text-blue-800 text-sm space-y-1 mr-6">
           <li>• استخدم البحث للعثور على المستخدمين بسرعة</li>

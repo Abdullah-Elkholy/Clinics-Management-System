@@ -17,6 +17,7 @@ export type ModalType =
   | 'quotaManagement'
   | 'editPatient'
   | 'messageConditions'
+  | 'manageConditions'
   | 'templateEditor';
 
 export interface ModalData {

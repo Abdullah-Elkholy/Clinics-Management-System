@@ -11,6 +11,8 @@ export default function AddTemplateModal() {
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('appointment');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -18,6 +20,17 @@ export default function AddTemplateModal() {
   const isOpen = openModals.has('addTemplate');
 
   const MAX_CONTENT_LENGTH = 1000;
+  const MAX_DESCRIPTION_LENGTH = 200;
+  
+  const categories = [
+    { value: 'appointment', label: 'تأكيد موعد' },
+    { value: 'reminder', label: 'تذكير' },
+    { value: 'greeting', label: 'ترحيب' },
+    { value: 'priority', label: 'أولوية عالية' },
+    { value: 'postpone', label: 'تأجيل' },
+    { value: 'feedback', label: 'تقييم' },
+    { value: 'other', label: 'أخرى' },
+  ];
 
   const insertVariable = (variable: string) => {
     if (content.length + variable.length <= MAX_CONTENT_LENGTH) {
@@ -113,9 +126,22 @@ export default function AddTemplateModal() {
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 500));
       
-      // TODO: Add template through context
+      // Create new template object
+      const newTemplate = {
+        id: `template-${Date.now()}`,
+        title,
+        description,
+        category,
+        content,
+        isActive: true,
+        createdAt: new Date(),
+      };
+      
+      // TODO: Add template through context or API
       addToast('تم إضافة قالب الرسالة بنجاح', 'success');
       setTitle('');
+      setDescription('');
+      setCategory('appointment');
       setContent('');
       setErrors({});
       closeModal('addTemplate');
@@ -166,6 +192,51 @@ export default function AddTemplateModal() {
               {errors.title}
             </p>
           )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            الوصف (اختياري)
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => {
+              if (e.target.value.length <= MAX_DESCRIPTION_LENGTH) {
+                setDescription(e.target.value);
+              } else {
+                addToast(`الحد الأقصى ${MAX_DESCRIPTION_LENGTH} حرف`, 'error');
+              }
+            }}
+            rows={2}
+            placeholder="أدخل وصف القالب - مثال: رسالة ترحيب للمرضى الجدد"
+            disabled={isLoading}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+          />
+          <p className={`text-xs mt-1 ${
+            description.length > MAX_DESCRIPTION_LENGTH * 0.9
+              ? 'text-orange-600'
+              : 'text-gray-500'
+          }`}>
+            {description.length} / {MAX_DESCRIPTION_LENGTH}
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            الفئة *
+          </label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            disabled={isLoading}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          >
+            {categories.map((cat) => (
+              <option key={cat.value} value={cat.value}>
+                {cat.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
@@ -267,6 +338,8 @@ export default function AddTemplateModal() {
             onClick={() => {
               closeModal('addTemplate');
               setTitle('');
+              setDescription('');
+              setCategory('appointment');
               setContent('');
               setErrors({});
             }}

@@ -41,15 +41,16 @@ export default function MessagesPanel() {
     });
   }, []);
 
-  // Expand all queues
-  const expandAllQueues = useCallback(() => {
-    setExpandedQueues(new Set(queues.map((q) => q.id)));
-  }, [queues]);
-
-  // Collapse all queues
-  const collapseAllQueues = useCallback(() => {
-    setExpandedQueues(new Set());
-  }, []);
+  // Toggle all queues (expand/collapse)
+  const toggleAllQueues = useCallback(() => {
+    if (expandedQueues.size === queues.length) {
+      // All expanded, collapse all
+      setExpandedQueues(new Set());
+    } else {
+      // Not all expanded, expand all
+      setExpandedQueues(new Set(queues.map((q) => q.id)));
+    }
+  }, [expandedQueues.size, queues]);
 
   return (
     <PanelWrapper>
@@ -65,15 +66,9 @@ export default function MessagesPanel() {
           queues.length > 0
             ? [
                 {
-                  label: 'توسيع الكل',
-                  icon: 'fa-expand',
-                  onClick: expandAllQueues,
-                  variant: 'secondary',
-                },
-                {
-                  label: 'طي الكل',
-                  icon: 'fa-compress',
-                  onClick: collapseAllQueues,
+                  label: expandedQueues.size === queues.length ? 'طي الكل' : 'توسيع الكل',
+                  icon: expandedQueues.size === queues.length ? 'fa-compress' : 'fa-expand',
+                  onClick: toggleAllQueues,
                   variant: 'secondary',
                 },
               ]
@@ -209,13 +204,13 @@ export default function MessagesPanel() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 m-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
         <h4 className="font-semibold text-blue-900 flex items-center gap-2">
-          <i className="fas fa-lightbulb"></i>
-          نصائح مفيدة:
+          <i className="fas fa-info-circle"></i>
+          نصائح للاستخدام الأمثل:
         </h4>
         <ul className="text-blue-800 text-sm space-y-1 mr-6">
-          <li>• وسّع الطابور لرؤية جميع قوالب الرسائل</li>
+          <li>• وسّع الطابور لرؤية جميع قوالب الرسائل الخاصة بهذا الطابور</li>
           <li>• استخدم البحث والفلاتر للعثور على الرسائل بسرعة</li>
           <li>• يمكنك تحرير أو حذف أو نسخ أي رسالة</li>
           <li>• استخدم العمليات الجماعية لإدارة عدة رسائل في آن واحد</li>
