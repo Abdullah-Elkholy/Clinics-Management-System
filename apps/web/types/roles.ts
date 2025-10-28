@@ -207,10 +207,16 @@ export const ROLE_PERMISSIONS: Record<UserRole, Set<Feature>> = {
   ]),
 
   [UserRole.User]: new Set([
-    // Can view their moderator's queues and messages (read-only)
+    // Can view their moderator's queues and messages, and manage their own messages
     Feature.VIEW_QUEUES,
     Feature.VIEW_PATIENTS,
     Feature.VIEW_MESSAGES,
+    Feature.CREATE_MESSAGE_TEMPLATE,
+    Feature.EDIT_MESSAGE_TEMPLATE,
+    Feature.DELETE_MESSAGE_TEMPLATE,
+    Feature.CREATE_MESSAGE_CONDITION,
+    Feature.EDIT_MESSAGE_CONDITION,
+    Feature.DELETE_MESSAGE_CONDITION,
     Feature.SEND_MESSAGES,
   ]),
 };

@@ -15,7 +15,9 @@ export type ModalType =
   | 'editUser' 
   | 'retryPreview' 
   | 'quotaManagement'
-  | 'editPatient';
+  | 'editPatient'
+  | 'messageConditions'
+  | 'templateEditor';
 
 export interface ModalData {
   [key: string]: any;

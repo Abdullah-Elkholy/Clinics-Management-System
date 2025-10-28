@@ -3,7 +3,7 @@
 import { useQueue } from '@/contexts/QueueContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { validateNumber } from '@/utils/validation';
 import { MOCK_QUEUE_PATIENTS } from '@/constants/mockData';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
@@ -11,6 +11,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { QueueStatsCard } from './QueueStatsCard';
+import { useQueueMessageConfig } from '@/hooks/useQueueMessageConfig';
 
 // Sample patient data
 const SAMPLE_PATIENTS = MOCK_QUEUE_PATIENTS;
@@ -18,6 +19,9 @@ const SAMPLE_PATIENTS = MOCK_QUEUE_PATIENTS;
 export default function QueueDashboard() {
   const { selectedQueueId, queues } = useQueue();
   const { openModal } = useModal();
+  const { config: messageConfig, loadConfig: loadMessageConfig } = useQueueMessageConfig({
+    autoLoad: false,
+  });
   const { addToast } = useUI();
   
   const [currentCQP, setCurrentCQP] = useState('3');
@@ -34,6 +38,13 @@ export default function QueueDashboard() {
   const [editingQueueValue, setEditingQueueValue] = useState('');
   
   const queue = queues.find((q) => q.id === selectedQueueId);
+
+  // Load message config when queue changes
+  useEffect(() => {
+    if (selectedQueueId) {
+      loadMessageConfig(String(selectedQueueId));
+    }
+  }, [selectedQueueId, loadMessageConfig]);
 
   /**
    * Handle CQP (Current Queue Position) Edit - memoized
@@ -444,6 +455,13 @@ export default function QueueDashboard() {
             openModal('messagePreview', {
               selectedPatients,
               selectedPatientCount: selectedPatients.length,
+              queueId: selectedQueueId,
+              queueName: queue?.doctorName || 'طابور',
+              currentCQP: parseInt(currentCQP),
+              estimatedTimeRemaining: parseInt(currentETS),
+              patients: patients.filter(p => selectedPatients.includes(p.id)),
+              conditions: messageConfig?.conditions || [],
+              messageTemplate: messageConfig?.defaultTemplate || 'مرحباً بك {PN}',
             });
           }}
           className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse"
@@ -454,22 +472,47 @@ export default function QueueDashboard() {
       </div>
 
       {/* Selected Message Display */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex items-start justify-between">
-        <div className="flex-1">
-          <h3 className="font-bold text-gray-800 mb-2">الرسالة الافتراضية المحددة:</h3>
-          <p className="text-gray-700">
-            مرحباً {'{PN}'}, ترتيبك {'{PQP}'} والموضع الحالي {'{CQP}'},
-            الوقت المتبقي المقدر {'{ETR}'} دقيقة
-          </p>
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <h3 className="font-bold text-gray-800 mb-2">الرسالة الافتراضية المحددة:</h3>
+            <p className="text-gray-700">
+              مرحباً {'{PN}'}, ترتيبك {'{PQP}'} والموضع الحالي {'{CQP}'},
+              الوقت المتبقي المقدر {'{ETR}'} دقيقة
+            </p>
+          </div>
+          <button
+            onClick={() => openModal('messageSelection')}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 ml-4 flex-shrink-0"
+            title="تغيير الرسالة"
+          >
+            <i className="fas fa-edit"></i>
+            <span className="text-sm font-medium">تغيير الرسالة</span>
+          </button>
         </div>
+
+
+        {/* Disclaimer - Manage Templates in MessagesPanel */}
+        <div className="border-t border-blue-200 pt-4 mt-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          {/* Disclaimer Message */}
+        {/* Message Conditions Control Button */}
         <button
-          onClick={() => openModal('messageSelection')}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 ml-4 flex-shrink-0"
-          title="تغيير الرسالة"
+          onClick={() => openModal('messageConditions')}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-medium flex-shrink-0"
+          title="إدارة شروط الرسالة"
         >
-          <i className="fas fa-edit"></i>
-          <span className="text-sm font-medium">تغيير الرسالة</span>
+          <i className="fas fa-sliders-h"></i>
+          <span>تحديث الشروط / القواعد</span>
         </button>
+          <div className="bg-blue-50 border-l-4 border-blue-500 rounded px-3 py-2 flex-1">
+            <div className="flex items-start gap-2">
+              <i className="fas fa-info-circle text-blue-600 mt-0.5 flex-shrink-0 text-sm"></i>
+              <p className="text-xs text-blue-800">
+                <span className="font-semibold">لإدارة الرسائل بشكل كامل:</span> توجه إلى قائمة<span className="font-semibold"> الرسائل</span> في الشريط الجانبي
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Patients Table */}

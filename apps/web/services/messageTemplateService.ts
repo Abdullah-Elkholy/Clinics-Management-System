@@ -1,29 +1,32 @@
 /**
- * Message Template Service - Business logic for message management
- * SOLID: Single Responsibility - Only handles message template operations
- * SOLID: Dependency Inversion - Can be replaced with different implementations
+ * Message Template Service
+ * File: apps/web/services/messageTemplateService.ts
+ * 
+ * Handles CRUD operations for message templates per queue
+ * Storage: localStorage with key pattern `queueTemplates_${queueId}`
  */
 
 export interface MessageTemplate {
   id: string;
+  queueId: string;
   title: string;
+  description?: string;
   content: string;
   variables: string[];
+  isActive: boolean;
+  priority?: number;
+  
   createdBy: string;
   createdAt: Date;
   updatedAt?: Date;
-  moderatorId?: string; // For moderator-specific templates
 }
 
-export interface MessageCondition {
-  id: string;
-  templateId: string;
-  type: 'range' | 'lessThan' | 'greaterThan' | 'equals';
-  field: string; // e.g., 'queuePosition', 'waitTime'
-  minValue?: number;
-  maxValue?: number;
-  value?: number;
-  description: string;
+export interface QueueTemplateConfig {
+  queueId: string;
+  queueName: string;
+  templates: MessageTemplate[];
+  defaultTemplate?: string;
+  totalConditions?: number;
 }
 
 export interface MessageServiceResponse<T> {
@@ -32,261 +35,266 @@ export interface MessageServiceResponse<T> {
   error?: string;
 }
 
+const STORAGE_KEY_PREFIX = 'queueTemplates_';
+
 /**
- * Message Template Service - Handles all message template operations
- * In production, this would make API calls
+ * Get all templates for a specific queue
  */
-class MessageTemplateService {
-  private templates: MessageTemplate[] = [
-    {
-      id: '1',
-      title: 'الترحيب',
-      content: 'مرحباً {PN}، ترتيبك {PQP} والموضع الحالي {CQP}',
-      variables: ['PN', 'PQP', 'CQP'],
-      createdBy: 'admin',
-      createdAt: new Date('2024-01-10'),
-    },
-    {
-      id: '2',
-      title: 'دورك يقترب',
-      content: 'مرحباً {PN}، دورك سيأتي قريباً. موضعك الحالي {CQP}',
-      variables: ['PN', 'CQP'],
-      createdBy: 'admin',
-      createdAt: new Date('2024-01-15'),
-    },
-    {
-      id: '3',
-      title: 'تأكيد الموعد',
-      content: 'تأكيد موعدك يا {PN} مع {DR} - ترتيب الطابور: {QN}',
-      variables: ['PN', 'DR', 'QN'],
-      createdBy: 'fatima.mod@clinic.com',
-      createdAt: new Date('2024-02-05'),
-      moderatorId: '3',
-    },
-    {
-      id: '4',
-      title: 'تذكير قبل الموعد',
-      content: 'تذكير يا {PN}، موعدك غداً الساعة {ETR} مع الدكتور {DR}. الرجاء الحضور في الموعد المحدد.',
-      variables: ['PN', 'ETR', 'DR'],
-      createdBy: 'mahmoud.mod@clinic.com',
-      createdAt: new Date('2024-02-10'),
-      moderatorId: '4',
-    },
-    {
-      id: '5',
-      title: 'تنبيه زمن الانتظار',
-      content: 'عذراً يا {PN}، هناك تأخير في الخدمة. وقت الانتظار المتوقع: {ETR}. شكراً لصبرك.',
-      variables: ['PN', 'ETR'],
-      createdBy: 'admin',
-      createdAt: new Date('2024-03-01'),
-    },
-    {
-      id: '6',
-      title: 'رسالة إلغاء الموعد',
-      content: 'تنبيه: تم إلغاء موعد {PN} مع {DR}. الترتيب: {PQP}. يرجى الاتصال للحجز مجدداً.',
-      variables: ['PN', 'DR', 'PQP'],
-      createdBy: 'admin',
-      createdAt: new Date('2024-03-05'),
-    },
-    {
-      id: '7',
-      title: 'استقبال الطبيب',
-      content: 'أهلاً وسهلاً {PN}، يرجى التوجه للعيادة {QN}. الدكتور {DR} ينتظرك.',
-      variables: ['PN', 'QN', 'DR'],
-      createdBy: 'fatima.mod@clinic.com',
-      createdAt: new Date('2024-03-12'),
-      moderatorId: '3',
-    },
-    {
-      id: '8',
-      title: 'رسالة بعد الانتهاء',
-      content: 'شكراً {PN} على زيارتك. نتمنى لك الصحة والعافية. موعدك القادم {ETR}.',
-      variables: ['PN', 'ETR'],
-      createdBy: 'admin',
-      createdAt: new Date('2024-03-15'),
-    },
-    {
-      id: '9',
-      title: 'إشعار بتغيير الطبيب',
-      content: 'تم تعديل موعدك {PN}. الطبيب الجديد: {DR}. الترتيب الجديد: {PQP}. الرجاء التأكيد.',
-      variables: ['PN', 'DR', 'PQP'],
-      createdBy: 'mahmoud.mod@clinic.com',
-      createdAt: new Date('2024-04-01'),
-      moderatorId: '4',
-    },
-    {
-      id: '10',
-      title: 'دعوة لإعادة جدولة',
-      content: 'لم نرك منذ فترة يا {PN}! هل تود إعادة جدولة موعدك مع {DR}؟ موعدك المتاح {ETR}.',
-      variables: ['PN', 'DR', 'ETR'],
-      createdBy: 'admin',
-      createdAt: new Date('2024-04-10'),
-    },
-  ];
-
-  private conditions: MessageCondition[] = [];
-
-  /**
-   * Get all templates (with optional filtering)
-   */
-  async getTemplates(filters?: { moderatorId?: string }): Promise<MessageServiceResponse<MessageTemplate[]>> {
-    try {
-      let filtered = this.templates;
-      if (filters?.moderatorId) {
-        filtered = filtered.filter(
-          t => !t.moderatorId || t.moderatorId === filters.moderatorId || !('moderatorId' in t)
-        );
-      }
-      return { success: true, data: filtered };
-    } catch (error) {
-      return { success: false, error: 'Failed to fetch templates' };
+export async function getQueueTemplates(queueId: string): Promise<MessageTemplate[]> {
+  try {
+    const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${queueId}`);
+    if (!stored) {
+      return [];
     }
-  }
-
-  /**
-   * Get single template by ID
-   */
-  async getTemplate(id: string): Promise<MessageServiceResponse<MessageTemplate>> {
-    try {
-      const template = this.templates.find(t => t.id === id);
-      if (!template) {
-        return { success: false, error: 'Template not found' };
-      }
-      return { success: true, data: template };
-    } catch (error) {
-      return { success: false, error: 'Failed to fetch template' };
-    }
-  }
-
-  /**
-   * Create new template
-   */
-  async createTemplate(data: Omit<MessageTemplate, 'id' | 'createdAt'>): Promise<MessageServiceResponse<MessageTemplate>> {
-    try {
-      const template: MessageTemplate = {
-        ...data,
-        id: `template_${Date.now()}`,
-        createdAt: new Date(),
-      };
-      this.templates.push(template);
-      return { success: true, data: template };
-    } catch (error) {
-      return { success: false, error: 'Failed to create template' };
-    }
-  }
-
-  /**
-   * Update existing template
-   */
-  async updateTemplate(id: string, data: Partial<MessageTemplate>): Promise<MessageServiceResponse<MessageTemplate>> {
-    try {
-      const index = this.templates.findIndex(t => t.id === id);
-      if (index === -1) {
-        return { success: false, error: 'Template not found' };
-      }
-      const updated = { ...this.templates[index], ...data, updatedAt: new Date() };
-      this.templates[index] = updated;
-      return { success: true, data: updated };
-    } catch (error) {
-      return { success: false, error: 'Failed to update template' };
-    }
-  }
-
-  /**
-   * Delete template
-   */
-  async deleteTemplate(id: string): Promise<MessageServiceResponse<void>> {
-    try {
-      const index = this.templates.findIndex(t => t.id === id);
-      if (index === -1) {
-        return { success: false, error: 'Template not found' };
-      }
-      this.templates.splice(index, 1);
-      // Also delete associated conditions
-      this.conditions = this.conditions.filter(c => c.templateId !== id);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to delete template' };
-    }
-  }
-
-  /**
-   * Validate template - Check if all variables are valid
-   */
-  validateTemplate(template: MessageTemplate): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    if (!template.title || template.title.trim() === '') {
-      errors.push('العنوان مطلوب');
-    }
-
-    if (!template.content || template.content.trim() === '') {
-      errors.push('محتوى الرسالة مطلوب');
-    }
-
-    // Check for undefined variables in content
-    const variableRegex = /{([^}]+)}/g;
-    const usedVariables = new Set<string>();
-    let match;
-    while ((match = variableRegex.exec(template.content)) !== null) {
-      usedVariables.add(match[1]);
-    }
-
-    // Verify all used variables are in the variables list
-    const validVariables = ['PN', 'PQP', 'CQP', 'ETR', 'QN', 'DR'];
-    usedVariables.forEach(v => {
-      if (!validVariables.includes(v)) {
-        errors.push(`متغير غير معروف: {${v}}`);
-      }
-    });
-
-    return { valid: errors.length === 0, errors };
-  }
-
-  /**
-   * Get all conditions for a template
-   */
-  async getConditions(templateId: string): Promise<MessageServiceResponse<MessageCondition[]>> {
-    try {
-      const conditions = this.conditions.filter(c => c.templateId === templateId);
-      return { success: true, data: conditions };
-    } catch (error) {
-      return { success: false, error: 'Failed to fetch conditions' };
-    }
-  }
-
-  /**
-   * Create condition
-   */
-  async createCondition(data: Omit<MessageCondition, 'id'>): Promise<MessageServiceResponse<MessageCondition>> {
-    try {
-      const condition: MessageCondition = {
-        ...data,
-        id: `condition_${Date.now()}`,
-      };
-      this.conditions.push(condition);
-      return { success: true, data: condition };
-    } catch (error) {
-      return { success: false, error: 'Failed to create condition' };
-    }
-  }
-
-  /**
-   * Delete condition
-   */
-  async deleteCondition(id: string): Promise<MessageServiceResponse<void>> {
-    try {
-      const index = this.conditions.findIndex(c => c.id === id);
-      if (index === -1) {
-        return { success: false, error: 'Condition not found' };
-      }
-      this.conditions.splice(index, 1);
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to delete condition' };
-    }
+    const config: QueueTemplateConfig = JSON.parse(stored);
+    return config.templates || [];
+  } catch (error) {
+    console.error('Failed to fetch queue templates:', error);
+    return [];
   }
 }
 
-// Export singleton instance
-export const messageTemplateService = new MessageTemplateService();
+/**
+ * Get queue template config (includes metadata)
+ */
+export async function getQueueTemplateConfig(queueId: string, queueName: string): Promise<QueueTemplateConfig> {
+  try {
+    const stored = localStorage.getItem(`${STORAGE_KEY_PREFIX}${queueId}`);
+    if (!stored) {
+      return {
+        queueId,
+        queueName,
+        templates: [],
+      };
+    }
+    return JSON.parse(stored) as QueueTemplateConfig;
+  } catch (error) {
+    console.error('Failed to fetch queue template config:', error);
+    return {
+      queueId,
+      queueName,
+      templates: [],
+    };
+  }
+}
+
+/**
+ * Save all templates for a queue
+ */
+export async function saveQueueTemplates(queueId: string, queueName: string, templates: MessageTemplate[]): Promise<boolean> {
+  try {
+    const config: QueueTemplateConfig = {
+      queueId,
+      queueName,
+      templates,
+      totalConditions: 0,
+    };
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}${queueId}`, JSON.stringify(config));
+    return true;
+  } catch (error) {
+    console.error('Failed to save queue templates:', error);
+    return false;
+  }
+}
+
+/**
+ * Create new template in queue
+ */
+export async function createTemplate(
+  queueId: string,
+  queueName: string,
+  data: Omit<MessageTemplate, 'id' | 'createdAt' | 'queueId'>
+): Promise<MessageTemplate | null> {
+  try {
+    const templates = await getQueueTemplates(queueId);
+    
+    const newTemplate: MessageTemplate = {
+      ...data,
+      queueId,
+      id: `template_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date(),
+    };
+
+    templates.push(newTemplate);
+    const success = await saveQueueTemplates(queueId, queueName, templates);
+    
+    return success ? newTemplate : null;
+  } catch (error) {
+    console.error('Failed to create template:', error);
+    return null;
+  }
+}
+
+/**
+ * Update existing template
+ */
+export async function updateTemplate(
+  queueId: string,
+  queueName: string,
+  templateId: string,
+  updates: Partial<MessageTemplate>
+): Promise<MessageTemplate | null> {
+  try {
+    const templates = await getQueueTemplates(queueId);
+    const index = templates.findIndex(t => t.id === templateId);
+
+    if (index === -1) {
+      return null;
+    }
+
+    templates[index] = {
+      ...templates[index],
+      ...updates,
+      id: templates[index].id,
+      queueId: templates[index].queueId,
+      createdAt: templates[index].createdAt,
+      updatedAt: new Date(),
+    };
+
+    const success = await saveQueueTemplates(queueId, queueName, templates);
+    return success ? templates[index] : null;
+  } catch (error) {
+    console.error('Failed to update template:', error);
+    return null;
+  }
+}
+
+/**
+ * Delete template from queue
+ */
+export async function deleteTemplate(queueId: string, queueName: string, templateId: string): Promise<boolean> {
+  try {
+    const templates = await getQueueTemplates(queueId);
+    const filtered = templates.filter(t => t.id !== templateId);
+    
+    return await saveQueueTemplates(queueId, queueName, filtered);
+  } catch (error) {
+    console.error('Failed to delete template:', error);
+    return false;
+  }
+}
+
+/**
+ * Duplicate template in same queue
+ */
+export async function duplicateTemplate(
+  queueId: string,
+  queueName: string,
+  templateId: string,
+  newTitle?: string
+): Promise<MessageTemplate | null> {
+  try {
+    const templates = await getQueueTemplates(queueId);
+    const original = templates.find(t => t.id === templateId);
+
+    if (!original) {
+      return null;
+    }
+
+    const duplicate: MessageTemplate = {
+      ...original,
+      id: `template_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      title: newTitle || `${original.title} (نسخة)`,
+      createdAt: new Date(),
+      updatedAt: undefined,
+    };
+
+    templates.push(duplicate);
+    const success = await saveQueueTemplates(queueId, queueName, templates);
+
+    return success ? duplicate : null;
+  } catch (error) {
+    console.error('Failed to duplicate template:', error);
+    return null;
+  }
+}
+
+/**
+ * Get all queues with templates
+ */
+export async function getAllQueueTemplateConfigs(): Promise<QueueTemplateConfig[]> {
+  try {
+    const configs: QueueTemplateConfig[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(STORAGE_KEY_PREFIX)) {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          configs.push(JSON.parse(stored) as QueueTemplateConfig);
+        }
+      }
+    }
+    return configs;
+  } catch (error) {
+    console.error('Failed to fetch all configs:', error);
+    return [];
+  }
+}
+
+/**
+ * Set default template for queue
+ */
+export async function setDefaultTemplate(queueId: string, queueName: string, templateContent: string): Promise<boolean> {
+  try {
+    const config = await getQueueTemplateConfig(queueId, queueName);
+    config.defaultTemplate = templateContent;
+    return await saveQueueTemplates(queueId, queueName, config.templates);
+  } catch (error) {
+    console.error('Failed to set default template:', error);
+    return false;
+  }
+}
+
+/**
+ * Toggle template active status
+ */
+export async function toggleTemplateStatus(queueId: string, queueName: string, templateId: string): Promise<MessageTemplate | null> {
+  try {
+    const templates = await getQueueTemplates(queueId);
+    const template = templates.find(t => t.id === templateId);
+
+    if (!template) {
+      return null;
+    }
+
+    template.isActive = !template.isActive;
+    template.updatedAt = new Date();
+
+    const success = await saveQueueTemplates(queueId, queueName, templates);
+    return success ? template : null;
+  } catch (error) {
+    console.error('Failed to toggle template status:', error);
+    return null;
+  }
+}
+
+/**
+ * Validate template
+ */
+export function validateTemplate(template: MessageTemplate): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!template.title || template.title.trim() === '') {
+    errors.push('العنوان مطلوب');
+  }
+
+  if (!template.content || template.content.trim() === '') {
+    errors.push('محتوى الرسالة مطلوب');
+  }
+
+  const validVariables = ['PN', 'PQP', 'CQP', 'ETR', 'QN', 'DR', 'DN'];
+  const variableRegex = /{([^}]+)}/g;
+  const usedVariables = new Set<string>();
+  let match;
+  while ((match = variableRegex.exec(template.content)) !== null) {
+    usedVariables.add(match[1]);
+  }
+
+  usedVariables.forEach(v => {
+    if (!validVariables.includes(v)) {
+      errors.push(`متغير غير معروف: {${v}}`);
+    }
+  });
+
+  return { valid: errors.length === 0, errors };
+}

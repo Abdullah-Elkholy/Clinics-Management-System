@@ -69,6 +69,7 @@ export default function MainApp() {
           <Modals.EditPatientModal />
           <Modals.MessageSelectionModal />
           <Modals.MessagePreviewModal />
+          <Modals.MessageConditionsModal />
           <Modals.RetryPreviewModal />
           <Modals.QuotaManagementModal />
         </ModalProvider>

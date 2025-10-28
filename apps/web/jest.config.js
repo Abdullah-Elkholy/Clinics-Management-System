@@ -20,4 +20,8 @@ module.exports = {
     '!**/node_modules/**',
     '!**/.next/**',
   ],
+  testMatch: [
+    '**/__tests__/**/*.(test|spec).[jt]s?(x)',
+    '**/?(*.)+(spec|test).[jt]s?(x)',
+  ],
 };
