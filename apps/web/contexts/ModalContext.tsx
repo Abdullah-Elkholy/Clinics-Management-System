@@ -9,6 +9,7 @@ export type ModalType =
   | 'messageSelection' 
   | 'messagePreview' 
   | 'addTemplate' 
+  | 'editTemplate'
   | 'accountInfo' 
   | 'whatsappAuth' 
   | 'editQueue' 

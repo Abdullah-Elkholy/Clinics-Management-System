@@ -5,11 +5,12 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { validateNumber } from '@/utils/validation';
-import { MOCK_QUEUE_PATIENTS, MOCK_MESSAGE_TEMPLATES } from '@/constants/mockData';
+import { MOCK_QUEUE_PATIENTS, MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
+import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { QueueStatsCard } from './QueueStatsCard';
 import { useQueueMessageConfig } from '@/hooks/useQueueMessageConfig';
 
@@ -38,6 +39,46 @@ export default function QueueDashboard() {
   const [editingQueueValue, setEditingQueueValue] = useState('');
   
   const queue = queues.find((q) => q.id === selectedQueueId);
+
+  // Compute guide items dynamically based on queue and default template
+  const guideItems = useMemo(() => {
+    const baseItems = [
+      {
+        title: 'CQP',
+        description: 'الموضع الحالي في قائمة الانتظار'
+      },
+      {
+        title: 'ETS',
+        description: 'المدة المتوقعة لكل كشف طبي بالدقائق'
+      },
+      {
+        title: '',
+        description: 'يمكنك تعديل ترتيب المرضى بالنقر على أيقونة التعديل'
+      },
+      {
+        title: '',
+        description: 'اختر عدد من المرضى وارسل لهم رسائل جماعية'
+      },
+    ];
+
+    // Check if queue has a default template
+    if (selectedQueueId) {
+      const defaultTemplate = MOCK_MESSAGE_TEMPLATES.find(
+        (t) => t.queueId === String(selectedQueueId) && 
+               t.conditionId?.startsWith('DEFAULT_')
+      );
+
+      if (!defaultTemplate) {
+        // Add warning item if no default template
+        baseItems.push({
+          title: '⚠️ تنبيه هام',
+          description: 'لم يتم تحديد قالب رسالة افتراضي لهذه الطابور. يجب إنشاء قالب افتراضي قبل تفعيل الرسائل الآلية.'
+        });
+      }
+    }
+
+    return baseItems;
+  }, [selectedQueueId]);
 
   // Load message config when queue changes
   useEffect(() => {
@@ -612,18 +653,9 @@ export default function QueueDashboard() {
       )}
 
       {/* Info Box */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
-        <h4 className="font-semibold text-blue-900 flex items-center gap-2">
-          <i className="fas fa-info-circle"></i>
-          نصائح للاستخدام الأمثل:
-        </h4>
-        <ul className="text-blue-800 text-sm space-y-1 mr-6">
-          <li>• CQP: الموضع الحالي في قائمة الانتظار</li>
-          <li>• ETS: المدة المتوقعة لكل كشف طبي بالدقائق</li>
-          <li>• يمكنك تعديل ترتيب المرضى بالنقر على أيقونة التعديل</li>
-          <li>• اختر عدد من المرضى وارسل لهم رسائل جماعية</li>
-        </ul>
-      </div>
+      <UsageGuideSection 
+        items={guideItems}
+      />
     </PanelWrapper>
   );
 }

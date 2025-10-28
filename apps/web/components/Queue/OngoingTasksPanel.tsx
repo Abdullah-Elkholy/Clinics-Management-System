@@ -8,6 +8,7 @@ import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
+import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Badge } from '@/components/Common/ResponsiveUI';
 
 interface Patient {
@@ -33,6 +34,25 @@ interface Session {
   patients: Patient[];
   isPaused?: boolean;
 }
+
+const ONGOING_TASKS_GUIDE_ITEMS = [
+  {
+    title: '',
+    description: 'يمكنك إيقاف أو استئناف جلسة واحدة أو جميع الجلسات من الأزرار العلوية'
+  },
+  {
+    title: '',
+    description: 'لاحظ شريط التقدم الذي يوضح نسبة الرسائل المرسلة من إجمالي المرضى'
+  },
+  {
+    title: '',
+    description: 'حدد عدة مرضى وامسح أو عدل بيانات عدة مرضى في نفس الوقت'
+  },
+  {
+    title: '',
+    description: 'الجلسات الموقوفة تظهر بخلفية صفراء/برتقالية للدلالة على الحالة الموقوفة'
+  },
+];
 
 export default function OngoingTasksPanel() {
   const { openModal } = useModal();
@@ -663,6 +683,12 @@ export default function OngoingTasksPanel() {
             </div>
           );
         })}
+      </div>
+
+      <div className="px-6 pb-6">
+        <UsageGuideSection
+          items={ONGOING_TASKS_GUIDE_ITEMS}
+        />
       </div>
     </PanelWrapper>
   );

@@ -9,6 +9,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { Badge } from '@/components/Common/ResponsiveUI';
+import UsageGuideSection from '@/components/Common/UsageGuideSection';
 
 interface Patient {
   id: number;
@@ -31,6 +32,25 @@ interface Session {
   failedCount: number;
   patients: Patient[];
 }
+
+const FAILED_TASKS_GUIDE_ITEMS = [
+  {
+    title: '',
+    description: 'كل محاولة إعادة تزيد عداد المحاولات'
+  },
+  {
+    title: '',
+    description: 'يمكنك تحديد عدد من المرضى برسائلهم وإعادة محاولة جميعها'
+  },
+  {
+    title: '',
+    description: 'حذف المريض يزيل الفشل النهائي من السجل'
+  },
+  {
+    title: '',
+    description: 'الرسائل الفاشلة قد تكون بسبب رقم جوال خاطئ أو مشكلة اتصال'
+  },
+];
 
 export default function FailedTasksPanel() {
   const { openModal } = useModal();
@@ -596,18 +616,10 @@ export default function FailedTasksPanel() {
         })}
       </div>
 
-      {/* Info Box */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
-        <h4 className="font-semibold text-blue-900 flex items-center gap-2">
-          <i className="fas fa-info-circle"></i>
-          نصائح للاستخدام الأمثل:
-        </h4>
-        <ul className="text-blue-800 text-sm space-y-1 mr-6">
-          <li>• كل محاولة إعادة تزيد عداد المحاولات</li>
-          <li>• يمكنك تحديد عدد من المرضى برسائلهم وإعادة محاولة جميعها</li>
-          <li>• حذف المريض يزيل الفشل النهائي من السجل</li>
-          <li>• الرسائل الفاشلة قد تكون بسبب رقم جوال خاطئ أو مشكلة اتصال</li>
-        </ul>
+      <div className="px-6 pb-6">
+        <UsageGuideSection
+          items={FAILED_TASKS_GUIDE_ITEMS}
+        />
       </div>
     </PanelWrapper>
   );

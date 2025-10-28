@@ -3,6 +3,7 @@ export { default as AddQueueModal } from './AddQueueModal';
 export { default as AddPatientModal } from './AddPatientModal';
 export { default as UploadModal } from './UploadModal';
 export { default as AddTemplateModal } from './AddTemplateModal';
+export { default as EditTemplateModal } from './EditTemplateModal';
 export { default as AccountInfoModal } from './AccountInfoModal';
 export { default as WhatsAppAuthModal } from './WhatsAppAuthModal';
 export { default as EditQueueModal } from './EditQueueModal';

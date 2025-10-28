@@ -6,11 +6,11 @@ import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validateTextarea, ValidationError } from '@/utils/validation';
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
 
-export default function AddTemplateModal() {
-  const { openModals, closeModal } = useModal();
+export default function EditTemplateModal() {
+  const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
   const { selectedQueueId } = useQueue();
   const [title, setTitle] = useState('');
@@ -19,20 +19,39 @@ export default function AddTemplateModal() {
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
+  const [currentTemplate, setCurrentTemplate] = useState<any>(null);
   const [showDefaultWarning, setShowDefaultWarning] = useState(false);
   const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<any>(null);
 
-  const isOpen = openModals.has('addTemplate');
+  const isOpen = openModals.has('editTemplate');
+  const modalData = getModalData('editTemplate');
+  const templateId = modalData?.templateId as string | undefined;
 
   const MAX_CONTENT_LENGTH = 1000;
   const MAX_DESCRIPTION_LENGTH = 200;
 
+  // Load template data when modal opens
+  useEffect(() => {
+    if (isOpen && templateId) {
+      const template = MOCK_MESSAGE_TEMPLATES.find((t) => t.id === templateId);
+      if (template) {
+        setCurrentTemplate(template);
+        setTitle(template.title);
+        setDescription(template.description || '');
+        setContent(template.content);
+        setSelectedConditionId(template.conditionId);
+      }
+    }
+  }, [isOpen, templateId]);
+
   // Handle condition selection
   const handleConditionChange = (conditionId: string | null) => {
-    // If selecting a default condition, check if one already exists
-    if (conditionId && conditionId.startsWith('DEFAULT_')) {
+    // If selecting a different default condition, check if one already exists elsewhere
+    if (conditionId && conditionId.startsWith('DEFAULT_') && currentTemplate?.conditionId !== conditionId) {
       const existingDefault = MOCK_MESSAGE_TEMPLATES.find(
-        (t) => t.queueId === String(selectedQueueId) && t.conditionId?.startsWith('DEFAULT_')
+        (t) => t.queueId === currentTemplate?.queueId && 
+               t.id !== currentTemplate?.id &&
+               t.conditionId?.startsWith('DEFAULT_')
       );
       if (existingDefault) {
         setExistingDefaultTemplate(existingDefault);
@@ -66,7 +85,7 @@ export default function AddTemplateModal() {
 
   const validateField = (fieldName: string, value: string) => {
     let error: string | null = null;
-    
+
     switch (fieldName) {
       case 'title':
         error = validateName(value, 'عنوان القالب');
@@ -77,7 +96,7 @@ export default function AddTemplateModal() {
       default:
         break;
     }
-    
+
     if (error) {
       setErrors((prev) => ({ ...prev, [fieldName]: error }));
     } else {
@@ -100,7 +119,7 @@ export default function AddTemplateModal() {
         return;
       }
     }
-    
+
     // Validate on change for better UX
     if (errors[fieldName]) {
       validateField(fieldName, value);
@@ -117,50 +136,40 @@ export default function AddTemplateModal() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate all fields
     const newErrors: ValidationError = {};
-    
+
     if (validateName(title, 'عنوان القالب')) {
       newErrors.title = validateName(title, 'عنوان القالب') || '';
     }
-    
+
     if (validateTextarea(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH)) {
       newErrors.content = validateTextarea(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH) || '';
     }
-    
+
     setErrors(newErrors);
-    
+
     if (Object.keys(newErrors).length > 0) {
       addToast('يرجى تصحيح الأخطاء أعلاه', 'error');
       return;
     }
-    
+
     try {
       setIsLoading(true);
-      
+
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 500));
-      
-      // Create new template object
-      const newTemplate = {
-        id: `template-${Date.now()}`,
-        title,
-        description,
-        content,
-        isActive: true,
-        createdAt: new Date(),
-      };
-      
-      // TODO: Add template through context or API
-      addToast('تم إضافة قالب الرسالة بنجاح', 'success');
+
+      // TODO: Update template through context or API
+      addToast('تم تحديث قالب الرسالة بنجاح', 'success');
       setTitle('');
       setDescription('');
       setContent('');
       setErrors({});
-      closeModal('addTemplate');
+      closeModal('editTemplate');
     } catch (error) {
-      addToast('حدث خطأ أثناء إضافة القالب', 'error');
+      addToast('حدث خطأ أثناء تحديث القالب', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -174,12 +183,12 @@ export default function AddTemplateModal() {
     <Modal
       isOpen={isOpen}
       onClose={() => {
-        closeModal('addTemplate');
+        closeModal('editTemplate');
         setTitle('');
         setContent('');
         setErrors({});
       }}
-      title="إضافة قالب رسالة جديد"
+      title="تحرير قالب رسالة"
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -344,8 +353,8 @@ export default function AddTemplateModal() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">لم يتم تحديده بعد - القالب الافتراضي</option>
-              {selectedQueueId && MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-                (c) => c.queueId === String(selectedQueueId) && !c.id.startsWith('DEFAULT_')
+              {currentTemplate && MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
+                (c) => c.queueId === currentTemplate.queueId && !c.id.startsWith('DEFAULT_')
               ).map((condition) => (
                 <option key={condition.id} value={condition.id}>
                   {condition.name} ({condition.operator === 'GREATER' ? 'أكثر من' : condition.operator === 'LESS' ? 'أقل من' : 'يساوي'} {condition.value})
@@ -374,25 +383,25 @@ export default function AddTemplateModal() {
             className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 ${
               isSubmitDisabled
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
             {isLoading ? (
               <>
                 <i className="fas fa-spinner fa-spin"></i>
-                جاري الإضافة...
+                جاري التحديث...
               </>
             ) : (
               <>
-                <i className="fas fa-plus"></i>
-                إضافة القالب
+                <i className="fas fa-save"></i>
+                حفظ التغييرات
               </>
             )}
           </button>
           <button
             type="button"
             onClick={() => {
-              closeModal('addTemplate');
+              closeModal('editTemplate');
               setTitle('');
               setDescription('');
               setContent('');
@@ -416,7 +425,7 @@ export default function AddTemplateModal() {
               القالب الافتراضي الحالي للطابور هو: <strong className="text-blue-600">{existingDefaultTemplate?.title}</strong>
             </p>
             <p>
-              هل تريد استبدال القالب الافتراضي الحالي بهذا القالب الجديد؟
+              هل تريد استبدال القالب الافتراضي الحالي بهذا القالب؟
             </p>
             <div className="bg-amber-50 border border-amber-200 p-3 rounded text-sm text-amber-800">
               <p className="font-semibold mb-1">⚠️ تنبيه:</p>
@@ -432,7 +441,7 @@ export default function AddTemplateModal() {
         onConfirm={confirmDefaultOverride}
         onCancel={() => {
           setShowDefaultWarning(false);
-          setSelectedConditionId(null);
+          setSelectedConditionId(currentTemplate?.conditionId || null);
           setExistingDefaultTemplate(null);
         }}
       />

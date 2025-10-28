@@ -62,6 +62,7 @@ export default function MainApp() {
           <Modals.AddPatientModal />
           <Modals.UploadModal />
           <Modals.AddTemplateModal />
+          <Modals.EditTemplateModal />
           <Modals.AccountInfoModal />
           <Modals.WhatsAppAuthModal />
           <Modals.EditQueueModal />

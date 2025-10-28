@@ -7,6 +7,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { Badge } from '@/components/Common/ResponsiveUI';
+import UsageGuideSection from '@/components/Common/UsageGuideSection';
 
 interface Patient {
   id: number;
@@ -29,6 +30,25 @@ interface Session {
   completedAt: string;
   patients: Patient[];
 }
+
+const COMPLETED_TASKS_GUIDE_ITEMS = [
+  {
+    title: '',
+    description: 'هنا تجد جميع الجلسات التي تمت معالجتها بنجاح'
+  },
+  {
+    title: '',
+    description: 'يمكنك عرض تفاصيل كل جلسة والمرضى المرسل إليهم'
+  },
+  {
+    title: '',
+    description: 'يتم حفظ كل البيانات المكتملة للمراجعة والتقارير'
+  },
+  {
+    title: '',
+    description: 'نسبة النجاح توضح فعالية كل جلسة'
+  },
+];
 
 export default function CompletedTasksPanel() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
@@ -371,17 +391,10 @@ export default function CompletedTasksPanel() {
       </div>
 
       {/* Info Box */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2 mt-6">
-        <h4 className="font-semibold text-blue-900 flex items-center gap-2">
-          <i className="fas fa-info-circle"></i>
-          نصائح للاستخدام الأمثل:
-        </h4>
-        <ul className="text-blue-800 text-sm space-y-1 mr-6">
-          <li>• هنا تجد جميع الجلسات التي تمت معالجتها بنجاح</li>
-          <li>• يمكنك عرض تفاصيل كل جلسة والمرضى المرسل إليهم</li>
-          <li>• يتم حفظ كل البيانات المكتملة للمراجعة والتقارير</li>
-          <li>• نسبة النجاح توضح فعالية كل جلسة</li>
-        </ul>
+      <div className="px-6 pb-6">
+        <UsageGuideSection 
+          items={COMPLETED_TASKS_GUIDE_ITEMS}
+        />
       </div>
     </PanelWrapper>
   );
