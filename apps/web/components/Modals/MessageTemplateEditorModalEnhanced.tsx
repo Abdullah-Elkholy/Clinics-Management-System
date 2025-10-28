@@ -47,19 +47,6 @@ const AVAILABLE_VARIABLES = [
     example: 'عيادة الأسنان',
   },
 ];
-
-/**
- * Template categories for filtering/organizing
- */
-const TEMPLATE_CATEGORIES: { value: MessageTemplateCategory; label: string; icon: string }[] = [
-  { value: 'greeting', label: 'ترحيب', icon: 'fa-handshake' },
-  { value: 'reminder', label: 'تذكير', icon: 'fa-bell' },
-  { value: 'alert', label: 'تنبيه', icon: 'fa-exclamation-circle' },
-  { value: 'confirmation', label: 'تأكيد', icon: 'fa-check-circle' },
-  { value: 'thank_you', label: 'شكر', icon: 'fa-heart' },
-  { value: 'custom', label: 'مخصص', icon: 'fa-star' },
-];
-
 /**
  * Variable Validation Rules
  */
@@ -85,7 +72,6 @@ export default function MessageTemplateEditorModal({
   const [formData, setFormData] = useState<Partial<MessageTemplate>>({
     title: '',
     content: '',
-    category: 'custom',
     isActive: true,
     priority: 0,
   });
@@ -104,7 +90,6 @@ export default function MessageTemplateEditorModal({
       setFormData({
         title: template.title,
         content: template.content,
-        category: template.category || 'custom',
         isActive: template.isActive,
         priority: template.priority || 0,
       });
@@ -124,7 +109,6 @@ export default function MessageTemplateEditorModal({
       setFormData({
         title: '',
         content: '',
-        category: 'custom',
         isActive: true,
         priority: 0,
       });
@@ -229,7 +213,6 @@ export default function MessageTemplateEditorModal({
       setFormData({
         title: version.title,
         content: version.content,
-        category: formData.category,
         isActive: formData.isActive,
         priority: formData.priority,
       });
@@ -267,7 +250,6 @@ export default function MessageTemplateEditorModal({
         await onSave({
           title: formData.title,
           content: formData.content,
-          category: formData.category,
           isActive: formData.isActive,
           priority: formData.priority,
         });
@@ -336,29 +318,6 @@ export default function MessageTemplateEditorModal({
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <p className="text-xs text-gray-600 mt-1">اسم مختصر وواضح للقالب</p>
-          </div>
-
-          {/* Category Field */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">التصنيف</label>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-              {TEMPLATE_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.value}
-                  type="button"
-                  onClick={() => handleFieldChange('category', cat.value)}
-                  className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all ${
-                    formData.category === cat.value
-                      ? 'border-blue-600 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                  }`}
-                  title={cat.label}
-                >
-                  <i className={`fas ${cat.icon} text-lg`}></i>
-                  <span className="text-xs text-center">{cat.label}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Content Field with Advanced Variables */}
