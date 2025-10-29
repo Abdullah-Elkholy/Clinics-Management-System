@@ -369,3 +369,23 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
     description: 'تطبيق على رسالة الأولوية عندما تكون أولوية المريض = 1 (عالية)',
   },
 ];
+
+/**
+ * Mock Quota Data
+ * Contains quota information for message and queue management
+ */
+export const MOCK_QUOTA = {
+  messagesQuota: {
+    total: 1000,
+    consumed: 450,
+    remaining: 550,
+    percentUsed: 45,
+  },
+  queuesQuota: {
+    total: 10,
+    consumed: 3,
+    remaining: 7,
+    percentUsed: 30,
+  },
+  lastUpdated: new Date(),
+};

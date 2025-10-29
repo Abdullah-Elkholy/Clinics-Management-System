@@ -35,6 +35,15 @@ export interface MessageTemplate {
   id: string;
   title: string;
   content: string;
+  description?: string;
+  queueId?: string;
+  moderatorId?: string;
+  conditionId?: string;
+  isActive?: boolean;
+  variables?: string[];
+  createdBy?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface MessageCondition {

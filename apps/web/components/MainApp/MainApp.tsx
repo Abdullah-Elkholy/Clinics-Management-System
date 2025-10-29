@@ -71,6 +71,7 @@ export default function MainApp() {
           <Modals.MessageSelectionModal />
           <Modals.MessagePreviewModal />
           <Modals.MessageConditionsModal />
+          <Modals.ManageConditionsModal />
           <Modals.RetryPreviewModal />
           <Modals.QuotaManagementModal />
         </ModalProvider>

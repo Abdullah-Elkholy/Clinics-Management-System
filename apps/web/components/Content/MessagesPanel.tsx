@@ -8,7 +8,8 @@ import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
-import { MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
+import { ConflictBadge } from '@/components/Common/ConflictBadge';
+import { MOCK_QUEUE_MESSAGE_CONDITIONS, MOCK_QUOTA } from '@/constants/mockData';
 
 /**
  * Minimal Messages Panel - Focused on Queue Template Management
@@ -53,13 +54,15 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function MessagesPanel() {
-  const { selectedQueueId, queues } = useQueue();
+  const { selectedQueueId, queues, messageTemplates } = useQueue();
   const { addToast } = useUI();
   const { openModal } = useModal();
 
   // State for search, filtering, sorting
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedQueues, setExpandedQueues] = useState<Set<string | number>>(new Set());
+  const [selectedConditionFilter, setSelectedConditionFilter] = useState<string | null>(null);
+  const [highlightedConditionType, setHighlightedConditionType] = useState<string | null>(null);
 
   // Toggle queue expansion
   const toggleQueueExpanded = useCallback((queueId: string | number) => {
@@ -85,6 +88,112 @@ export default function MessagesPanel() {
     }
   }, [expandedQueues.size, queues]);
 
+  /**
+   * Check for condition intersections in a queue
+   */
+  const checkConditionIntersections = (queueId: string) => {
+    const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
+      (c) => c.queueId === queueId && !c.id.startsWith('DEFAULT_')
+    );
+
+    if (queueConditions.length < 2) return [];
+
+    const intersections: Array<{ cond1: any; cond2: any; message: string }> = [];
+
+    for (let i = 0; i < queueConditions.length; i++) {
+      for (let j = i + 1; j < queueConditions.length; j++) {
+        const cond1 = queueConditions[i];
+        const cond2 = queueConditions[j];
+
+        // Check if conditions overlap
+        if (
+          cond1.operator &&
+          cond2.operator &&
+          getConditionRange(cond1) &&
+          getConditionRange(cond2) &&
+          conditionsOverlap(cond1, cond2)
+        ) {
+          intersections.push({
+            cond1,
+            cond2,
+            message: `تقاطع: ${getConditionText(cond1)} و ${getConditionText(cond2)}`
+          });
+        }
+      }
+    }
+
+    return intersections;
+  };
+
+  /**
+   * Get all condition IDs that are involved in intersections
+   */
+  const getConflictingConditionIds = useCallback((queueId: string): Set<string> => {
+    const intersections = checkConditionIntersections(queueId);
+    const conflictingIds = new Set<string>();
+    
+    intersections.forEach((intersection) => {
+      conflictingIds.add(intersection.cond1.id);
+      conflictingIds.add(intersection.cond2.id);
+    });
+    
+    return conflictingIds;
+  }, []);
+
+  /**
+   * Get range representation of a condition
+   * Note: All values must be >= 1 (0 and negative values are invalid)
+   */
+  const getConditionRange = (cond: any): { min: number; max: number } | null => {
+    switch (cond.operator) {
+      case 'EQUAL':
+        if (cond.value === undefined || cond.value <= 0) return null;
+        return { min: cond.value, max: cond.value };
+      case 'GREATER':
+        if (cond.value === undefined || cond.value <= 0) return null;
+        return { min: cond.value + 1, max: 999 };
+      case 'LESS':
+        if (cond.value === undefined || cond.value <= 0) return null;
+        return { min: 1, max: cond.value - 1 };
+      case 'RANGE':
+        if (cond.minValue === undefined || cond.maxValue === undefined || cond.minValue <= 0 || cond.maxValue <= 0) return null;
+        return { min: cond.minValue, max: cond.maxValue };
+      default:
+        return null;
+    }
+  };
+
+  /**
+   * Check if two conditions overlap/intersect
+   */
+  const conditionsOverlap = (cond1: any, cond2: any): boolean => {
+    const range1 = getConditionRange(cond1);
+    const range2 = getConditionRange(cond2);
+    
+    if (!range1 || !range2) return false;
+    
+    // Two ranges overlap if NOT (range1.max < range2.min OR range2.max < range1.min)
+    return !(range1.max < range2.min || range2.max < range1.min);
+  };
+
+  /**
+   * Get human-readable condition text
+   */
+  const getConditionText = (cond: any): string => {
+    const operatorMap: Record<string, string> = {
+      'EQUAL': 'يساوي',
+      'GREATER': 'أكثر من',
+      'LESS': 'أقل من',
+      'RANGE': 'نطاق',
+    };
+
+    const operatorText = operatorMap[cond.operator] || cond.operator;
+    const valueText =
+      cond.operator === 'RANGE' ? `${cond.minValue}-${cond.maxValue}` : cond.value;
+
+    return `${operatorText} ${valueText}`;
+  };
+
   return (
     <PanelWrapper>
       <PanelHeader
@@ -92,8 +201,9 @@ export default function MessagesPanel() {
         title="إدارة قوالب الرسائل"
         description="إدارة قوالب الرسائل لكل طابور بشكل منفصل وسهل"
         stats={[
-          { label: 'عدد الطوابير', value: queues.length.toString(), color: 'blue' },
-          { label: 'الطوابير المفتوحة', value: expandedQueues.size.toString(), color: 'green' },
+          { label: 'إجمالي الرسائل في الحصة', value: MOCK_QUOTA.messagesQuota.total.toString(), color: 'blue' },
+          { label: 'الرسائل المستهلكة', value: MOCK_QUOTA.messagesQuota.consumed.toString(), color: 'yellow' },
+          { label: 'الرسائل المتبقية', value: MOCK_QUOTA.messagesQuota.remaining.toString(), color: 'green' },
         ]}
         actions={[]}
       />
@@ -166,16 +276,28 @@ export default function MessagesPanel() {
                           {queue.doctorName || `الطابور #${queue.id}`}
                         </h4>
                         <p className="text-xs text-gray-600 mt-1">
-                          📧 {MOCK_MESSAGE_TEMPLATES.filter((t) => t.queueId === String(queue.id)).length} قالب رسالة
+                          📧 {messageTemplates.filter((t) => t.queueId === String(queue.id)).length} قالب رسالة
                         </p>
                       </div>
                     </button>
 
-                    {/* Quick Stats Badge */}
+                    {/* Quick Stats Badge & Conflict Badge */}
                     <div className="flex items-center gap-2">
                       <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
                         📦 رسائل
                       </span>
+                      
+                      {/* Conflict Badge - Only show when collapsed */}
+                      {!isExpanded && (() => {
+                        const intersections = checkConditionIntersections(String(queue.id));
+                        return intersections.length > 0 ? (
+                          <ConflictBadge 
+                            conflictCount={intersections.length}
+                            size="sm"
+                            onClick={() => toggleQueueExpanded(queue.id)}
+                          />
+                        ) : null;
+                      })()}
                     </div>
 
                     {/* Add Template Button */}
@@ -194,6 +316,34 @@ export default function MessagesPanel() {
                   {/* Queue Content - Collapsible */}
                   {isExpanded && (
                     <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-4">
+                      {/* Intersection Warning */}
+                      {(() => {
+                        const intersections = checkConditionIntersections(String(queue.id));
+                        return intersections.length > 0 ? (
+                          <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-3">
+                            <div className="flex items-start gap-2">
+                              <i className="fas fa-exclamation-circle text-red-600 text-lg mt-0.5 flex-shrink-0"></i>
+                              <div className="flex-1">
+                                <p className="text-sm font-semibold text-red-900 mb-2">
+                                  ⛔ خطأ: تقاطع في الشروط
+                                </p>
+                                <p className="text-xs text-red-800 mb-2">
+                                  تم اكتشاف شروط متقاطعة ولا يمكن قبول هذه التكوينات. يجب تصحيح الشروط:
+                                </p>
+                                <ul className="space-y-1 text-xs text-red-800">
+                                  {intersections.map((intersection, idx) => (
+                                    <li key={idx} className="flex items-start gap-2">
+                                      <span className="text-red-600 flex-shrink-0">✕</span>
+                                      <span>{intersection.message}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null;
+                      })()}
+
                       {/* Template Data Table */}
                       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                         <div className="overflow-x-auto">
@@ -202,13 +352,13 @@ export default function MessagesPanel() {
                               <tr className="bg-gray-100 border-b border-gray-200">
                                 <th className="px-4 py-2 text-right">العنوان</th>
                                 <th className="px-4 py-2 text-right">الشرط المطبق</th>
-                                <th className="px-4 py-2 text-right">أنشأ بواسطة</th>
+                                <th className="px-4 py-2 text-right">انشئ بواسطة</th>
                                 <th className="px-4 py-2 text-right">آخر تحديث</th>
                                 <th className="px-4 py-2 text-right">الإجراءات</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {MOCK_MESSAGE_TEMPLATES.filter((t) => t.queueId === String(queue.id))
+                              {messageTemplates.filter((t) => t.queueId === String(queue.id))
                                 .filter((t) => {
                                   // Search filter
                                   const searchLower = searchTerm.toLowerCase();
@@ -218,8 +368,71 @@ export default function MessagesPanel() {
                                   );
                                 })
                                 .sort((a, b) => {
-                                  // Sort by title alphabetically (Arabic order)
-                                  return a.title.localeCompare(b.title, 'ar');
+                                  // Get conditions for both templates
+                                  const conditionA = a.conditionId 
+                                    ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === a.conditionId)
+                                    : null;
+                                  const conditionB = b.conditionId 
+                                    ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === b.conditionId)
+                                    : null;
+
+                                  // Check if conditions are default
+                                  const isDefaultA = conditionA && conditionA.id.startsWith('DEFAULT_');
+                                  const isDefaultB = conditionB && conditionB.id.startsWith('DEFAULT_');
+
+                                  // 1. Default conditions always first
+                                  if (isDefaultA && !isDefaultB) return -1;
+                                  if (!isDefaultA && isDefaultB) return 1;
+
+                                  // 2. If both have conditions (and neither is default), sort by condition type and value
+                                  if (conditionA && conditionB && !isDefaultA && !isDefaultB) {
+                                    // Define sort order: EQUAL < RANGE < GREATER < LESS
+                                    const operatorOrder: Record<string, number> = {
+                                      'EQUAL': 0,
+                                      'RANGE': 1,
+                                      'GREATER': 2,
+                                      'LESS': 3,
+                                    };
+
+                                    const orderA = operatorOrder[(conditionA as any).operator] ?? 999;
+                                    const orderB = operatorOrder[(conditionB as any).operator] ?? 999;
+
+                                    // If different operators, sort by operator priority
+                                    if (orderA !== orderB) {
+                                      return orderA - orderB;
+                                    }
+
+                                    // If same operator, sort by value
+                                    const opA = (conditionA as any).operator;
+                                    const opB = (conditionB as any).operator;
+                                    
+                                    if (opA === 'RANGE' && opB === 'RANGE') {
+                                      // For RANGE, sort by minValue first, then maxValue
+                                      const minDiff = ((conditionA as any).minValue ?? 0) - ((conditionB as any).minValue ?? 0);
+                                      if (minDiff !== 0) return minDiff;
+                                      return ((conditionA as any).maxValue ?? 0) - ((conditionB as any).maxValue ?? 0);
+                                    } else if (opA === 'EQUAL' && opB === 'EQUAL') {
+                                      // For EQUAL, sort by value ascending (1 < 2 < 5)
+                                      return ((conditionA as any).value ?? 0) - ((conditionB as any).value ?? 0);
+                                    } else if (opA === 'GREATER' && opB === 'GREATER') {
+                                      // For GREATER, sort by value ascending (5 < 10 < 15)
+                                      return ((conditionA as any).value ?? 0) - ((conditionB as any).value ?? 0);
+                                    } else if (opA === 'LESS' && opB === 'LESS') {
+                                      // For LESS, sort by value ascending (3 < 5 < 10)
+                                      return ((conditionA as any).value ?? 0) - ((conditionB as any).value ?? 0);
+                                    }
+                                  }
+
+                                  // 3. If no conditions, sort by title
+                                  if (!conditionA && !conditionB) {
+                                    return a.title.localeCompare(b.title, 'ar');
+                                  }
+
+                                  // 4. "لم يتم تحديده بعد" (no condition) comes last
+                                  if (!conditionA && conditionB) return 1;
+                                  if (conditionA && !conditionB) return -1;
+
+                                  return 0;
                                 })
                                 .map((template) => {
                                 const condition = template.conditionId 
@@ -229,8 +442,18 @@ export default function MessagesPanel() {
                                 // Check if this is a default condition
                                 const isDefaultCondition = condition && condition.id.startsWith('DEFAULT_');
                                 
+                                // Check if this template's condition is conflicting
+                                const conflictingIds = getConflictingConditionIds(String(queue.id));
+                                const hasConflict = condition && conflictingIds.has(condition.id);
+                                
                                 return (
-                                  <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">
+                                  <tr key={template.id} className={`border-b border-gray-200 transition-colors ${
+                                    hasConflict 
+                                      ? 'bg-red-100 hover:bg-red-150 border-l-4 border-l-red-600' 
+                                      : highlightedConditionType && condition && (condition as any).operator === highlightedConditionType
+                                        ? 'bg-yellow-100 hover:bg-yellow-150 border-l-4 border-l-yellow-500'
+                                        : 'hover:bg-blue-50'
+                                  }`}>
                                     <td className="px-4 py-2">
                                       <div>
                                         <p className="font-medium text-gray-900">{template.title}</p>
@@ -244,15 +467,28 @@ export default function MessagesPanel() {
                                             ✓ افتراضي
                                           </span>
                                         ) : (
-                                          <div className="flex items-center gap-2">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            {hasConflict && (
+                                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold animate-pulse">
+                                                <i className="fas fa-exclamation-triangle"></i>
+                                                تضارب!
+                                              </span>
+                                            )}
                                             <span className="text-sm font-semibold text-blue-600">
-                                              {condition.operator === 'EQUAL' && 'يساوي'}
-                                              {condition.operator === 'GREATER' && 'أكثر من'}
-                                              {condition.operator === 'LESS' && 'أقل من'}
+                                              {(condition as any).operator === 'EQUAL' && 'يساوي'}
+                                              {(condition as any).operator === 'GREATER' && 'أكثر من'}
+                                              {(condition as any).operator === 'LESS' && 'أقل من'}
+                                              {(condition as any).operator === 'RANGE' && 'نطاق'}
                                             </span>
-                                            <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
-                                              {condition.value}
-                                            </span>
+                                            {(condition as any).operator === 'RANGE' ? (
+                                              <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
+                                                {(condition as any).minValue} - {(condition as any).maxValue}
+                                              </span>
+                                            ) : (
+                                              <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
+                                                {(condition as any).value}
+                                              </span>
+                                            )}
                                           </div>
                                         )
                                       ) : (
@@ -289,7 +525,7 @@ export default function MessagesPanel() {
                                             
                                             if (isDefault) {
                                               // Get all other templates in this queue
-                                              const otherTemplates = MOCK_MESSAGE_TEMPLATES.filter(
+                                              const otherTemplates = messageTemplates.filter(
                                                 (t) => t.queueId === String(queue.id) && t.id !== template.id
                                               );
                                               

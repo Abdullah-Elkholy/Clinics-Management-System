@@ -11,6 +11,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
+import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
 import { useQueueMessageConfig } from '@/hooks/useQueueMessageConfig';
 
@@ -157,6 +158,103 @@ export default function QueueDashboard() {
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   }, []);
+
+  /**
+   * Get condition range for conflict detection
+   */
+  const getConditionRange = (cond: any): { min: number; max: number } | null => {
+    switch (cond.operator) {
+      case 'EQUAL':
+        if (cond.value === undefined || cond.value <= 0) return null;
+        return { min: cond.value, max: cond.value };
+      case 'GREATER':
+        if (cond.value === undefined || cond.value <= 0) return null;
+        return { min: cond.value + 1, max: 999 };
+      case 'LESS':
+        if (cond.value === undefined || cond.value <= 0) return null;
+        return { min: 1, max: cond.value - 1 };
+      case 'RANGE':
+        if (cond.minValue === undefined || cond.maxValue === undefined || cond.minValue <= 0 || cond.maxValue <= 0) return null;
+        return { min: cond.minValue, max: cond.maxValue };
+      default:
+        return null;
+    }
+  };
+
+  /**
+   * Check if two conditions overlap/intersect
+   */
+  const conditionsOverlap = (cond1: any, cond2: any): boolean => {
+    const range1 = getConditionRange(cond1);
+    const range2 = getConditionRange(cond2);
+    
+    if (!range1 || !range2) return false;
+    
+    return !(range1.max < range2.min || range2.max < range1.min);
+  };
+
+  /**
+   * Detect all overlapping conditions in the queue
+   */
+  const detectQueueConflicts = useCallback(() => {
+    if (!selectedQueueId) return [];
+
+    const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
+      (c) => c.queueId === selectedQueueId && !c.id.startsWith('DEFAULT_')
+    );
+
+    if (queueConditions.length < 2) return [];
+
+    const overlappingConditions = [];
+
+    for (let i = 0; i < queueConditions.length; i++) {
+      for (let j = i + 1; j < queueConditions.length; j++) {
+        const cond1 = queueConditions[i];
+        const cond2 = queueConditions[j];
+
+        if (
+          cond1.operator &&
+          cond2.operator &&
+          getConditionRange(cond1) &&
+          getConditionRange(cond2) &&
+          conditionsOverlap(cond1, cond2)
+        ) {
+          overlappingConditions.push({
+            id1: cond1.id,
+            id2: cond2.id,
+            description: `تقاطع: ${getConditionText(cond1)} و ${getConditionText(cond2)}`
+          });
+        }
+      }
+    }
+
+    return overlappingConditions;
+  }, [selectedQueueId]);
+
+  /**
+   * Get human-readable condition text
+   */
+  const getConditionText = (cond: any): string => {
+    const operatorMap: Record<string, string> = {
+      'EQUAL': 'يساوي',
+      'GREATER': 'أكثر من',
+      'LESS': 'أقل من',
+      'RANGE': 'نطاق',
+    };
+
+    const operatorText = operatorMap[cond.operator] || cond.operator;
+    const valueText =
+      cond.operator === 'RANGE' ? `${cond.minValue}-${cond.maxValue}` : cond.value;
+
+    return `${operatorText} ${valueText}`;
+  };
+
+  /**
+   * Check if there are any conflicts in the current queue
+   */
+  const hasQueueConflicts = useCallback(() => {
+    return detectQueueConflicts().length > 0;
+  }, [selectedQueueId]);
 
   /**
    * Toggle all patients - memoized
@@ -489,26 +587,35 @@ export default function QueueDashboard() {
 
         <button
           onClick={() => {
-            if (selectedPatients.length === 0) {
-              addToast('يرجى تحديد مريض واحد على الأقل لإرسال الرسالة', 'error');
+            // Check if there are conflicts - if yes, show toast and prevent sending
+            if (hasQueueConflicts()) {
+              addToast('هناك تضارب في الشروط. يرجى حل جميع التضاربات قبل الإرسال', 'error');
               return;
             }
+            
+            // Send to all patients (no need to select)
+            if (patients.length === 0) {
+              addToast('لا يوجد مرضى للإرسال إليهم', 'error');
+              return;
+            }
+
             openModal('messagePreview', {
-              selectedPatients,
-              selectedPatientCount: selectedPatients.length,
+              selectedPatients: patients.map(p => p.id), // Send to ALL patients
+              selectedPatientCount: patients.length,
               queueId: selectedQueueId,
               queueName: queue?.doctorName || 'طابور',
               currentCQP: parseInt(currentCQP),
               estimatedTimeRemaining: parseInt(currentETS),
-              patients: patients.filter(p => selectedPatients.includes(p.id)),
+              patients: patients, // All patients
               conditions: messageConfig?.conditions || [],
               messageTemplate: messageConfig?.defaultTemplate || 'مرحباً بك {PN}',
             });
           }}
           className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse"
+          title="إرسال الرسائل لجميع المرضى"
         >
           <i className="fab fa-whatsapp"></i>
-          <span>إرسال ({selectedPatients.length})</span>
+          <span>إرسال ({patients.length})</span>
         </button>
       </div>
 
@@ -567,7 +674,20 @@ export default function QueueDashboard() {
             </div>
           </div>
         </div>
+        {/* Conflict Warning Section */}
+        {(() => {
+          const conflicts = detectQueueConflicts();
+          return conflicts.length > 0 ? (
+            <div className="mt-4">
+              <ConflictWarning 
+                overlappingConditions={conflicts}
+                hasDefaultConflict={false}
+              />
+            </div>
+          ) : null;
+        })()}
       </div>
+
 
       {/* Patients Table */}
       {patients.length === 0 ? (

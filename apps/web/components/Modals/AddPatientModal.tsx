@@ -7,7 +7,6 @@ import { COUNTRY_CODES } from '@/constants';
 import Modal from './Modal';
 import { useState } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
-import CustomCountryCodeInput from '@/components/Common/CustomCountryCodeInput';
 import { getEffectiveCountryCode } from '@/utils/core.utils';
 
 interface PatientField {
@@ -29,6 +28,7 @@ export default function AddPatientModal() {
   ]);
   const [errors, setErrors] = useState<PatientErrors>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [expandedPatients, setExpandedPatients] = useState<Set<number>>(new Set([0])); // Track expanded patients
 
   const isOpen = openModals.has('addPatient');
 
@@ -43,7 +43,35 @@ export default function AddPatientModal() {
     const phoneError = validatePhone(patient.phone);
     if (phoneError) patientErrors.phone = phoneError;
     
+    // Validate custom country code if 'OTHER' is selected
+    if (patient.countryCode === 'OTHER') {
+      const customCodeError = validateCountryCode(patient.customCountryCode || '', true);
+      if (customCodeError) patientErrors.customCountryCode = customCodeError;
+    }
+    
     return patientErrors;
+  };
+
+  // Toggle expand/collapse for a single patient
+  const togglePatientExpanded = (index: number) => {
+    const newExpanded = new Set(expandedPatients);
+    if (newExpanded.has(index)) {
+      newExpanded.delete(index);
+    } else {
+      newExpanded.add(index);
+    }
+    setExpandedPatients(newExpanded);
+  };
+
+  // Expand all patients
+  const expandAll = () => {
+    const allIndices = new Set(patients.map((_, i) => i));
+    setExpandedPatients(allIndices);
+  };
+
+  // Collapse all patients
+  const collapseAll = () => {
+    setExpandedPatients(new Set());
   };
 
   const addPatientSlot = () => {
@@ -194,10 +222,58 @@ export default function AddPatientModal() {
           </p>
         </div>
 
+        {/* Form-level Validation Alert */}
+        {Object.keys(errors).length > 0 && (
+          <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
+            <p className="text-red-800 font-semibold flex items-center gap-2 mb-2">
+              <i className="fas fa-exclamation-circle text-red-600"></i>
+              يوجد أخطاء في البيانات
+            </p>
+            <ul className="space-y-1 text-sm text-red-700">
+              {Object.entries(errors).map(([rowKey, patientErrors]) => {
+                const rowNum = parseInt(rowKey.replace('patient_', '')) + 1;
+                return (
+                  <li key={rowKey} className="flex items-center gap-2">
+                    <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                    <span>
+                      <strong>المريض #{rowNum}:</strong> {Object.values(patientErrors).join(' و ')}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         {/* Patients List */}
         <div id="patientSlots" className="space-y-3 flex-1 overflow-y-auto pr-2">
+          {/* Collapse/Expand All Buttons */}
+          {patients.length > 1 && (
+            <div className="flex gap-2 mb-3 sticky top-0 bg-white z-10 pb-2">
+              <button
+                type="button"
+                onClick={expandAll}
+                disabled={isLoading}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                <i className="fas fa-expand"></i>
+                توسيع الكل
+              </button>
+              <button
+                type="button"
+                onClick={collapseAll}
+                disabled={isLoading}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 bg-gray-600 text-white text-sm rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                <i className="fas fa-compress"></i>
+                طي الكل
+              </button>
+            </div>
+          )}
+
           {patients.map((patient, index) => {
             const patientError = errors[`patient_${index}`];
+            const isExpanded = expandedPatients.has(index);
             return (
               <div
                 key={index}
@@ -210,10 +286,21 @@ export default function AddPatientModal() {
                 {/* Patient Card Header */}
                 <div className={`px-4 py-3 border-b ${patientError ? 'bg-red-100' : 'bg-gradient-to-r from-blue-50 to-blue-100'}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-gray-700">
-                      <i className="fas fa-user-circle text-blue-600 ml-2"></i>
-                      المريض #{index + 1}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => togglePatientExpanded(index)}
+                        disabled={isLoading}
+                        className="text-gray-600 hover:text-gray-800 p-1 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+                        title={isExpanded ? "طي" : "توسيع"}
+                      >
+                        <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} transition-transform`}></i>
+                      </button>
+                      <span className="text-sm font-semibold text-gray-700">
+                        <i className="fas fa-user-circle text-blue-600 ml-2"></i>
+                        المريض #{index + 1}
+                      </span>
+                    </div>
                     {patients.length > 1 && (
                       <button
                         type="button"
@@ -228,7 +315,8 @@ export default function AddPatientModal() {
                   </div>
                 </div>
 
-                {/* Patient Form Fields */}
+                {/* Patient Form Fields - Collapsible */}
+                {isExpanded && (
                 <div className="p-4 space-y-3">
                   {/* Name Field */}
                   <div>
@@ -278,14 +366,19 @@ export default function AddPatientModal() {
 
                       {/* Phone Input */}
                       {patient.countryCode === 'OTHER' ? (
-                        <CustomCountryCodeInput
+                        <input
+                          type="text"
                           value={patient.customCountryCode || ''}
-                          onChange={(value) => updatePatient(index, 'customCountryCode', value)}
+                          onChange={(e) => updatePatient(index, 'customCountryCode', e.target.value)}
+                          onBlur={() => handleFieldBlur(index)}
+                          placeholder="مثال: +44 أو +1 أو +886"
                           disabled={isLoading}
-                          hasError={!!patientError?.phone}
-                          size="sm"
-                          placeholder="مثال: +44 أو +1 أو +886 (ابدأ بـ +)"
-                          showFullInfo={false}
+                          className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+                            patientError?.customCountryCode
+                              ? 'border-red-500 bg-red-50 focus:ring-red-500'
+                              : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          title="الصيغة: + متبوعة بـ 1-4 أرقام"
                         />
                       ) : (
                         <input
@@ -310,20 +403,27 @@ export default function AddPatientModal() {
                         {patientError.phone}
                       </p>
                     )}
+
+                    {/* Custom Country Code Error */}
+                    {patientError?.customCountryCode && (
+                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                        <i className="fas fa-exclamation-circle"></i>
+                        {patientError.customCountryCode}
+                      </p>
+                    )}
                   </div>
 
                   {/* Custom Country Code Info */}
                   {patient.countryCode === 'OTHER' && (
-                    <CustomCountryCodeInput
-                      value={patient.customCountryCode || ''}
-                      onChange={(value) => updatePatient(index, 'customCountryCode', value)}
-                      disabled={isLoading}
-                      size="md"
-                      placeholder="مثال: +44 (بريطانيا) أو +1 (أمریکا) أو +886 (تایوان)"
-                      showFullInfo={true}
-                    />
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                      <p className="text-xs text-blue-700 mb-1">
+                        <i className="fas fa-info-circle ml-1"></i>
+                        <strong>الصيغة:</strong> + متبوعة بـ 1-4 أرقام (مثال: +44 أو +212)
+                      </p>
+                    </div>
                   )}
                 </div>
+                )}
               </div>
             );
           })}
@@ -353,12 +453,8 @@ export default function AddPatientModal() {
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading || patients.length === 0}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium ${
-              isLoading || patients.length === 0
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700 shadow-md hover:shadow-lg'
-            }`}
+            disabled={isLoading}
+            className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 font-medium bg-green-600 text-white hover:bg-green-700 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>

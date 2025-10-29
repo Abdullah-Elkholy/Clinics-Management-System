@@ -1,4 +1,6 @@
 'use client';
+/* Lines 2-11 omitted */
+import { ConditionApplicationSection } from '../Common/ConditionApplicationSection';
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
@@ -7,12 +9,12 @@ import { validateName, validateTextarea, ValidationError } from '@/utils/validat
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
 import { useState, useEffect } from 'react';
-import { MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
+import { MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
 
 export default function EditTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { selectedQueueId } = useQueue();
+  const { selectedQueueId, updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions } = useQueue();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
@@ -22,6 +24,13 @@ export default function EditTemplateModal() {
   const [currentTemplate, setCurrentTemplate] = useState<any>(null);
   const [showDefaultWarning, setShowDefaultWarning] = useState(false);
   const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<any>(null);
+  const [touched, setTouched] = useState(false);
+
+  // Condition choice states - for building actual condition data
+  const [selectedOperator, setSelectedOperator] = useState<'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT' | null>(null);
+  const [selectedValue, setSelectedValue] = useState<number | undefined>(undefined);
+  const [selectedMinValue, setSelectedMinValue] = useState<number | undefined>(undefined);
+  const [selectedMaxValue, setSelectedMaxValue] = useState<number | undefined>(undefined);
 
   const isOpen = openModals.has('editTemplate');
   const modalData = getModalData('editTemplate');
@@ -33,22 +42,22 @@ export default function EditTemplateModal() {
   // Load template data when modal opens
   useEffect(() => {
     if (isOpen && templateId) {
-      const template = MOCK_MESSAGE_TEMPLATES.find((t) => t.id === templateId);
+      const template = messageTemplates.find((t) => t.id === templateId);
       if (template) {
         setCurrentTemplate(template);
         setTitle(template.title);
         setDescription(template.description || '');
         setContent(template.content);
-        setSelectedConditionId(template.conditionId);
+        setSelectedConditionId(template.conditionId || null);
       }
     }
-  }, [isOpen, templateId]);
+  }, [isOpen, templateId, messageTemplates]);
 
   // Handle condition selection
   const handleConditionChange = (conditionId: string | null) => {
     // If selecting a different default condition, check if one already exists elsewhere
     if (conditionId && conditionId.startsWith('DEFAULT_') && currentTemplate?.conditionId !== conditionId) {
-      const existingDefault = MOCK_MESSAGE_TEMPLATES.find(
+      const existingDefault = messageTemplates.find(
         (t) => t.queueId === currentTemplate?.queueId && 
                t.id !== currentTemplate?.id &&
                t.conditionId?.startsWith('DEFAULT_')
@@ -108,6 +117,13 @@ export default function EditTemplateModal() {
     }
   };
 
+  /**
+   * Validate condition value - must be >= 1
+   */
+  const validateConditionValue = (value: number | undefined): boolean => {
+    return value !== undefined && value > 0;
+  };
+
   const handleFieldChange = (fieldName: string, value: string) => {
     if (fieldName === 'title') {
       setTitle(value);
@@ -119,6 +135,7 @@ export default function EditTemplateModal() {
         return;
       }
     }
+    setTouched(true);
 
     // Validate on change for better UX
     if (errors[fieldName]) {
@@ -127,6 +144,7 @@ export default function EditTemplateModal() {
   };
 
   const handleFieldBlur = (fieldName: string) => {
+    setTouched(true);
     if (fieldName === 'title') {
       validateField(fieldName, title);
     } else if (fieldName === 'content') {
@@ -136,6 +154,7 @@ export default function EditTemplateModal() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTouched(true);
 
     // Validate all fields
     const newErrors: ValidationError = {};
@@ -148,10 +167,28 @@ export default function EditTemplateModal() {
       newErrors.content = validateTextarea(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH) || '';
     }
 
+    // Validate condition if operator is selected
+    if (selectedOperator) {
+      if (selectedOperator === 'RANGE') {
+        if (!selectedMinValue || selectedMinValue <= 0) {
+          newErrors.minValue = 'الحد الأدنى مطلوب ويجب أن يكون > 0';
+        }
+        if (!selectedMaxValue || selectedMaxValue <= 0) {
+          newErrors.maxValue = 'الحد الأقصى مطلوب ويجب أن يكون > 0';
+        }
+        if (selectedMinValue && selectedMaxValue && selectedMinValue >= selectedMaxValue) {
+          newErrors.range = 'الحد الأدنى يجب أن يكون أقل من الحد الأقصى';
+        }
+      } else {
+        if (!selectedValue || selectedValue <= 0) {
+          newErrors.value = 'القيمة مطلوبة ويجب أن تكون > 0';
+        }
+      }
+    }
+
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length > 0) {
-      addToast('يرجى تصحيح الأخطاء أعلاه', 'error');
       return;
     }
 
@@ -161,12 +198,51 @@ export default function EditTemplateModal() {
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // TODO: Update template through context or API
+      let conditionIdToUse: string | undefined = undefined;
+
+      // If an operator is selected, handle the condition with the data
+      if (selectedOperator && selectedOperator !== 'DEFAULT') {
+        // Store the condition data with actual values from ConditionSection
+        const conditionDescription = 
+          selectedOperator === 'RANGE' 
+            ? `${selectedMinValue} - ${selectedMaxValue}`
+            : `${selectedValue}`;
+        
+        addToast(`تم تحديث الشرط: ${selectedOperator} ${conditionDescription}`, 'success');
+        
+        // Use existing condition ID or generate new one
+        if (currentTemplate?.conditionId && !currentTemplate.conditionId.startsWith('DEFAULT_')) {
+          conditionIdToUse = currentTemplate.conditionId;
+        } else {
+          conditionIdToUse = `cond_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        }
+      } else if (selectedOperator === 'DEFAULT') {
+        // For DEFAULT, use a special condition ID
+        conditionIdToUse = `DEFAULT_Q${currentTemplate?.queueId}`;
+      }
+
+      // Update template through context
+      if (currentTemplate) {
+        updateMessageTemplate(currentTemplate.id, {
+          title,
+          description,
+          content,
+          conditionId: conditionIdToUse || undefined,
+          updatedAt: new Date(),
+        });
+      }
+      
       addToast('تم تحديث قالب الرسالة بنجاح', 'success');
       setTitle('');
       setDescription('');
       setContent('');
       setErrors({});
+      setSelectedConditionId(null);
+      setSelectedOperator(null);
+      setSelectedValue(undefined);
+      setSelectedMinValue(undefined);
+      setSelectedMaxValue(undefined);
+      setCurrentTemplate(null);
       closeModal('editTemplate');
     } catch (error) {
       addToast('حدث خطأ أثناء تحديث القالب', 'error');
@@ -175,7 +251,8 @@ export default function EditTemplateModal() {
     }
   };
 
-  const isSubmitDisabled = Object.keys(errors).length > 0 || !title.trim() || !content.trim() || isLoading;
+  // Validation errors check
+  const hasValidationErrors = Object.keys(errors).length > 0 || !title.trim() || !content.trim();
 
   if (!isOpen) return null;
 
@@ -187,11 +264,30 @@ export default function EditTemplateModal() {
         setTitle('');
         setContent('');
         setErrors({});
+        setTouched(false);
       }}
       title="تحرير قالب رسالة"
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Validation Errors Alert - Only show if user touched and there are errors */}
+        {touched && Object.keys(errors).length > 0 && (
+          <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
+            <p className="text-red-800 font-semibold flex items-center gap-2 mb-2">
+              <i className="fas fa-exclamation-circle text-red-600"></i>
+              يرجى تصحيح الأخطاء التالية:
+            </p>
+            <ul className="space-y-1 text-sm text-red-700">
+              {Object.entries(errors).map(([field, error]) => (
+                <li key={field} className="flex items-center gap-2">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  {error}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Required Fields Disclaimer */}
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
           <p className="flex items-center gap-2">
@@ -288,11 +384,11 @@ export default function EditTemplateModal() {
 
         <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-2 border-blue-200 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="font-semibold text-blue-900 flex items-center gap-2">
+            <h4 className="font-bold text-lg text-blue-900 flex items-center gap-2">
               <i className="fas fa-code text-blue-600"></i>
               المتغيرات المتاحة:
             </h4>
-            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded-full">
+            <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded-full font-medium">
               انقر لإدراج المتغير
             </span>
           </div>
@@ -303,9 +399,9 @@ export default function EditTemplateModal() {
               disabled={isLoading}
               className="bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed border-2 border-blue-300 hover:border-blue-400 px-3 py-2 rounded-lg text-blue-700 font-mono text-sm text-left transition-all hover:shadow-md"
             >
-              <span className="font-bold text-blue-600">{'{PN}'}</span>
+              <span className="font-bold text-lg text-blue-600">{'{PN}'}</span>
               <br />
-              <span className="text-xs text-gray-600">اسم المريض بالكامل</span>
+              <span className="text-sm font-medium text-gray-700">اسم المريض بالكامل</span>
             </button>
             <button
               type="button"
@@ -313,9 +409,9 @@ export default function EditTemplateModal() {
               disabled={isLoading}
               className="bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed border-2 border-blue-300 hover:border-blue-400 px-3 py-2 rounded-lg text-blue-700 font-mono text-sm text-left transition-all hover:shadow-md"
             >
-              <span className="font-bold text-blue-600">{'{PQP}'}</span>
+              <span className="font-bold text-lg text-blue-600">{'{PQP}'}</span>
               <br />
-              <span className="text-xs text-gray-600">الموضع الحالي للمريض في الطابور</span>
+              <span className="text-sm font-medium text-gray-700">الموضع الحالي للمريض في الطابور</span>
             </button>
             <button
               type="button"
@@ -323,9 +419,9 @@ export default function EditTemplateModal() {
               disabled={isLoading}
               className="bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed border-2 border-blue-300 hover:border-blue-400 px-3 py-2 rounded-lg text-blue-700 font-mono text-sm text-left transition-all hover:shadow-md"
             >
-              <span className="font-bold text-blue-600">{'{CQP}'}</span>
+              <span className="font-bold text-lg text-blue-600">{'{CQP}'}</span>
               <br />
-              <span className="text-xs text-gray-600">الموضع الحالي لمجمل الطابور</span>
+              <span className="text-sm font-medium text-gray-700">الموضع الحالي لمجمل الطابور</span>
             </button>
             <button
               type="button"
@@ -333,58 +429,34 @@ export default function EditTemplateModal() {
               disabled={isLoading}
               className="bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed border-2 border-blue-300 hover:border-blue-400 px-3 py-2 rounded-lg text-blue-700 font-mono text-sm text-left transition-all hover:shadow-md"
             >
-              <span className="font-bold text-blue-600">{'{ETR}'}</span>
+              <span className="font-bold text-lg text-blue-600">{'{ETR}'}</span>
               <br />
-              <span className="text-xs text-gray-600">الوقت المتبقي بالدقائق</span>
+              <span className="text-sm font-medium text-gray-700">الوقت المتبقي بالدقائق</span>
             </button>
           </div>
         </div>
 
-        {/* Condition Selection Section */}
-        <div className="space-y-3 border border-gray-200 rounded-lg p-4 bg-gray-50">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              تطبيق الشرط (اختياري)
-            </label>
-            <select
-              value={selectedConditionId || ''}
-              onChange={(e) => handleConditionChange(e.target.value || null)}
-              disabled={isLoading}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">لم يتم تحديده بعد - القالب الافتراضي</option>
-              {currentTemplate && MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-                (c) => c.queueId === currentTemplate.queueId && !c.id.startsWith('DEFAULT_')
-              ).map((condition) => (
-                <option key={condition.id} value={condition.id}>
-                  {condition.name} ({condition.operator === 'GREATER' ? 'أكثر من' : condition.operator === 'LESS' ? 'أقل من' : 'يساوي'} {condition.value})
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800">
-            <p className="font-semibold mb-2 flex items-center gap-2">
-              <i className="fas fa-info-circle"></i>
-              معلومات مهمة:
-            </p>
-            <ul className="space-y-1 text-xs list-disc list-inside">
-              <li>إذا لم تحدد شرط، سيصبح هذا القالب هو القالب الافتراضي للطابور</li>
-              <li>يمكن استخدام القالب في الرسائل الآلية فقط بعد تحديد القالب الافتراضي</li>
-              <li>كل طابور يجب أن يكون له قالب افتراضي واحد فقط</li>
-            </ul>
-          </div>
-        </div>
+        {/* Condition Application Section */}
+        <ConditionApplicationSection
+          operator={selectedOperator}
+          value={selectedValue}
+          minValue={selectedMinValue}
+          maxValue={selectedMaxValue}
+          onOperatorChange={setSelectedOperator}
+          onValueChange={setSelectedValue}
+          onMinValueChange={setSelectedMinValue}
+          onMaxValueChange={setSelectedMaxValue}
+          onAddToast={addToast}
+          isLoading={isLoading}
+          errors={errors}
+          hideInfo={false}
+        />
 
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isSubmitDisabled}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 ${
-              isSubmitDisabled
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
+            disabled={isLoading}
+            className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>

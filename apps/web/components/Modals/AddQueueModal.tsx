@@ -15,6 +15,7 @@ export default function AddQueueModal() {
   const [doctorName, setDoctorName] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [touched, setTouched] = useState(false);
 
   const isOpen = openModals.has('addQueue');
 
@@ -29,6 +30,7 @@ export default function AddQueueModal() {
 
   const handleFieldChange = (value: string) => {
     setDoctorName(value);
+    setTouched(true);
     // Validate on change for better UX
     if (errors.doctorName) {
       validateField(value);
@@ -36,19 +38,20 @@ export default function AddQueueModal() {
   };
 
   const handleFieldBlur = () => {
+    setTouched(true);
     validateField(doctorName);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTouched(true);
     
     // Validate doctor name
     const error = validateName(doctorName, 'اسم الطبيب');
     
     if (error) {
       setErrors({ doctorName: error });
-      addToast('يرجى تصحيح الأخطاء أعلاه', 'error');
-      return;
+      return; // Prevent submission if validation fails
     }
     
     try {
@@ -66,6 +69,7 @@ export default function AddQueueModal() {
       // Reset form
       setDoctorName('');
       setErrors({});
+      setTouched(false);
       closeModal('addQueue');
     } catch (error) {
       addToast('حدث خطأ أثناء إضافة الطابور', 'error');
@@ -85,11 +89,30 @@ export default function AddQueueModal() {
         closeModal('addQueue');
         setDoctorName('');
         setErrors({});
+        setTouched(false);
       }}
       title="إضافة طابور جديد"
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Validation Errors Alert - Only show if user touched field and there are errors */}
+        {touched && hasErrors(errors) && (
+          <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
+            <p className="text-red-800 font-semibold flex items-center gap-2 mb-2">
+              <i className="fas fa-exclamation-circle text-red-600"></i>
+              يرجى تصحيح الأخطاء التالية:
+            </p>
+            <ul className="space-y-1 text-sm text-red-700">
+              {Object.entries(errors).map(([field, error]) => (
+                <li key={field} className="flex items-center gap-2">
+                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                  {error}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Doctor Name */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -120,12 +143,8 @@ export default function AddQueueModal() {
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isSubmitDisabled}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 ${
-              isSubmitDisabled
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
+            disabled={isLoading}
+            className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>

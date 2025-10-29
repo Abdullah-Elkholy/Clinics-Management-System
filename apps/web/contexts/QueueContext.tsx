@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { Queue, Patient, MessageTemplate, MessageCondition } from '../types';
-import { SAMPLE_QUEUES, SAMPLE_MESSAGE_TEMPLATES } from '../constants';
+import { SAMPLE_QUEUES } from '../constants';
+import { MOCK_MESSAGE_TEMPLATES } from '@/constants/mockData';
 
 interface QueueContextType {
   queues: Queue[];
@@ -24,6 +25,9 @@ interface QueueContextType {
   estimatedTimePerSession: number;
   setEstimatedTimePerSession: (time: number) => void;
   messageTemplates: MessageTemplate[];
+  addMessageTemplate: (template: Omit<MessageTemplate, 'id'>) => void;
+  updateMessageTemplate: (id: string, template: Partial<MessageTemplate>) => void;
+  deleteMessageTemplate: (id: string) => void;
   selectedMessageTemplateId: string;
   setSelectedMessageTemplateId: (id: string) => void;
   messageConditions: MessageCondition[];
@@ -40,7 +44,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [patients, setPatients] = useState<Patient[]>([]);
   const [currentPosition, setCurrentPosition] = useState(3);
   const [estimatedTimePerSession, setEstimatedTimePerSession] = useState(15);
-  const [messageTemplates] = useState<MessageTemplate[]>(SAMPLE_MESSAGE_TEMPLATES);
+  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
   const [selectedMessageTemplateId, setSelectedMessageTemplateId] = useState('1');
   const [messageConditions, setMessageConditions] = useState<MessageCondition[]>([]);
 
@@ -98,6 +102,24 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setPatients((prev) => prev.map((p) => ({ ...p, selected: false })));
   }, []);
 
+  const addMessageTemplate = useCallback((template: Omit<MessageTemplate, 'id'>) => {
+    const newTemplate: MessageTemplate = {
+      ...template,
+      id: Date.now().toString(),
+    };
+    setMessageTemplates((prev) => [...prev, newTemplate]);
+  }, []);
+
+  const updateMessageTemplate = useCallback((id: string, templateUpdates: Partial<MessageTemplate>) => {
+    setMessageTemplates((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, ...templateUpdates } : t))
+    );
+  }, []);
+
+  const deleteMessageTemplate = useCallback((id: string) => {
+    setMessageTemplates((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const addMessageCondition = useCallback((condition: Omit<MessageCondition, 'id'>) => {
     if (messageConditions.length >= 5) return;
     const newCondition: MessageCondition = {
@@ -139,6 +161,9 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         estimatedTimePerSession,
         setEstimatedTimePerSession,
         messageTemplates,
+        addMessageTemplate,
+        updateMessageTemplate,
+        deleteMessageTemplate,
         selectedMessageTemplateId,
         setSelectedMessageTemplateId,
         messageConditions,
