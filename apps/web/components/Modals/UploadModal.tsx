@@ -125,7 +125,7 @@ export default function UploadModal() {
       setCellErrors(newCellErrors);
       
       if (validationWarnings > 0) {
-        addToast(`⚠️ تحذير: ${validationWarnings} خطأ في البيانات (يمكن تصحيحها)`, 'warning');
+        addToast(`تحذير: ${validationWarnings} خطأ في البيانات (يمكن تصحيحها)`, 'warning');
       }
       
       const previewSlice = processedData.slice(0, 6);

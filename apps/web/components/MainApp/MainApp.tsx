@@ -67,6 +67,7 @@ export default function MainApp() {
           <Modals.WhatsAppAuthModal />
           <Modals.EditQueueModal />
           <Modals.EditUserModal />
+          <Modals.AddUserModal />
           <Modals.EditPatientModal />
           <Modals.MessageSelectionModal />
           <Modals.MessagePreviewModal />

@@ -8,6 +8,7 @@ export { default as AccountInfoModal } from './AccountInfoModal';
 export { default as WhatsAppAuthModal } from './WhatsAppAuthModal';
 export { default as EditQueueModal } from './EditQueueModal';
 export { default as EditUserModal } from './EditUserModal';
+export { default as AddUserModal } from './AddUserModal';
 export { default as EditPatientModal } from './EditPatientModal';
 export { default as MessageSelectionModal } from './MessageSelectionModal';
 export { default as MessagePreviewModal } from './MessagePreviewModal';

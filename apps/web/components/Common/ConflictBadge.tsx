@@ -57,7 +57,7 @@ export function ConflictBadge({
 /**
  * Inline Conflict Warning
  * 
- * Displays inline warning message for conflicts
+ * Displays inline warning message for conflicts - Collapsible
  */
 interface ConflictWarningProps {
   overlappingConditions: Array<{ id1: string; id2: string; description: string }>;
@@ -70,48 +70,76 @@ export function ConflictWarning({
   hasDefaultConflict = false,
   className = '',
 }: ConflictWarningProps) {
+  const [isExpanded, setIsExpanded] = React.useState(true);
   const totalConflicts = overlappingConditions.length + (hasDefaultConflict ? 1 : 0);
 
   if (totalConflicts === 0) return null;
 
   return (
-    <div className={`bg-red-50 border-l-4 border-red-400 rounded-lg p-4 ${className}`}>
-      <div className="flex items-start gap-3">
-        <i className="fas fa-exclamation-triangle text-red-600 mt-1 flex-shrink-0"></i>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-red-800 mb-2">
-            تحذير: تضارب في الشروط
-          </p>
-
-          {hasDefaultConflict && (
-            <p className="text-sm text-red-700 mb-2">
-              <i className="fas fa-circle text-red-500 ml-1"></i>
-              تم تعريف أكثر من قالب افتراضي واحد (DEFAULT). يمكن أن يكون هناك قالب افتراضي واحد فقط.
+    <div className={`bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-400 rounded-xl overflow-hidden shadow-lg shadow-red-200 ${className}`}>
+      {/* Collapsible Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between hover:bg-red-200 hover:bg-opacity-30 transition-colors px-4 py-3"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-red-200">
+            <i className="fas fa-circle-xmark text-red-700 text-lg"></i>
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold text-red-900">
+              تعذر إرسال الرسائل
             </p>
-          )}
-
-          {overlappingConditions.length > 0 && (
-            <div>
-              <p className="text-sm text-red-700 mb-1">
-                <i className="fas fa-circle text-red-500 ml-1"></i>
-                تم اكتشاف شروط متداخلة:
-              </p>
-              <ul className="space-y-1 ml-5">
-                {overlappingConditions.map((overlap, idx) => (
-                  <li key={idx} className="text-sm text-red-700 flex items-center gap-2 mr-4 mb-1">
-                    <span className="text-red-500">•</span>
-                    {overlap.description}
-                  </li>
-                ))}
-              </ul>
-                <p className="text-sm text-red-700 mb-1">
-                <i className="fas fa-circle text-red-500 ml-1"></i>
-                يرجى مراجعة الشروط المتداخلة أعلاه لتتمكن من إرسال الرسائل.
-              </p>
-            </div>
-          )}
+            <span className="inline-block px-2 py-0.5 bg-red-200 text-red-800 text-xs font-semibold rounded-full">
+              محظور
+            </span>
+          </div>
         </div>
-      </div>
+        <i className={`fas fa-chevron-down text-red-700 text-lg transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}></i>
+      </button>
+
+      {/* Expanded Content */}
+      {isExpanded && (
+        <>
+          <div className="border-t-2 border-red-300"></div>
+          <div className="px-4 py-3">
+            <p className="text-xs text-red-800 mb-3 leading-relaxed">
+              لا يمكنك إرسال رسائل حالياً. يجب حل جميع العناصر أدناه أولاً:
+            </p>
+            <div className="space-y-2">
+              {overlappingConditions.length > 0 && (
+                <div className="bg-white bg-opacity-60 rounded-lg p-2.5 border-l-3 border-red-500">
+                  <p className="font-semibold text-red-800 flex items-center gap-2 mb-2 text-xs">
+                    <i className="fas fa-code-merge text-red-600 text-sm"></i>
+                    حل تضاربات الشروط المتداخلة
+                  </p>
+                  <div className="ml-6 space-y-1.5">
+                    {overlappingConditions.map((overlap, idx) => (
+                      <div key={idx} className="text-xs text-red-700 flex items-start gap-2 bg-red-50 rounded p-2">
+                        <span className="text-red-500 font-bold mt-0.5 flex-shrink-0">→</span>
+                        <span className="leading-relaxed">{overlap.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {hasDefaultConflict && (
+                <div className="bg-white bg-opacity-60 rounded-lg p-2.5 border-l-3 border-amber-500 flex items-start gap-2">
+                  <i className="fas fa-star text-amber-600 text-sm mt-0.5 flex-shrink-0"></i>
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-amber-900 mb-1">
+                      أضف شرط افتراضي
+                    </p>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      قالب يتم استخدامه عندما لا تنطبق أي شروط أخرى
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

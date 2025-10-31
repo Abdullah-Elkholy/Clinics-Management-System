@@ -28,7 +28,7 @@ import { UserRole } from '@/types/roles';
 export interface User {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: UserRole;
   createdAt: Date;
   updatedAt: Date;
@@ -42,7 +42,7 @@ export interface User {
  */
 export interface CreateUserPayload {
   name: string;
-  email: string;
+  username: string;
   role: UserRole;
   assignedModerator?: string;
 }
@@ -52,7 +52,6 @@ export interface CreateUserPayload {
  */
 export interface UpdateUserPayload {
   name?: string;
-  email?: string;
   role?: UserRole;
   isActive?: boolean;
   assignedModerator?: string;
@@ -94,7 +93,7 @@ const mockUsers: User[] = [
   {
     id: '1',
     name: 'أحمد محمد',
-    email: 'ahmed.admin@clinic.com',
+    username: 'ahmed_admin',
     role: UserRole.PrimaryAdmin,
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-10-24'),
@@ -104,7 +103,7 @@ const mockUsers: User[] = [
   {
     id: '2',
     name: 'علي حسن',
-    email: 'ali.admin@clinic.com',
+    username: 'ali_admin',
     role: UserRole.SecondaryAdmin,
     createdAt: new Date('2024-01-15'),
     updatedAt: new Date('2024-10-23'),
@@ -114,7 +113,7 @@ const mockUsers: User[] = [
   {
     id: '3',
     name: 'فاطمة محمود',
-    email: 'fatima.mod@clinic.com',
+    username: 'fatima_mod',
     role: UserRole.Moderator,
     createdAt: new Date('2024-02-01'),
     updatedAt: new Date('2024-10-24'),
@@ -124,7 +123,7 @@ const mockUsers: User[] = [
   {
     id: '4',
     name: 'محمود علي',
-    email: 'mahmoud.mod@clinic.com',
+    username: 'mahmoud_mod',
     role: UserRole.Moderator,
     createdAt: new Date('2024-02-15'),
     updatedAt: new Date('2024-10-22'),
@@ -134,7 +133,7 @@ const mockUsers: User[] = [
   {
     id: '5',
     name: 'نور إبراهيم',
-    email: 'noor.user@clinic.com',
+    username: 'noor_user',
     role: UserRole.User,
     createdAt: new Date('2024-03-01'),
     updatedAt: new Date('2024-10-21'),
@@ -145,7 +144,7 @@ const mockUsers: User[] = [
   {
     id: '6',
     name: 'سلمى أحمد',
-    email: 'salma.mod@clinic.com',
+    username: 'salma_mod',
     role: UserRole.Moderator,
     createdAt: new Date('2024-03-05'),
     updatedAt: new Date('2024-10-24'),
@@ -155,7 +154,7 @@ const mockUsers: User[] = [
   {
     id: '7',
     name: 'خالد محمود',
-    email: 'khaled.user@clinic.com',
+    username: 'khaled_user',
     role: UserRole.User,
     createdAt: new Date('2024-03-10'),
     updatedAt: new Date('2024-10-20'),
@@ -166,7 +165,7 @@ const mockUsers: User[] = [
   {
     id: '8',
     name: 'ليلى حسن',
-    email: 'layla.user@clinic.com',
+    username: 'layla_user',
     role: UserRole.User,
     createdAt: new Date('2024-03-15'),
     updatedAt: new Date('2024-10-19'),
@@ -177,7 +176,7 @@ const mockUsers: User[] = [
   {
     id: '9',
     name: 'عمر إبراهيم',
-    email: 'omar.mod@clinic.com',
+    username: 'omar_mod',
     role: UserRole.Moderator,
     createdAt: new Date('2024-03-20'),
     updatedAt: new Date('2024-10-23'),
@@ -187,7 +186,7 @@ const mockUsers: User[] = [
   {
     id: '10',
     name: 'مريم علي',
-    email: 'mariam.user@clinic.com',
+    username: 'mariam_user',
     role: UserRole.User,
     createdAt: new Date('2024-04-01'),
     updatedAt: new Date('2024-10-18'),
@@ -198,7 +197,7 @@ const mockUsers: User[] = [
   {
     id: '11',
     name: 'يوسف محمد',
-    email: 'youssef.user@clinic.com',
+    username: 'youssef_user',
     role: UserRole.User,
     createdAt: new Date('2024-04-05'),
     updatedAt: new Date('2024-10-17'),
@@ -209,7 +208,7 @@ const mockUsers: User[] = [
   {
     id: '12',
     name: 'هناء أحمد',
-    email: 'hanaa.user@clinic.com',
+    username: 'hanaa_user',
     role: UserRole.User,
     createdAt: new Date('2024-04-10'),
     updatedAt: new Date('2024-10-16'),
@@ -220,7 +219,7 @@ const mockUsers: User[] = [
   {
     id: '13',
     name: 'إبراهيم حسين',
-    email: 'ibrahim.user@clinic.com',
+    username: 'ibrahim_user',
     role: UserRole.User,
     createdAt: new Date('2024-04-15'),
     updatedAt: new Date('2024-10-24'),
@@ -231,7 +230,7 @@ const mockUsers: User[] = [
   {
     id: '14',
     name: 'جميلة محمود',
-    email: 'jamila.user@clinic.com',
+    username: 'jamila_user',
     role: UserRole.User,
     createdAt: new Date('2024-04-20'),
     updatedAt: new Date('2024-10-15'),
@@ -242,7 +241,7 @@ const mockUsers: User[] = [
   {
     id: '15',
     name: 'رياض علي',
-    email: 'riyad.user@clinic.com',
+    username: 'riyad_user',
     role: UserRole.User,
     createdAt: new Date('2024-05-01'),
     updatedAt: new Date('2024-10-14'),
@@ -253,7 +252,7 @@ const mockUsers: User[] = [
   {
     id: '16',
     name: 'نادية إبراهيم',
-    email: 'nadia.user@clinic.com',
+    username: 'nadia_user',
     role: UserRole.User,
     createdAt: new Date('2024-05-05'),
     updatedAt: new Date('2024-10-22'),
@@ -264,7 +263,7 @@ const mockUsers: User[] = [
   {
     id: '17',
     name: 'صلاح محمد',
-    email: 'salah.user@clinic.com',
+    username: 'salah_user',
     role: UserRole.User,
     createdAt: new Date('2024-05-10'),
     updatedAt: new Date('2024-10-13'),
@@ -275,7 +274,7 @@ const mockUsers: User[] = [
   {
     id: '18',
     name: 'فرح حسن',
-    email: 'farah.user@clinic.com',
+    username: 'farah_user',
     role: UserRole.User,
     createdAt: new Date('2024-05-15'),
     updatedAt: new Date('2024-10-12'),
@@ -286,7 +285,7 @@ const mockUsers: User[] = [
   {
     id: '19',
     name: 'أسامة أحمد',
-    email: 'osama.user@clinic.com',
+    username: 'osama_user',
     role: UserRole.User,
     createdAt: new Date('2024-05-20'),
     updatedAt: new Date('2024-10-24'),
@@ -297,7 +296,7 @@ const mockUsers: User[] = [
   {
     id: '20',
     name: 'زينب علي',
-    email: 'zainab.user@clinic.com',
+    username: 'zainab_user',
     role: UserRole.User,
     createdAt: new Date('2024-06-01'),
     updatedAt: new Date('2024-10-11'),
@@ -496,7 +495,7 @@ class UserManagementService {
         users = users.filter(
           (u) =>
             u.name.toLowerCase().includes(search) ||
-            u.email.toLowerCase().includes(search)
+            u.username.toLowerCase().includes(search)
         );
       }
 
@@ -538,16 +537,16 @@ class UserManagementService {
         return { success: false, error: validation.error };
       }
 
-      // Check duplicate email
-      const exists = Array.from(this.users.values()).some((u) => u.email === payload.email);
-      if (exists) {
-        return { success: false, error: 'Email already in use' };
+      // Check duplicate username
+      const usernameExists = Array.from(this.users.values()).some((u) => u.username === payload.username);
+      if (usernameExists) {
+        return { success: false, error: 'Username already in use' };
       }
 
       const newUser: User = {
         id: String(Date.now()),
         name: payload.name,
-        email: payload.email,
+        username: payload.username,
         role: payload.role,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -597,18 +596,9 @@ class UserManagementService {
         return { success: false, error: `User with id ${id} not found` };
       }
 
-      // Check email uniqueness if changing email
-      if (payload.email && payload.email !== user.email) {
-        const exists = Array.from(this.users.values()).some((u) => u.email === payload.email && u.id !== id);
-        if (exists) {
-          return { success: false, error: 'Email already in use' };
-        }
-      }
-
       const updated: User = {
         ...user,
         ...(payload.name !== undefined && { name: payload.name }),
-        ...(payload.email !== undefined && { email: payload.email }),
         ...(payload.role !== undefined && { role: payload.role }),
         ...(payload.isActive !== undefined && { isActive: payload.isActive }),
         ...(payload.assignedModerator !== undefined && { assignedModerator: payload.assignedModerator }),
@@ -778,14 +768,8 @@ class UserManagementService {
       return { valid: false, error: 'Name is required' };
     }
 
-    if (!payload.email || payload.email.trim().length === 0) {
-      return { valid: false, error: 'Email is required' };
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(payload.email)) {
-      return { valid: false, error: 'Invalid email format' };
+    if (!payload.username || payload.username.trim().length === 0) {
+      return { valid: false, error: 'Username is required' };
     }
 
     if (!payload.role) {

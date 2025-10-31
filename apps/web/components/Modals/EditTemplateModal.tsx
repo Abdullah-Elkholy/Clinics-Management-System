@@ -1,11 +1,12 @@
 'use client';
 /* Lines 2-11 omitted */
 import { ConditionApplicationSection } from '../Common/ConditionApplicationSection';
+import UsageGuideSection from '../Common/UsageGuideSection';
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
-import { validateName, validateTextarea, ValidationError } from '@/utils/validation';
+import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
 import { useState, useEffect } from 'react';
@@ -100,7 +101,7 @@ export default function EditTemplateModal() {
         error = validateName(value, 'عنوان القالب');
         break;
       case 'content':
-        error = validateTextarea(value, 'محتوى الرسالة', MAX_CONTENT_LENGTH);
+        error = validateTextareaRequired(value, 'محتوى الرسالة', MAX_CONTENT_LENGTH);
         break;
       default:
         break;
@@ -163,8 +164,8 @@ export default function EditTemplateModal() {
       newErrors.title = validateName(title, 'عنوان القالب') || '';
     }
 
-    if (validateTextarea(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH)) {
-      newErrors.content = validateTextarea(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH) || '';
+    if (validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH)) {
+      newErrors.content = validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH) || '';
     }
 
     // Validate condition if operator is selected
@@ -323,33 +324,6 @@ export default function EditTemplateModal() {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            الوصف (اختياري)
-          </label>
-          <textarea
-            value={description}
-            onChange={(e) => {
-              if (e.target.value.length <= MAX_DESCRIPTION_LENGTH) {
-                setDescription(e.target.value);
-              } else {
-                addToast(`الحد الأقصى ${MAX_DESCRIPTION_LENGTH} حرف`, 'error');
-              }
-            }}
-            rows={2}
-            placeholder="أدخل وصف القالب - مثال: رسالة ترحيب للمرضى الجدد"
-            disabled={isLoading}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
-          />
-          <p className={`text-xs mt-1 ${
-            description.length > MAX_DESCRIPTION_LENGTH * 0.9
-              ? 'text-orange-600'
-              : 'text-gray-500'
-          }`}>
-            {description.length} / {MAX_DESCRIPTION_LENGTH}
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
             محتوى الرسالة *
           </label>
           <textarea
@@ -450,6 +424,24 @@ export default function EditTemplateModal() {
           isLoading={isLoading}
           errors={errors}
           hideInfo={false}
+        />
+
+        {/* Usage Guide Section */}
+        <UsageGuideSection
+          items={[
+            {
+              title: 'بدون شرط',
+              description: 'عند اختيار هذا الخيار، ستُرسل الرسالة لجميع المرضى بدون استثناء'
+            },
+            {
+              title: 'قالب افتراضي',
+              description: 'يمكنك تعيين قالب واحد فقط كقالب افتراضي لكل طابور. سيتم إرسال هذا القالب عندما لا ينطبق أي شرط آخر'
+            },
+            {
+              title: 'جميع القيم يجب أن تكون أكبر من صفر (≥1)',
+              description: 'تأكد من إدخال قيم صحيحة عند تحديد أي شرط. يجب أن تكون جميع الأرقام موجبة'
+            }
+          ]}
         />
 
         <div className="flex gap-3 pt-4 border-t">

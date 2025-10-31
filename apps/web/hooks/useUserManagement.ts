@@ -25,9 +25,8 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useCanAccess } from '@/hooks/useAuthz';
 import { useUI } from '@/contexts/UIContext';
-import { Feature, UserRole } from '@/types/roles';
+import { UserRole } from '@/types/roles';
 import {
   userManagementService,
   User,
@@ -48,11 +47,6 @@ export interface UseUserManagementState {
   quota?: UserQuota;
   loading: boolean;
   error: string | null;
-  canCreate: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-  canManageQuotas: boolean;
-  canAssignModerators: boolean;
 }
 
 /**
@@ -87,23 +81,11 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Permission checks
-  const canCreate = useCanAccess(Feature.CREATE_USER);
-  const canEdit = useCanAccess(Feature.EDIT_USER);
-  const canDelete = useCanAccess(Feature.DELETE_USER);
-  const canManageQuotas = useCanAccess(Feature.EDIT_QUOTAS);
-  const canAssignModerators = useCanAccess(Feature.MANAGE_MODERATORS);
-
   /**
    * Fetch all users
    */
   const fetchUsers = useCallback(
     async (filters?: { role?: UserRole; isActive?: boolean; search?: string }) => {
-      if (!canCreate && !canEdit && !canDelete) {
-        setError('No permission to view users');
-        return;
-      }
-
       setLoading(true);
       setError(null);
 
@@ -121,7 +103,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         setLoading(false);
       }
     },
-    [canCreate, canEdit, canDelete]
+    []
   );
 
   /**
@@ -169,13 +151,6 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const createUser = useCallback(
     async (payload: CreateUserPayload): Promise<boolean> => {
-      if (!canCreate) {
-        const msg = 'No permission to create users';
-        setError(msg);
-        addToast(msg, 'error');
-        return false;
-      }
-
       setLoading(true);
       setError(null);
 
@@ -200,7 +175,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         setLoading(false);
       }
     },
-    [canCreate, addToast]
+    [addToast]
   );
 
   /**
@@ -208,13 +183,6 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const updateUser = useCallback(
     async (id: string, payload: UpdateUserPayload): Promise<boolean> => {
-      if (!canEdit) {
-        const msg = 'No permission to edit users';
-        setError(msg);
-        addToast(msg, 'error');
-        return false;
-      }
-
       setLoading(true);
       setError(null);
 
@@ -242,7 +210,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         setLoading(false);
       }
     },
-    [canEdit, selectedUser, addToast]
+    [selectedUser, addToast]
   );
 
   /**
@@ -250,13 +218,6 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const deleteUser = useCallback(
     async (id: string): Promise<boolean> => {
-      if (!canDelete) {
-        const msg = 'No permission to delete users';
-        setError(msg);
-        addToast(msg, 'error');
-        return false;
-      }
-
       const confirmed = window.confirm('هل أنت متأكد من حذف هذا المستخدم؟');
       if (!confirmed) return false;
 
@@ -287,18 +248,13 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         setLoading(false);
       }
     },
-    [canDelete, selectedUser, addToast]
+    [selectedUser, addToast]
   );
 
   /**
    * Get user quota
    */
   const getQuota = useCallback(async (userId: string) => {
-    if (!canManageQuotas) {
-      setError('No permission to view quotas');
-      return;
-    }
-
     try {
       const result = await userManagementService.getQuota(userId);
       if (result.success && result.data) {
@@ -310,20 +266,13 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
     }
-  }, [canManageQuotas]);
+  }, []);
 
   /**
    * Update quota limits
    */
   const updateQuotaLimits = useCallback(
     async (userId: string, limits: { dailyLimit?: number; monthlyLimit?: number }): Promise<boolean> => {
-      if (!canManageQuotas) {
-        const msg = 'No permission to manage quotas';
-        setError(msg);
-        addToast(msg, 'error');
-        return false;
-      }
-
       try {
         const result = await userManagementService.updateQuotaLimits(userId, limits);
         if (result.success && result.data) {
@@ -343,7 +292,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         return false;
       }
     },
-    [canManageQuotas, addToast]
+    [addToast]
   );
 
   /**
@@ -351,13 +300,6 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const assignModerator = useCallback(
     async (payload: AssignModeratorPayload): Promise<boolean> => {
-      if (!canAssignModerators) {
-        const msg = 'No permission to assign moderators';
-        setError(msg);
-        addToast(msg, 'error');
-        return false;
-      }
-
       try {
         const result = await userManagementService.assignModerator(payload);
         if (result.success && result.data) {
@@ -380,7 +322,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         return false;
       }
     },
-    [canAssignModerators, selectedUser, addToast]
+    [selectedUser, addToast]
   );
 
   /**
@@ -409,7 +351,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const selectUser = useCallback((user?: User) => {
     setSelectedUser(user);
-    if (user && canManageQuotas) {
+    if (user) {
       // Fetch quota when selecting user
       userManagementService.getQuota(user.id).then((result) => {
         if (result.success && result.data) {
@@ -417,7 +359,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         }
       });
     }
-  }, [canManageQuotas]);
+  }, []);
 
   /**
    * Clear error
@@ -447,13 +389,8 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       quota,
       loading,
       error,
-      canCreate,
-      canEdit,
-      canDelete,
-      canManageQuotas,
-      canAssignModerators,
     }),
-    [users, moderators, selectedUser, quota, loading, error, canCreate, canEdit, canDelete, canManageQuotas, canAssignModerators]
+    [users, moderators, selectedUser, quota, loading, error]
   );
 
   /**

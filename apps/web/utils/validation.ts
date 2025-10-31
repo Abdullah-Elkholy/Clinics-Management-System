@@ -80,13 +80,35 @@ export const validateDateOfBirth = (date: string): string | null => {
   return null;
 };
 
-// Textarea validation
+// Textarea validation (optional)
 export const validateTextarea = (
   text: string,
   fieldName: string = 'النص',
   maxLength: number = 500
 ): string | null => {
   if (!text) return null; // Optional field
+  
+  if (text.length > maxLength) {
+    return `${fieldName} يجب أن لا يتجاوز ${maxLength} حرف`;
+  }
+  
+  return null;
+};
+
+// Textarea validation (required)
+export const validateTextareaRequired = (
+  text: string,
+  fieldName: string = 'النص',
+  maxLength: number = 500,
+  minLength: number = 1
+): string | null => {
+  if (!text || !text.trim()) {
+    return `${fieldName} مطلوب`;
+  }
+  
+  if (text.trim().length < minLength) {
+    return `${fieldName} يجب أن يكون ${minLength} أحرف على الأقل`;
+  }
   
   if (text.length > maxLength) {
     return `${fieldName} يجب أن لا يتجاوز ${maxLength} حرف`;

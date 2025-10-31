@@ -103,9 +103,9 @@ export function ConditionApplicationSection({
 
       {/* Condition Selection Section - Only shown if template is selected or no template selector shown */}
       {(!showTemplateSelector || selectedTemplate) && (
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-lg p-4">
-          <h5 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
-            <i className="fas fa-sliders-h text-emerald-600"></i>
+        <div className="bg-gradient-to-r from-blue-50 to-teal-50 border-2 border-blue-200 rounded-lg p-4">
+          <h5 className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+            <i className="fas fa-sliders-h text-blue-600"></i>
             تطبيق الشرط
           </h5>
           <ConditionSection

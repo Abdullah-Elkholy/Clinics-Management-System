@@ -4,33 +4,27 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, ValidationError } from '@/utils/validation';
 import { useUserManagement } from '@/hooks/useUserManagement';
-import { User } from '@/services/userManagementService';
+import { UserRole } from '@/types/roles';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
-interface EditUserModalProps {
-  selectedUser?: User | null;
+interface AddUserModalProps {
+  onUserAdded?: () => void;
 }
 
-export default function EditUserModal({ selectedUser }: EditUserModalProps) {
+export default function AddUserModal({ onUserAdded }: AddUserModalProps) {
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
   const [, actions] = useUserManagement();
+  
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [role, setRole] = useState<UserRole>(UserRole.User);
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
 
-  const isOpen = openModals.has('editUser');
-
-  // Load selected user data when modal opens
-  useEffect(() => {
-    if (isOpen && selectedUser) {
-      setName(selectedUser.name);
-      setTouched(false);
-      setErrors({});
-    }
-  }, [isOpen, selectedUser]);
+  const isOpen = openModals.has('addUser');
 
   const validateFields = () => {
     const newErrors: ValidationError = {};
@@ -38,11 +32,15 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
     const nameError = validateName(name, 'الاسم الكامل');
     if (nameError) newErrors.name = nameError;
     
+    const usernameError = validateName(username, 'اسم المستخدم');
+    if (usernameError) newErrors.username = usernameError;
+    
     return newErrors;
   };
 
   const handleFieldChange = (field: string, value: string) => {
     if (field === 'name') setName(value);
+    if (field === 'username') setUsername(value);
     setTouched(true);
     
     // Clear error if exists
@@ -72,27 +70,27 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       return;
     }
 
-    if (!selectedUser) {
-      addToast('لم يتم تحديد مستخدم', 'error');
-      return;
-    }
-
     try {
       setIsLoading(true);
       
-      const success = await actions.updateUser(selectedUser.id, {
+      const success = await actions.createUser({
         name,
+        username,
+        role,
       });
       
       if (success) {
-        addToast('تم تحديث بيانات المستخدم بنجاح', 'success');
+        addToast('تم إضافة المستخدم بنجاح', 'success');
         setName('');
+        setUsername('');
+        setRole(UserRole.User);
         setErrors({});
         setTouched(false);
-        closeModal('editUser');
+        closeModal('addUser');
+        onUserAdded?.();
       }
     } catch (err) {
-      addToast('حدث خطأ أثناء تحديث البيانات', 'error');
+      addToast('حدث خطأ أثناء إضافة المستخدم', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -100,7 +98,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
 
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0 || 
-                             !name.trim();
+                             !name.trim() || 
+                             !username.trim();
 
   if (!isOpen) return null;
 
@@ -108,12 +107,14 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
     <Modal
       isOpen={isOpen}
       onClose={() => {
-        closeModal('editUser');
+        closeModal('addUser');
         setName('');
+        setUsername('');
+        setRole(UserRole.User);
         setErrors({});
         setTouched(false);
       }}
-      title="تعديل بيانات المستخدم"
+      title="إضافة مستخدم جديد"
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -158,38 +159,70 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
               </p>
             )}
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => handleFieldChange('username', e.target.value)}
+              onBlur={handleFieldBlur}
+              placeholder="أدخل اسم المستخدم"
+              disabled={isLoading}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
+                errors.username
+                  ? 'border-red-500 focus:ring-red-500'
+                  : 'border-gray-300 focus:ring-blue-500'
+              }`}
+            />
+            {errors.username && (
+              <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                <i className="fas fa-exclamation-circle"></i>
+                {errors.username}
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-          <p className="text-sm text-yellow-700">
-            <i className="fas fa-info-circle ml-1"></i>
-            يمكنك إعادة تعيين كلمة المرور من خلال زر الإجراءات في الجدول
-          </p>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">نوع المستخدم *</label>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as UserRole)}
+            disabled={isLoading}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+          >
+            <option value={UserRole.User}>مستخدم عادي</option>
+            <option value={UserRole.Moderator}>مشرف</option>
+            <option value={UserRole.SecondaryAdmin}>مدير ثانوي</option>
+            <option value={UserRole.PrimaryAdmin}>مدير أساسي</option>
+          </select>
         </div>
 
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || hasValidationErrors}
             className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>
                 <i className="fas fa-spinner fa-spin"></i>
-                جاري الحفظ...
+                جاري الإضافة...
               </>
             ) : (
               <>
-                <i className="fas fa-save"></i>
-                حفظ التغييرات
+                <i className="fas fa-plus"></i>
+                إضافة المستخدم
               </>
             )}
           </button>
           <button
             type="button"
             onClick={() => {
-              closeModal('editUser');
+              closeModal('addUser');
               setName('');
+              setUsername('');
+              setRole(UserRole.User);
               setErrors({});
             }}
             disabled={isLoading}

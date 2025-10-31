@@ -14,6 +14,8 @@ import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
 import { useQueueMessageConfig } from '@/hooks/useQueueMessageConfig';
+import { desc } from 'framer-motion/client';
+import { title } from 'process';
 
 // Sample patient data
 const SAMPLE_PATIENTS = MOCK_QUEUE_PATIENTS;
@@ -38,6 +40,7 @@ export default function QueueDashboard() {
   const [selectedPatients, setSelectedPatients] = useState<number[]>([]);
   const [editingQueueId, setEditingQueueId] = useState<number | null>(null);
   const [editingQueueValue, setEditingQueueValue] = useState('');
+  const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
   
   const queue = queues.find((q) => q.id === selectedQueueId);
 
@@ -45,20 +48,92 @@ export default function QueueDashboard() {
   const guideItems = useMemo(() => {
     const baseItems = [
       {
+        title: '',
+        description: 'كل دكتور/عيادة له قائمة المرضى الخاصة وقوالب الرسائل والشروط الخاصة به المنفصلة عن باقي الدكاترة/العيادات',
+      },
+      {
+        title: '',
+        description: 'لكل مشرف عدد محدود من "الرسائل المرسلة" و"عدد الطوابير (الدكاترة)", برجاء مراجعة الإدارة في حالة نفاذهم',
+      },
+      {
+        title: '',
+        description: 'للتمكن من إرسال الرسائل, يجب أولا التأكد من وجود مريض واحد على الأقل مضاف عن طريق زر "إضافة مريض يدوياً" أو "رفع ملف المرضى", ووجود رسالة افتراضية من خلال زر "تحديث الشروط" بالأعلى إذا كان هناك رسائل تم إنشاؤها أو قسم "الرسائل" في الشريط الجانبي لإنشاء رسالة وجعلها افتراضية, وعدم وجود أي تضاربات في شروط الرسائل عن طريق نفس الزر',
+      },
+      {
         title: 'CQP',
-        description: 'الموضع الحالي في قائمة الانتظار'
+        description: 'هو الموضع الحالي في قائمة الانتظار, يمكنك تعديل قيمته من خلال زر "تعديل" بجواره بالأعلى'
       },
       {
         title: 'ETS',
-        description: 'المدة المتوقعة لكل كشف طبي بالدقائق'
+        description: 'هي المدة المتوقعة لكل كشف بالدقائق, يمكنك تعديل قيمتها من خلال زر "تعديل" بجواره بالأعلى '
       },
       {
-        title: '',
-        description: 'يمكنك تعديل ترتيب المرضى بالنقر على أيقونة التعديل'
+        title: 'إدارة قوالب الرسائل',
+        description: 'لإدارة الرسائل والقوالب بشكل كامل، توجه إلى قسم الرسائل في الشريط الجانبي'
       },
       {
-        title: '',
-        description: 'اختر عدد من المرضى وارسل لهم رسائل جماعية'
+        title: 'إدارة المستخدمين',
+        description: 'لإدارة المستخدمين المصرح لك بهم ومراجعة عدد الرسائل والطوابير المسموحة، توجه إلى قسم الإدارة في الشريط الجانبي'
+      },
+      {
+        title: 'إضافة طابور',
+        description: 'لإضافة طابور جديد، استخدم زر الزائد "إضافة طابور" في الشريط الجانبي. للعلم أن الطوابير محدودة لكل مشرف, برجاء الرجوع للإدارة في حالة نفاذهم'
+      },
+      {
+        title: 'تعديل اسم الطابور',
+        description: 'لتعديل اسم الطابور, استخدم زر القلم "تعديل" بجوار الاسم في الشريط الجانبي',
+      },
+      {
+        title: 'حذف الطابور بالكامل',
+        description: 'لحذف الطابور بالكامل, استخدم زر سلة المهملات "حذف" بجوار الاسم في الشريط الجانبي',
+      },
+      {
+        title: 'المهام الجارية',
+        description: 'لمراجعة المهام الجارية مثل الرسائل التي أخدت أمر الإرسال وفي انتظار التنفيذ، استخدم قسم "المهام الجارية" في الشريط الجانبي'
+      },
+      {
+        title: 'المهام الفاشلة',
+        description: 'لمراجعة المهام الفاشلة مثل الرسائل التي لم ترسل بنجاح، استخدم قسم "المهام الفاشلة" في الشريط الجانبي'
+      },
+      {
+        title: 'المهام المكتملة',
+        description: 'لمراجعة المهام المكتملة مثل الرسائل التي تم إرسالها بنجاح، استخدم قسم "المهام المكتملة" في الشريط الجانبي'
+      },
+      {
+        title: 'إدارة شروط الرسائل',
+        description: 'لتعديل الشروط الخاصة بالرسائل، استخدم زر "تحديث الشروط" في الأعلى, تحت زر "إرسال". ويمكنك توسيع الخانة بالنقر عليها للإطلاع على الرسالة الافتراضية والشروط',
+      },
+      {
+        title: 'إعادة ترتيب المرضى',
+        description: 'يمكنك تعديل ترتيب المرضى بالنقر على زر القلم "تعديل" في عمود ترتيب الانتظار'
+      },
+      {
+        title: 'إرسال رسالة جماعية',
+        description: 'اضف عدد من المرضى وارسل لهم رسائل جماعية عن طريق زر "إرسال" في الأعلى'
+      },
+      {
+        title: 'إضافة مريض جديد',
+        description: 'لإضافة مرضى جدد بشكل يدوي، استخدم زر "إضافة مريض" في الأعلى'
+      },
+      {
+        title: 'إضافة مرضى من ملف إكسيل',
+        description: 'لإضافة مرضى جدد بشكل جماعي عن طريق ملف، استخدم زر "رفع ملف المرضى" في الأعلى',
+      },
+      {
+        title: 'حذف مرضى محددين',
+        description: 'لحذف مرضى محددين، اخترهم ثم استخدم زر "حذف المحددين" في الأعلى'
+      },
+      {
+        title: 'حذف مريض من الطابور',
+        description: 'لحذف مريض من الطابور، استخدم زر سلة المهملات "حذف" في عمود الإجراءات'
+      },
+      {
+        title: 'تعديل بيانات المريض',
+        description: 'لتعديل بيانات المريض، استخدم زر القلم "تعديل" في عمود الإجراءات'
+      },
+      {
+        title: 'فتح محادثة واتساب',
+        description: 'لفتح محادثة واتساب مع المريض في المتصفح، استخدم زر أيقونة واتساب في عمود الإجراءات',
       },
     ];
 
@@ -619,74 +694,159 @@ export default function QueueDashboard() {
         </button>
       </div>
 
-      {/* Selected Message Display */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <h3 className="font-bold text-gray-800 mb-2">الرسالة الافتراضية المحددة:</h3>
-            <p className="text-gray-700">
-              مرحباً {'{PN}'}, ترتيبك {'{PQP}'} والموضع الحالي {'{CQP}'},
-              الوقت المتبقي المقدر {'{ETR}'} دقيقة
-            </p>
-          </div>
-          <button
-            onClick={() => openModal('messageSelection')}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 ml-4 flex-shrink-0"
-            title="تغيير الرسالة"
-          >
-            <i className="fas fa-edit"></i>
-            <span className="text-sm font-medium">تغيير الرسالة</span>
-          </button>
-        </div>
-
-
-        {/* Disclaimer - Manage Templates in MessagesPanel */}
-        <div className="border-t border-blue-200 pt-4 mt-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          {/* Disclaimer Message */}
-        {/* Message Conditions Control Button */}
+      {/* Selected Message Display - Collapsible */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl overflow-hidden shadow-md mb-6">
+        {/* Collapsible Header */}
         <button
-          onClick={() => openModal('manageConditions', {
-            templateId: null,
-            queueId: selectedQueueId,
-            queueName: queue?.doctorName || 'طابور',
-            currentConditions: messageConfig?.conditions || [],
-            allConditions: messageConfig?.conditions || [],
-            allTemplates: MOCK_MESSAGE_TEMPLATES.map(t => ({ 
-              id: t.id, 
-              title: t.title 
-            })),
-            onSave: (conditions: any) => {
-              console.log('Conditions updated:', conditions);
-            },
-          })}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-medium flex-shrink-0"
-          title="إدارة شروط الرسالة"
+          onClick={() => setIsMessageSectionExpanded(!isMessageSectionExpanded)}
+          className="w-full flex items-center justify-between hover:bg-blue-100 transition-colors px-6 py-4"
         >
-          <i className="fas fa-sliders-h"></i>
-          <span>تحديث الشروط / القواعد</span>
-        </button>
-          <div className="bg-blue-50 border-l-4 border-blue-500 rounded px-3 py-2 flex-1">
-            <div className="flex items-start gap-2">
-              <i className="fas fa-info-circle text-blue-600 mt-0.5 flex-shrink-0 text-sm"></i>
-              <p className="text-xs text-blue-800">
-                <span className="font-semibold">لإدارة الرسائل بشكل كامل:</span> توجه إلى قائمة<span className="font-semibold"> الرسائل</span> في الشريط الجانبي
-              </p>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-200">
+              <i className="fas fa-envelope text-blue-700 text-lg"></i>
+            </div>
+            <div className="text-right">
+              <h3 className="font-bold text-gray-900 text-lg">إدارة شروط الرسائل</h3>
+              <p className="text-sm text-gray-600">الرسالة الافتراضية والشروط المطبقة</p>
             </div>
           </div>
-        </div>
-        {/* Conflict Warning Section */}
-        {(() => {
-          const conflicts = detectQueueConflicts();
-          return conflicts.length > 0 ? (
-            <div className="mt-4">
-              <ConflictWarning 
-                overlappingConditions={conflicts}
-                hasDefaultConflict={false}
-              />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openModal('manageConditions', {
+                  templateId: null,
+                  queueId: selectedQueueId,
+                  queueName: queue?.doctorName || 'طابور',
+                  currentConditions: messageConfig?.conditions || [],
+                  allConditions: messageConfig?.conditions || [],
+                  allTemplates: MOCK_MESSAGE_TEMPLATES.map(t => ({ 
+                    id: t.id, 
+                    title: t.title 
+                  })),
+                  onSave: (conditions: any) => {
+                    console.log('Conditions updated:', conditions);
+                  },
+                });
+              }}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-semibold shadow-md hover:shadow-lg flex-shrink-0"
+              title="إدارة شروط الرسائل"
+            >
+              <i className="fas fa-sliders-h"></i>
+              <span>تحديث الشروط</span>
+            </button>
+            <i className={`fas fa-chevron-down text-blue-700 text-xl transition-transform duration-300 ${isMessageSectionExpanded ? 'rotate-180' : ''}`}></i>
+          </div>
+        </button>
+
+        {/* Expanded Content */}
+        {isMessageSectionExpanded && (
+          <>
+            <div className="border-t-2 border-blue-200"></div>
+            <div className="px-6 py-4 space-y-6">
+              {/* Check if default template exists */}
+              {(() => {
+                const hasDefaultTemplate = MOCK_MESSAGE_TEMPLATES.some(
+                  (t) => t.queueId === String(selectedQueueId) && 
+                         t.conditionId?.startsWith('DEFAULT_')
+                );
+
+                if (!hasDefaultTemplate) {
+                  return (
+                    <div className="flex flex-col gap-4">
+                      <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
+                        <div className="flex items-start gap-3">
+                          <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0 text-lg"></i>
+                          <div className="flex-1">
+                            <h4 className="font-bold text-amber-900 mb-1">لم يتم تحديد رسالة افتراضية</h4>
+                            <p className="text-sm text-amber-800 mb-2">
+                              يجب إنشاء قالب رسالة بشرط افتراضي (DEFAULT) قبل تفعيل الرسائل الآلية
+                            </p>
+                            <p className="text-xs text-amber-700">
+                              توجه إلى قسم <span className="font-semibold">الرسائل</span> في الشريط الجانبي لإنشاء قالب افتراضي
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Show conditions if they exist
+                const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(c => c.queueId === selectedQueueId);
+                const hasConditions = queueConditions && queueConditions.length > 0;
+
+                return (
+                  <div className="flex flex-col gap-6">
+                    <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
+                      <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <i className="fas fa-message text-blue-600"></i>
+                        الرسالة الافتراضية:
+                      </h4>
+                      <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                        <p className="text-gray-800 text-sm leading-relaxed font-medium">
+                          مرحباً {'{PN}'}, ترتيبك {'{PQP}'} والموضع الحالي {'{CQP}'},
+                          الوقت المتبقي المقدر {'{ETR}'} دقيقة
+                        </p>
+                        <p className="text-xs text-gray-600 mt-3">
+                          <i className="fas fa-info-circle text-blue-500 ml-1"></i>
+                          {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {hasConditions && (
+                      <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
+                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                          <i className="fas fa-filter text-green-600"></i>
+                          الشروط المطبقة:
+                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
+                            {queueConditions.length}
+                          </span>
+                        </h4>
+                        <div className="space-y-2">
+                          {queueConditions.map((condition, idx) => (
+                            <div key={idx} className="flex items-start gap-3 bg-green-50 rounded-lg p-3 border border-green-100 hover:border-green-300 hover:bg-green-100 transition-colors">
+                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-300 text-green-900 text-xs font-bold flex-shrink-0">
+                                {idx + 1}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-900">
+                                  {condition.name || 'شرط بدون عنوان'}
+                                </p>
+                                <p className="text-xs text-gray-700 mt-1">
+                                  {condition.operator === 'EQUAL' && `✓ يساوي: ${condition.value}`}
+                                  {condition.operator === 'GREATER' && `✓ أكبر من: ${condition.value}`}
+                                  {condition.operator === 'LESS' && `✓ أقل من: ${condition.value}`}
+                                  {(condition.operator as string) === 'RANGE' && `✓ نطاق: من ${(condition as any).minValue} إلى ${(condition as any).maxValue}`}
+                                  {(condition.operator as string) === 'DEFAULT' && `✓ قالب افتراضي`}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
-          ) : null;
-        })()}
+          </>
+        )}
       </div>
+
+      {/* Conflict Warning Section */}
+      {(() => {
+        const conflicts = detectQueueConflicts();
+        return conflicts.length > 0 ? (
+          <div className="mb-6">
+            <ConflictWarning 
+              overlappingConditions={conflicts}
+              hasDefaultConflict={false}
+            />
+          </div>
+        ) : null;
+      })()}
 
 
       {/* Patients Table */}
