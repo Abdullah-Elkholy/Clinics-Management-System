@@ -690,7 +690,7 @@ export default function QueueDashboard() {
           title="إرسال الرسائل لجميع المرضى"
         >
           <i className="fab fa-whatsapp"></i>
-          <span>إرسال ({patients.length})</span>
+          <span>إرسال</span>
         </button>
       </div>
 
@@ -711,7 +711,7 @@ export default function QueueDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
+            <div
               onClick={(e) => {
                 e.stopPropagation();
                 openModal('manageConditions', {
@@ -729,12 +729,33 @@ export default function QueueDashboard() {
                   },
                 });
               }}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-semibold shadow-md hover:shadow-lg flex-shrink-0"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation();
+                  openModal('manageConditions', {
+                    templateId: null,
+                    queueId: selectedQueueId,
+                    queueName: queue?.doctorName || 'طابور',
+                    currentConditions: messageConfig?.conditions || [],
+                    allConditions: messageConfig?.conditions || [],
+                    allTemplates: MOCK_MESSAGE_TEMPLATES.map(t => ({ 
+                      id: t.id, 
+                      title: t.title 
+                    })),
+                    onSave: (conditions: any) => {
+                      console.log('Conditions updated:', conditions);
+                    },
+                  });
+                }
+              }}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 text-sm font-semibold shadow-md hover:shadow-lg flex-shrink-0 cursor-pointer"
               title="إدارة شروط الرسائل"
             >
               <i className="fas fa-sliders-h"></i>
               <span>تحديث الشروط</span>
-            </button>
+            </div>
             <i className={`fas fa-chevron-down text-blue-700 text-xl transition-transform duration-300 ${isMessageSectionExpanded ? 'rotate-180' : ''}`}></i>
           </div>
         </button>

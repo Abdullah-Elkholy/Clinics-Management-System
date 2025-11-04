@@ -20,6 +20,7 @@ interface Patient {
   status: string;
   failedAttempts: number;
   isPaused?: boolean;
+  messagePreview?: string;
 }
 
 interface Session {
@@ -61,6 +62,7 @@ export default function OngoingTasksPanel() {
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<number>>>(new Map());
   const [pausedSessions, setPausedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-002']));
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
   const [sessions, setSessions] = useState<Session[]>(MOCK_ONGOING_SESSIONS as Session[]);
 
   /**
@@ -341,12 +343,13 @@ export default function OngoingTasksPanel() {
    * Memoize table columns for each session
    */
   const tableColumns = useMemo(() => [
-    { key: 'checkbox', label: '', width: '5%' },
-    { key: 'name', label: 'الاسم', width: '25%' },
-    { key: 'phone', label: 'رقم الجوال', width: '20%' },
-    { key: 'status', label: 'الحالة', width: '20%' },
-    { key: 'failedAttempts', label: 'المحاولات الفاشلة', width: '15%' },
-    { key: 'actions', label: 'الإجراءات', width: '15%' },
+    { key: 'checkbox', label: '', width: '4%' },
+    { key: 'name', label: 'الاسم', width: '15%' },
+    { key: 'phone', label: 'رقم الجوال', width: '15%' },
+    { key: 'message', label: 'الرسالة', width: '25%', hasToggle: true },
+    { key: 'status', label: 'الحالة', width: '15%' },
+    { key: 'failedAttempts', label: 'المحاولات الفاشلة', width: '12%' },
+    { key: 'actions', label: 'الإجراءات', width: '14%' },
   ], []);
 
   /**
@@ -364,6 +367,16 @@ export default function OngoingTasksPanel() {
     ),
     name: patient.name,
     phone: `${patient.countryCode || '+966'} ${patient.phone}`,
+    message: (
+      <div
+        className={`text-sm text-gray-700 ${
+          isMessagesExpanded ? '' : 'line-clamp-2'
+        } max-w-xs`}
+        title={patient.messagePreview}
+      >
+        {patient.messagePreview || 'لا توجد رسالة'}
+      </div>
+    ),
     status: (
       <div className="flex gap-2">
         <Badge
@@ -414,7 +427,7 @@ export default function OngoingTasksPanel() {
         </button>
       </div>
     ),
-  }), [selectedPatients, togglePatientSelection, togglePatientPause, handleEditPatient, handleDeletePatient]);
+  }), [selectedPatients, togglePatientSelection, togglePatientPause, handleEditPatient, handleDeletePatient, isMessagesExpanded]);
 
   if (sessions.length === 0) {
     return (
@@ -643,13 +656,27 @@ export default function OngoingTasksPanel() {
                         <table className="w-full">
                           <thead className="bg-gray-50 border-b">
                             <tr>
-                              {tableColumns.map((col) => (
+                              {tableColumns.map((col: any) => (
                                 <th
                                   key={col.key}
                                   style={{ width: col.width }}
                                   className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
                                 >
-                                  {col.label}
+                                  {col.hasToggle ? (
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span>{col.label}</span>
+                                      <button
+                                        onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
+                                        className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
+                                        title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
+                                      >
+                                        <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
+                                        <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    col.label
+                                  )}
                                 </th>
                               ))}
                             </tr>
@@ -667,6 +694,7 @@ export default function OngoingTasksPanel() {
                                   <td className="px-6 py-3 text-sm">{row.checkbox}</td>
                                   <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
                                   <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                                  <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
                                   <td className="px-6 py-3 text-sm">{row.status}</td>
                                   <td className="px-6 py-3 text-sm">{row.failedAttempts}</td>
                                   <td className="px-6 py-3 text-sm">{row.actions}</td>
@@ -684,12 +712,9 @@ export default function OngoingTasksPanel() {
           );
         })}
       </div>
-
-      <div className="px-6 pb-6">
         <UsageGuideSection
           items={ONGOING_TASKS_GUIDE_ITEMS}
         />
-      </div>
     </PanelWrapper>
   );
 }

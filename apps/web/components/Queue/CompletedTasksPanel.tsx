@@ -17,6 +17,7 @@ interface Patient {
   queue?: number;
   status: string;
   completedAt?: string;
+  messagePreview?: string;
 }
 
 interface Session {
@@ -52,8 +53,8 @@ const COMPLETED_TASKS_GUIDE_ITEMS = [
 
 export default function CompletedTasksPanel() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
-  const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<number>>>(new Map());
-  const [sessions, setSessions] = useState<Session[]>(MOCK_COMPLETED_SESSIONS as Session[]);
+  const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
+  const [sessions] = useState<Session[]>(MOCK_COMPLETED_SESSIONS as Session[]);
 
   /**
    * Toggle session expand - memoized
@@ -69,71 +70,6 @@ export default function CompletedTasksPanel() {
       return newSet;
     });
   }, []);
-
-  /**
-   * Toggle patient selection - memoized
-   */
-  const togglePatientSelection = useCallback((sessionId: string, patientId: number) => {
-    setSelectedPatients((prev) => {
-      const newMap = new Map(prev);
-      if (!newMap.has(sessionId)) {
-        newMap.set(sessionId, new Set());
-      }
-      const sessionSet = newMap.get(sessionId)!;
-      if (sessionSet.has(patientId)) {
-        sessionSet.delete(patientId);
-      } else {
-        sessionSet.add(patientId);
-      }
-      return newMap;
-    });
-  }, []);
-
-  /**
-   * Toggle all patients - memoized
-   */
-  const toggleAllPatients = useCallback((sessionId: string) => {
-    const session = sessions.find((s) => s.id === sessionId);
-    if (!session) return;
-
-    const selectedSet = selectedPatients.get(sessionId) || new Set();
-    setSelectedPatients((prev) => {
-      const newMap = new Map(prev);
-      if (selectedSet.size === session.patients.length) {
-        newMap.delete(sessionId);
-      } else {
-        newMap.set(sessionId, new Set(session.patients.map((p) => p.id)));
-      }
-      return newMap;
-    });
-  }, [selectedPatients, sessions]);
-
-  /**
-   * Delete selected patients - memoized
-   */
-  const deleteSelectedPatients = useCallback((sessionId: string) => {
-    const selected = selectedPatients.get(sessionId) || new Set();
-    if (selected.size === 0) return;
-
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              patients: s.patients.filter((p) => !selected.has(p.id)),
-              totalPatients: s.totalPatients - selected.size,
-              sentCount: s.sentCount - selected.size,
-            }
-          : s
-      )
-    );
-
-    setSelectedPatients((prev) => {
-      const newMap = new Map(prev);
-      newMap.delete(sessionId);
-      return newMap;
-    });
-  }, [selectedPatients]);
 
   /**
    * Memoize computed stats
@@ -157,36 +93,34 @@ export default function CompletedTasksPanel() {
   ], [sessions]);
 
   /**
-   * Memoize table columns
+   * Memoize table columns - no checkbox since deletion is disabled, no status column
    */
   const tableColumns = useMemo(() => [
-    { key: 'checkbox', label: '', width: '5%' },
     { key: 'name', label: 'الاسم', width: '25%' },
     { key: 'phone', label: 'رقم الجوال', width: '20%' },
-    { key: 'completedAt', label: 'وقت الإكمال', width: '25%' },
-    { key: 'status', label: 'الحالة', width: '25%' },
+    { key: 'message', label: 'الرسالة', width: '35%', hasToggle: true },
+    { key: 'completedAt', label: 'وقت الإكمال', width: '20%' },
   ], []);
 
   /**
-   * Render patient row
+   * Render patient row - no checkbox since deletion is disabled, no status column
    */
-  const renderPatientRow = useCallback((patient: Patient, sessionId: string) => ({
+  const renderPatientRow = useCallback((patient: Patient) => ({
     id: patient.id,
-    checkbox: (
-      <input
-        type="checkbox"
-        checked={selectedPatients.get(sessionId)?.has(patient.id) || false}
-        onChange={() => togglePatientSelection(sessionId, patient.id)}
-        className="w-4 h-4 rounded cursor-pointer"
-      />
-    ),
     name: patient.name,
     phone: `${patient.countryCode || '+966'} ${patient.phone}`,
-    completedAt: patient.completedAt || 'غير معروف',
-    status: (
-      <Badge color="green" label="✓ مكتملة" />
+    message: (
+      <div
+        className={`text-sm text-gray-700 ${
+          isMessagesExpanded ? '' : 'line-clamp-2'
+        } max-w-xs`}
+        title={patient.messagePreview}
+      >
+        {patient.messagePreview || 'لا توجد رسالة'}
+      </div>
     ),
-  }), [selectedPatients, togglePatientSelection]);
+    completedAt: patient.completedAt || 'غير معروف',
+  }), [isMessagesExpanded]);
 
   if (sessions.length === 0) {
     return (
@@ -216,12 +150,9 @@ export default function CompletedTasksPanel() {
         description={`عرض جميع المهام المكتملة والمرسلة بنجاح - ${sessions.length} جلسة`}
         stats={stats}
       />
-
-      {/* Sessions List */}
       <div className="space-y-4">
         {sessions.map((session) => {
           const isExpanded = expandedSessions.has(session.id);
-          const selectedCount = selectedPatients.get(session.id)?.size || 0;
           const progressPercent = Math.round((session.sentCount / session.totalPatients) * 100);
 
           return (
@@ -297,47 +228,13 @@ export default function CompletedTasksPanel() {
                   <div className="bg-white rounded-lg overflow-hidden border">
                     <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
                       <div className="flex items-center gap-4">
-                        <div
-                          onClick={() => toggleAllPatients(session.id)}
-                          className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
-                          style={{
-                            borderColor: selectedCount === 0 ? '#d1d5db' : selectedCount === session.patients.length ? '#3b82f6' : '#f59e0b',
-                            backgroundColor: selectedCount === 0 ? 'white' : selectedCount === session.patients.length ? '#3b82f6' : '#fef3c7',
-                          }}
-                          title={selectedCount === 0 ? 'تحديد الكل' : selectedCount === session.patients.length ? 'إلغاء التحديد' : 'تحديد الكل'}
-                        >
-                          {selectedCount > 0 && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <i
-                                className={`fas text-white text-xs ${
-                                  selectedCount === session.patients.length ? 'fa-check' : 'fa-minus'
-                                }`}
-                              ></i>
-                            </div>
-                          )}
-                        </div>
                         <h4 className="font-bold text-gray-800">قائمة المرضى</h4>
                         <span className="text-sm text-gray-600">
-                          {selectedCount} من {session.patients.length} محدد
+                          {session.patients.length} مريض
                         </span>
                       </div>
                       <div className="flex gap-2">
-                        {selectedCount > 0 && (
-                          <>
-                            <button
-                              onClick={() => setSelectedPatients(new Map(selectedPatients).set(session.id, new Set()))}
-                              className="text-sm text-red-600 hover:text-red-800"
-                            >
-                              إلغاء التحديد
-                            </button>
-                            <button
-                              onClick={() => deleteSelectedPatients(session.id)}
-                              className="text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
-                            >
-                              حذف ({selectedCount})
-                            </button>
-                          </>
-                        )}
+                        {/* Deletion and selection controls intentionally removed - completed patients cannot be deleted */}
                       </div>
                     </div>
 
@@ -351,30 +248,43 @@ export default function CompletedTasksPanel() {
                         <table className="w-full">
                           <thead className="bg-gray-50 border-b">
                             <tr>
-                              {tableColumns.map((col) => (
+                              {tableColumns.map((col: any) => (
                                 <th
                                   key={col.key}
                                   style={{ width: col.width }}
                                   className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
                                 >
-                                  {col.label}
+                                  {col.hasToggle ? (
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span>{col.label}</span>
+                                      <button
+                                        onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
+                                        className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
+                                        title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
+                                      >
+                                        <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
+                                        <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    col.label
+                                  )}
                                 </th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {session.patients.map((patient) => {
-                              const row = renderPatientRow(patient, session.id);
+                              const row = renderPatientRow(patient);
                               return (
                                 <tr
                                   key={patient.id}
                                   className="border-b hover:bg-gray-50 transition-colors"
                                 >
-                                  <td className="px-6 py-3 text-sm">{row.checkbox}</td>
                                   <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
                                   <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                                  <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
                                   <td className="px-6 py-3 text-sm text-gray-600">{row.completedAt}</td>
-                                  <td className="px-6 py-3 text-sm">{row.status}</td>
                                 </tr>
                               );
                             })}
@@ -391,11 +301,9 @@ export default function CompletedTasksPanel() {
       </div>
 
       {/* Info Box */}
-      <div className="px-6 pb-6">
         <UsageGuideSection 
           items={COMPLETED_TASKS_GUIDE_ITEMS}
         />
-      </div>
     </PanelWrapper>
   );
 }
