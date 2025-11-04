@@ -10,9 +10,11 @@ import { useState } from 'react';
 
 interface AddUserModalProps {
   onUserAdded?: () => void;
+  role?: UserRole | null;
+  moderatorId?: string | null;
 }
 
-export default function AddUserModal({ onUserAdded }: AddUserModalProps) {
+export default function AddUserModal({ onUserAdded, role = null, moderatorId = null }: AddUserModalProps) {
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
   const [, actions] = useUserManagement();
@@ -100,11 +102,20 @@ export default function AddUserModal({ onUserAdded }: AddUserModalProps) {
     try {
       setIsLoading(true);
       
-      const success = await actions.createUser({
+      const userRole = role || UserRole.User;
+      
+      const userPayload: any = {
         name,
         username,
-        role: UserRole.User,
-      });
+        role: userRole,
+      };
+
+      // Add moderator ID if this is a regular user being added to a moderator
+      if (userRole === UserRole.User && moderatorId) {
+        userPayload.assignedModerator = moderatorId;
+      }
+
+      const success = await actions.createUser(userPayload);
       
       if (success) {
         addToast('تم إضافة المستخدم بنجاح', 'success');
@@ -131,6 +142,20 @@ export default function AddUserModal({ onUserAdded }: AddUserModalProps) {
                              !password.trim() ||
                              password !== confirmPassword;
 
+  // Get modal title based on role
+  const getModalTitle = () => {
+    switch (role) {
+      case UserRole.Moderator:
+        return 'إضافة مشرف جديد';
+      case UserRole.SecondaryAdmin:
+        return 'إضافة مدير ثانوي جديد';
+      case UserRole.User:
+        return 'إضافة مستخدم جديد';
+      default:
+        return 'إضافة مستخدم جديد';
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -145,7 +170,7 @@ export default function AddUserModal({ onUserAdded }: AddUserModalProps) {
         setErrors({});
         setTouched(false);
       }}
-      title="إضافة مستخدم جديد"
+      title={getModalTitle()}
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">

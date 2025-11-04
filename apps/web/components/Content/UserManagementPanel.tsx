@@ -473,7 +473,7 @@ export default function UserManagementPanel() {
                 {/* Add Secondary Admin Button */}
                 <div className="mb-4">
                   <button
-                    onClick={() => handleAddUser()}
+                    onClick={() => handleAddUser(UserRole.SecondaryAdmin)}
                     disabled={state.loading}
                     className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
                   >
@@ -1164,7 +1164,11 @@ export default function UserManagementPanel() {
       {/* Modals */}
       <EditUserModal selectedUser={selectedUser} />
       <EditAccountModal selectedUser={selectedUser} />
-      <AddUserModal onUserAdded={() => actions.fetchUsers()} />
+      <AddUserModal 
+        onUserAdded={() => actions.fetchUsers()} 
+        role={selectedRole}
+        moderatorId={selectedModerator}
+      />
     </>
   );
 }
