@@ -57,6 +57,45 @@ export const validateName = (name: string, fieldName: string = 'الاسم'): st
   return null;
 };
 
+// Username validation
+export const validateUsername = (username: string): string | null => {
+  if (!username || !username.trim()) {
+    return 'اسم المستخدم مطلوب';
+  }
+
+  if (username.trim().length < 3) {
+    return 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل';
+  }
+
+  if (username.trim().length > 50) {
+    return 'اسم المستخدم يجب أن لا يتجاوز 50 حرف';
+  }
+
+  // Check for spaces
+  if (/\s/.test(username)) {
+    return 'اسم المستخدم لا يمكن أن يحتوي على مسافات';
+  }
+
+  // Check if first character is a number
+  if (/^[0-9]/.test(username)) {
+    return 'اسم المستخدم يجب أن يبدأ بحرف إنجليزي';
+  }
+
+  // Allow only English letters, numbers (not first character), hyphens, and underscores
+  // Do not allow two consecutive hyphens or underscores
+  const usernameRegex = /^[a-zA-Z]([a-zA-Z0-9_-]*[a-zA-Z0-9])?$/;
+  if (!usernameRegex.test(username.trim())) {
+    return 'اسم المستخدم يحتوي على أحرف غير صالحة';
+  }
+
+  // Check for consecutive underscores or hyphens
+  if (/([_-])\1/.test(username)) {
+    return 'اسم المستخدم لا يمكن أن يحتوي على حرفين متتاليين من (_ أو -)';
+  }
+
+  return null;
+};
+
 // Date of birth validation
 export const validateDateOfBirth = (date: string): string | null => {
   if (!date) return null; // Optional field

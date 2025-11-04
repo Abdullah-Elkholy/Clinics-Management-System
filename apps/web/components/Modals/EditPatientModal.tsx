@@ -15,16 +15,22 @@ export default function EditPatientModal() {
   const data = getModalData('editPatient');
 
   const initialName = data?.patient?.name ?? '';
+  const initialUsername = data?.patient?.username ?? '';
   const initialPhone = data?.patient?.phone ?? '';
   const initialCountryCode = data?.patient?.countryCode ?? '+20';
 
   const [name, setName] = useState(initialName);
+  const [username, setUsername] = useState(initialUsername);
   const [phone, setPhone] = useState(initialPhone);
   const [countryCode, setCountryCode] = useState(initialCountryCode);
   const [customCountryCode, setCustomCountryCode] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [initialValues, setInitialValues] = useState({
+    name: initialName,
+    username: initialUsername,
+  });
 
   const isOpen = openModals.has('editPatient');
 
@@ -42,11 +48,23 @@ export default function EditPatientModal() {
   const validateFields = () => {
     const newErrors: ValidationError = {};
     
-    const nameError = validateName(name, 'اسم المريض');
-    if (nameError) newErrors.name = nameError;
+    // Only validate fields that have changed
+    if (name !== initialValues.name && name) {
+      const nameError = validateName(name, 'اسم المريض');
+      if (nameError) newErrors.name = nameError;
+    }
     
-    const phoneError = validatePhone(phone);
-    if (phoneError) newErrors.phone = phoneError;
+    if (username !== initialValues.username && username) {
+      // Basic username validation
+      if (username.trim().length < 2) {
+        newErrors.username = 'اسم المستخدم يجب أن يكون على الأقل 2 أحرف';
+      }
+    }
+    
+    if (phone !== initialPhone) {
+      const phoneError = validatePhone(phone);
+      if (phoneError) newErrors.phone = phoneError;
+    }
     
     // Validate custom country code if 'OTHER' is selected
     if (countryCode === 'OTHER') {
@@ -59,6 +77,7 @@ export default function EditPatientModal() {
 
   const handleFieldChange = (field: string, value: string) => {
     if (field === 'name') setName(value);
+    if (field === 'username') setUsername(value);
     if (field === 'phone') setPhone(value);
     if (field === 'customCountryCode') setCustomCountryCode(value);
     setTouched(true);
@@ -90,22 +109,42 @@ export default function EditPatientModal() {
       return;
     }
 
-    // Get effective country code (handle "OTHER" option)
-    const effectiveCountryCode = getEffectiveCountryCode(countryCode, customCountryCode);
+    // Build update payload with only changed fields
+    const updatePayload: any = {};
+    
+    if (name !== initialValues.name && name.trim()) {
+      updatePayload.name = name.trim();
+    }
+    
+    if (username !== initialValues.username && username.trim()) {
+      updatePayload.username = username.trim();
+    }
+    
+    if (phone !== initialPhone) {
+      updatePayload.phone = phone.trim();
+    }
+    
+    if (countryCode !== initialCountryCode || customCountryCode) {
+      const effectiveCountryCode = getEffectiveCountryCode(countryCode, customCountryCode);
+      const countryCodeError = validateCountryCode(effectiveCountryCode, true);
+      if (countryCodeError) {
+        setErrors({ country: countryCodeError });
+        addToast(`خطأ في كود الدولة: ${countryCodeError}`, 'error');
+        return;
+      }
+      updatePayload.countryCode = effectiveCountryCode;
+    }
 
-    // Validate country code
-    const countryCodeError = validateCountryCode(effectiveCountryCode, true);
-    if (countryCodeError) {
-      setErrors({ country: countryCodeError });
-      addToast(`خطأ في كود الدولة: ${countryCodeError}`, 'error');
+    // Check if any data was changed
+    if (Object.keys(updatePayload).length === 0) {
+      addToast('لم يتم تغيير أي بيانات', 'info');
+      closeModal('editPatient');
       return;
     }
 
     const updated = {
       ...data?.patient,
-      name: name.trim(),
-      phone: phone.trim(),
-      countryCode: effectiveCountryCode,
+      ...updatePayload,
     };
 
     // call onSave callback if provided
@@ -114,6 +153,7 @@ export default function EditPatientModal() {
       data?.onSave && data.onSave(updated);
       addToast('تم تحديث بيانات المريض بنجاح', 'success');
       setName('');
+      setUsername('');
       setPhone('');
       setErrors({});
       closeModal('editPatient');
@@ -125,7 +165,7 @@ export default function EditPatientModal() {
   };
 
   // Validation errors check
-  const hasValidationErrors = Object.keys(errors).length > 0 || !name.trim() || !phone.trim();
+  const hasValidationErrors = Object.keys(errors).length > 0;
 
   if (!isOpen) return null;
 
@@ -135,6 +175,7 @@ export default function EditPatientModal() {
       onClose={() => {
         closeModal('editPatient');
         setName('');
+        setUsername('');
         setPhone('');
         setErrors({});
         setTouched(false);
@@ -143,6 +184,14 @@ export default function EditPatientModal() {
       size="md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Disclaimer */}
+        <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
+          <p className="text-blue-800 text-sm font-medium flex items-center gap-2">
+            <i className="fas fa-info-circle text-blue-600"></i>
+            عدل البيانات المراد تغييرها فقط
+          </p>
+        </div>
+
         {/* Validation Errors Alert - Only show if user touched and there are errors */}
         {touched && Object.keys(errors).length > 0 && (
           <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
@@ -162,7 +211,7 @@ export default function EditPatientModal() {
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
           <input
             type="text"
             value={name}
@@ -180,6 +229,29 @@ export default function EditPatientModal() {
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
               <i className="fas fa-exclamation-circle"></i>
               {errors.name}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => handleFieldChange('username', e.target.value)}
+            onBlur={handleFieldBlur}
+            placeholder="أدخل اسم المستخدم"
+            disabled={isLoading}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
+              errors.username
+                ? 'border-red-500 focus:ring-red-500'
+                : 'border-gray-300 focus:ring-blue-500'
+            }`}
+          />
+          {errors.username && (
+            <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+              <i className="fas fa-exclamation-circle"></i>
+              {errors.username}
             </p>
           )}
         </div>
@@ -272,6 +344,7 @@ export default function EditPatientModal() {
             onClick={() => {
               closeModal('editPatient');
               setName('');
+              setUsername('');
               setPhone('');
               setErrors({});
             }}

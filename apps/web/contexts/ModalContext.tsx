@@ -14,6 +14,7 @@ export type ModalType =
   | 'whatsappAuth' 
   | 'editQueue' 
   | 'editUser'
+  | 'editAccount'
   | 'addUser'
   | 'retryPreview' 
   | 'quotaManagement'

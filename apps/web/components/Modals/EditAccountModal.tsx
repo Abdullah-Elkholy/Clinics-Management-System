@@ -1,0 +1,497 @@
+'use client';
+
+import { useModal } from '@/contexts/ModalContext';
+import { useUI } from '@/contexts/UIContext';
+import { validateName, validateUsername, ValidationError } from '@/utils/validation';
+import { useUserManagement } from '@/hooks/useUserManagement';
+import { User } from '@/services/userManagementService';
+import Modal from './Modal';
+import { useState, useEffect } from 'react';
+
+interface EditAccountModalProps {
+  selectedUser?: User | null;
+}
+
+export default function EditAccountModal({ selectedUser }: EditAccountModalProps) {
+  const { openModals, closeModal } = useModal();
+  const { addToast } = useUI();
+  const [, actions] = useUserManagement();
+  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [errors, setErrors] = useState<ValidationError>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
+  
+  // Track initial values to detect changes
+  const [initialValues, setInitialValues] = useState({
+    name: '',
+    username: '',
+  });
+
+  const isOpen = openModals.has('editAccount');
+
+  // Load selected user data when modal opens
+  useEffect(() => {
+    if (isOpen && selectedUser) {
+      setName(selectedUser.name);
+      setUsername(selectedUser.username);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setInitialValues({
+        name: selectedUser.name,
+        username: selectedUser.username,
+      });
+      setTouched(false);
+      setErrors({});
+      setIsChangingPassword(false);
+      setGeneratedPassword(null);
+    }
+  }, [isOpen, selectedUser]);
+
+  // Generate random password
+  const generateRandomPassword = () => {
+    const length = 12;
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+      password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    setGeneratedPassword(password);
+    setNewPassword(password);
+    setConfirmPassword(password);
+  };
+
+  const validateFields = () => {
+    const newErrors: ValidationError = {};
+    
+    // Only validate name if it was changed
+    if (name !== initialValues.name && name) {
+      const nameError = validateName(name, 'الاسم الكامل');
+      if (nameError) newErrors.name = nameError;
+    }
+
+    // Only validate username if it was changed
+    if (username !== initialValues.username && username) {
+      const usernameError = validateUsername(username);
+      if (usernameError) newErrors.username = usernameError;
+    }
+
+    // Password change validation - requires current password
+    if (isChangingPassword) {
+      if (!currentPassword) {
+        newErrors.currentPassword = 'يرجى إدخال كلمة المرور الحالية';
+      }
+
+      if (!newPassword) {
+        newErrors.newPassword = 'يرجى إدخال كلمة المرور الجديدة';
+      } else if (newPassword.length < 6) {
+        newErrors.newPassword = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+      }
+
+      if (newPassword !== confirmPassword) {
+        newErrors.confirmPassword = 'كلمات المرور الجديدة غير متطابقة';
+      }
+    }
+    
+    return newErrors;
+  };
+
+  const handleFieldChange = (field: string, value: string) => {
+    if (field === 'name') setName(value);
+    if (field === 'username') setUsername(value);
+    if (field === 'currentPassword') setCurrentPassword(value);
+    if (field === 'newPassword') setNewPassword(value);
+    if (field === 'confirmPassword') setConfirmPassword(value);
+    setTouched(true);
+    
+    // Clear error if exists
+    if (errors[field]) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  const handleFieldBlur = () => {
+    setTouched(true);
+    const newErrors = validateFields();
+    setErrors(newErrors);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTouched(true);
+    
+    const newErrors = validateFields();
+    
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    if (!selectedUser) {
+      addToast('لم يتم تحديد مستخدم', 'error');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Only include fields that were changed
+      const updatePayload: any = {};
+      
+      if (name !== initialValues.name && name.trim()) {
+        updatePayload.name = name;
+      }
+      
+      if (username !== initialValues.username && username.trim()) {
+        updatePayload.username = username;
+      }
+      
+      if (isChangingPassword && newPassword && confirmPassword && newPassword === confirmPassword) {
+        updatePayload.currentPassword = currentPassword;
+        updatePayload.password = newPassword;
+      }
+
+      // If no fields were changed, show a message
+      if (Object.keys(updatePayload).length === 0) {
+        addToast('لم يتم تغيير أي بيانات', 'info');
+        closeModal('editAccount');
+        return;
+      }
+
+      const success = await actions.updateUser(selectedUser.id, updatePayload);
+      
+      if (success) {
+        addToast('تم تحديث بيانات الحساب بنجاح', 'success');
+        setName('');
+        setUsername('');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setErrors({});
+        setTouched(false);
+        setIsChangingPassword(false);
+        setGeneratedPassword(null);
+        closeModal('editAccount');
+      }
+    } catch (err) {
+      addToast('حدث خطأ أثناء تحديث البيانات', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Validation errors check
+  const hasValidationErrors = Object.keys(errors).length > 0;
+
+  if (!isOpen) return null;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={() => {
+        closeModal('editAccount');
+        setName('');
+        setUsername('');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setErrors({});
+        setTouched(false);
+        setIsChangingPassword(false);
+        setGeneratedPassword(null);
+      }}
+      title="تعديل معلومات الحساب"
+      size="lg"
+    >
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Profile Information Section */}
+        <div className="space-y-4">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <i className="fas fa-user text-blue-600"></i>
+            بيانات الملف الشخصي
+          </h3>
+
+          {/* Disclaimer */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-700 flex items-center gap-2">
+              <i className="fas fa-info-circle"></i>
+              عدل البيانات المراد تغييرها فقط
+            </p>
+          </div>
+
+          {/* Name Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              الاسم الكامل
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => handleFieldChange('name', e.target.value)}
+              onBlur={handleFieldBlur}
+              placeholder="أدخل الاسم الكامل"
+              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                touched && errors.name ? 'border-red-500' : 'border-gray-300'
+              }`}
+            />
+            {touched && errors.name && (
+              <p className="text-sm text-red-600 mt-1">{errors.name}</p>
+            )}
+          </div>
+
+          {/* Username Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              اسم المستخدم
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => handleFieldChange('username', e.target.value)}
+              onBlur={handleFieldBlur}
+              placeholder="أدخل اسم المستخدم"
+              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                touched && errors.username ? 'border-red-500' : 'border-gray-300'
+              }`}
+            />
+            {touched && errors.username && (
+              <p className="text-sm text-red-600 mt-1">{errors.username}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Username Requirements Disclaimer */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="text-sm text-amber-800 font-semibold flex items-center gap-2 mb-2">
+            <i className="fas fa-lightbulb"></i>
+            متطلبات اسم المستخدم:
+          </p>
+          <ul className="space-y-1 text-xs text-amber-700 ml-6">
+            <li>• يجب أن يبدأ بحرف إنجليزي (a-z, A-Z)</li>
+            <li>• يمكن أن يحتوي على أرقام بعد الحرف الأول (0-9)</li>
+            <li>• يمكن استخدام الشرطة (-) والشرطة السفلية (_)</li>
+            <li>• لا يمكن أن يحتوي على حرفين متتاليين من (_ أو -)</li>
+            <li>• لا يمكن أن يحتوي على مسافات</li>
+            <li>• الحد الأدنى 3 أحرف، الحد الأقصى 50 حرف</li>
+          </ul>
+        </div>
+
+        {/* Password Change Section */}
+        <div className="border-t pt-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <i className="fas fa-lock text-amber-600"></i>
+                تغيير كلمة المرور
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsChangingPassword(!isChangingPassword);
+                  setCurrentPassword('');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                  setGeneratedPassword(null);
+                  setErrors({});
+                }}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  isChangingPassword
+                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {isChangingPassword ? 'إلغاء' : 'تغيير'}
+              </button>
+            </div>
+
+            {/* Password Change Warning */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm text-amber-700 flex items-center gap-2">
+                <i className="fas fa-exclamation-circle"></i>
+                {isChangingPassword 
+                  ? 'يجب إدخال كلمة المرور الحالية لتغيير كلمة المرور الجديدة' 
+                  : 'اضغط على زر التغيير لتغيير كلمة المرور'}
+              </p>
+            </div>
+
+            {isChangingPassword && (
+              <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                {/* Current Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    كلمة المرور الحالية
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => handleFieldChange('currentPassword', e.target.value)}
+                      onBlur={handleFieldBlur}
+                      placeholder="أدخل كلمة المرور الحالية"
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent ${
+                        touched && errors.currentPassword ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute left-3 top-2.5 text-gray-500 hover:text-gray-700"
+                    >
+                      <i className={`fas ${showCurrentPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                    </button>
+                  </div>
+                  {touched && errors.currentPassword && (
+                    <p className="text-sm text-red-600 mt-1">{errors.currentPassword}</p>
+                  )}
+                </div>
+
+                {/* Generate Password Button */}
+                <button
+                  type="button"
+                  onClick={generateRandomPassword}
+                  className="w-full px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors font-medium text-sm flex items-center justify-center gap-2"
+                >
+                  <i className="fas fa-magic"></i>
+                  توليد كلمة مرور عشوائية
+                </button>
+
+                {/* Generated Password Display */}
+                {generatedPassword && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                    <p className="text-xs text-purple-700 font-medium mb-2">كلمة المرور المُولّدة:</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <code className="bg-white px-3 py-2 rounded border border-purple-200 font-mono text-sm text-purple-900 flex-1 break-all">
+                        {generatedPassword}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(generatedPassword);
+                          addToast('تم نسخ كلمة المرور', 'success');
+                        }}
+                        className="px-2 py-2 bg-purple-100 text-purple-600 hover:bg-purple-200 rounded transition-colors"
+                        title="نسخ"
+                      >
+                        <i className="fas fa-copy"></i>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* New Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    كلمة المرور الجديدة
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => handleFieldChange('newPassword', e.target.value)}
+                      onBlur={handleFieldBlur}
+                      placeholder="أدخل كلمة المرور الجديدة"
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent ${
+                        touched && errors.newPassword ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute left-3 top-2.5 text-gray-500 hover:text-gray-700"
+                    >
+                      <i className={`fas ${showNewPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                    </button>
+                  </div>
+                  {touched && errors.newPassword && (
+                    <p className="text-sm text-red-600 mt-1">{errors.newPassword}</p>
+                  )}
+                </div>
+
+                {/* Confirm New Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    تأكيد كلمة المرور الجديدة
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
+                      onBlur={handleFieldBlur}
+                      placeholder="أعد إدخال كلمة المرور الجديدة"
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent ${
+                        touched && errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute left-3 top-2.5 text-gray-500 hover:text-gray-700"
+                    >
+                      <i className={`fas ${showConfirmPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                    </button>
+                  </div>
+                  {touched && errors.confirmPassword && (
+                    <p className="text-sm text-red-600 mt-1">{errors.confirmPassword}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-3 pt-4 border-t">
+          <button
+            type="button"
+            onClick={() => {
+              closeModal('editAccount');
+              setName('');
+              setUsername('');
+              setCurrentPassword('');
+              setNewPassword('');
+              setConfirmPassword('');
+              setErrors({});
+              setTouched(false);
+              setIsChangingPassword(false);
+              setGeneratedPassword(null);
+            }}
+            className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+          >
+            إلغاء
+          </button>
+          <button
+            type="submit"
+            disabled={hasValidationErrors || isLoading}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <i className="fas fa-spinner animate-spin"></i>
+                جاري التحديث...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-save"></i>
+                حفظ التغييرات
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
