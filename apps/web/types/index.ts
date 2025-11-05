@@ -1,15 +1,14 @@
 // User Types - Import from centralized roles definition
 export { UserRole, Feature, ActionType } from './roles';
 export type { } from './roles';
+// Re-export canonical types from dedicated files
+export type { MessageTemplate } from './messageTemplate';
+export type { MessageCondition } from './messageCondition';
+export type { User, UserQuota, ModeratorUser, RegularUser, AdminUser, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, UserFilter, UserStats } from './user';
 
-export interface User {
-  id: string;
-  username: string;
-  firstName: string;
-  lastName: string;
-  role: string; // Will be validated as UserRole at runtime
-  moderatorId?: string;
-}
+import type { MessageTemplate } from './messageTemplate';
+import type { MessageCondition } from './messageCondition';
+import type { User } from './user';
 
 export interface LoginCredentials {
   username: string;
@@ -17,11 +16,25 @@ export interface LoginCredentials {
 }
 
 export interface Patient {
-  id: string;
-  position: number;
+  id: number;
   name: string;
   phone: string;
-  countryCode: string;
+  countryCode?: string;
+  queue?: number;
+  position?: number;
+  status?: string;
+  failedReason?: string;
+  // Consolidated failure tracking (replacing retryCount and failedAttempts)
+  failureMetrics?: {
+    attempts: number;        // Total failed attempts
+    retries: number;         // Total retry attempts
+    lastFailedAt?: string;   // Timestamp of last failure
+    reason?: string;         // Failure reason
+  };
+  isPaused?: boolean;
+  completedAt?: string;
+  messagePreview?: string;
+  queueName?: string;
   selected?: boolean;
 }
 
@@ -29,29 +42,6 @@ export interface Queue {
   id: string;
   doctorName: string;
   moderatorId?: string;
-}
-
-export interface MessageTemplate {
-  id: string;
-  title: string;
-  content: string;
-  description?: string;
-  queueId?: string;
-  moderatorId?: string;
-  conditionId?: string;
-  isActive?: boolean;
-  variables?: string[];
-  createdBy?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-export interface MessageCondition {
-  id: string;
-  type: 'range' | 'lessThan' | 'greaterThan';
-  minValue?: number;
-  maxValue?: number;
-  templateId: string;
 }
 
 export interface OngoingTask {

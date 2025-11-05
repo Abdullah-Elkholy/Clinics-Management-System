@@ -29,9 +29,8 @@ import {
 export interface ModeratorResponse {
   id: number;
   username: string;
-  fullName: string;
-  email: string;
-  phoneNumber?: string;
+  firstName: string;
+  lastName: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -47,28 +46,23 @@ export interface ModeratorDetailsResponse extends ModeratorResponse {
 }
 
 export interface CreateModeratorRequest {
-  fullName: string;
-  email: string;
+  firstName: string;
+  lastName: string;
   username: string;
-  phoneNumber?: string;
   messagesQuota: number;
   queuesQuota: number;
-  whatsAppPhoneNumber?: string;
 }
 
 export interface UpdateModeratorRequest {
-  fullName?: string;
-  email?: string;
-  phoneNumber?: string;
-  whatsAppPhoneNumber?: string;
+  firstName?: string;
+  lastName?: string;
   isActive?: boolean;
 }
 
 export interface AddUserToModeratorRequest {
-  fullName: string;
-  email: string;
+  firstName: string;
+  lastName: string;
   username: string;
-  phoneNumber?: string;
 }
 
 export interface ServiceResponse<T> {
@@ -88,9 +82,8 @@ class ModeratorsService {
       const details: ModeratorDetailsResponse[] = moderators.map((mod) => ({
         id: mod.id,
         username: mod.username,
-        fullName: mod.fullName,
-        email: mod.email,
-        phoneNumber: mod.phoneNumber,
+        firstName: mod.firstName,
+        lastName: mod.lastName,
         isActive: mod.isActive,
         createdAt: mod.createdAt,
         updatedAt: mod.updatedAt,
@@ -122,9 +115,8 @@ class ModeratorsService {
       const response: ModeratorDetailsResponse = {
         id: moderator.id,
         username: moderator.username,
-        fullName: moderator.fullName,
-        email: moderator.email,
-        phoneNumber: moderator.phoneNumber,
+        firstName: moderator.firstName,
+        lastName: moderator.lastName,
         isActive: moderator.isActive,
         createdAt: moderator.createdAt,
         updatedAt: moderator.updatedAt,
@@ -158,10 +150,9 @@ class ModeratorsService {
       const newModerator: Moderator = {
         id: newModeratorId,
         username: request.username,
-        fullName: request.fullName,
-        email: request.email,
+        firstName: request.firstName,
+        lastName: request.lastName,
         role: 'moderator',
-        phoneNumber: request.phoneNumber,
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -175,7 +166,6 @@ class ModeratorsService {
       const newSettings: ModeratorSettings = {
         id: Math.max(...MOCK_MODERATOR_SETTINGS.map((s) => s.id)) + 1,
         moderatorUserId: newModeratorId,
-        whatsAppPhoneNumber: request.whatsAppPhoneNumber,
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -201,9 +191,8 @@ class ModeratorsService {
       const response: ModeratorDetailsResponse = {
         id: newModerator.id,
         username: newModerator.username,
-        fullName: newModerator.fullName,
-        email: newModerator.email,
-        phoneNumber: newModerator.phoneNumber,
+        firstName: newModerator.firstName,
+        lastName: newModerator.lastName,
         isActive: newModerator.isActive,
         createdAt: newModerator.createdAt,
         updatedAt: newModerator.updatedAt,
@@ -242,9 +231,8 @@ class ModeratorsService {
       // Update user
       const userIndex = MOCK_USERS.findIndex((u) => u.id === moderatorId);
       if (userIndex >= 0) {
-        if (request.fullName) MOCK_USERS[userIndex].fullName = request.fullName;
-        if (request.email) MOCK_USERS[userIndex].email = request.email;
-        if (request.phoneNumber) MOCK_USERS[userIndex].phoneNumber = request.phoneNumber;
+        if (request.firstName) MOCK_USERS[userIndex].firstName = request.firstName;
+        if (request.lastName) MOCK_USERS[userIndex].lastName = request.lastName;
         if (request.isActive !== undefined) MOCK_USERS[userIndex].isActive = request.isActive;
         MOCK_USERS[userIndex].updatedAt = new Date();
       }
@@ -254,9 +242,6 @@ class ModeratorsService {
         (s) => s.moderatorUserId === moderatorId
       );
       if (settingsIndex >= 0) {
-        if (request.whatsAppPhoneNumber) {
-          MOCK_MODERATOR_SETTINGS[settingsIndex].whatsAppPhoneNumber = request.whatsAppPhoneNumber;
-        }
         MOCK_MODERATOR_SETTINGS[settingsIndex].updatedAt = new Date();
       }
 
@@ -352,10 +337,9 @@ class ModeratorsService {
       const newUser: User = {
         id: newUserId,
         username: request.username,
-        fullName: request.fullName,
-        email: request.email,
+        firstName: request.firstName,
+        lastName: request.lastName,
         role: 'user',
-        phoneNumber: request.phoneNumber,
         moderatorId: moderatorId,
         isActive: true,
         createdAt: now,

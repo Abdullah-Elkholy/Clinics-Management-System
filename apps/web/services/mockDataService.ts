@@ -18,10 +18,9 @@ const generateSessionId = (): string => {
 export interface User {
   id: number;
   username: string;
-  fullName: string;
-  email: string;
+  firstName: string;
+  lastName: string;
   role: 'primary_admin' | 'secondary_admin' | 'moderator' | 'user';
-  phoneNumber?: string;
   moderatorId?: number;
   isActive: boolean;
   createdAt: Date;
@@ -103,7 +102,8 @@ export interface Quota {
 export interface Patient {
   id: number;
   queueId: number;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phoneNumber: string;
   position: number;
   status: 'waiting' | 'in_service' | 'completed' | 'cancelled';
@@ -139,10 +139,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 1,
     username: 'admin',
-    fullName: 'محمد الإدارة',
-    email: 'admin@clinic.com',
+    firstName: 'محمد',
+    lastName: 'الإدارة',
     role: 'primary_admin',
-    phoneNumber: '+966501234567',
     isActive: true,
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-01'),
@@ -150,10 +149,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 2,
     username: 'ahmed_mod',
-    fullName: 'أحمد علي',
-    email: 'ahmed@clinic.com',
+    firstName: 'أحمد',
+    lastName: 'علي',
     role: 'moderator',
-    phoneNumber: '+966501234568',
     isActive: true,
     createdAt: new Date('2024-01-05'),
     updatedAt: new Date('2024-01-05'),
@@ -161,10 +159,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 3,
     username: 'sara_mod',
-    fullName: 'سارة محمد',
-    email: 'sara@clinic.com',
+    firstName: 'سارة',
+    lastName: 'محمد',
     role: 'moderator',
-    phoneNumber: '+966501234569',
     isActive: true,
     createdAt: new Date('2024-01-10'),
     updatedAt: new Date('2024-01-10'),
@@ -172,10 +169,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 4,
     username: 'khalid_mod',
-    fullName: 'خالد إبراهيم',
-    email: 'khalid@clinic.com',
+    firstName: 'خالد',
+    lastName: 'إبراهيم',
     role: 'moderator',
-    phoneNumber: '+966501234570',
     isActive: true,
     createdAt: new Date('2024-01-15'),
     updatedAt: new Date('2024-01-15'),
@@ -184,10 +180,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 5,
     username: 'user_ahmed1',
-    fullName: 'فاطمة أحمد',
-    email: 'fatima@clinic.com',
+    firstName: 'فاطمة',
+    lastName: 'أحمد',
     role: 'user',
-    phoneNumber: '+966501234571',
     moderatorId: 2,
     isActive: true,
     createdAt: new Date('2024-01-20'),
@@ -196,10 +191,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 6,
     username: 'user_ahmed2',
-    fullName: 'علي محمود',
-    email: 'ali@clinic.com',
+    firstName: 'علي',
+    lastName: 'محمود',
     role: 'user',
-    phoneNumber: '+966501234572',
     moderatorId: 2,
     isActive: true,
     createdAt: new Date('2024-01-21'),
@@ -209,10 +203,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 7,
     username: 'user_sara1',
-    fullName: 'ليلى أحمد',
-    email: 'layla@clinic.com',
+    firstName: 'ليلى',
+    lastName: 'أحمد',
     role: 'user',
-    phoneNumber: '+966501234573',
     moderatorId: 3,
     isActive: true,
     createdAt: new Date('2024-01-25'),
@@ -221,10 +214,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 8,
     username: 'user_sara2',
-    fullName: 'مريم علي',
-    email: 'maryam@clinic.com',
+    firstName: 'مريم',
+    lastName: 'علي',
     role: 'user',
-    phoneNumber: '+966501234574',
     moderatorId: 3,
     isActive: true,
     createdAt: new Date('2024-01-26'),
@@ -233,10 +225,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 9,
     username: 'user_sara3',
-    fullName: 'نور الهدى',
-    email: 'noor@clinic.com',
+    firstName: 'نور',
+    lastName: 'الهدى',
     role: 'user',
-    phoneNumber: '+966501234575',
     moderatorId: 3,
     isActive: true,
     createdAt: new Date('2024-01-27'),
@@ -246,10 +237,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 10,
     username: 'user_khalid1',
-    fullName: 'محمد خالد',
-    email: 'mohamed.k@clinic.com',
+    firstName: 'محمد',
+    lastName: 'خالد',
     role: 'user',
-    phoneNumber: '+966501234576',
     moderatorId: 4,
     isActive: true,
     createdAt: new Date('2024-02-01'),
@@ -567,7 +557,8 @@ export const MOCK_PATIENTS: Patient[] = [
   {
     id: 1,
     queueId: 1,
-    fullName: 'محمود أحمد',
+    firstName: 'محمود',
+    lastName: 'أحمد',
     phoneNumber: '+966501234601',
     position: 1,
     status: 'in_service',
@@ -576,7 +567,8 @@ export const MOCK_PATIENTS: Patient[] = [
   {
     id: 2,
     queueId: 1,
-    fullName: 'هناء علي',
+    firstName: 'هناء',
+    lastName: 'علي',
     phoneNumber: '+966501234602',
     position: 2,
     status: 'waiting',
@@ -585,7 +577,8 @@ export const MOCK_PATIENTS: Patient[] = [
   {
     id: 3,
     queueId: 2,
-    fullName: 'سارة محمد',
+    firstName: 'سارة',
+    lastName: 'محمد',
     phoneNumber: '+966501234603',
     position: 1,
     status: 'waiting',
@@ -594,7 +587,8 @@ export const MOCK_PATIENTS: Patient[] = [
   {
     id: 4,
     queueId: 4,
-    fullName: 'خديجة أحمد',
+    firstName: 'خديجة',
+    lastName: 'أحمد',
     phoneNumber: '+966501234604',
     position: 1,
     status: 'completed',

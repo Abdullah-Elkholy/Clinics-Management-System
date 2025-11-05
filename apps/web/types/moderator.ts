@@ -15,7 +15,8 @@ export type MessageChannel = 'whatsapp' | 'sms' | 'email';
 export interface UserBase {
   id: number;
   username: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phoneNumber?: string;
   isActive: boolean;
@@ -143,7 +144,8 @@ export interface MessageWithDetails extends Message {
 export interface Patient {
   id: number;
   queueId: number;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   phoneNumber: string;
   position: number;
   status: PatientStatus;
@@ -201,28 +203,23 @@ export interface SystemStats {
 
 // Form Request Types
 export interface CreateModeratorRequest {
-  fullName: string;
-  email: string;
+  firstName: string;
+  lastName: string;
   username: string;
-  phoneNumber?: string;
   messagesQuota: number;
   queuesQuota: number;
-  whatsAppPhoneNumber?: string;
 }
 
 export interface UpdateModeratorRequest {
-  fullName?: string;
-  email?: string;
-  phoneNumber?: string;
-  whatsAppPhoneNumber?: string;
+  firstName?: string;
+  lastName?: string;
   isActive?: boolean;
 }
 
 export interface AddUserToModeratorRequest {
-  fullName: string;
-  email: string;
+  firstName: string;
+  lastName: string;
   username: string;
-  phoneNumber?: string;
 }
 
 export interface CreateQueueRequest {

@@ -10,18 +10,7 @@ import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
-
-interface Patient {
-  id: number;
-  name: string;
-  phone: string;
-  countryCode?: string;
-  queue?: number;
-  status: string;
-  failedReason: string;
-  retryCount: number;
-  messagePreview?: string;
-}
+import { Patient } from '@/types';
 
 interface Session {
   id: string;
@@ -160,7 +149,13 @@ export default function FailedTasksPanel() {
               ...s,
               patients: s.patients.map((p) =>
                 selected.has(p.id)
-                  ? { ...p, status: 'جاري', retryCount: p.retryCount + 1 }
+                  ? {
+                      ...p,
+                      status: 'جاري',
+                      failureMetrics: p.failureMetrics
+                        ? { ...p.failureMetrics, retries: p.failureMetrics.retries + 1 }
+                        : { attempts: 0, retries: 1 },
+                    }
                   : p
               ),
             }
@@ -188,7 +183,13 @@ export default function FailedTasksPanel() {
               ...s,
               patients: s.patients.map((p) =>
                 p.id === patientId
-                  ? { ...p, status: 'جاري', retryCount: p.retryCount + 1 }
+                  ? {
+                      ...p,
+                      status: 'جاري',
+                      failureMetrics: p.failureMetrics
+                        ? { ...p.failureMetrics, retries: p.failureMetrics.retries + 1 }
+                        : { attempts: 0, retries: 1 },
+                    }
                   : p
               ),
             }
@@ -208,7 +209,9 @@ export default function FailedTasksPanel() {
         patients: s.patients.map((p) => ({
           ...p,
           status: 'جاري',
-          retryCount: p.retryCount + 1,
+          failureMetrics: p.failureMetrics
+            ? { ...p.failureMetrics, retries: p.failureMetrics.retries + 1 }
+            : { attempts: 0, retries: 1 },
         })),
       }))
     );
@@ -352,7 +355,7 @@ export default function FailedTasksPanel() {
     ),
     retries: (
       <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-medium">
-        {patient.retryCount}
+        {patient.failureMetrics?.retries || 0}
       </span>
     ),
     actions: (

@@ -5,6 +5,8 @@ import { useUI } from '@/contexts/UIContext';
 import { formatPositionDisplay } from '@/utils/queuePositionUtils';
 import { resolvePatientMessages } from '@/services/queueMessageService';
 import { QueueMessageConfig, MessageResolution } from '@/types/messageCondition';
+import { Patient } from '@/types';
+import { MOCK_QUEUE_PATIENTS } from '@/constants/mockData';
 import { useState } from 'react';
 import Modal from './Modal';
 
@@ -21,14 +23,14 @@ export default function MessagePreviewModal() {
   // State for removed patients
   const [removedPatients, setRemovedPatients] = useState<string[]>([]);
 
-  // Preview data with queue positions - use data from modal or sample
-  const previewPatients = data?.patients || [
-    { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 3, queueName: 'د. أحمد محمد' },
-    { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 5, queueName: 'د. أحمد محمد' },
-    { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 2, queueName: 'د. أحمد محمد' },
-    { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 7, queueName: 'د. أحمد محمد' },
-    { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 1, queueName: 'د. أحمد محمد' },
-  ];
+  // Preview data with queue positions - use data from modal or sample from unified mock data
+  const previewPatients: Patient[] = data?.patients || MOCK_QUEUE_PATIENTS.map(p => ({
+    ...p,
+    queueName: 'د. أحمد محمد',
+    status: 'قيد الانتظار',
+    failedAttempts: 0,
+    isPaused: false,
+  }));
 
   // Sort patients by queue position (الترتيب) - ascending order
   const sortedPatients = [...previewPatients].sort((a, b) => a.queue - b.queue);

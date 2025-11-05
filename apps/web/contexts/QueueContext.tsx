@@ -14,10 +14,10 @@ interface QueueContextType {
   setSelectedQueueId: (id: string | null) => void;
   patients: Patient[];
   addPatient: (patient: Omit<Patient, 'id'>) => void;
-  updatePatient: (id: string, patient: Partial<Patient>) => void;
-  deletePatient: (id: string) => void;
+  updatePatient: (id: number | string, patient: Partial<Patient>) => void;
+  deletePatient: (id: number | string) => void;
   reorderPatients: (patients: Patient[]) => void;
-  togglePatientSelection: (id: string) => void;
+  togglePatientSelection: (id: number | string) => void;
   selectAllPatients: () => void;
   clearPatientSelection: () => void;
   currentPosition: number;
@@ -69,18 +69,18 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addPatient = useCallback((patient: Omit<Patient, 'id'>) => {
     const newPatient: Patient = {
       ...patient,
-      id: Date.now().toString(),
+      id: Date.now(),
     };
     setPatients((prev) => [...prev, newPatient]);
   }, []);
 
-  const updatePatient = useCallback((id: string, patientUpdates: Partial<Patient>) => {
+  const updatePatient = useCallback((id: number | string, patientUpdates: Partial<Patient>) => {
     setPatients((prev) =>
       prev.map((p) => (p.id === id ? { ...p, ...patientUpdates } : p))
     );
   }, []);
 
-  const deletePatient = useCallback((id: string) => {
+  const deletePatient = useCallback((id: number | string) => {
     setPatients((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
@@ -88,7 +88,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setPatients(newPatients);
   }, []);
 
-  const togglePatientSelection = useCallback((id: string) => {
+  const togglePatientSelection = useCallback((id: number | string) => {
     setPatients((prev) =>
       prev.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p))
     );

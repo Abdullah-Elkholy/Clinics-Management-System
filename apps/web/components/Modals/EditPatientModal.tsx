@@ -234,29 +234,6 @@ export default function EditPatientModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => handleFieldChange('username', e.target.value)}
-            onBlur={handleFieldBlur}
-            placeholder="أدخل اسم المستخدم"
-            disabled={isLoading}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-              errors.username
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 focus:ring-blue-500'
-            }`}
-          />
-          {errors.username && (
-            <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
-              <i className="fas fa-exclamation-circle"></i>
-              {errors.username}
-            </p>
-          )}
-        </div>
-
-        <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">كود الدولة</label>
           <CountryCodeSelector
             value={countryCode}

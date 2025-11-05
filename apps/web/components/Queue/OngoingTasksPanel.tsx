@@ -10,18 +10,7 @@ import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Badge } from '@/components/Common/ResponsiveUI';
-
-interface Patient {
-  id: number;
-  name: string;
-  phone: string;
-  countryCode?: string;
-  queue?: number;
-  status: string;
-  failedAttempts: number;
-  isPaused?: boolean;
-  messagePreview?: string;
-}
+import { Patient } from '@/types';
 
 interface Session {
   id: string;
@@ -381,19 +370,19 @@ export default function OngoingTasksPanel() {
       <div className="flex gap-2">
         <Badge
           color={patient.isPaused ? 'yellow' : 'green'}
-          label={patient.isPaused ? '⏸️ موقوف' : '✓ نشط'}
+          label={patient.isPaused ? '⏸️ موقوف' : '🔄 جاري'}
         />
       </div>
     ),
     failedAttempts: (
       <span
         className={`px-3 py-1 rounded-full text-sm font-medium ${
-          patient.failedAttempts > 0
+          (patient.failureMetrics?.attempts ?? 0) > 0
             ? 'bg-red-100 text-red-700'
             : 'bg-green-100 text-green-700'
         }`}
       >
-        {patient.failedAttempts}
+        {patient.failureMetrics?.attempts ?? 0}
       </span>
     ),
     actions: (

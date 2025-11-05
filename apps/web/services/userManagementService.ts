@@ -21,61 +21,9 @@
  */
 
 import { UserRole } from '@/types/roles';
-
-/**
- * User data model
- */
-export interface User {
-  id: string;
-  name: string;
-  username: string;
-  role: UserRole;
-  createdAt: Date;
-  updatedAt: Date;
-  isActive: boolean;
-  lastLogin?: Date;
-  assignedModerator?: string; // For users assigned to moderators
-}
-
-/**
- * User creation payload
- */
-export interface CreateUserPayload {
-  name: string;
-  username: string;
-  role: UserRole;
-  assignedModerator?: string;
-}
-
-/**
- * User update payload
- */
-export interface UpdateUserPayload {
-  name?: string;
-  role?: UserRole;
-  isActive?: boolean;
-  assignedModerator?: string;
-}
-
-/**
- * Moderator assignment payload
- */
-export interface AssignModeratorPayload {
-  userId: string;
-  moderatorId?: string; // undefined = remove assignment
-}
-
-/**
- * Quota information
- */
-export interface UserQuota {
-  userId: string;
-  dailyQueueLimit: number;
-  monthlyQueueLimit: number;
-  currentMonthQueues: number;
-  currentDayQueues: number;
-  remainingQuota: number;
-}
+// Import canonical User type from dedicated file
+export type { User, UserQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
+import type { User, UserQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
 
 /**
  * Service response wrapper
@@ -92,9 +40,11 @@ export interface UserServiceResponse<T> {
 const mockUsers: User[] = [
   {
     id: '1',
-    name: 'أحمد محمد',
+    firstName: 'أحمد',
+    lastName: 'محمد',
     username: 'ahmed_admin',
     role: UserRole.PrimaryAdmin,
+    createdBy: 'system',
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-10-24'),
     isActive: true,
@@ -102,9 +52,11 @@ const mockUsers: User[] = [
   },
   {
     id: '2',
-    name: 'علي حسن',
+    firstName: 'علي',
+    lastName: 'حسن',
     username: 'ali_admin',
     role: UserRole.SecondaryAdmin,
+    createdBy: '1',
     createdAt: new Date('2024-01-15'),
     updatedAt: new Date('2024-10-23'),
     isActive: true,
@@ -112,9 +64,11 @@ const mockUsers: User[] = [
   },
   {
     id: '3',
-    name: 'فاطمة محمود',
+    firstName: 'فاطمة',
+    lastName: 'محمود',
     username: 'fatima_mod',
     role: UserRole.Moderator,
+    createdBy: '1',
     createdAt: new Date('2024-02-01'),
     updatedAt: new Date('2024-10-24'),
     isActive: true,
@@ -122,9 +76,11 @@ const mockUsers: User[] = [
   },
   {
     id: '4',
-    name: 'محمود علي',
+    firstName: 'محمود',
+    lastName: 'علي',
     username: 'mahmoud_mod',
     role: UserRole.Moderator,
+    createdBy: '1',
     createdAt: new Date('2024-02-15'),
     updatedAt: new Date('2024-10-22'),
     isActive: true,
@@ -132,9 +88,11 @@ const mockUsers: User[] = [
   },
   {
     id: '5',
-    name: 'نور إبراهيم',
+    firstName: 'نور',
+    lastName: 'إبراهيم',
     username: 'noor_user',
     role: UserRole.User,
+    createdBy: '3',
     createdAt: new Date('2024-03-01'),
     updatedAt: new Date('2024-10-21'),
     isActive: true,
@@ -143,9 +101,11 @@ const mockUsers: User[] = [
   },
   {
     id: '6',
-    name: 'سلمى أحمد',
+    firstName: 'سلمى',
+    lastName: 'أحمد',
     username: 'salma_mod',
     role: UserRole.Moderator,
+    createdBy: '1',
     createdAt: new Date('2024-03-05'),
     updatedAt: new Date('2024-10-24'),
     isActive: true,
@@ -153,9 +113,11 @@ const mockUsers: User[] = [
   },
   {
     id: '7',
-    name: 'خالد محمود',
+    firstName: 'خالد',
+    lastName: 'محمود',
     username: 'khaled_user',
     role: UserRole.User,
+    createdBy: '4',
     createdAt: new Date('2024-03-10'),
     updatedAt: new Date('2024-10-20'),
     isActive: true,
@@ -164,9 +126,11 @@ const mockUsers: User[] = [
   },
   {
     id: '8',
-    name: 'ليلى حسن',
+    firstName: 'ليلى',
+    lastName: 'حسن',
     username: 'layla_user',
     role: UserRole.User,
+    createdBy: '3',
     createdAt: new Date('2024-03-15'),
     updatedAt: new Date('2024-10-19'),
     isActive: true,
@@ -175,9 +139,11 @@ const mockUsers: User[] = [
   },
   {
     id: '9',
-    name: 'عمر إبراهيم',
+    firstName: 'عمر',
+    lastName: 'إبراهيم',
     username: 'omar_mod',
     role: UserRole.Moderator,
+    createdBy: '1',
     createdAt: new Date('2024-03-20'),
     updatedAt: new Date('2024-10-23'),
     isActive: true,
@@ -185,9 +151,11 @@ const mockUsers: User[] = [
   },
   {
     id: '10',
-    name: 'مريم علي',
+    firstName: 'مريم',
+    lastName: 'علي',
     username: 'mariam_user',
     role: UserRole.User,
+    createdBy: '3',
     createdAt: new Date('2024-04-01'),
     updatedAt: new Date('2024-10-18'),
     isActive: true,
@@ -196,9 +164,11 @@ const mockUsers: User[] = [
   },
   {
     id: '11',
-    name: 'يوسف محمد',
+    firstName: 'يوسف',
+    lastName: 'محمد',
     username: 'youssef_user',
     role: UserRole.User,
+    createdBy: '6',
     createdAt: new Date('2024-04-05'),
     updatedAt: new Date('2024-10-17'),
     isActive: true,
@@ -207,9 +177,11 @@ const mockUsers: User[] = [
   },
   {
     id: '12',
-    name: 'هناء أحمد',
+    firstName: 'هناء',
+    lastName: 'أحمد',
     username: 'hanaa_user',
     role: UserRole.User,
+    createdBy: '3',
     createdAt: new Date('2024-04-10'),
     updatedAt: new Date('2024-10-16'),
     isActive: false,
@@ -218,9 +190,11 @@ const mockUsers: User[] = [
   },
   {
     id: '13',
-    name: 'إبراهيم حسين',
+    firstName: 'إبراهيم',
+    lastName: 'حسين',
     username: 'ibrahim_user',
     role: UserRole.User,
+    createdBy: '9',
     createdAt: new Date('2024-04-15'),
     updatedAt: new Date('2024-10-24'),
     isActive: true,
@@ -229,9 +203,11 @@ const mockUsers: User[] = [
   },
   {
     id: '14',
-    name: 'جميلة محمود',
+    firstName: 'جميلة',
+    lastName: 'محمود',
     username: 'jamila_user',
     role: UserRole.User,
+    createdBy: '6',
     createdAt: new Date('2024-04-20'),
     updatedAt: new Date('2024-10-15'),
     isActive: true,
@@ -240,9 +216,11 @@ const mockUsers: User[] = [
   },
   {
     id: '15',
-    name: 'رياض علي',
+    firstName: 'رياض',
+    lastName: 'علي',
     username: 'riyad_user',
     role: UserRole.User,
+    createdBy: '4',
     createdAt: new Date('2024-05-01'),
     updatedAt: new Date('2024-10-14'),
     isActive: true,
@@ -251,9 +229,11 @@ const mockUsers: User[] = [
   },
   {
     id: '16',
-    name: 'نادية إبراهيم',
+    firstName: 'نادية',
+    lastName: 'إبراهيم',
     username: 'nadia_user',
     role: UserRole.User,
+    createdBy: '3',
     createdAt: new Date('2024-05-05'),
     updatedAt: new Date('2024-10-22'),
     isActive: true,
@@ -262,9 +242,11 @@ const mockUsers: User[] = [
   },
   {
     id: '17',
-    name: 'صلاح محمد',
+    firstName: 'صلاح',
+    lastName: 'محمد',
     username: 'salah_user',
     role: UserRole.User,
+    createdBy: '9',
     createdAt: new Date('2024-05-10'),
     updatedAt: new Date('2024-10-13'),
     isActive: true,
@@ -273,9 +255,11 @@ const mockUsers: User[] = [
   },
   {
     id: '18',
-    name: 'فرح حسن',
+    firstName: 'فرح',
+    lastName: 'حسن',
     username: 'farah_user',
     role: UserRole.User,
+    createdBy: '6',
     createdAt: new Date('2024-05-15'),
     updatedAt: new Date('2024-10-12'),
     isActive: false,
@@ -284,9 +268,11 @@ const mockUsers: User[] = [
   },
   {
     id: '19',
-    name: 'أسامة أحمد',
+    firstName: 'أسامة',
+    lastName: 'أحمد',
     username: 'osama_user',
     role: UserRole.User,
+    createdBy: '4',
     createdAt: new Date('2024-05-20'),
     updatedAt: new Date('2024-10-24'),
     isActive: true,
@@ -295,9 +281,11 @@ const mockUsers: User[] = [
   },
   {
     id: '20',
-    name: 'زينب علي',
+    firstName: 'زينب',
+    lastName: 'علي',
     username: 'zainab_user',
     role: UserRole.User,
+    createdBy: '3',
     createdAt: new Date('2024-06-01'),
     updatedAt: new Date('2024-10-11'),
     isActive: true,
@@ -311,148 +299,256 @@ const mockUsers: User[] = [
  */
 const mockQuotas: Record<string, UserQuota> = {
   '3': {
+    id: 'quota_3',
     userId: '3',
+    dailyMessageLimit: 100,
+    monthlyMessageLimit: 2000,
+    currentDayMessages: 45,
+    currentMonthMessages: 890,
     dailyQueueLimit: 20,
     monthlyQueueLimit: 400,
     currentMonthQueues: 287,
     currentDayQueues: 15,
-    remainingQuota: 113,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T10:30:00'),
   },
   '4': {
+    id: 'quota_4',
     userId: '4',
+    dailyMessageLimit: 100,
+    monthlyMessageLimit: 2000,
+    currentDayMessages: 32,
+    currentMonthMessages: 1520,
     dailyQueueLimit: 20,
     monthlyQueueLimit: 400,
     currentMonthQueues: 145,
     currentDayQueues: 8,
-    remainingQuota: 255,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T09:15:00'),
   },
   '5': {
+    id: 'quota_5',
     userId: '5',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 20,
+    currentMonthMessages: 450,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 89,
     currentDayQueues: 5,
-    remainingQuota: 111,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T08:45:00'),
   },
   '6': {
+    id: 'quota_6',
     userId: '6',
+    dailyMessageLimit: 100,
+    monthlyMessageLimit: 2000,
+    currentDayMessages: 68,
+    currentMonthMessages: 1680,
     dailyQueueLimit: 20,
     monthlyQueueLimit: 400,
     currentMonthQueues: 312,
     currentDayQueues: 18,
-    remainingQuota: 88,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T11:20:00'),
   },
   '7': {
+    id: 'quota_7',
     userId: '7',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 28,
+    currentMonthMessages: 750,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 156,
     currentDayQueues: 9,
-    remainingQuota: 44,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T07:30:00'),
   },
   '8': {
+    id: 'quota_8',
     userId: '8',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 15,
+    currentMonthMessages: 520,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 78,
     currentDayQueues: 4,
-    remainingQuota: 122,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T06:00:00'),
   },
   '9': {
+    id: 'quota_9',
     userId: '9',
+    dailyMessageLimit: 100,
+    monthlyMessageLimit: 2000,
+    currentDayMessages: 55,
+    currentMonthMessages: 1680,
     dailyQueueLimit: 20,
     monthlyQueueLimit: 400,
     currentMonthQueues: 234,
     currentDayQueues: 12,
-    remainingQuota: 166,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T10:45:00'),
   },
   '10': {
+    id: 'quota_10',
     userId: '10',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 22,
+    currentMonthMessages: 580,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 92,
     currentDayQueues: 6,
-    remainingQuota: 108,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T12:00:00'),
   },
   '11': {
+    id: 'quota_11',
     userId: '11',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 35,
+    currentMonthMessages: 720,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 145,
     currentDayQueues: 7,
-    remainingQuota: 55,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T09:00:00'),
   },
   '12': {
+    id: 'quota_12',
     userId: '12',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 0,
+    currentMonthMessages: 320,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 65,
     currentDayQueues: 0,
-    remainingQuota: 135,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T04:30:00'),
   },
   '13': {
+    id: 'quota_13',
     userId: '13',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 42,
+    currentMonthMessages: 890,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 178,
     currentDayQueues: 10,
-    remainingQuota: 22,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T11:30:00'),
   },
   '14': {
+    id: 'quota_14',
     userId: '14',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 18,
+    currentMonthMessages: 615,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 123,
     currentDayQueues: 5,
-    remainingQuota: 77,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T08:15:00'),
   },
   '15': {
+    id: 'quota_15',
     userId: '15',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 48,
+    currentMonthMessages: 990,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 198,
     currentDayQueues: 9,
-    remainingQuota: 2,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T13:00:00'),
   },
   '16': {
+    id: 'quota_16',
     userId: '16',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 25,
+    currentMonthMessages: 435,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 87,
     currentDayQueues: 6,
-    remainingQuota: 113,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T07:45:00'),
   },
   '17': {
+    id: 'quota_17',
     userId: '17',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 32,
+    currentMonthMessages: 670,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 134,
     currentDayQueues: 8,
-    remainingQuota: 66,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T10:00:00'),
   },
   '18': {
+    id: 'quota_18',
     userId: '18',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 0,
+    currentMonthMessages: 225,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 45,
     currentDayQueues: 0,
-    remainingQuota: 155,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T05:00:00'),
   },
   '19': {
+    id: 'quota_19',
     userId: '19',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 38,
+    currentMonthMessages: 835,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 167,
     currentDayQueues: 9,
-    remainingQuota: 33,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T11:45:00'),
   },
   '20': {
+    id: 'quota_20',
     userId: '20',
+    dailyMessageLimit: 50,
+    monthlyMessageLimit: 1000,
+    currentDayMessages: 28,
+    currentMonthMessages: 560,
     dailyQueueLimit: 10,
     monthlyQueueLimit: 200,
     currentMonthQueues: 112,
     currentDayQueues: 7,
-    remainingQuota: 88,
+    lastResetDate: new Date('2024-10-24'),
+    updatedAt: new Date('2024-10-24T09:30:00'),
   },
 };
 
@@ -494,12 +590,12 @@ class UserManagementService {
         const search = filters.search.toLowerCase();
         users = users.filter(
           (u) =>
-            u.name.toLowerCase().includes(search) ||
+            `${u.firstName} ${u.lastName}`.toLowerCase().includes(search) ||
             u.username.toLowerCase().includes(search)
         );
       }
 
-      return { success: true, data: users.sort((a, b) => a.name.localeCompare(b.name)) };
+      return { success: true, data: users.sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)) };
     } catch (error) {
       return {
         success: false,
@@ -545,9 +641,11 @@ class UserManagementService {
 
       const newUser: User = {
         id: String(Date.now()),
-        name: payload.name,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
         username: payload.username,
         role: payload.role,
+        createdBy: payload.createdBy,
         createdAt: new Date(),
         updatedAt: new Date(),
         isActive: true,
@@ -558,23 +656,39 @@ class UserManagementService {
 
       // Create default quota for moderators and users
       if (payload.role === UserRole.Moderator) {
-        this.quotas.set(newUser.id, {
+        const moderatorQuota: UserQuota = {
+          id: `quota_${newUser.id}`,
           userId: newUser.id,
-          dailyQueueLimit: 20,
-          monthlyQueueLimit: 400,
+          dailyMessageLimit: payload.initialQuota?.dailyMessageLimit ?? 100,
+          monthlyMessageLimit: payload.initialQuota?.monthlyMessageLimit ?? 2000,
+          currentDayMessages: 0,
+          currentMonthMessages: 0,
+          dailyQueueLimit: payload.initialQuota?.dailyQueueLimit ?? 20,
+          monthlyQueueLimit: payload.initialQuota?.monthlyQueueLimit ?? 400,
           currentMonthQueues: 0,
           currentDayQueues: 0,
-          remainingQuota: 400,
-        });
+          lastResetDate: new Date(),
+          updatedAt: new Date(),
+        };
+        this.quotas.set(newUser.id, moderatorQuota);
+        newUser.quota = moderatorQuota;
       } else if (payload.role === UserRole.User) {
-        this.quotas.set(newUser.id, {
+        const userQuota: UserQuota = {
+          id: `quota_${newUser.id}`,
           userId: newUser.id,
-          dailyQueueLimit: 10,
-          monthlyQueueLimit: 200,
+          dailyMessageLimit: payload.initialQuota?.dailyMessageLimit ?? 50,
+          monthlyMessageLimit: payload.initialQuota?.monthlyMessageLimit ?? 1000,
+          currentDayMessages: 0,
+          currentMonthMessages: 0,
+          dailyQueueLimit: payload.initialQuota?.dailyQueueLimit ?? 10,
+          monthlyQueueLimit: payload.initialQuota?.monthlyQueueLimit ?? 200,
           currentMonthQueues: 0,
           currentDayQueues: 0,
-          remainingQuota: 200,
-        });
+          lastResetDate: new Date(),
+          updatedAt: new Date(),
+        };
+        this.quotas.set(newUser.id, userQuota);
+        newUser.quota = userQuota;
       }
 
       return { success: true, data: newUser };
@@ -598,7 +712,8 @@ class UserManagementService {
 
       const updated: User = {
         ...user,
-        ...(payload.name !== undefined && { name: payload.name }),
+        ...(payload.firstName !== undefined && { firstName: payload.firstName }),
+        ...(payload.lastName !== undefined && { lastName: payload.lastName }),
         ...(payload.role !== undefined && { role: payload.role }),
         ...(payload.isActive !== undefined && { isActive: payload.isActive }),
         ...(payload.assignedModerator !== undefined && { assignedModerator: payload.assignedModerator }),
@@ -677,10 +792,8 @@ class UserManagementService {
         ...quota,
         ...(limits.dailyLimit !== undefined && { dailyQueueLimit: limits.dailyLimit }),
         ...(limits.monthlyLimit !== undefined && { monthlyQueueLimit: limits.monthlyLimit }),
+        updatedAt: new Date(),
       };
-
-      // Recalculate remaining quota
-      updated.remainingQuota = updated.monthlyQueueLimit - updated.currentMonthQueues;
 
       this.quotas.set(userId, updated);
       return { success: true, data: updated };
@@ -764,8 +877,12 @@ class UserManagementService {
    * Validate user payload
    */
   private validateUserPayload(payload: Partial<CreateUserPayload>): { valid: boolean; error?: string } {
-    if (!payload.name || payload.name.trim().length === 0) {
-      return { valid: false, error: 'Name is required' };
+    if (!payload.firstName || payload.firstName.trim().length === 0) {
+      return { valid: false, error: 'First name is required' };
+    }
+
+    if (!payload.lastName || payload.lastName.trim().length === 0) {
+      return { valid: false, error: 'Last name is required' };
     }
 
     if (!payload.username || payload.username.trim().length === 0) {

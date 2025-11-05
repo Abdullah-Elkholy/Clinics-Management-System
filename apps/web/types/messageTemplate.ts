@@ -16,6 +16,7 @@ export interface MessageTemplate {
   variables: string[];           // list of variables in template
   isActive: boolean;             // whether template is in use
   priority?: number;             // order when multiple templates available
+  conditionId?: string;          // optional associated condition (for conditional message rendering)
   
   // Metadata
   createdAt: Date;

@@ -16,7 +16,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
   const [, actions] = useUserManagement();
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,7 +29,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   
   // Track initial values to detect changes
   const [initialValues, setInitialValues] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     username: '',
   });
 
@@ -37,12 +39,14 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   // Load selected user data when modal opens
   useEffect(() => {
     if (isOpen && selectedUser) {
-      setName(selectedUser.name);
+      setFirstName(selectedUser.firstName);
+      setLastName(selectedUser.lastName || '');
       setUsername(selectedUser.username);
       setPassword('');
       setConfirmPassword('');
       setInitialValues({
-        name: selectedUser.name,
+        firstName: selectedUser.firstName,
+        lastName: selectedUser.lastName || '',
         username: selectedUser.username,
       });
       setTouched(false);
@@ -53,10 +57,16 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   const validateFields = () => {
     const newErrors: ValidationError = {};
     
-    // Only validate name if it was changed
-    if (name !== initialValues.name && name) {
-      const nameError = validateName(name, 'الاسم الكامل');
-      if (nameError) newErrors.name = nameError;
+    // Only validate firstName if it was changed
+    if (firstName !== initialValues.firstName && firstName) {
+      const nameError = validateName(firstName, 'الاسم الأول');
+      if (nameError) newErrors.firstName = nameError;
+    }
+
+    // Only validate lastName if it was changed (optional field)
+    if (lastName !== initialValues.lastName && lastName) {
+      const nameError = validateName(lastName, 'الاسم الأخير');
+      if (nameError) newErrors.lastName = nameError;
     }
 
     // Only validate username if it was changed
@@ -80,7 +90,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   };
 
   const handleFieldChange = (field: string, value: string) => {
-    if (field === 'name') setName(value);
+    if (field === 'firstName') setFirstName(value);
+    if (field === 'lastName') setLastName(value);
     if (field === 'username') setUsername(value);
     if (field === 'password') setPassword(value);
     if (field === 'confirmPassword') setConfirmPassword(value);
@@ -130,12 +141,16 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       // Only include fields that were changed
       const updatePayload: any = {};
       
-      if (name !== initialValues.name && name.trim()) {
-        updatePayload.name = name;
+      if (firstName !== initialValues.firstName && firstName.trim()) {
+        updatePayload.firstName = firstName.trim();
+      }
+
+      if (lastName !== initialValues.lastName && lastName.trim()) {
+        updatePayload.lastName = lastName.trim();
       }
       
       if (username !== initialValues.username && username.trim()) {
-        updatePayload.username = username;
+        updatePayload.username = username.trim();
       }
       
       if (password && confirmPassword && password === confirmPassword) {
@@ -153,7 +168,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       
       if (success) {
         addToast('تم تحديث بيانات المستخدم بنجاح', 'success');
-        setName('');
+        setFirstName('');
+        setLastName('');
         setUsername('');
         setPassword('');
         setConfirmPassword('');
@@ -167,11 +183,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       setIsLoading(false);
     }
   };
-
-  // Validation errors check
-  const hasValidationErrors = Object.keys(errors).length > 0 || 
-                             (password && password !== confirmPassword) ||
-                             (password && !confirmPassword);
+  // Only disable if loading - validation errors show on blur but don't disable submit
+  // User can still click submit, which will show validation errors
 
   if (!isOpen) return null;
 
@@ -180,7 +193,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       isOpen={isOpen}
       onClose={() => {
         closeModal('editUser');
-        setName('');
+        setFirstName('');
+        setLastName('');
         setUsername('');
         setPassword('');
         setConfirmPassword('');
@@ -235,49 +249,72 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => handleFieldChange('name', e.target.value)}
+              value={firstName}
+              onChange={(e) => handleFieldChange('firstName', e.target.value)}
               onBlur={handleFieldBlur}
-              placeholder="أدخل الاسم الكامل"
+              placeholder="أدخل الاسم الأول"
               disabled={isLoading}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-                errors.name
+                errors.firstName
                   ? 'border-red-500 focus:ring-red-500'
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
             />
-            {errors.name && (
+            {errors.firstName && (
               <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
                 <i className="fas fa-exclamation-circle"></i>
-                {errors.name}
+                {errors.firstName}
               </p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
             <input
               type="text"
-              value={username}
-              onChange={(e) => handleFieldChange('username', e.target.value)}
+              value={lastName}
+              onChange={(e) => handleFieldChange('lastName', e.target.value)}
               onBlur={handleFieldBlur}
-              placeholder="أدخل اسم المستخدم"
+              placeholder="أدخل الاسم الأخير (اختياري)"
               disabled={isLoading}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-                errors.username
+                errors.lastName
                   ? 'border-red-500 focus:ring-red-500'
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
             />
-            {errors.username && (
+            {errors.lastName && (
               <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
                 <i className="fas fa-exclamation-circle"></i>
-                {errors.username}
+                {errors.lastName}
               </p>
             )}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => handleFieldChange('username', e.target.value)}
+            onBlur={handleFieldBlur}
+            placeholder="أدخل اسم المستخدم"
+            disabled={isLoading}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
+              errors.username
+                ? 'border-red-500 focus:ring-red-500'
+                : 'border-gray-300 focus:ring-blue-500'
+            }`}
+          />
+          {errors.username && (
+            <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+              <i className="fas fa-exclamation-circle"></i>
+              {errors.username}
+            </p>
+          )}
         </div>
 
         {/* Password Fields */}
@@ -369,7 +406,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
             type="button"
             onClick={() => {
               closeModal('editUser');
-              setName('');
+              setFirstName('');
+              setLastName('');
               setUsername('');
               setPassword('');
               setConfirmPassword('');

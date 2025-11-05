@@ -158,7 +158,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         const result = await userManagementService.createUser(payload);
         if (result.success && result.data) {
           setUsers((prev) => [...prev, result.data]);
-          addToast(`تم إنشاء المستخدم: ${result.data.name}`, 'success');
+          addToast(`تم إنشاء المستخدم: ${result.data.firstName} ${result.data.lastName}`, 'success');
           return true;
         } else {
           const errorMsg = result.error || 'Failed to create user';
@@ -193,7 +193,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
           if (selectedUser?.id === id) {
             setSelectedUser(result.data);
           }
-          addToast(`تم تحديث المستخدم: ${result.data.name}`, 'success');
+          addToast(`تم تحديث المستخدم: ${result.data.firstName} ${result.data.lastName}`, 'success');
           return true;
         } else {
           const errorMsg = result.error || 'Failed to update user';

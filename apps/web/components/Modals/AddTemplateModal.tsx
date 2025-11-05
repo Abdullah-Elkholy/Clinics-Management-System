@@ -212,6 +212,8 @@ export default function AddTemplateModal() {
         queueId: String(queueId),
         isActive: true,
         createdAt: new Date(),
+        variables: [],  // Initialize with empty variables
+        createdBy: 'Current User',  // TODO: Get actual user from context
         conditionId: conditionIdToUse || undefined,
       };
       

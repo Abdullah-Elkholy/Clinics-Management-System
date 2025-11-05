@@ -68,9 +68,6 @@ export default function EditQueueModal() {
     }
   };
 
-  // Validation errors check
-  const hasValidationErrors = Object.keys(errors).length > 0 || !doctorName.trim();
-
   if (!isOpen) return null;
 
   return (

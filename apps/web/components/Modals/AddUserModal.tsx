@@ -6,20 +6,33 @@ import { validateName, validateUsername, ValidationError } from '@/utils/validat
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { UserRole } from '@/types/roles';
 import Modal from './Modal';
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 interface AddUserModalProps {
   onUserAdded?: () => void;
   role?: UserRole | null;
   moderatorId?: string | null;
+  onClose?: () => void;
 }
 
-export default function AddUserModal({ onUserAdded, role = null, moderatorId = null }: AddUserModalProps) {
-  const { openModals, closeModal } = useModal();
+export default function AddUserModal({ onUserAdded, role = null, moderatorId = null, onClose }: AddUserModalProps) {
+  const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
   const [, actions] = useUserManagement();
   
-  const [name, setName] = useState('');
+  // Try to get role from modal context data (passed via openModal)
+  const modalData = getModalData('addUser');
+  const contextRole = modalData?.role || role;
+  
+  console.log('=== AddUserModal RENDER ===');
+  console.log('role prop:', role);
+  console.log('modalData:', modalData);
+  console.log('contextRole:', contextRole);
+  console.log('role type:', typeof role);
+  console.log('UserRole.Moderator value:', UserRole.Moderator);
+  
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,8 +41,16 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
 
   const isOpen = openModals.has('addUser');
+  console.log('isOpen:', isOpen);
+  
+  // Sync currentRole with contextRole whenever it changes
+  useEffect(() => {
+    console.log('[useEffect sync contextRole] contextRole changed to:', contextRole);
+    setCurrentRole(contextRole);
+  }, [contextRole]);
 
   // Generate random password
   const generateRandomPassword = () => {
@@ -46,8 +67,14 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const validateFields = () => {
     const newErrors: ValidationError = {};
     
-    const nameError = validateName(name, 'الاسم الكامل');
-    if (nameError) newErrors.name = nameError;
+    const firstNameError = validateName(firstName, 'الاسم الأول');
+    if (firstNameError) newErrors.firstName = firstNameError;
+
+    // lastName is now optional
+    if (lastName && lastName.trim()) {
+      const lastNameError = validateName(lastName, 'الاسم الأخير');
+      if (lastNameError) newErrors.lastName = lastNameError;
+    }
     
     const usernameError = validateUsername(username);
     if (usernameError) newErrors.username = usernameError;
@@ -66,7 +93,8 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   };
 
   const handleFieldChange = (field: string, value: string) => {
-    if (field === 'name') setName(value);
+    if (field === 'firstName') setFirstName(value);
+    if (field === 'lastName') setLastName(value);
     if (field === 'username') setUsername(value);
     if (field === 'password') setPassword(value);
     if (field === 'confirmPassword') setConfirmPassword(value);
@@ -102,10 +130,11 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
     try {
       setIsLoading(true);
       
-      const userRole = role || UserRole.User;
-      
+      const userRole = currentRole || UserRole.User;
+      console.log('[handleSubmit] Using currentRole:', currentRole, 'userRole:', userRole);
       const userPayload: any = {
-        name,
+        firstName,
+        lastName,
         username,
         role: userRole,
       };
@@ -119,7 +148,8 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       
       if (success) {
         addToast('تم إضافة المستخدم بنجاح', 'success');
-        setName('');
+        setFirstName('');
+        setLastName('');
         setUsername('');
         setPassword('');
         setConfirmPassword('');
@@ -127,6 +157,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
         setTouched(false);
         closeModal('addUser');
         onUserAdded?.();
+        onClose?.();
       }
     } catch (err) {
       addToast('حدث خطأ أثناء إضافة المستخدم', 'error');
@@ -135,42 +166,59 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
     }
   };
 
-  // Validation errors check
-  const hasValidationErrors = Object.keys(errors).length > 0 || 
-                             !name.trim() || 
-                             !username.trim() ||
-                             !password.trim() ||
-                             password !== confirmPassword;
+  // Check if form is valid for submission
+  const isFormValid = firstName.trim() &&
+                      username.trim() &&
+                      password.trim() &&
+                      password === confirmPassword &&
+                      Object.keys(errors).length === 0;
 
-  // Get modal title based on role
-  const getModalTitle = () => {
-    switch (role) {
-      case UserRole.Moderator:
-        return 'إضافة مشرف جديد';
-      case UserRole.SecondaryAdmin:
-        return 'إضافة مدير ثانوي جديد';
-      case UserRole.User:
-        return 'إضافة مستخدم جديد';
-      default:
-        return 'إضافة مستخدم جديد';
+  // Get modal title based on role - memoized to ensure it updates when role changes
+  const modalTitle = useMemo(() => {
+    let title = 'إضافة مستخدم جديد';
+    console.log('[modalTitle useMemo] ===== COMPUTING TITLE =====');
+    console.log('[modalTitle useMemo] currentRole value:', JSON.stringify(currentRole));
+    console.log('[modalTitle useMemo] currentRole type:', typeof currentRole);
+    console.log('[modalTitle useMemo] UserRole object:', UserRole);
+    console.log('[modalTitle useMemo] UserRole.Moderator:', UserRole.Moderator, 'type:', typeof UserRole.Moderator);
+    console.log('[modalTitle useMemo] UserRole.SecondaryAdmin:', UserRole.SecondaryAdmin, 'type:', typeof UserRole.SecondaryAdmin);
+    console.log('[modalTitle useMemo] currentRole === UserRole.Moderator:', currentRole === UserRole.Moderator);
+    console.log('[modalTitle useMemo] currentRole === "moderator":', currentRole === 'moderator');
+    console.log('[modalTitle useMemo] currentRole === "secondary_admin":', currentRole === 'secondary_admin');
+    
+    if (currentRole === UserRole.Moderator) {
+      title = 'إضافة مشرف جديد';
+      console.log('[modalTitle useMemo] ✓ MATCHED MODERATOR');
+    } else if (currentRole === UserRole.SecondaryAdmin) {
+      title = 'إضافة مدير ثانوي جديد';
+      console.log('[modalTitle useMemo] ✓ MATCHED SECONDARY ADMIN');
+    } else if (currentRole === UserRole.User) {
+      title = 'إضافة مستخدم جديد';
+      console.log('[modalTitle useMemo] ✓ MATCHED USER');
+    } else {
+      console.log('[modalTitle useMemo] ✗ NO MATCH - using default');
     }
-  };
-
-  if (!isOpen) return null;
+    
+    console.log('[modalTitle useMemo] Final title:', title);
+    console.log('[modalTitle useMemo] ===== END COMPUTING =====');
+    return title;
+  }, [currentRole]);
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={() => {
         closeModal('addUser');
-        setName('');
+        setFirstName('');
+        setLastName('');
         setUsername('');
         setPassword('');
         setConfirmPassword('');
         setErrors({});
         setTouched(false);
+        onClose?.();
       }}
-      title={getModalTitle()}
+      title={modalTitle}
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -210,49 +258,72 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => handleFieldChange('name', e.target.value)}
+              value={firstName}
+              onChange={(e) => handleFieldChange('firstName', e.target.value)}
               onBlur={handleFieldBlur}
-              placeholder="أدخل الاسم الكامل"
+              placeholder="أدخل الاسم الأول"
               disabled={isLoading}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-                errors.name
+                errors.firstName
                   ? 'border-red-500 focus:ring-red-500'
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
             />
-            {errors.name && (
+            {errors.firstName && (
               <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
                 <i className="fas fa-exclamation-circle"></i>
-                {errors.name}
+                {errors.firstName}
               </p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
             <input
               type="text"
-              value={username}
-              onChange={(e) => handleFieldChange('username', e.target.value)}
+              value={lastName}
+              onChange={(e) => handleFieldChange('lastName', e.target.value)}
               onBlur={handleFieldBlur}
-              placeholder="أدخل اسم المستخدم"
+              placeholder="أدخل الاسم الأخير (اختياري)"
               disabled={isLoading}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-                errors.username
+                errors.lastName
                   ? 'border-red-500 focus:ring-red-500'
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
             />
-            {errors.username && (
+            {errors.lastName && (
               <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
                 <i className="fas fa-exclamation-circle"></i>
-                {errors.username}
+                {errors.lastName}
               </p>
             )}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => handleFieldChange('username', e.target.value)}
+            onBlur={handleFieldBlur}
+            placeholder="أدخل اسم المستخدم"
+            disabled={isLoading}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
+              errors.username
+                ? 'border-red-500 focus:ring-red-500'
+                : 'border-gray-300 focus:ring-blue-500'
+            }`}
+          />
+          {errors.username && (
+            <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+              <i className="fas fa-exclamation-circle"></i>
+              {errors.username}
+            </p>
+          )}
         </div>
 
         {/* Password Fields */}
@@ -336,7 +407,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading || hasValidationErrors}
+            disabled={isLoading || !isFormValid}
             className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
@@ -347,7 +418,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
             ) : (
               <>
                 <i className="fas fa-plus"></i>
-                إضافة المستخدم
+                {modalTitle}
               </>
             )}
           </button>
@@ -355,7 +426,8 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
             type="button"
             onClick={() => {
               closeModal('addUser');
-              setName('');
+              setFirstName('');
+              setLastName('');
               setUsername('');
               setPassword('');
               setConfirmPassword('');

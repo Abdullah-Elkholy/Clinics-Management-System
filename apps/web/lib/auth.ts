@@ -11,6 +11,9 @@ export const authenticateUser = (username: string, password: string): User | nul
         firstName: cred.firstName,
         lastName: cred.lastName,
         role: cred.role as UserRole,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
     }
   }

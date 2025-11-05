@@ -2,13 +2,20 @@
 
 import React, { useState, useEffect } from 'react';
 import { useUserManagement } from '@/hooks/useUserManagement';
+import { useModeratorQuota } from '@/hooks/useModeratorQuota';
 import { UserRole } from '@/types/roles';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { User } from '@/services/userManagementService';
+import { ModeratorQuota } from '@/types/user';
 import EditUserModal from '@/components/Modals/EditUserModal';
 import EditAccountModal from '@/components/Modals/EditAccountModal';
 import AddUserModal from '@/components/Modals/AddUserModal';
+import ModeratorQuotaDisplay from '@/components/Moderators/ModeratorQuotaDisplay';
+import ModeratorQuotaModal from '@/components/Moderators/ModeratorQuotaModal';
+import ModeratorMessagesQuotaModal from '@/components/Moderators/ModeratorMessagesQuotaModal';
+import ModeratorQueuesQuotaModal from '@/components/Moderators/ModeratorQueuesQuotaModal';
+import moderatorQuotaService from '@/services/moderatorQuotaService';
 
 /**
  * UserManagementPanel - Manage moderators and their users
@@ -32,6 +39,19 @@ export default function UserManagementPanel() {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [selectedModerator, setSelectedModerator] = useState<string | null>(null);
+  
+  // Log whenever selectedRole changes
+  useEffect(() => {
+    console.log('[UserManagementPanel effect] selectedRole changed to:', selectedRole);
+  }, [selectedRole]);
+  
+  // Quota management state
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const [showMessagesQuotaModal, setShowMessagesQuotaModal] = useState(false);
+  const [showQueuesQuotaModal, setShowQueuesQuotaModal] = useState(false);
+  const [selectedQuota, setSelectedQuota] = useState<ModeratorQuota | null>(null);
+  const [selectedModeratorForQuota, setSelectedModeratorForQuota] = useState<User | null>(null);
+  const [quotaSaving, setQuotaSaving] = useState(false);
 
   // Export logs to CSV
   const handleExportLogs = async () => {
@@ -134,10 +154,19 @@ export default function UserManagementPanel() {
   };
 
   const handleAddUser = (role: UserRole, moderatorId?: string) => {
+    console.log('========== handleAddUser CALLED ==========');
+    console.log('Button role parameter:', role);
+    console.log('UserRole.Moderator constant value:', UserRole.Moderator);
+    console.log('Are they equal?', role === UserRole.Moderator);
+    
     setSelectedUser(null);
     setSelectedRole(role);
     setSelectedModerator(moderatorId || null);
-    openModal('addUser');
+    
+    console.log('About to call openModal with role data');
+    // Pass role through modal context data instead of just relying on component props
+    openModal('addUser', { role });
+    console.log('==========================================');
   };
 
   const handleEditUser = (user: User) => {
@@ -146,12 +175,12 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteUser = async (user: User) => {
-    const confirmed = window.confirm(`هل أنت متأكد من حذف المستخدم: ${user.name}؟`);
+    const confirmed = window.confirm(`هل أنت متأكد من حذف المستخدم: ${user.firstName} ${user.lastName}؟`);
     if (!confirmed) return;
 
     const success = await actions.deleteUser(user.id);
     if (success) {
-      addToast(`تم حذف المستخدم ${user.name} بنجاح`, 'success');
+      addToast(`تم حذف المستخدم ${user.firstName} ${user.lastName} بنجاح`, 'success');
       setSelectedUser(null);
     }
   };
@@ -162,13 +191,59 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteModerator = async (moderator: User) => {
-    const confirmed = window.confirm(`هل أنت متأكد من حذف المشرف: ${moderator.name}؟`);
+    const confirmed = window.confirm(`هل أنت متأكد من حذف المشرف: ${moderator.firstName} ${moderator.lastName}؟`);
     if (!confirmed) return;
 
     const success = await actions.deleteUser(moderator.id);
     if (success) {
-      addToast(`تم حذف المشرف ${moderator.name} بنجاح`, 'success');
+      addToast(`تم حذف المشرف ${moderator.firstName} ${moderator.lastName} بنجاح`, 'success');
       setSelectedUser(null);
+    }
+  };
+
+  // Handle opening quota editor (kept for backward compatibility)
+  const handleEditQuota = async (moderator: User, quota: ModeratorQuota) => {
+    setSelectedModeratorForQuota(moderator);
+    setSelectedQuota(quota);
+    setShowQuotaModal(true);
+  };
+
+  // Handle opening messages quota editor
+  const handleEditMessagesQuota = async (moderator: User, quota: ModeratorQuota) => {
+    setSelectedModeratorForQuota(moderator);
+    setSelectedQuota(quota);
+    setShowMessagesQuotaModal(true);
+  };
+
+  // Handle opening queues quota editor
+  const handleEditQueuesQuota = async (moderator: User, quota: ModeratorQuota) => {
+    setSelectedModeratorForQuota(moderator);
+    setSelectedQuota(quota);
+    setShowQueuesQuotaModal(true);
+  };
+
+  // Handle saving quota
+  const handleSaveQuota = async (updatedQuota: ModeratorQuota) => {
+    if (!selectedModeratorForQuota) return;
+
+    setQuotaSaving(true);
+    try {
+      const result = await moderatorQuotaService.updateQuota(
+        selectedModeratorForQuota.id,
+        updatedQuota
+      );
+      if (result.success) {
+        addToast(`تم تحديث حصة ${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName} بنجاح`, 'success');
+        setShowQuotaModal(false);
+        setSelectedModeratorForQuota(null);
+        setSelectedQuota(null);
+      } else {
+        addToast('فشل تحديث الحصة', 'error');
+      }
+    } catch (error) {
+      addToast('حدث خطأ أثناء تحديث الحصة', 'error');
+    } finally {
+      setQuotaSaving(false);
     }
   };
 
@@ -346,7 +421,7 @@ export default function UserManagementPanel() {
                       </span>
                       <div className="text-right">
                         <h3 className="font-semibold text-gray-900">
-                          {moderator.name}
+                          {moderator.firstName} {moderator.lastName}
                         </h3>
                       </div>
                     </div>
@@ -380,6 +455,57 @@ export default function UserManagementPanel() {
                   {/* Managed Users Table */}
                   {isExpanded && (
                     <div className="bg-white border-t border-gray-200">
+                      {/* Moderator Details Section */}
+                      <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-600 font-medium text-xs block mb-1">اسم المستخدم</span>
+                            <p className="text-gray-900 font-semibold text-xs">@{moderator.username}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-600 font-medium text-xs block mb-1">تاريخ الإنشاء</span>
+                            <p className="text-gray-900 font-semibold text-xs">
+                              {moderator.createdAt ? new Date(moderator.createdAt).toLocaleString('en-US') : 'لم يحدد'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-gray-600 font-medium text-xs block mb-1">آخر دخول</span>
+                            <p className="text-gray-900 font-semibold text-xs">
+                              {moderator.lastLogin ? new Date(moderator.lastLogin).toLocaleString('en-US') : 'لم يدخل بعد'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quota Display Section */}
+                      <div className="px-6 py-4 border-b border-gray-200">
+                        <ModeratorQuotaDisplay
+                          moderatorId={moderator.id}
+                          quota={moderator.quota ? {
+                            ...moderator.quota,
+                            moderatorId: moderator.id,
+                            messagesQuota: {
+                              limit: -1,
+                              used: 0,
+                              percentage: 0,
+                              isLow: false,
+                              warningThreshold: 80,
+                            },
+                            queuesQuota: {
+                              limit: -1,
+                              used: 0,
+                              percentage: 0,
+                              isLow: false,
+                              warningThreshold: 80,
+                            },
+                            createdAt: new Date(),
+                            updatedAt: new Date(),
+                          } as ModeratorQuota : undefined}
+                          onEditMessages={(quota) => handleEditMessagesQuota(moderator, quota)}
+                          onEditQueues={(quota) => handleEditQueuesQuota(moderator, quota)}
+                        />
+                      </div>
+
                       {/* Add User Button for this Moderator */}
                       <div className="px-6 py-4 border-b border-gray-200">
                         <button
@@ -388,65 +514,67 @@ export default function UserManagementPanel() {
                           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                         >
                           <i className="fas fa-plus"></i>
-                          <span>إضافة مستخدم</span>
+                          <span>إضافة مستخدم جديد</span>
                         </button>
                       </div>
 
                       {managedUsers.length > 0 ? (
-                        <table className="w-full">
-                          <thead>
-                            <tr className="bg-blue-50">
-                              <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
-                                الاسم
-                              </th>
-                              <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
-                                اسم المستخدم
-                              </th>
-                              <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
-                                آخر دخول
-                              </th>
-                              <th className="px-6 py-3 text-right text-sm font-semibold text-gray-900">
-                                الإجراءات
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {managedUsers.map((user) => (
-                              <tr
-                                key={user.id}
-                                className="border-t border-gray-200 hover:bg-gray-50 transition-colors"
-                              >
-                                <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                                  {user.name}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-600">
-                                  {user.username}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-600">
-                                  {formatDate(user.lastLogin)}
-                                </td>
-                                <td className="px-6 py-4 text-sm">
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={() => handleEditUser(user)}
-                                      title="تعديل"
-                                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
-                                    >
-                                      <i className="fas fa-edit"></i>
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteUser(user)}
-                                      title="حذف"
-                                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-                                    >
-                                      <i className="fas fa-trash"></i>
-                                    </button>
-                                  </div>
-                                </td>
+                        <div className="overflow-hidden rounded-lg border border-gray-200 m-4">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="bg-gradient-to-r from-blue-50 to-blue-100 border-b-2 border-blue-200">
+                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                  الاسم
+                                </th>
+                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                  اسم المستخدم
+                                </th>
+                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                  آخر دخول
+                                </th>
+                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                  الإجراءات
+                                </th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {managedUsers.map((user, idx) => (
+                                <tr
+                                  key={user.id}
+                                  className={`hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
+                                >
+                                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                                    {user.firstName} {user.lastName}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm text-gray-600">
+                                    @{user.username}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm text-gray-600">
+                                    {formatDate(user.lastLogin)}
+                                  </td>
+                                  <td className="px-6 py-4 text-sm">
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => handleEditUser(user)}
+                                        title="تعديل"
+                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-100 transition-colors"
+                                      >
+                                        <i className="fas fa-edit"></i>
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteUser(user)}
+                                        title="حذف"
+                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-100 transition-colors"
+                                      >
+                                        <i className="fas fa-trash"></i>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       ) : (
                         <div className="px-6 py-8 text-center">
                           <p className="text-sm text-gray-600">
@@ -526,7 +654,7 @@ export default function UserManagementPanel() {
                         ></i>
                         <div className="text-right">
                           <h3 className="font-semibold text-gray-900">
-                            {admin.name}
+                            {admin.firstName} {admin.lastName}
                           </h3>
                         </div>
                       </div>
@@ -636,7 +764,7 @@ export default function UserManagementPanel() {
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-600 font-medium">الاسم الكامل</p>
                   <p className="text-sm text-gray-900 font-semibold mt-1">
-                    {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.name || 'لم يتم تعيين'}
+                    {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.firstName} {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.lastName || 'لم يتم تعيين'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
@@ -1184,12 +1312,73 @@ export default function UserManagementPanel() {
       )}
 
       {/* Modals */}
+      {console.log('UserManagementPanel rendering AddUserModal with selectedRole:', selectedRole)}
       <EditUserModal selectedUser={selectedUser} />
       <EditAccountModal selectedUser={selectedUser} />
       <AddUserModal 
         onUserAdded={() => actions.fetchUsers()} 
         role={selectedRole}
         moderatorId={selectedModerator}
+        onClose={() => setSelectedRole(null)}
+      />
+      <ModeratorQuotaModal
+        isOpen={showQuotaModal}
+        quota={selectedQuota || {
+          id: '',
+          moderatorId: selectedModeratorForQuota?.id || '',
+          messagesQuota: { limit: -1, used: 0, percentage: 0, isLow: false, warningThreshold: 80 },
+          queuesQuota: { limit: -1, used: 0, percentage: 0, isLow: false, warningThreshold: 80 },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }}
+        moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
+        onClose={() => {
+          setShowQuotaModal(false);
+          setSelectedModeratorForQuota(null);
+          setSelectedQuota(null);
+        }}
+        onSave={handleSaveQuota}
+        isLoading={quotaSaving}
+      />
+      <ModeratorMessagesQuotaModal
+        isOpen={showMessagesQuotaModal}
+        quota={selectedQuota || {
+          id: '',
+          moderatorId: selectedModeratorForQuota?.id || '',
+          messagesQuota: { limit: -1, used: 0, percentage: 0, isLow: false, warningThreshold: 80 },
+          queuesQuota: { limit: -1, used: 0, percentage: 0, isLow: false, warningThreshold: 80 },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }}
+        moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
+        moderatorData={selectedModeratorForQuota}
+        onClose={() => {
+          setShowMessagesQuotaModal(false);
+          setSelectedModeratorForQuota(null);
+          setSelectedQuota(null);
+        }}
+        onSave={handleSaveQuota}
+        isLoading={quotaSaving}
+      />
+      <ModeratorQueuesQuotaModal
+        isOpen={showQueuesQuotaModal}
+        quota={selectedQuota || {
+          id: '',
+          moderatorId: selectedModeratorForQuota?.id || '',
+          messagesQuota: { limit: -1, used: 0, percentage: 0, isLow: false, warningThreshold: 80 },
+          queuesQuota: { limit: -1, used: 0, percentage: 0, isLow: false, warningThreshold: 80 },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }}
+        moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
+        moderatorData={selectedModeratorForQuota}
+        onClose={() => {
+          setShowQueuesQuotaModal(false);
+          setSelectedModeratorForQuota(null);
+          setSelectedQuota(null);
+        }}
+        onSave={handleSaveQuota}
+        isLoading={quotaSaving}
       />
     </>
   );

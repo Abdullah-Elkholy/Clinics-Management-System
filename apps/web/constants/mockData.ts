@@ -16,11 +16,11 @@ export const MOCK_ONGOING_SESSIONS = [
     failedCount: 1,
     isPaused: false,
     patients: [
-      { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 1, status: 'تم', failedAttempts: 0, isPaused: false },
-      { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 2, status: 'جاري', failedAttempts: 0, isPaused: false },
-      { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 3, status: 'فشل', failedAttempts: 2, isPaused: false },
-      { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 4, status: 'تم', failedAttempts: 0, isPaused: false },
-      { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 5, status: 'قيد الانتظار', failedAttempts: 0, isPaused: false },
+      { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 1, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك أحمد، ترتيبك الحالي هو 1' },
+      { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 2, status: 'جاري', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك فاطمة، ترتيبك الحالي هو 2' },
+      { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 3, status: 'فشل', failureMetrics: { attempts: 2, retries: 1, reason: 'خطأ في الاتصال' }, isPaused: false, failedReason: 'خطأ في الاتصال', messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 3' },
+      { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 4, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 4' },
+      { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 5, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 5' },
     ],
   },
   {
@@ -34,8 +34,8 @@ export const MOCK_ONGOING_SESSIONS = [
     failedCount: 0,
     isPaused: true,
     patients: [
-      { id: 6, name: 'علي حسن', phone: '01098765432', countryCode: '+20', queue: 1, status: 'تم', failedAttempts: 0, isPaused: true },
-      { id: 7, name: 'ليلى محمد', phone: '01055667788', countryCode: '+20', queue: 2, status: 'تم', failedAttempts: 0, isPaused: true },
+      { id: 6, name: 'علي حسن', phone: '01098765432', countryCode: '+20', queue: 1, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: true, messagePreview: 'مرحباً بك علي، ترتيبك الحالي هو 1' },
+      { id: 7, name: 'ليلى محمد', phone: '01055667788', countryCode: '+20', queue: 2, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: true, messagePreview: 'مرحباً بك ليلى، ترتيبك الحالي هو 2' },
     ],
   },
 ];
@@ -60,7 +60,9 @@ export const MOCK_FAILED_SESSIONS = [
         queue: 1,
         status: 'فشل',
         failedReason: 'فشل الاتصال بالخادم',
-        retryCount: 1,
+        failureMetrics: { attempts: 1, retries: 1, reason: 'فشل الاتصال بالخادم' },
+        isPaused: false,
+        messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 1',
       },
       {
         id: 102,
@@ -70,7 +72,9 @@ export const MOCK_FAILED_SESSIONS = [
         queue: 2,
         status: 'فشل',
         failedReason: 'رقم جوال غير صحيح',
-        retryCount: 2,
+        failureMetrics: { attempts: 2, retries: 2, reason: 'رقم جوال غير صحيح' },
+        isPaused: false,
+        messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 2',
       },
       {
         id: 103,
@@ -80,7 +84,9 @@ export const MOCK_FAILED_SESSIONS = [
         queue: 3,
         status: 'فشل',
         failedReason: 'انقطاع الإنترنت',
-        retryCount: 0,
+        failureMetrics: { attempts: 1, retries: 0, reason: 'انقطاع الإنترنت' },
+        isPaused: false,
+        messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 3',
       },
     ],
   },
@@ -103,7 +109,9 @@ export const MOCK_FAILED_SESSIONS = [
         queue: 1,
         status: 'فشل',
         failedReason: 'حد التأخير تم تجاوزه',
-        retryCount: 1,
+        failureMetrics: { attempts: 1, retries: 1, reason: 'حد التأخير تم تجاوزه' },
+        isPaused: false,
+        messagePreview: 'مرحباً بك فيصل، ترتيبك الحالي هو 1',
       },
     ],
   },
@@ -120,8 +128,8 @@ export const MOCK_COMPLETED_SESSIONS = [
     totalPatients: 5,
     sentCount: 5,
     patients: [
-      { id: 4, name: 'علي حسن', phone: '01055667788', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 09:15:33' },
-      { id: 5, name: 'ليلى محمد', phone: '01011223344', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 09:28:47' },
+      { id: 4, name: 'علي حسن', phone: '01055667788', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 09:15:33', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك علي، ترتيبك الحالي هو 1' },
+      { id: 5, name: 'ليلى محمد', phone: '01011223344', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 09:28:47', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك ليلى، ترتيبك الحالي هو 2' },
     ],
   },
   {
@@ -134,18 +142,18 @@ export const MOCK_COMPLETED_SESSIONS = [
     totalPatients: 8,
     sentCount: 8,
     patients: [
-      { id: 201, name: 'خديجة علي', phone: '01098765432', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 11:20:15' },
-      { id: 202, name: 'زيدان حسن', phone: '01012345678', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 11:35:42' },
+      { id: 201, name: 'خديجة علي', phone: '01098765432', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 11:20:15', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك خديجة، ترتيبك الحالي هو 1' },
+      { id: 202, name: 'زيدان حسن', phone: '01012345678', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 11:35:42', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك زيدان، ترتيبك الحالي هو 2' },
     ],
   },
 ];
 
 export const MOCK_QUEUE_PATIENTS = [
-  { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 3 },
-  { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 5 },
-  { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 2 },
-  { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 7 },
-  { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 1 },
+  { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 3, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك أحمد، ترتيبك الحالي هو 3' },
+  { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 5, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك فاطمة، ترتيبك الحالي هو 5' },
+  { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 2, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 2' },
+  { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 7, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 7' },
+  { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 1, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 1' },
 ];
 
 export const MOCK_QUEUES = [

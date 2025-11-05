@@ -39,21 +39,18 @@ export default function ModeratorsPanel() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const [formData, setFormData] = useState<CreateModeratorRequest>({
-    fullName: '',
-    email: '',
+    firstName: '',
+    lastName: '',
     username: '',
-    phoneNumber: '',
     messagesQuota: 1000,
     queuesQuota: 10,
-    whatsAppPhoneNumber: '',
   });
 
   const [editFormData, setEditFormData] = useState<UpdateModeratorRequest>({});
   const [userFormData, setUserFormData] = useState<AddUserToModeratorRequest>({
-    fullName: '',
-    email: '',
+    firstName: '',
+    lastName: '',
     username: '',
-    phoneNumber: '',
   });
 
   // Fetch moderators on mount
@@ -88,7 +85,7 @@ export default function ModeratorsPanel() {
   }, []);
 
   const handleCreateModerator = useCallback(async () => {
-    if (!formData.fullName || !formData.email || !formData.username) {
+    if (!formData.firstName || !formData.lastName || !formData.username) {
       setState((prev) => ({
         ...prev,
         error: 'Please fill in all required fields',
@@ -102,13 +99,11 @@ export default function ModeratorsPanel() {
         await fetchModerators();
         setShowCreateForm(false);
         setFormData({
-          fullName: '',
-          email: '',
+          firstName: '',
+          lastName: '',
           username: '',
-          phoneNumber: '',
           messagesQuota: 1000,
           queuesQuota: 10,
-          whatsAppPhoneNumber: '',
         });
       } else {
         setState((prev) => ({
@@ -172,7 +167,7 @@ export default function ModeratorsPanel() {
   }, [fetchModerators]);
 
   const handleAddUserToModerator = useCallback(async () => {
-    if (!state.selectedModerator || !userFormData.fullName || !userFormData.email || !userFormData.username) {
+    if (!state.selectedModerator || !userFormData.firstName || !userFormData.lastName || !userFormData.username) {
       setState((prev) => ({
         ...prev,
         error: 'Please fill in all required fields',
@@ -189,10 +184,9 @@ export default function ModeratorsPanel() {
         await fetchModerators();
         setShowAddUserModal(false);
         setUserFormData({
-          fullName: '',
-          email: '',
+          firstName: '',
+          lastName: '',
           username: '',
-          phoneNumber: '',
         });
       } else {
         setState((prev) => ({
@@ -209,8 +203,8 @@ export default function ModeratorsPanel() {
   }, [state.selectedModerator, userFormData, fetchModerators]);
 
   const filteredModerators = state.moderators.filter((m) =>
-    m.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.email.toLowerCase().includes(searchTerm.toLowerCase())
+    `${m.firstName} ${m.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    m.username.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -304,19 +298,19 @@ export default function ModeratorsPanel() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input
                   type="text"
-                  placeholder="الاسم الكامل"
-                  value={formData.fullName}
+                  placeholder="الاسم الأول"
+                  value={formData.firstName}
                   onChange={(e) =>
-                    setFormData({ ...formData, fullName: e.target.value })
+                    setFormData({ ...formData, firstName: e.target.value })
                   }
                   className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <input
-                  type="email"
-                  placeholder="البريد الإلكتروني"
-                  value={formData.email}
+                  type="text"
+                  placeholder="الاسم الأخير"
+                  value={formData.lastName}
                   onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
+                    setFormData({ ...formData, lastName: e.target.value })
                   }
                   className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -326,27 +320,6 @@ export default function ModeratorsPanel() {
                   value={formData.username}
                   onChange={(e) =>
                     setFormData({ ...formData, username: e.target.value })
-                  }
-                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="tel"
-                  placeholder="رقم الهاتف"
-                  value={formData.phoneNumber}
-                  onChange={(e) =>
-                    setFormData({ ...formData, phoneNumber: e.target.value })
-                  }
-                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="tel"
-                  placeholder="رقم WhatsApp"
-                  value={formData.whatsAppPhoneNumber}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      whatsAppPhoneNumber: e.target.value,
-                    })
                   }
                   className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -364,7 +337,7 @@ export default function ModeratorsPanel() {
                 />
                 <input
                   type="number"
-                  placeholder="حصة الرتب"
+                  placeholder="حصة الطوابير"
                   value={formData.queuesQuota}
                   onChange={(e) =>
                     setFormData({
@@ -408,17 +381,46 @@ export default function ModeratorsPanel() {
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-bold text-gray-900">{moderator.fullName}</h3>
-                      <p className="text-sm text-gray-500">{moderator.email}</p>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-lg text-gray-900">{moderator.firstName} {moderator.lastName}</h3>
+                      <p className="text-sm text-gray-600 mt-1">
+                        <span className="text-gray-500">@</span>
+                        {moderator.username}
+                      </p>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
                       moderator.isActive 
                         ? 'bg-blue-100 text-blue-800' 
                         : 'bg-gray-100 text-gray-800'
                     }`}>
                       {moderator.isActive ? 'نشط' : 'معطل'}
                     </span>
+                  </div>
+
+                  {/* Detailed Info */}
+                  <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600">المعرف:</span>
+                      <span className="text-sm font-mono font-medium text-gray-900">{moderator.id}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600">الحالة:</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {moderator.isActive ? '✅ مفعّل' : '❌ معطّل'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600">تاريخ الإنشاء:</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {new Date(moderator.createdAt).toLocaleDateString('ar-SA')}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600">آخر تحديث:</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {new Date(moderator.updatedAt).toLocaleDateString('ar-SA')}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Stats */}
@@ -428,7 +430,7 @@ export default function ModeratorsPanel() {
                       <span className="font-semibold">{moderator.managedUsersCount}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">الرتب:</span>
+                      <span className="text-gray-600">الطوابير:</span>
                       <span className="font-semibold">{moderator.queuesCount}</span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -510,7 +512,7 @@ export default function ModeratorsPanel() {
                   key={moderator.id}
                   className="bg-white border border-gray-200 rounded-lg p-6"
                 >
-                  <h4 className="font-bold text-gray-900 mb-4">{moderator.fullName}</h4>
+                  <h4 className="font-bold text-gray-900 mb-4">{moderator.firstName} {moderator.lastName}</h4>
 
                   {/* Messages Quota */}
                   <div className="mb-6">
@@ -537,7 +539,7 @@ export default function ModeratorsPanel() {
                   {/* Queues Quota */}
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">الرتب</span>
+                      <span className="text-sm font-medium text-gray-700">الطوابير</span>
                       <span className="text-sm font-semibold">
                         {moderator.quota.consumedQueues} / {moderator.quota.queuesQuota}
                       </span>
@@ -567,7 +569,7 @@ export default function ModeratorsPanel() {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-lg">
-              مستخدمو {state.selectedModerator.fullName}
+              مستخدمو {state.selectedModerator.firstName} {state.selectedModerator.lastName}
             </h3>
             <button
               onClick={() => setShowAddUserModal(true)}
@@ -585,19 +587,19 @@ export default function ModeratorsPanel() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <input
                   type="text"
-                  placeholder="الاسم الكامل"
-                  value={userFormData.fullName}
+                  placeholder="الاسم الأول"
+                  value={userFormData.firstName}
                   onChange={(e) =>
-                    setUserFormData({ ...userFormData, fullName: e.target.value })
+                    setUserFormData({ ...userFormData, firstName: e.target.value })
                   }
                   className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <input
-                  type="email"
-                  placeholder="البريد الإلكتروني"
-                  value={userFormData.email}
+                  type="text"
+                  placeholder="الاسم الأخير"
+                  value={userFormData.lastName}
                   onChange={(e) =>
-                    setUserFormData({ ...userFormData, email: e.target.value })
+                    setUserFormData({ ...userFormData, lastName: e.target.value })
                   }
                   className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -607,18 +609,6 @@ export default function ModeratorsPanel() {
                   value={userFormData.username}
                   onChange={(e) =>
                     setUserFormData({ ...userFormData, username: e.target.value })
-                  }
-                  className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <input
-                  type="tel"
-                  placeholder="رقم الهاتف"
-                  value={userFormData.phoneNumber}
-                  onChange={(e) =>
-                    setUserFormData({
-                      ...userFormData,
-                      phoneNumber: e.target.value,
-                    })
                   }
                   className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />

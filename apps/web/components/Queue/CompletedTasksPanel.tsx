@@ -8,17 +8,7 @@ import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
-
-interface Patient {
-  id: number;
-  name: string;
-  phone: string;
-  countryCode?: string;
-  queue?: number;
-  status: string;
-  completedAt?: string;
-  messagePreview?: string;
-}
+import { Patient } from '@/types';
 
 interface Session {
   id: string;

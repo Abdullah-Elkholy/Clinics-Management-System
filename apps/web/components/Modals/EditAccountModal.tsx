@@ -16,7 +16,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
   const [, actions] = useUserManagement();
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -32,7 +33,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
   
   // Track initial values to detect changes
   const [initialValues, setInitialValues] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     username: '',
   });
 
@@ -41,13 +43,15 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
   // Load selected user data when modal opens
   useEffect(() => {
     if (isOpen && selectedUser) {
-      setName(selectedUser.name);
+      setFirstName(selectedUser.firstName);
+      setLastName(selectedUser.lastName || '');
       setUsername(selectedUser.username);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setInitialValues({
-        name: selectedUser.name,
+        firstName: selectedUser.firstName,
+        lastName: selectedUser.lastName || '',
         username: selectedUser.username,
       });
       setTouched(false);
@@ -73,10 +77,16 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
   const validateFields = () => {
     const newErrors: ValidationError = {};
     
-    // Only validate name if it was changed
-    if (name !== initialValues.name && name) {
-      const nameError = validateName(name, 'الاسم الكامل');
-      if (nameError) newErrors.name = nameError;
+    // Only validate firstName if it was changed
+    if (firstName !== initialValues.firstName && firstName) {
+      const nameError = validateName(firstName, 'الاسم الأول');
+      if (nameError) newErrors.firstName = nameError;
+    }
+
+    // Only validate lastName if it was changed (optional field)
+    if (lastName !== initialValues.lastName && lastName) {
+      const nameError = validateName(lastName, 'الاسم الأخير');
+      if (nameError) newErrors.lastName = nameError;
     }
 
     // Only validate username if it was changed
@@ -106,7 +116,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
   };
 
   const handleFieldChange = (field: string, value: string) => {
-    if (field === 'name') setName(value);
+    if (field === 'firstName') setFirstName(value);
+    if (field === 'lastName') setLastName(value);
     if (field === 'username') setUsername(value);
     if (field === 'currentPassword') setCurrentPassword(value);
     if (field === 'newPassword') setNewPassword(value);
@@ -151,12 +162,16 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       // Only include fields that were changed
       const updatePayload: any = {};
       
-      if (name !== initialValues.name && name.trim()) {
-        updatePayload.name = name;
+      if (firstName !== initialValues.firstName && firstName.trim()) {
+        updatePayload.firstName = firstName.trim();
+      }
+
+      if (lastName !== initialValues.lastName && lastName.trim()) {
+        updatePayload.lastName = lastName.trim();
       }
       
       if (username !== initialValues.username && username.trim()) {
-        updatePayload.username = username;
+        updatePayload.username = username.trim();
       }
       
       if (isChangingPassword && newPassword && confirmPassword && newPassword === confirmPassword) {
@@ -175,7 +190,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       
       if (success) {
         addToast('تم تحديث بيانات الحساب بنجاح', 'success');
-        setName('');
+        setFirstName('');
+        setLastName('');
         setUsername('');
         setCurrentPassword('');
         setNewPassword('');
@@ -193,8 +209,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
     }
   };
 
-  // Validation errors check
-  const hasValidationErrors = Object.keys(errors).length > 0;
+  // Only disable if loading - validation errors show on blur but don't disable submit
+  // User can still click submit, which will show validation errors
 
   if (!isOpen) return null;
 
@@ -203,7 +219,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       isOpen={isOpen}
       onClose={() => {
         closeModal('editAccount');
-        setName('');
+        setFirstName('');
+        setLastName('');
         setUsername('');
         setCurrentPassword('');
         setNewPassword('');
@@ -232,24 +249,45 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
             </p>
           </div>
 
-          {/* Name Field */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              الاسم الكامل
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => handleFieldChange('name', e.target.value)}
-              onBlur={handleFieldBlur}
-              placeholder="أدخل الاسم الكامل"
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                touched && errors.name ? 'border-red-500' : 'border-gray-300'
-              }`}
-            />
-            {touched && errors.name && (
-              <p className="text-sm text-red-600 mt-1">{errors.name}</p>
-            )}
+          {/* Name Fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                الاسم الأول *
+              </label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => handleFieldChange('firstName', e.target.value)}
+                onBlur={handleFieldBlur}
+                placeholder="أدخل الاسم الأول"
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  touched && errors.firstName ? 'border-red-500' : 'border-gray-300'
+                }`}
+              />
+              {touched && errors.firstName && (
+                <p className="text-sm text-red-600 mt-1">{errors.firstName}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                الاسم الأخير
+              </label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => handleFieldChange('lastName', e.target.value)}
+                onBlur={handleFieldBlur}
+                placeholder="أدخل الاسم الأخير (اختياري)"
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  touched && errors.lastName ? 'border-red-500' : 'border-gray-300'
+                }`}
+              />
+              {touched && errors.lastName && (
+                <p className="text-sm text-red-600 mt-1">{errors.lastName}</p>
+              )}
+            </div>
           </div>
 
           {/* Username Field */}
@@ -322,8 +360,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
               <p className="text-sm text-amber-700 flex items-center gap-2">
                 <i className="fas fa-exclamation-circle"></i>
                 {isChangingPassword 
-                  ? 'يجب إدخال كلمة المرور الحالية لتغيير كلمة المرور الجديدة' 
-                  : 'اضغط على زر التغيير لتغيير كلمة المرور'}
+                  ? 'يجب إدخال كلمة المرور الحالية لتغييرها' 
+                  : 'اضغط على زر "تغيير" لتغيير كلمة المرور'}
               </p>
             </div>
 
@@ -365,7 +403,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
                   className="w-full px-4 py-2 border border-purple-300 text-purple-600 rounded-lg hover:bg-purple-50 transition-colors font-medium text-sm flex items-center justify-center gap-2"
                 >
                   <i className="fas fa-magic"></i>
-                  توليد كلمة مرور عشوائية
+                  توليد كلمة مرور جديدة عشوائية
                 </button>
 
                 {/* Generated Password Display */}
@@ -391,62 +429,63 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
                   </div>
                 )}
 
-                {/* New Password */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    كلمة المرور الجديدة
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showNewPassword ? 'text' : 'password'}
-                      value={newPassword}
-                      onChange={(e) => handleFieldChange('newPassword', e.target.value)}
-                      onBlur={handleFieldBlur}
-                      placeholder="أدخل كلمة المرور الجديدة"
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent ${
-                        touched && errors.newPassword ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute left-3 top-2.5 text-gray-500 hover:text-gray-700"
-                    >
-                      <i className={`fas ${showNewPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
-                    </button>
+                {/* New Password & Confirm Password Side-by-Side */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      كلمة المرور الجديدة
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(e) => handleFieldChange('newPassword', e.target.value)}
+                        onBlur={handleFieldBlur}
+                        placeholder="أدخل كلمة المرور الجديدة"
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent ${
+                          touched && errors.newPassword ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute left-3 top-2.5 text-gray-500 hover:text-gray-700"
+                      >
+                        <i className={`fas ${showNewPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                      </button>
+                    </div>
+                    {touched && errors.newPassword && (
+                      <p className="text-sm text-red-600 mt-1">{errors.newPassword}</p>
+                    )}
                   </div>
-                  {touched && errors.newPassword && (
-                    <p className="text-sm text-red-600 mt-1">{errors.newPassword}</p>
-                  )}
-                </div>
 
-                {/* Confirm New Password */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    تأكيد كلمة المرور الجديدة
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showConfirmPassword ? 'text' : 'password'}
-                      value={confirmPassword}
-                      onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
-                      onBlur={handleFieldBlur}
-                      placeholder="أعد إدخال كلمة المرور الجديدة"
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent ${
-                        touched && errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute left-3 top-2.5 text-gray-500 hover:text-gray-700"
-                    >
-                      <i className={`fas ${showConfirmPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
-                    </button>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      تأكيد كلمة المرور الجديدة
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
+                        onBlur={handleFieldBlur}
+                        placeholder="أعد إدخال كلمة المرور الجديدة"
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent ${
+                          touched && errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute left-3 top-2.5 text-gray-500 hover:text-gray-700"
+                      >
+                        <i className={`fas ${showConfirmPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                      </button>
+                    </div>
+                    {touched && errors.confirmPassword && (
+                      <p className="text-sm text-red-600 mt-1">{errors.confirmPassword}</p>
+                    )}
                   </div>
-                  {touched && errors.confirmPassword && (
-                    <p className="text-sm text-red-600 mt-1">{errors.confirmPassword}</p>
-                  )}
                 </div>
               </div>
             )}
@@ -459,7 +498,8 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
             type="button"
             onClick={() => {
               closeModal('editAccount');
-              setName('');
+              setFirstName('');
+              setLastName('');
               setUsername('');
               setCurrentPassword('');
               setNewPassword('');
@@ -475,7 +515,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
           </button>
           <button
             type="submit"
-            disabled={hasValidationErrors || isLoading}
+            disabled={isLoading}
             className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
           >
             {isLoading ? (
