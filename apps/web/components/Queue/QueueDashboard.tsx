@@ -3,8 +3,10 @@
 import { useQueue } from '@/contexts/QueueContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { validateNumber } from '@/utils/validation';
+import { createDeleteConfirmation, createBulkDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { MOCK_QUEUE_PATIENTS, MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
@@ -23,6 +25,7 @@ const SAMPLE_PATIENTS = MOCK_QUEUE_PATIENTS;
 export default function QueueDashboard() {
   const { selectedQueueId, queues } = useQueue();
   const { openModal } = useModal();
+  const { confirm } = useConfirmDialog();
   const { config: messageConfig, loadConfig: loadMessageConfig } = useQueueMessageConfig({
     autoLoad: false,
   });
@@ -491,9 +494,9 @@ export default function QueueDashboard() {
               <i className="fas fa-edit"></i>
             </button>
             <button
-              onClick={() => {
-                const ok = window.confirm(`هل أنت متأكد من حذف ${patient.name}؟`);
-                if (ok) {
+              onClick={async () => {
+                const confirmed = await confirm(createDeleteConfirmation(patient.name));
+                if (confirmed) {
                   setPatients((prev) => prev.filter((p) => p.id !== patient.id));
                   setSelectedPatients((prev) => prev.filter((id) => id !== patient.id));
                 }
@@ -642,13 +645,13 @@ export default function QueueDashboard() {
         </button>
 
         <button
-          onClick={() => {
+          onClick={async () => {
             if (selectedPatients.length === 0) {
               addToast('يرجى تحديد مريض واحد على الأقل', 'error');
               return;
             }
-            const ok = window.confirm(`هل أنت متأكد من حذف ${selectedPatients.length} مريض؟`);
-            if (ok) {
+            const confirmed = await confirm(createBulkDeleteConfirmation(selectedPatients.length, 'مريض'));
+            if (confirmed) {
               setPatients((prev) => prev.filter((p) => !selectedPatients.includes(p.id)));
               setSelectedPatients([]);
               addToast(`تم حذف ${selectedPatients.length} مريض`, 'success');

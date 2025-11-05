@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { useModeratorQuota } from '@/hooks/useModeratorQuota';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
@@ -29,6 +31,7 @@ export default function UserManagementPanel() {
   const [state, actions] = useUserManagement();
   const { openModal } = useModal();
   const { addToast } = useUI();
+  const { confirm } = useConfirmDialog();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'moderators' | 'secondaryAdmins' | 'accountSettings' | 'logs'>('moderators');
   const [expandedModerators, setExpandedModerators] = useState<Set<string>>(new Set());
@@ -175,7 +178,7 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteUser = async (user: User) => {
-    const confirmed = window.confirm(`هل أنت متأكد من حذف المستخدم: ${user.firstName} ${user.lastName}؟`);
+    const confirmed = await confirm(createDeleteConfirmation(`${user.firstName} ${user.lastName}`));
     if (!confirmed) return;
 
     const success = await actions.deleteUser(user.id);
@@ -191,7 +194,7 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteModerator = async (moderator: User) => {
-    const confirmed = window.confirm(`هل أنت متأكد من حذف المشرف: ${moderator.firstName} ${moderator.lastName}؟`);
+    const confirmed = await confirm(createDeleteConfirmation(`${moderator.firstName} ${moderator.lastName}`));
     if (!confirmed) return;
 
     const success = await actions.deleteUser(moderator.id);

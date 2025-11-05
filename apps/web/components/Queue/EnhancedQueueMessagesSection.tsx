@@ -13,6 +13,8 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { useQueueMessageTemplates } from '@/hooks/useQueueMessageTemplates';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { MessageTemplate } from '@/types/messageTemplate';
 import MessageTemplateEditorModalEnhanced from '@/components/Modals/MessageTemplateEditorModalEnhanced';
 
@@ -43,6 +45,7 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
       queueName,
       autoLoad: true,
     });
+  const { confirm } = useConfirmDialog();
 
   // Modal states
   const [showEditorModal, setShowEditorModal] = useState(false);
@@ -105,12 +108,13 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
 
   const handleDeleteTemplate = useCallback(
     async (templateId: string) => {
-      if (confirm('هل أنت متأكد من حذف هذا القالب؟')) {
+      const confirmed = await confirm(createDeleteConfirmation('القالب'));
+      if (confirmed) {
         await deleteTemplate(templateId);
         onTemplateDeleted?.();
       }
     },
-    [deleteTemplate, onTemplateDeleted]
+    [deleteTemplate, onTemplateDeleted, confirm]
   );
 
   const handleDuplicateTemplate = useCallback(

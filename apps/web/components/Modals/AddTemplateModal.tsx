@@ -258,24 +258,6 @@ export default function AddTemplateModal() {
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Validation Errors Alert - Only show if user touched and there are errors */}
-        {touched && Object.keys(errors).length > 0 && (
-          <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
-            <p className="text-red-800 font-semibold flex items-center gap-2 mb-2">
-              <i className="fas fa-exclamation-circle text-red-600"></i>
-              يرجى تصحيح الأخطاء التالية:
-            </p>
-            <ul className="space-y-1 text-sm text-red-700">
-              {Object.entries(errors).map(([field, error]) => (
-                <li key={field} className="flex items-center gap-2">
-                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                  {error}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {/* Required Fields Disclaimer */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
           <p className="flex items-center gap-2">

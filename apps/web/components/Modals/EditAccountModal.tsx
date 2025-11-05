@@ -72,6 +72,14 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
     setGeneratedPassword(password);
     setNewPassword(password);
     setConfirmPassword(password);
+    
+    // Clear password validation errors
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors.newPassword;
+      delete newErrors.confirmPassword;
+      return newErrors;
+    });
   };
 
   const validateFields = () => {
@@ -236,10 +244,6 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Profile Information Section */}
         <div className="space-y-4">
-          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-            <i className="fas fa-user text-blue-600"></i>
-            بيانات الملف الشخصي
-          </h3>
 
           {/* Disclaimer */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -247,6 +251,22 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
               <i className="fas fa-info-circle"></i>
               عدل البيانات المراد تغييرها فقط
             </p>
+          </div>
+
+          {/* Username Requirements Disclaimer */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-sm text-amber-800 font-semibold flex items-center gap-2 mb-2">
+              <i className="fas fa-lightbulb"></i>
+              متطلبات اسم المستخدم:
+            </p>
+            <ul className="space-y-1 text-xs text-amber-700 ml-6">
+              <li>• يجب أن يبدأ بحرف إنجليزي (a-z, A-Z)</li>
+              <li>• يمكن أن يحتوي على أرقام بعد الحرف الأول (0-9)</li>
+              <li>• يمكن استخدام الشرطة (-) والشرطة السفلية (_)</li>
+              <li>• لا يمكن أن يحتوي على حرفين متتاليين من (_ أو -)</li>
+              <li>• لا يمكن أن يحتوي على مسافات</li>
+              <li>• الحد الأدنى 3 أحرف، الحد الأقصى 50 حرف</li>
+            </ul>
           </div>
 
           {/* Name Fields */}
@@ -293,7 +313,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
           {/* Username Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              اسم المستخدم
+              اسم المستخدم *
             </label>
             <input
               type="text"
@@ -309,22 +329,6 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
               <p className="text-sm text-red-600 mt-1">{errors.username}</p>
             )}
           </div>
-        </div>
-
-        {/* Username Requirements Disclaimer */}
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-          <p className="text-sm text-amber-800 font-semibold flex items-center gap-2 mb-2">
-            <i className="fas fa-lightbulb"></i>
-            متطلبات اسم المستخدم:
-          </p>
-          <ul className="space-y-1 text-xs text-amber-700 ml-6">
-            <li>• يجب أن يبدأ بحرف إنجليزي (a-z, A-Z)</li>
-            <li>• يمكن أن يحتوي على أرقام بعد الحرف الأول (0-9)</li>
-            <li>• يمكن استخدام الشرطة (-) والشرطة السفلية (_)</li>
-            <li>• لا يمكن أن يحتوي على حرفين متتاليين من (_ أو -)</li>
-            <li>• لا يمكن أن يحتوي على مسافات</li>
-            <li>• الحد الأدنى 3 أحرف، الحد الأقصى 50 حرف</li>
-          </ul>
         </div>
 
         {/* Password Change Section */}

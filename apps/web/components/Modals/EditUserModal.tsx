@@ -54,6 +54,26 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
     }
   }, [isOpen, selectedUser]);
 
+  // Generate random password
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    let pass = '';
+    for (let i = 0; i < 12; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(pass);
+    setConfirmPassword(pass);
+    setTouched(true);
+    
+    // Clear password validation errors
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors.password;
+      delete newErrors.confirmPassword;
+      return newErrors;
+    });
+  };
+
   const validateFields = () => {
     const newErrors: ValidationError = {};
     
@@ -229,24 +249,6 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
           </ul>
         </div>
 
-        {/* Validation Errors Alert - Only show if user touched and there are errors */}
-        {touched && Object.keys(errors).length > 0 && (
-          <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
-            <p className="text-red-800 font-semibold flex items-center gap-2 mb-2">
-              <i className="fas fa-exclamation-circle text-red-600"></i>
-              يرجى تصحيح الأخطاء التالية:
-            </p>
-            <ul className="space-y-1 text-sm text-red-700">
-              {Object.entries(errors).map(([field, error]) => (
-                <li key={field} className="flex items-center gap-2">
-                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                  {error}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
@@ -320,7 +322,18 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
         {/* Password Fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور</label>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-gray-700">كلمة المرور *</label>
+              <button
+                type="button"
+                onClick={generateRandomPassword}
+                disabled={isLoading}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+              >
+                <i className="fas fa-magic ml-1"></i>
+                توليد عشوائي
+              </button>
+            </div>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}

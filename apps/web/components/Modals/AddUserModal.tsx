@@ -62,6 +62,14 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
     setPassword(pass);
     setConfirmPassword(pass);
     setTouched(true);
+    
+    // Clear password validation errors
+    setErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors.password;
+      delete newErrors.confirmPassword;
+      return newErrors;
+    });
   };
 
   const validateFields = () => {
@@ -166,12 +174,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
     }
   };
 
-  // Check if form is valid for submission
-  const isFormValid = firstName.trim() &&
-                      username.trim() &&
-                      password.trim() &&
-                      password === confirmPassword &&
-                      Object.keys(errors).length === 0;
+
 
   // Get modal title based on role - memoized to ensure it updates when role changes
   const modalTitle = useMemo(() => {
@@ -222,24 +225,6 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Validation Errors Alert - Only show if user touched and there are errors */}
-        {touched && Object.keys(errors).length > 0 && (
-          <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
-            <p className="text-red-800 font-semibold flex items-center gap-2 mb-2">
-              <i className="fas fa-exclamation-circle text-red-600"></i>
-              يرجى تصحيح الأخطاء التالية:
-            </p>
-            <ul className="space-y-1 text-sm text-red-700">
-              {Object.entries(errors).map(([field, error]) => (
-                <li key={field} className="flex items-center gap-2">
-                  <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                  {error}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {/* Username Requirements Disclaimer */}
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
           <p className="text-sm text-amber-800 font-semibold flex items-center gap-2 mb-2">
@@ -407,7 +392,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading || !isFormValid}
+            disabled={isLoading}
             className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (

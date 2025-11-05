@@ -2,10 +2,16 @@
  * Moderators Service
  * Handles all moderator-related API operations
  * Using mock data for frontend development
+ * 
+ * QUOTA HIERARCHY:
+ * - Quotas are tied to moderators via moderatorId
+ * - All users under a moderator share their moderator's quota
+ * - This service manages moderator quotas at the moderator level
  */
 
 'use client';
 
+import { ModeratorQuota } from '@/types/user';
 import {
   MOCK_USERS,
   MOCK_MODERATOR_SETTINGS,
@@ -22,7 +28,6 @@ import {
   User,
   Moderator,
   ModeratorSettings,
-  Quota,
   WhatsAppSession,
 } from './mockDataService';
 
@@ -40,7 +45,7 @@ export interface ModeratorDetailsResponse extends ModeratorResponse {
   managedUsersCount: number;
   queuesCount: number;
   templatesCount: number;
-  quota: Quota;
+  quota: ModeratorQuota;  // Use unified ModeratorQuota from types/user.ts
   settings: ModeratorSettings;
   whatsappSession: WhatsAppSession | null;
 }
@@ -172,19 +177,26 @@ class ModeratorsService {
       };
       MOCK_MODERATOR_SETTINGS.push(newSettings);
 
-      // Create quota
-      const newQuota: Quota = {
-        id: Math.max(...MOCK_QUOTAS.map((q) => q.id)) + 1,
-        moderatorUserId: newModeratorId,
-        messagesQuota: request.messagesQuota,
-        consumedMessages: 0,
-        queuesQuota: request.queuesQuota,
-        consumedQueues: 0,
-        remainingMessages: request.messagesQuota,
-        remainingQueues: request.queuesQuota,
+      // Create quota - Using unified ModeratorQuota structure
+      const newQuota: ModeratorQuota = {
+        id: `quota-${newModeratorId}`,
+        moderatorId: String(newModeratorId),
+        messagesQuota: {
+          limit: request.messagesQuota,
+          used: 0,
+          percentage: 0,
+          isLow: false,
+          warningThreshold: 80,
+        },
+        queuesQuota: {
+          limit: request.queuesQuota,
+          used: 0,
+          percentage: 0,
+          isLow: false,
+          warningThreshold: 80,
+        },
+        createdAt: now,
         updatedAt: now,
-        isMessagesQuotaLow: false,
-        isQueuesQuotaLow: false,
       };
       MOCK_QUOTAS.push(newQuota);
 
@@ -283,7 +295,7 @@ class ModeratorsService {
       }
 
       // Remove quota
-      const quotaIndex = MOCK_QUOTAS.findIndex((q) => q.moderatorUserId === moderatorId);
+      const quotaIndex = MOCK_QUOTAS.findIndex((q) => q.moderatorId === String(moderatorId));
       if (quotaIndex >= 0) {
         MOCK_QUOTAS.splice(quotaIndex, 1);
       }

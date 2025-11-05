@@ -4,6 +4,8 @@
  * Used for frontend development before backend integration
  */
 
+import type { ModeratorQuota } from '@/types/user';
+
 // Helper function to generate session IDs
 const generateSessionId = (): string => {
   const now = new Date();
@@ -83,20 +85,6 @@ export interface Message {
   lastAttemptAt?: Date;
   sentAt?: Date;
   createdAt: Date;
-}
-
-export interface Quota {
-  id: number;
-  moderatorUserId: number;
-  messagesQuota: number;
-  consumedMessages: number;
-  queuesQuota: number;
-  consumedQueues: number;
-  remainingMessages: number;
-  remainingQueues: number;
-  updatedAt: Date;
-  isMessagesQuotaLow: boolean;
-  isQueuesQuotaLow: boolean;
 }
 
 export interface Patient {
@@ -278,47 +266,73 @@ export const MOCK_MODERATOR_SETTINGS: ModeratorSettings[] = [
 ];
 
 /**
- * Mock Quotas
+ * Mock Quotas - UNIFIED DATA STRUCTURE
+ * 
+ * HIERARCHY:
+ * - Quotas are tied directly to moderators via moderatorId
+ * - All users under a moderator share/consume this quota
+ * - Quotas accumulate and never reset
  */
-export const MOCK_QUOTAS: Quota[] = [
+export const MOCK_QUOTAS: ModeratorQuota[] = [
   {
-    id: 1,
-    moderatorUserId: 2,
-    messagesQuota: 1000,
-    consumedMessages: 340,
-    queuesQuota: 10,
-    consumedQueues: 3,
-    remainingMessages: 660,
-    remainingQueues: 7,
-    updatedAt: new Date(),
-    isMessagesQuotaLow: false,
-    isQueuesQuotaLow: false,
+    id: 'quota-1',
+    moderatorId: '2',
+    messagesQuota: {
+      limit: 1000,
+      used: 340,
+      percentage: 34,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 10,
+      used: 3,
+      percentage: 30,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-01-05'),
+    updatedAt: new Date('2024-01-05'),
   },
   {
-    id: 2,
-    moderatorUserId: 3,
-    messagesQuota: 800,
-    consumedMessages: 720,
-    queuesQuota: 8,
-    consumedQueues: 6,
-    remainingMessages: 80,
-    remainingQueues: 2,
-    updatedAt: new Date(),
-    isMessagesQuotaLow: true,
-    isQueuesQuotaLow: true,
+    id: 'quota-2',
+    moderatorId: '3',
+    messagesQuota: {
+      limit: 800,
+      used: 720,
+      percentage: 90,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 8,
+      used: 6,
+      percentage: 75,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-01-10'),
+    updatedAt: new Date('2024-01-10'),
   },
   {
-    id: 3,
-    moderatorUserId: 4,
-    messagesQuota: 1500,
-    consumedMessages: 450,
-    queuesQuota: 15,
-    consumedQueues: 5,
-    remainingMessages: 1050,
-    remainingQueues: 10,
-    updatedAt: new Date(),
-    isMessagesQuotaLow: false,
-    isQueuesQuotaLow: false,
+    id: 'quota-3',
+    moderatorId: '4',
+    messagesQuota: {
+      limit: 1500,
+      used: 450,
+      percentage: 30,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 15,
+      used: 5,
+      percentage: 33,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-01-15'),
+    updatedAt: new Date('2024-01-15'),
   },
 ];
 
@@ -713,9 +727,10 @@ export const getModeratorMessages = (moderatorId: number): Message[] => {
 
 /**
  * Get quota for a moderator
+ * Returns the moderator's quota (shared by all their users)
  */
-export const getModeratorQuota = (moderatorId: number): Quota | undefined => {
-  return MOCK_QUOTAS.find((q) => q.moderatorUserId === moderatorId);
+export const getModeratorQuota = (moderatorId: number): ModeratorQuota | undefined => {
+  return MOCK_QUOTAS.find((q) => q.moderatorId === String(moderatorId));
 };
 
 /**
@@ -743,8 +758,8 @@ export const getSystemStats = () => {
     totalTemplates: MOCK_MESSAGE_TEMPLATES.length,
     totalMessages: MOCK_MESSAGES.length,
     totalQuotaUsage: {
-      messages: MOCK_QUOTAS.reduce((sum, q) => sum + q.consumedMessages, 0),
-      queues: MOCK_QUOTAS.reduce((sum, q) => sum + q.consumedQueues, 0),
+      messages: MOCK_QUOTAS.reduce((sum, q) => sum + q.messagesQuota.used, 0),
+      queues: MOCK_QUOTAS.reduce((sum, q) => sum + q.queuesQuota.used, 0),
     },
     activeWhatsAppSessions: MOCK_WHATSAPP_SESSIONS.filter((s) => s.status === 'connected').length,
     messageDeliveryRate: (() => {

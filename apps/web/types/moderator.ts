@@ -1,17 +1,30 @@
 /**
  * Frontend Types - Matching Backend DTOs
  * All interfaces for moderator hierarchy system
+ * 
+ * UNIFIED TYPE HIERARCHY:
+ * - Core User types and ModeratorQuota are defined in types/user.ts
+ * - UserRole is defined in types/roles.ts
+ * - This file extends with moderator-specific and domain types
+ * - Imports unified types to ensure single source of truth
  */
 
-// Role Types
-export type UserRole = 'primary_admin' | 'secondary_admin' | 'moderator' | 'user';
+import type { ModeratorQuota } from './user';
+import type { UserRole } from './roles';
+
+// Re-export ModeratorQuota for convenience (single source of truth)
+export type { ModeratorQuota };
+export type { UserRole };
+
+// Additional status and enum types
 export type MessageStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'read';
 export type PatientStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled';
 export type WhatsAppStatus = 'connected' | 'disconnected' | 'pending';
 export type MessageSessionStatus = 'active' | 'paused' | 'completed' | 'cancelled';
 export type MessageChannel = 'whatsapp' | 'sms' | 'email';
 
-// User Types
+// Legacy/Deprecated: Use user.ts types instead
+// These kept for backward compatibility but should be migrated to types/user.ts
 export interface UserBase {
   id: number;
   username: string;
@@ -33,7 +46,6 @@ export interface ModeratorUser extends UserBase {
   moderatorId: undefined;
 }
 
-// Export for convenience
 export type Moderator = ModeratorUser;
 
 export interface RegularUser extends UserBase {
@@ -43,12 +55,12 @@ export interface RegularUser extends UserBase {
 
 export type User = AdminUser | ModeratorUser | RegularUser;
 
-// Moderator-specific types
+// Moderator-specific extended types
 export interface ModeratorDetails extends ModeratorUser {
   managedUsersCount: number;
   queuesCount: number;
   templatesCount: number;
-  quota: Quota;
+  quota: ModeratorQuota;         // Use unified ModeratorQuota from user.ts
   settings: ModeratorSettings;
   whatsappSession: WhatsAppSession | null;
   lastActivityAt?: Date;
@@ -61,20 +73,6 @@ export interface ModeratorSettings {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-}
-
-export interface Quota {
-  id: number;
-  moderatorUserId: number;
-  messagesQuota: number;
-  consumedMessages: number;
-  queuesQuota: number;
-  consumedQueues: number;
-  remainingMessages: number;
-  remainingQueues: number;
-  updatedAt: Date;
-  isMessagesQuotaLow: boolean;
-  isQueuesQuotaLow: boolean;
 }
 
 // Queue Types

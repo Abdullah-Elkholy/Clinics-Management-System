@@ -4,6 +4,9 @@ import { AuthProvider } from '../contexts/AuthContext';
 import { QueueProvider } from '../contexts/QueueContext';
 import { UIProvider } from '../contexts/UIContext';
 import { ModalProvider } from '../contexts/ModalContext';
+import { ConfirmationProvider } from '../contexts/ConfirmationContext';
+import { InputDialogProvider } from '../contexts/InputDialogContext';
+import { SelectDialogProvider } from '../contexts/SelectDialogContext';
 
 export const metadata: Metadata = {
   title: 'نظام إدارة العيادات الطبية',
@@ -28,7 +31,13 @@ export default function RootLayout({
           <QueueProvider>
             <UIProvider>
               <ModalProvider>
-                {children}
+                <ConfirmationProvider>
+                  <InputDialogProvider>
+                    <SelectDialogProvider>
+                      {children}
+                    </SelectDialogProvider>
+                  </InputDialogProvider>
+                </ConfirmationProvider>
               </ModalProvider>
             </UIProvider>
           </QueueProvider>

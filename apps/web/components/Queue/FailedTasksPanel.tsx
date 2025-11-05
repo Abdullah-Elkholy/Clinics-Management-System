@@ -3,6 +3,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { createBulkDeleteConfirmation, createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { MOCK_FAILED_SESSIONS } from '@/constants/mockData';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
@@ -45,6 +47,7 @@ const FAILED_TASKS_GUIDE_ITEMS = [
 export default function FailedTasksPanel() {
   const { openModal } = useModal();
   const { addToast } = useUI();
+  const { confirm } = useConfirmDialog();
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<number>>>(new Map());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
@@ -222,22 +225,22 @@ export default function FailedTasksPanel() {
   /**
    * Delete all patients - memoized
    */
-  const deleteAllPatients = useCallback(() => {
-    const ok = window.confirm('هل أنت متأكد من حذف جميع المهام الفاشلة؟');
-    if (ok) {
+  const deleteAllPatients = useCallback(async () => {
+    const confirmed = await confirm(createBulkDeleteConfirmation(sessions.length, 'جلسة فاشلة'));
+    if (confirmed) {
       setSessions([]);
       setSelectedPatients(new Map());
       addToast('تم حذف جميع المهام الفاشلة', 'success');
     }
-  }, [addToast]);
+  }, [addToast, confirm, sessions.length]);
 
   /**
    * Delete single session - memoized
    */
-  const deleteSession = useCallback((sessionId: string) => {
+  const deleteSession = useCallback(async (sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId);
-    const ok = window.confirm(`هل أنت متأكد من حذف جلسة ${session?.clinicName}؟`);
-    if (ok) {
+    const confirmed = await confirm(createDeleteConfirmation(`جلسة ${session?.clinicName}`));
+    if (confirmed) {
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       setSelectedPatients((prev) => {
         const newMap = new Map(prev);
@@ -246,7 +249,7 @@ export default function FailedTasksPanel() {
       });
       addToast(`تم حذف جلسة ${session?.clinicName}`, 'success');
     }
-  }, [sessions, addToast]);
+  }, [sessions, addToast, confirm]);
 
   /**
    * Edit patient - memoized
@@ -273,9 +276,9 @@ export default function FailedTasksPanel() {
   /**
    * Delete patient - memoized
    */
-  const handleDeletePatient = useCallback((sessionId: string, patientId: number) => {
-    const ok = window.confirm('هل أنت متأكد من حذف هذا المريض؟');
-    if (ok) {
+  const handleDeletePatient = useCallback(async (sessionId: string, patientId: number) => {
+    const confirmed = await confirm(createDeleteConfirmation('هذا المريض'));
+    if (confirmed) {
       setSessions((prev) =>
         prev.map((s) =>
           s.id === sessionId

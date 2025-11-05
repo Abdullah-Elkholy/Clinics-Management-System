@@ -4,6 +4,9 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
 import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { useSelectDialog } from '@/contexts/SelectDialogContext';
+import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
@@ -57,6 +60,8 @@ export default function MessagesPanel() {
   const { selectedQueueId, queues, messageTemplates } = useQueue();
   const { addToast } = useUI();
   const { openModal } = useModal();
+  const { confirm } = useConfirmDialog();
+  const { select } = useSelectDialog();
 
   // State for search, filtering, sorting
   const [searchTerm, setSearchTerm] = useState('');
@@ -201,9 +206,9 @@ export default function MessagesPanel() {
         title="إدارة قوالب الرسائل"
         description="إدارة قوالب الرسائل لكل طابور بشكل منفصل وسهل"
         stats={[
-          { label: 'إجمالي الرسائل في الحصة', value: MOCK_QUOTA.messagesQuota.total.toString(), color: 'blue' },
-          { label: 'الرسائل المستهلكة', value: MOCK_QUOTA.messagesQuota.consumed.toString(), color: 'yellow' },
-          { label: 'الرسائل المتبقية', value: MOCK_QUOTA.messagesQuota.remaining.toString(), color: 'green' },
+          { label: 'إجمالي الرسائل في الحصة', value: MOCK_QUOTA.messagesQuota.limit.toString(), color: 'blue' },
+          { label: 'الرسائل المستهلكة', value: MOCK_QUOTA.messagesQuota.used.toString(), color: 'yellow' },
+          { label: 'الرسائل المتبقية', value: (MOCK_QUOTA.messagesQuota.limit - MOCK_QUOTA.messagesQuota.used).toString(), color: 'green' },
         ]}
         actions={[]}
       />
@@ -518,7 +523,7 @@ export default function MessagesPanel() {
                                           تحرير
                                         </button>
                                         <button
-                                          onClick={() => {
+                                          onClick={async () => {
                                             // Check if this is the default template (has DEFAULT_ condition)
                                             const templateCondition = MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === template.conditionId);
                                             const isDefault = templateCondition && templateCondition.id.startsWith('DEFAULT_');
@@ -535,11 +540,21 @@ export default function MessagesPanel() {
                                               }
                                               
                                               // Show dialog to select new default
-                                              const newDefaultId = prompt(
-                                                'هذا هو القالب الافتراضي. يرجى اختيار قالب افتراضي جديد قبل الحذف:\n\n' +
-                                                otherTemplates.map((t) => `${t.id}: ${t.title}`).join('\n'),
-                                                otherTemplates[0].id
-                                              );
+                                              const newDefaultId = await select({
+                                                title: 'تحديد القالب الافتراضي الجديد',
+                                                message: 'هذا هو القالب الافتراضي. يرجى اختيار قالب افتراضي جديد قبل الحذف:',
+                                                options: [
+                                                  { id: '', label: 'اختر قالبا' },
+                                                  ...otherTemplates.map((t) => ({
+                                                    id: t.id,
+                                                    label: t.title,
+                                                  }))
+                                                ],
+                                                defaultValue: '',
+                                                confirmText: 'حذف',
+                                                cancelText: 'إلغاء',
+                                                isDangerous: true,
+                                              });
                                               
                                               if (!newDefaultId) {
                                                 return; // User cancelled
@@ -547,7 +562,8 @@ export default function MessagesPanel() {
                                               
                                               addToast('تم حذف القالب: ' + template.title, 'success');
                                             } else {
-                                              if (confirm('هل أنت متأكد من حذف هذا القالب؟')) {
+                                              const confirmed = await confirm(createDeleteConfirmation('القالب: ' + template.title));
+                                              if (confirmed) {
                                                 addToast('تم حذف القالب: ' + template.title, 'success');
                                               }
                                             }

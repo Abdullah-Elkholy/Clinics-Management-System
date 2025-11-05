@@ -3,6 +3,8 @@
 import { useQueue } from '../../contexts/QueueContext';
 import { useUI } from '../../contexts/UIContext';
 import { useModal } from '../../contexts/ModalContext';
+import { useConfirmDialog } from '../../contexts/ConfirmationContext';
+import { createDeleteConfirmation } from '../../utils/confirmationHelpers';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import { SidebarHeader } from './SidebarHeader';
 import { NavigationItem } from './NavigationItem';
@@ -13,6 +15,7 @@ export default function Navigation() {
   const { queues, selectedQueueId, setSelectedQueueId } = useQueue();
   const { currentPanel, setCurrentPanel } = useUI();
   const { openModal } = useModal();
+  const { confirm } = useConfirmDialog();
   const { isCollapsed, toggleCollapse, isHydrated } = useSidebarCollapse();
 
   const isQueueSelected = selectedQueueId !== null;
@@ -24,11 +27,9 @@ export default function Navigation() {
     }
   };
 
-  const handleDeleteQueue = (queueId: string) => {
+  const handleDeleteQueue = async (queueId: string) => {
     const queue = queues.find((q) => q.id === queueId);
-    const isConfirmed = window.confirm(
-      `هل أنت متأكد من حذف الطابور: ${queue?.doctorName}؟\nسيتم حذف جميع البيانات المرتبطة به.`
-    );
+    const isConfirmed = await confirm(createDeleteConfirmation(`${queue?.doctorName || 'الطابور'}`));
     if (isConfirmed) {
       // TODO: Implement delete queue API call
       // For now, just select another queue if this one was selected

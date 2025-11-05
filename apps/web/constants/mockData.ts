@@ -379,21 +379,33 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
 ];
 
 /**
- * Mock Quota Data
- * Contains quota information for message and queue management
+ * Mock Quota Data - UNIFIED STRUCTURE
+ * 
+ * HIERARCHY:
+ * - Quota is tied to a MODERATOR (via moderatorId)
+ * - All users under that moderator consume this quota
+ * - Used for displaying moderator's quota in panels
+ * 
+ * NOTE: This is a representative quota structure.
+ * In practice, each moderator would have their own ModeratorQuota.
  */
 export const MOCK_QUOTA = {
+  id: 'quota-moderator-current',
+  moderatorId: 'current-moderator',
   messagesQuota: {
-    total: 1000,
-    consumed: 450,
-    remaining: 550,
-    percentUsed: 45,
+    limit: 1000,
+    used: 450,
+    percentage: 45,
+    isLow: false,
+    warningThreshold: 80,
   },
   queuesQuota: {
-    total: 10,
-    consumed: 3,
-    remaining: 7,
-    percentUsed: 30,
+    limit: 10,
+    used: 3,
+    percentage: 30,
+    isLow: false,
+    warningThreshold: 80,
   },
-  lastUpdated: new Date(),
+  createdAt: new Date(),
+  updatedAt: new Date(),
 };

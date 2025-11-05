@@ -16,58 +16,45 @@
 import type { UserRole } from './roles';
 
 /**
- * User Quota Tracking
- * Tracks daily/monthly quotas for messages and queues
- */
-export interface UserQuota {
-  id: string;                      // Unique quota identifier
-  userId: string;
-  
-  // Message quotas
-  dailyMessageLimit: number;       // Max messages per day
-  monthlyMessageLimit: number;     // Max messages per month
-  currentDayMessages: number;      // Messages used today
-  currentMonthMessages: number;    // Messages used this month
-  
-  // Queue quotas
-  dailyQueueLimit: number;         // Max new queues per day
-  monthlyQueueLimit: number;       // Max new queues per month
-  currentDayQueues: number;        // New queues created today
-  currentMonthQueues: number;      // New queues created this month
-  
-  // Tracking
-  lastResetDate: Date;             // When daily quota was last reset
-  updatedAt: Date;
-}
-
-/**
- * Moderator Quota Management
- * Extended quota tracking with warnings and detailed metrics for moderators
- * NOTE: Quotas accumulate and never reset - they only increase over time
+ * Moderator Quota Management - SINGLE SOURCE OF TRUTH
+ * 
+ * HIERARCHY & RELATIONSHIP:
+ * - Quotas are directly attached to MODERATORS
+ * - Regular users under that moderator consume the moderator's quota (inherit through hierarchy)
+ * - Each moderator has ONE quota that all their assigned users share
+ * - Quotas accumulate and never reset - they only increase over time
+ * 
+ * FIELD SEMANTICS:
+ * - limit: Total quota allowed (-1 = unlimited)
+ * - used/consumed: Total usage accumulated (never resets)
+ * - remaining: Calculated as limit - used (when limit != -1)
+ * - percentage: (used / limit) * 100 for progress visualization
+ * - isLow: Warning flag when usage exceeds warningThreshold
  */
 export interface ModeratorQuota {
+  // Identity & Association
   id: string;                                // Unique quota identifier
-  moderatorId: string;                       // Associated moderator
+  moderatorId: string;                       // Associated moderator (quota is tied to moderator)
   
   // Message quotas with usage tracking (accumulative, never resets)
   messagesQuota: {
     limit: number;                           // Max total messages allowed (-1 for unlimited)
-    used: number;                            // Total messages used (accumulative, never resets)
-    percentage: number;                      // Usage percentage (0-100)
-    isLow: boolean;                          // Warning if usage exceeds warningThreshold
-    warningThreshold: number;                // Percentage at which to warn (default: 80)
+    used: number;                            // Total messages consumed (accumulative, never resets)
+    percentage: number;                      // Usage percentage (0-100 or >100 if over limit)
+    isLow: boolean;                          // Warning flag: true if percentage >= warningThreshold
+    warningThreshold: number;                // Percentage threshold to trigger warning (default: 80)
   };
   
   // Queue quotas with usage tracking (accumulative, never resets)
   queuesQuota: {
     limit: number;                           // Max total queues allowed (-1 for unlimited)
-    used: number;                            // Total queues used (accumulative, never resets)
-    percentage: number;                      // Usage percentage (0-100)
-    isLow: boolean;                          // Warning if usage exceeds warningThreshold
-    warningThreshold: number;                // Percentage at which to warn (default: 80)
+    used: number;                            // Total queues consumed (accumulative, never resets)
+    percentage: number;                      // Usage percentage (0-100 or >100 if over limit)
+    isLow: boolean;                          // Warning flag: true if percentage >= warningThreshold
+    warningThreshold: number;                // Percentage threshold to trigger warning (default: 80)
   };
   
-  // Tracking (accumulative only, no reset functionality)
+  // Audit and timestamps
   createdAt: Date;                           // When quota was created
   updatedAt: Date;                           // Last time quota was updated
   updatedBy?: string;                        // ID of user who last updated quota
@@ -80,6 +67,11 @@ export interface ModeratorQuota {
  * NOTE: Email and phoneNumber fields removed
  * NOTE: createdBy is nullable for bootstrap users (e.g., primary admin)
  * NOTE: Using firstName and lastName instead of fullName for better data structure
+ * 
+ * HIERARCHY:
+ * - Moderators have quotas directly attached
+ * - Regular users consume their assigned moderator's quota (no personal quota)
+ * - Admins don't have quotas or moderator assignments
  */
 export interface User {
   id: string;                      // Unique user identifier (UUID format)
@@ -94,8 +86,8 @@ export interface User {
   isActive: boolean;               // Whether user can login/perform actions
   
   // Assignment and quota
-  assignedModerator?: string;      // ID of assigned moderator (for regular users)
-  quota?: UserQuota;               // Optional quota tracking (typically for moderators)
+  assignedModerator?: string;      // ID of assigned moderator (for regular users only)
+  moderatorQuota?: ModeratorQuota; // Reference to moderator's quota (for display/hierarchy purposes only)
   
   // Audit and timestamps
   createdBy?: string;              // ID of user who created this account (nullable for bootstrap users)
@@ -107,21 +99,23 @@ export interface User {
 /**
  * Specialized type for Moderator users
  * Ensures moderator-specific fields are present
+ * Moderators always have quota tracking
  */
-export interface ModeratorUser extends Omit<User, 'role'> {
+export interface ModeratorUser extends Omit<User, 'role' | 'assignedModerator' | 'moderatorQuota'> {
   role: typeof UserRole.Moderator;  // Type narrowed to moderator role
   assignedModerator?: undefined;     // Moderators are not assigned to other moderators
-  quota: UserQuota;                  // Moderators always have quota tracking
+  quota: ModeratorQuota;             // Moderators always have their own quota
 }
 
 /**
  * Specialized type for Regular users
  * Ensures user-specific fields are present
+ * Users consume their moderator's quota
  */
 export interface RegularUser extends Omit<User, 'role'> {
   role: typeof UserRole.User;        // Type narrowed to user role
   assignedModerator: string;         // Regular users must be assigned to a moderator
-  quota?: UserQuota;                 // Optional quota for users
+  moderatorQuota: ModeratorQuota;    // Reference to their moderator's quota for consumption
 }
 
 /**
@@ -139,6 +133,9 @@ export interface AdminUser extends Omit<User, 'role'> {
  * createdBy is optional for bootstrap users
  * Using firstName and lastName instead of fullName
  * lastName is optional
+ * 
+ * For moderators: initialQuota is required to set their quota
+ * For regular users: quota is inherited from assigned moderator
  */
 export interface CreateUserPayload {
   username: string;
@@ -146,12 +143,10 @@ export interface CreateUserPayload {
   lastName?: string;               // Optional
   role: UserRole;
   createdBy?: string;              // ID of user creating this account (optional for bootstrap)
-  assignedModerator?: string;
-  initialQuota?: {
-    dailyMessageLimit: number;
-    monthlyMessageLimit: number;
-    dailyQueueLimit: number;
-    monthlyQueueLimit: number;
+  assignedModerator?: string;      // For regular users
+  initialQuota?: {                 // For moderators to set their initial quota
+    messagesLimit: number;
+    queuesLimit: number;
   };
 }
 
@@ -170,13 +165,15 @@ export interface UpdateUserPayload {
 }
 
 /**
- * Quota update payload
+ * Quota update payload - For moderator quota updates
+ * Supports both SET and ADD modes:
+ * - SET: Replace existing limits (used for "set limit")
+ * - ADD: Add to existing limits (used for "add quota")
  */
 export interface UpdateQuotaPayload {
-  dailyMessageLimit?: number;
-  monthlyMessageLimit?: number;
-  dailyQueueLimit?: number;
-  monthlyQueueLimit?: number;
+  messagesLimit?: number;          // New/additional message limit
+  queuesLimit?: number;            // New/additional queues limit
+  mode?: 'set' | 'add';            // SET to replace, ADD to increase (default: set)
 }
 
 /**

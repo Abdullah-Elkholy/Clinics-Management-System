@@ -3,6 +3,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { ModeratorDetails, CreateModeratorRequest, UpdateModeratorRequest, AddUserToModeratorRequest } from '@/types/moderator';
 import moderatorsService from '@/services/moderatorsService';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
@@ -25,6 +27,7 @@ interface ModeratorsState {
  * - Check WhatsApp status
  */
 export default function ModeratorsPanel() {
+  const { confirm } = useConfirmDialog();
   const [state, setState] = useState<ModeratorsState>({
     moderators: [],
     loading: true,
@@ -146,7 +149,8 @@ export default function ModeratorsPanel() {
   }, [state.selectedModerator, editFormData, fetchModerators]);
 
   const handleDeleteModerator = useCallback(async (moderatorId: number) => {
-    if (!confirm('Are you sure you want to delete this moderator?')) return;
+    const confirmed = await confirm(createDeleteConfirmation('المشرف'));
+    if (!confirmed) return;
 
     try {
       const response = await moderatorsService.deleteModerator(moderatorId);
@@ -164,7 +168,7 @@ export default function ModeratorsPanel() {
         error: 'Failed to delete moderator',
       }));
     }
-  }, [fetchModerators]);
+  }, [fetchModerators, confirm]);
 
   const handleAddUserToModerator = useCallback(async () => {
     if (!state.selectedModerator || !userFormData.firstName || !userFormData.lastName || !userFormData.username) {
