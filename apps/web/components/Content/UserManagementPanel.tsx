@@ -1282,6 +1282,305 @@ export default function UserManagementPanel() {
             </div>
           </div>
         )}
+
+        {/* My Users Section - For Moderators */}
+        {activeTab === 'myUsers' && currentUser?.role === UserRole.Moderator && (
+          <div className="space-y-6">
+            {/* My Users Info Header */}
+            <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-green-900 flex items-center gap-2">
+                <i className="fas fa-users"></i>
+                إدارة المستخدمين الخاصين بك
+              </h3>
+              <p className="text-sm text-green-700 mt-2">
+                يمكنك هنا إضافة وتعديل وإدارة بيانات المستخدمين التابعين لك
+              </p>
+            </div>
+
+            {/* Add User Button */}
+            <div>
+              <button
+                onClick={() => handleAddUser(UserRole.User, currentUser.id)}
+                disabled={state.loading}
+                className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+              >
+                <i className="fas fa-plus"></i>
+                <span>إضافة مستخدم جديد</span>
+              </button>
+            </div>
+
+            {/* Users List */}
+            {myManagedUsers.length === 0 ? (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-12 text-center">
+                <i className="fas fa-users text-4xl text-gray-400 mb-4 block"></i>
+                <p className="text-gray-600 mb-2">لا توجد مستخدمون</p>
+                <p className="text-sm text-gray-500">لا يوجد مستخدمون تابعون لك حالياً</p>
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          المستخدم
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          اسم المستخدم
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          المعرف
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          الحالة
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          آخر تسجيل دخول
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          الإجراءات
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {myManagedUsers.map((user) => (
+                        <tr key={user.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                                <i className="fas fa-user text-purple-600"></i>
+                              </div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {user.firstName} {user.lastName}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {user.username}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {user.id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                                user.isActive
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {user.isActive ? 'نشط' : 'غير نشط'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {formatDate(user.lastLogin)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleEditUser(user)}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                                title="تعديل المستخدم"
+                              >
+                                <i className="fas fa-edit"></i>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                                title="حذف المستخدم"
+                              >
+                                <i className="fas fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* WhatsApp Authentication Section - For Moderators and Users */}
+        {activeTab === 'whatsappAuth' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
+          <div className="space-y-6">
+            {/* WhatsApp Auth Header */}
+            <div className="bg-emerald-50 border-2 border-emerald-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-emerald-900 flex items-center gap-2">
+                <i className="fab fa-whatsapp"></i>
+                مصادقة واتساب
+              </h3>
+              <p className="text-sm text-emerald-700 mt-2">
+                قم بربط حسابك بواتساب للبدء في إرسال الرسائل وإدارة قوائم الانتظار
+              </p>
+            </div>
+
+            {/* Authentication Status Card */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <i className="fab fa-whatsapp text-emerald-600 text-xl"></i>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900">حالة الاتصال</h4>
+                    <p className="text-sm text-gray-600">معلومات ربط حسابك بواتساب</p>
+                  </div>
+                </div>
+                <span className="inline-flex px-4 py-2 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                  <i className="fas fa-times-circle ml-2"></i>
+                  غير متصل
+                </span>
+              </div>
+
+              <div className="space-y-4">
+                {/* Last Authentication */}
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-600 font-medium mb-1">آخر مصادقة</p>
+                  <p className="text-sm text-gray-900">لم يتم المصادقة بعد</p>
+                </div>
+
+                {/* Session Info */}
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-600 font-medium mb-1">معلومات الجلسة</p>
+                  <p className="text-sm text-gray-900">لا توجد جلسة نشطة</p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-white hover:bg-emerald-700 transition-colors font-medium"
+                  >
+                    <i className="fab fa-whatsapp"></i>
+                    <span>بدء المصادقة</span>
+                  </button>
+                  <button
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-200 px-6 py-3 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+                    disabled
+                  >
+                    <i className="fas fa-sign-out-alt"></i>
+                    <span>قطع الاتصال</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Instructions Card */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                <i className="fas fa-info-circle"></i>
+                كيفية المصادقة
+              </h4>
+              <ol className="text-sm text-blue-800 space-y-1 mr-4 list-decimal">
+                <li>انقر على زر "بدء المصادقة" أعلاه</li>
+                <li>سيظهر لك رمز QR على الشاشة</li>
+                <li>افتح تطبيق واتساب على هاتفك</li>
+                <li>اذهب إلى الإعدادات {'>'} الأجهزة المرتبطة</li>
+                <li>امسح رمز QR الظاهر على الشاشة</li>
+                <li>انتظر حتى يتم التأكيد والاتصال بنجاح</li>
+              </ol>
+            </div>
+          </div>
+        )}
+
+        {/* Quota Section - For Moderators and Users */}
+        {activeTab === 'quota' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
+          <div className="space-y-6">
+            {/* Quota Header */}
+            <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
+                <i className="fas fa-chart-pie"></i>
+                معلومات الحصة
+              </h3>
+              <p className="text-sm text-indigo-700 mt-2">
+                {currentUser.role === UserRole.Moderator
+                  ? 'اطلع على حصتك من الرسائل وقوائم الانتظار المتاحة'
+                  : 'اطلع على حصة المشرف الخاص بك من الرسائل وقوائم الانتظار'}
+              </p>
+            </div>
+
+            {/* Quota Display */}
+            {currentUser.role === UserRole.Moderator && 'quota' in currentUser ? (
+              <ModeratorQuotaDisplay
+                moderatorId={currentUser.id}
+                quota={(currentUser as any).quota as ModeratorQuota}
+                onEditMessages={() => {}}
+                onEditQueues={() => {}}
+              />
+            ) : (
+              <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+                <i className="fas fa-chart-pie text-4xl text-gray-400 mb-4 block"></i>
+                <p className="text-gray-600 mb-2">لا توجد معلومات حصة</p>
+                <p className="text-sm text-gray-500">
+                  {currentUser.role === UserRole.User
+                    ? 'يتم مشاركة الحصة مع مشرفك'
+                    : 'لم يتم تعيين حصة لحسابك'}
+                </p>
+              </div>
+            )}
+
+            {/* Quota Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white border border-blue-200 rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                      <i className="fas fa-envelope text-blue-600 text-xl"></i>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">حصة الرسائل</p>
+                      <p className="text-2xl font-bold text-gray-900">-</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }}></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
+              </div>
+
+              <div className="bg-white border border-purple-200 rounded-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                      <i className="fas fa-list text-purple-600 text-xl"></i>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">حصة قوائم الانتظار</p>
+                      <p className="text-2xl font-bold text-gray-900">-</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="bg-purple-600 h-2 rounded-full" style={{ width: '0%' }}></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
+              </div>
+            </div>
+
+            {/* Request Extra Quota Info */}
+            {currentUser.role === UserRole.Moderator && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                  <i className="fas fa-exclamation-triangle"></i>
+                  هل تحتاج إلى حصة إضافية؟
+                </h4>
+                <p className="text-sm text-yellow-800 mb-3">
+                  إذا كنت بحاجة إلى زيادة حصتك من الرسائل أو قوائم الانتظار، يمكنك طلب ذلك من المدير
+                </p>
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg bg-yellow-600 px-4 py-2 text-white hover:bg-yellow-700 transition-colors text-sm font-medium"
+                  disabled
+                >
+                  <i className="fas fa-paper-plane"></i>
+                  <span>طلب حصة إضافية (قريباً)</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Log Detail Modal */}
@@ -1381,305 +1680,6 @@ export default function UserManagementPanel() {
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* My Users Section - For Moderators */}
-      {activeTab === 'myUsers' && currentUser?.role === UserRole.Moderator && (
-        <div className="space-y-6">
-          {/* My Users Info Header */}
-          <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-green-900 flex items-center gap-2">
-              <i className="fas fa-users"></i>
-              إدارة المستخدمين الخاصين بك
-            </h3>
-            <p className="text-sm text-green-700 mt-2">
-              يمكنك هنا إضافة وتعديل وإدارة بيانات المستخدمين التابعين لك
-            </p>
-          </div>
-
-          {/* Add User Button */}
-          <div>
-            <button
-              onClick={() => handleAddUser(UserRole.User, currentUser.id)}
-              disabled={state.loading}
-              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-            >
-              <i className="fas fa-plus"></i>
-              <span>إضافة مستخدم جديد</span>
-            </button>
-          </div>
-
-          {/* Users List */}
-          {myManagedUsers.length === 0 ? (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-12 text-center">
-              <i className="fas fa-users text-4xl text-gray-400 mb-4 block"></i>
-              <p className="text-gray-600 mb-2">لا توجد مستخدمون</p>
-              <p className="text-sm text-gray-500">لا يوجد مستخدمون تابعون لك حالياً</p>
-            </div>
-          ) : (
-            <div className="border border-gray-200 rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        المستخدم
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        اسم المستخدم
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        المعرف
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        الحالة
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        آخر تسجيل دخول
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        الإجراءات
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {myManagedUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                              <i className="fas fa-user text-purple-600"></i>
-                            </div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {user.firstName} {user.lastName}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {user.username}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {user.id}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                              user.isActive
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {user.isActive ? 'نشط' : 'غير نشط'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {formatDate(user.lastLogin)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleEditUser(user)}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
-                              title="تعديل المستخدم"
-                            >
-                              <i className="fas fa-edit"></i>
-                            </button>
-                            <button
-                              onClick={() => handleDeleteUser(user)}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-                              title="حذف المستخدم"
-                            >
-                              <i className="fas fa-trash"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* WhatsApp Authentication Section - For Moderators and Users */}
-      {activeTab === 'whatsappAuth' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
-        <div className="space-y-6">
-          {/* WhatsApp Auth Header */}
-          <div className="bg-emerald-50 border-2 border-emerald-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-emerald-900 flex items-center gap-2">
-              <i className="fab fa-whatsapp"></i>
-              مصادقة واتساب
-            </h3>
-            <p className="text-sm text-emerald-700 mt-2">
-              قم بربط حسابك بواتساب للبدء في إرسال الرسائل وإدارة قوائم الانتظار
-            </p>
-          </div>
-
-          {/* Authentication Status Card */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <i className="fab fa-whatsapp text-emerald-600 text-xl"></i>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900">حالة الاتصال</h4>
-                  <p className="text-sm text-gray-600">معلومات ربط حسابك بواتساب</p>
-                </div>
-              </div>
-              <span className="inline-flex px-4 py-2 rounded-full text-sm font-medium bg-red-100 text-red-800">
-                <i className="fas fa-times-circle ml-2"></i>
-                غير متصل
-              </span>
-            </div>
-
-            <div className="space-y-4">
-              {/* Last Authentication */}
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-600 font-medium mb-1">آخر مصادقة</p>
-                <p className="text-sm text-gray-900">لم يتم المصادقة بعد</p>
-              </div>
-
-              {/* Session Info */}
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-600 font-medium mb-1">معلومات الجلسة</p>
-                <p className="text-sm text-gray-900">لا توجد جلسة نشطة</p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-white hover:bg-emerald-700 transition-colors font-medium"
-                >
-                  <i className="fab fa-whatsapp"></i>
-                  <span>بدء المصادقة</span>
-                </button>
-                <button
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-200 px-6 py-3 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
-                  disabled
-                >
-                  <i className="fas fa-sign-out-alt"></i>
-                  <span>قطع الاتصال</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Instructions Card */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
-              <i className="fas fa-info-circle"></i>
-              كيفية المصادقة
-            </h4>
-            <ol className="text-sm text-blue-800 space-y-1 mr-4 list-decimal">
-              <li>انقر على زر "بدء المصادقة" أعلاه</li>
-              <li>سيظهر لك رمز QR على الشاشة</li>
-              <li>افتح تطبيق واتساب على هاتفك</li>
-              <li>اذهب إلى الإعدادات {'>'} الأجهزة المرتبطة</li>
-              <li>امسح رمز QR الظاهر على الشاشة</li>
-              <li>انتظر حتى يتم التأكيد والاتصال بنجاح</li>
-            </ol>
-          </div>
-        </div>
-      )}
-
-      {/* Quota Section - For Moderators and Users */}
-      {activeTab === 'quota' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
-        <div className="space-y-6">
-          {/* Quota Header */}
-          <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
-              <i className="fas fa-chart-pie"></i>
-              معلومات الحصة
-            </h3>
-            <p className="text-sm text-indigo-700 mt-2">
-              {currentUser.role === UserRole.Moderator
-                ? 'اطلع على حصتك من الرسائل وقوائم الانتظار المتاحة'
-                : 'اطلع على حصة المشرف الخاص بك من الرسائل وقوائم الانتظار'}
-            </p>
-          </div>
-
-          {/* Quota Display */}
-          {currentUser.role === UserRole.Moderator && 'quota' in currentUser ? (
-            <ModeratorQuotaDisplay
-              moderatorId={currentUser.id}
-              quota={(currentUser as any).quota as ModeratorQuota}
-              onEditMessages={() => {}}
-              onEditQueues={() => {}}
-            />
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-              <i className="fas fa-chart-pie text-4xl text-gray-400 mb-4 block"></i>
-              <p className="text-gray-600 mb-2">لا توجد معلومات حصة</p>
-              <p className="text-sm text-gray-500">
-                {currentUser.role === UserRole.User
-                  ? 'يتم مشاركة الحصة مع مشرفك'
-                  : 'لم يتم تعيين حصة لحسابك'}
-              </p>
-            </div>
-          )}
-
-          {/* Quota Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white border border-blue-200 rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                    <i className="fas fa-envelope text-blue-600 text-xl"></i>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">حصة الرسائل</p>
-                    <p className="text-2xl font-bold text-gray-900">-</p>
-                  </div>
-                </div>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }}></div>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
-            </div>
-
-            <div className="bg-white border border-purple-200 rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                    <i className="fas fa-list text-purple-600 text-xl"></i>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">حصة قوائم الانتظار</p>
-                    <p className="text-2xl font-bold text-gray-900">-</p>
-                  </div>
-                </div>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className="bg-purple-600 h-2 rounded-full" style={{ width: '0%' }}></div>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
-            </div>
-          </div>
-
-          {/* Request Extra Quota Info */}
-          {currentUser.role === UserRole.Moderator && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
-                <i className="fas fa-exclamation-triangle"></i>
-                هل تحتاج إلى حصة إضافية؟
-              </h4>
-              <p className="text-sm text-yellow-800 mb-3">
-                إذا كنت بحاجة إلى زيادة حصتك من الرسائل أو قوائم الانتظار، يمكنك طلب ذلك من المدير
-              </p>
-              <button
-                className="inline-flex items-center gap-2 rounded-lg bg-yellow-600 px-4 py-2 text-white hover:bg-yellow-700 transition-colors text-sm font-medium"
-                disabled
-              >
-                <i className="fas fa-paper-plane"></i>
-                <span>طلب حصة إضافية (قريباً)</span>
-              </button>
-            </div>
-          )}
         </div>
       )}
 
