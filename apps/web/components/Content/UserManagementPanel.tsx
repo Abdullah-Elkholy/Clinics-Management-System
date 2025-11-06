@@ -8,8 +8,10 @@ import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { User } from '@/services/userManagementService';
 import { ModeratorQuota } from '@/types/user';
+import { useRoleBasedUI } from '@/hooks/useRoleBasedUI';
 import EditUserModal from '@/components/Modals/EditUserModal';
 import EditAccountModal from '@/components/Modals/EditAccountModal';
 import AddUserModal from '@/components/Modals/AddUserModal';
@@ -28,12 +30,14 @@ import moderatorQuotaService from '@/services/moderatorQuotaService';
  * - Collapsible sections per moderator
  */
 export default function UserManagementPanel() {
+  const { user: currentUser } = useAuth();
+  const { permissions, roleInfo } = useRoleBasedUI();
   const [state, actions] = useUserManagement();
   const { openModal } = useModal();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'moderators' | 'secondaryAdmins' | 'accountSettings' | 'logs'>('moderators');
+  const [activeTab, setActiveTab] = useState<'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs'>('moderators');
   const [expandedModerators, setExpandedModerators] = useState<Set<string>>(new Set());
   const [expandedSecondaryAdmins, setExpandedSecondaryAdmins] = useState<Set<string>>(new Set());
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
@@ -47,6 +51,28 @@ export default function UserManagementPanel() {
   useEffect(() => {
     console.log('[UserManagementPanel effect] selectedRole changed to:', selectedRole);
   }, [selectedRole]);
+
+  // Set default tab based on user role
+  useEffect(() => {
+    if (currentUser) {
+      switch (currentUser.role) {
+        case UserRole.PrimaryAdmin:
+          setActiveTab('moderators');
+          break;
+        case UserRole.SecondaryAdmin:
+          setActiveTab('moderators');
+          break;
+        case UserRole.Moderator:
+          setActiveTab('myUsers');
+          break;
+        case UserRole.User:
+          setActiveTab('accountSettings');
+          break;
+        default:
+          setActiveTab('accountSettings');
+      }
+    }
+  }, [currentUser]);
   
   // Quota management state
   const [showQuotaModal, setShowQuotaModal] = useState(false);
@@ -289,6 +315,23 @@ export default function UserManagementPanel() {
   const secondaryAdmins = getSecondaryAdmins();
   const regularUsers = state.users.filter((u) => u.role === UserRole.User);
 
+  // Get current user's managed users (for moderators and users)
+  const myManagedUsers = currentUser?.role === UserRole.Moderator
+    ? getUsersByModerator(currentUser.id)
+    : [];
+
+  // Unified tab styles (padding/colors/hover)
+  const TAB_BASE = 'px-4 py-3 font-medium transition-all border-b-2 inline-flex items-center gap-2';
+  const TAB_INACTIVE = 'border-transparent text-gray-600 hover:text-gray-900';
+  const TAB_ACTIVE = {
+    green: 'border-green-600 text-green-600',
+    orange: 'border-orange-600 text-orange-600',
+    emerald: 'border-emerald-600 text-emerald-600',
+    indigo: 'border-indigo-600 text-indigo-600',
+    blue: 'border-blue-600 text-blue-600',
+    purple: 'border-purple-600 text-purple-600',
+  } as const;
+
   return (
     <>
       {/* Error Alert */}
@@ -300,52 +343,96 @@ export default function UserManagementPanel() {
 
       {/* Content */}
       <div className="p-6">
-        {/* Navigation Tabs */}
+        {/* Navigation Tabs - Role Based */}
         <div className="flex gap-2 mb-6 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('moderators')}
-            className={`px-4 py-3 font-medium transition-all border-b-2 ${
-              activeTab === 'moderators'
-                ? 'border-green-600 text-green-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <i className="fas fa-user-shield ml-2"></i>
-            المشرفون ({moderators.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('secondaryAdmins')}
-            className={`px-4 py-3 font-medium transition-all border-b-2 ${
-              activeTab === 'secondaryAdmins'
-                ? 'border-orange-600 text-orange-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <i className="fas fa-user-tie ml-2"></i>
-            المديرون الثانويون ({secondaryAdmins.length})
-          </button>
+          {/* Moderators Tab - Show for Primary & Secondary Admin */}
+          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
+            <button
+              onClick={() => setActiveTab('moderators')}
+              className={`${TAB_BASE} ${
+                activeTab === 'moderators' ? TAB_ACTIVE.green : TAB_INACTIVE
+              }`}
+            >
+              <i className="fas fa-user-shield"></i>
+              المشرفون ({moderators.length})
+            </button>
+          )}
+
+          {/* My Users Tab - Show for Moderators only */}
+          {currentUser && currentUser.role === UserRole.Moderator && (
+            <button
+              onClick={() => setActiveTab('myUsers')}
+              className={`${TAB_BASE} ${
+                activeTab === 'myUsers' ? TAB_ACTIVE.green : TAB_INACTIVE
+              }`}
+            >
+              <i className="fas fa-users"></i>
+              المستخدمون ({myManagedUsers.length})
+            </button>
+          )}
+
+          {/* Secondary Admins Tab - Show for Primary Admin only */}
+          {currentUser && currentUser.role === UserRole.PrimaryAdmin && (
+            <button
+              onClick={() => setActiveTab('secondaryAdmins')}
+              className={`${TAB_BASE} ${
+                activeTab === 'secondaryAdmins' ? TAB_ACTIVE.orange : TAB_INACTIVE
+              }`}
+            >
+              <i className="fas fa-user-tie"></i>
+              المديرون الثانويون ({secondaryAdmins.length})
+            </button>
+          )}
+
+          {/* WhatsApp Auth Tab - Show for Moderators and Users */}
+          {currentUser && (currentUser.role === UserRole.Moderator || currentUser.role === UserRole.User) && (
+            <button
+              onClick={() => setActiveTab('whatsappAuth')}
+              className={`${TAB_BASE} ${
+                activeTab === 'whatsappAuth' ? TAB_ACTIVE.emerald : TAB_INACTIVE
+              }`}
+            >
+              <i className="fab fa-whatsapp"></i>
+              مصادقة واتساب
+            </button>
+          )}
+
+          {/* Quota Tab - Show for Moderators and Users */}
+          {currentUser && (currentUser.role === UserRole.Moderator || currentUser.role === UserRole.User) && (
+            <button
+              onClick={() => setActiveTab('quota')}
+              className={`${TAB_BASE} ${
+                activeTab === 'quota' ? TAB_ACTIVE.indigo : TAB_INACTIVE
+              }`}
+            >
+              <i className="fas fa-chart-pie"></i>
+              الحصة
+            </button>
+          )}
+
+          {/* Account Settings Tab - Show for all */}
           <button
             onClick={() => setActiveTab('accountSettings')}
-            className={`px-4 py-3 font-medium transition-all border-b-2 ${
-              activeTab === 'accountSettings'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
+            className={`${TAB_BASE} ${
+              activeTab === 'accountSettings' ? TAB_ACTIVE.blue : TAB_INACTIVE
             }`}
           >
-            <i className="fas fa-user-cog ml-2"></i>
+            <i className="fas fa-user-cog"></i>
             معلومات الحساب
           </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-3 font-medium transition-all border-b-2 ${
-              activeTab === 'logs'
-                ? 'border-purple-600 text-purple-600'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            <i className="fas fa-history ml-2"></i>
-            السجلات
-          </button>
+
+          {/* Logs Tab - Show for Admins and Moderators */}
+          {currentUser && currentUser.role !== UserRole.User && (
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`${TAB_BASE} ${
+                activeTab === 'logs' ? TAB_ACTIVE.purple : TAB_INACTIVE
+              }`}
+            >
+              <i className="fas fa-history"></i>
+              السجلات
+            </button>
+          )}
         </div>
 
         {/* Loading State */}
@@ -370,9 +457,9 @@ export default function UserManagementPanel() {
 
         {/* Moderators Section */}
         {activeTab === 'moderators' && (
-          <>
+          <div className="space-y-6">
             {/* Moderators Info Header */}
-            <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 mb-6">
+            <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-green-900 flex items-center gap-2">
                 <i className="fas fa-user-shield"></i>
                 إدارة المشرفون ومستخدميهم
@@ -384,7 +471,7 @@ export default function UserManagementPanel() {
 
             {/* Add Moderator Button */}
             {moderators.length > 0 && (
-              <div className="mb-4">
+              <div>
                 <button
                   onClick={() => handleAddUser(UserRole.Moderator)}
                   disabled={state.loading}
@@ -573,14 +660,14 @@ export default function UserManagementPanel() {
             })}
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* Secondary Admins Section */}
         {activeTab === 'secondaryAdmins' && (
-          <>
+          <div className="space-y-6">
             {/* Secondary Admins Info Header */}
-            <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-4 mb-6">
+            <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-orange-900 flex items-center gap-2">
                 <i className="fas fa-user-tie"></i>
                 إدارة المديرين الثانويين
@@ -605,7 +692,7 @@ export default function UserManagementPanel() {
             {secondaryAdmins.length > 0 && (
               <>
                 {/* Add Secondary Admin Button */}
-                <div className="mb-4">
+                <div>
                   <button
                     onClick={() => handleAddUser(UserRole.SecondaryAdmin)}
                     disabled={state.loading}
@@ -697,7 +784,7 @@ export default function UserManagementPanel() {
                 </div>
               </>
             )}
-          </>
+          </div>
         )}
 
         {/* Account Settings Section */}
@@ -805,10 +892,12 @@ export default function UserManagementPanel() {
             <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-purple-900 flex items-center gap-2">
                 <i className="fas fa-history"></i>
-                سجلات النظام
+                {currentUser?.role === UserRole.Moderator ? 'سجلات العمليات' : 'سجلات النظام'}
               </h3>
               <p className="text-sm text-purple-700 mt-2">
-                اعرض سجلات النظام مع مستويات الخطورة والرسائل المفصلة
+                {currentUser?.role === UserRole.Moderator
+                  ? 'اعرض سجلات العمليات والأنشطة الخاصة بحسابك فقط'
+                  : 'اعرض سجلات النظام مع مستويات الخطورة والرسائل المفصلة'}
               </p>
             </div>
 
@@ -1292,6 +1381,305 @@ export default function UserManagementPanel() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* My Users Section - For Moderators */}
+      {activeTab === 'myUsers' && currentUser?.role === UserRole.Moderator && (
+        <div className="space-y-6">
+          {/* My Users Info Header */}
+          <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-green-900 flex items-center gap-2">
+              <i className="fas fa-users"></i>
+              إدارة المستخدمين الخاصين بك
+            </h3>
+            <p className="text-sm text-green-700 mt-2">
+              يمكنك هنا إضافة وتعديل وإدارة بيانات المستخدمين التابعين لك
+            </p>
+          </div>
+
+          {/* Add User Button */}
+          <div>
+            <button
+              onClick={() => handleAddUser(UserRole.User, currentUser.id)}
+              disabled={state.loading}
+              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+            >
+              <i className="fas fa-plus"></i>
+              <span>إضافة مستخدم جديد</span>
+            </button>
+          </div>
+
+          {/* Users List */}
+          {myManagedUsers.length === 0 ? (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-12 text-center">
+              <i className="fas fa-users text-4xl text-gray-400 mb-4 block"></i>
+              <p className="text-gray-600 mb-2">لا توجد مستخدمون</p>
+              <p className="text-sm text-gray-500">لا يوجد مستخدمون تابعون لك حالياً</p>
+            </div>
+          ) : (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        المستخدم
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        اسم المستخدم
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        المعرف
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        الحالة
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        آخر تسجيل دخول
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        الإجراءات
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {myManagedUsers.map((user) => (
+                      <tr key={user.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                              <i className="fas fa-user text-purple-600"></i>
+                            </div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {user.firstName} {user.lastName}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {user.username}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {user.id}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
+                              user.isActive
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            {user.isActive ? 'نشط' : 'غير نشط'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {formatDate(user.lastLogin)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEditUser(user)}
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                              title="تعديل المستخدم"
+                            >
+                              <i className="fas fa-edit"></i>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUser(user)}
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                              title="حذف المستخدم"
+                            >
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* WhatsApp Authentication Section - For Moderators and Users */}
+      {activeTab === 'whatsappAuth' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
+        <div className="space-y-6">
+          {/* WhatsApp Auth Header */}
+          <div className="bg-emerald-50 border-2 border-emerald-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-emerald-900 flex items-center gap-2">
+              <i className="fab fa-whatsapp"></i>
+              مصادقة واتساب
+            </h3>
+            <p className="text-sm text-emerald-700 mt-2">
+              قم بربط حسابك بواتساب للبدء في إرسال الرسائل وإدارة قوائم الانتظار
+            </p>
+          </div>
+
+          {/* Authentication Status Card */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <i className="fab fa-whatsapp text-emerald-600 text-xl"></i>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-900">حالة الاتصال</h4>
+                  <p className="text-sm text-gray-600">معلومات ربط حسابك بواتساب</p>
+                </div>
+              </div>
+              <span className="inline-flex px-4 py-2 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                <i className="fas fa-times-circle ml-2"></i>
+                غير متصل
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              {/* Last Authentication */}
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-600 font-medium mb-1">آخر مصادقة</p>
+                <p className="text-sm text-gray-900">لم يتم المصادقة بعد</p>
+              </div>
+
+              {/* Session Info */}
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-600 font-medium mb-1">معلومات الجلسة</p>
+                <p className="text-sm text-gray-900">لا توجد جلسة نشطة</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-white hover:bg-emerald-700 transition-colors font-medium"
+                >
+                  <i className="fab fa-whatsapp"></i>
+                  <span>بدء المصادقة</span>
+                </button>
+                <button
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-200 px-6 py-3 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+                  disabled
+                >
+                  <i className="fas fa-sign-out-alt"></i>
+                  <span>قطع الاتصال</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Instructions Card */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+              <i className="fas fa-info-circle"></i>
+              كيفية المصادقة
+            </h4>
+            <ol className="text-sm text-blue-800 space-y-1 mr-4 list-decimal">
+              <li>انقر على زر "بدء المصادقة" أعلاه</li>
+              <li>سيظهر لك رمز QR على الشاشة</li>
+              <li>افتح تطبيق واتساب على هاتفك</li>
+              <li>اذهب إلى الإعدادات {'>'} الأجهزة المرتبطة</li>
+              <li>امسح رمز QR الظاهر على الشاشة</li>
+              <li>انتظر حتى يتم التأكيد والاتصال بنجاح</li>
+            </ol>
+          </div>
+        </div>
+      )}
+
+      {/* Quota Section - For Moderators and Users */}
+      {activeTab === 'quota' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
+        <div className="space-y-6">
+          {/* Quota Header */}
+          <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
+              <i className="fas fa-chart-pie"></i>
+              معلومات الحصة
+            </h3>
+            <p className="text-sm text-indigo-700 mt-2">
+              {currentUser.role === UserRole.Moderator
+                ? 'اطلع على حصتك من الرسائل وقوائم الانتظار المتاحة'
+                : 'اطلع على حصة المشرف الخاص بك من الرسائل وقوائم الانتظار'}
+            </p>
+          </div>
+
+          {/* Quota Display */}
+          {currentUser.role === UserRole.Moderator && 'quota' in currentUser ? (
+            <ModeratorQuotaDisplay
+              moderatorId={currentUser.id}
+              quota={(currentUser as any).quota as ModeratorQuota}
+              onEditMessages={() => {}}
+              onEditQueues={() => {}}
+            />
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+              <i className="fas fa-chart-pie text-4xl text-gray-400 mb-4 block"></i>
+              <p className="text-gray-600 mb-2">لا توجد معلومات حصة</p>
+              <p className="text-sm text-gray-500">
+                {currentUser.role === UserRole.User
+                  ? 'يتم مشاركة الحصة مع مشرفك'
+                  : 'لم يتم تعيين حصة لحسابك'}
+              </p>
+            </div>
+          )}
+
+          {/* Quota Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white border border-blue-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-envelope text-blue-600 text-xl"></i>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">حصة الرسائل</p>
+                    <p className="text-2xl font-bold text-gray-900">-</p>
+                  </div>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }}></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
+            </div>
+
+            <div className="bg-white border border-purple-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-list text-purple-600 text-xl"></i>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">حصة قوائم الانتظار</p>
+                    <p className="text-2xl font-bold text-gray-900">-</p>
+                  </div>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="bg-purple-600 h-2 rounded-full" style={{ width: '0%' }}></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
+            </div>
+          </div>
+
+          {/* Request Extra Quota Info */}
+          {currentUser.role === UserRole.Moderator && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                <i className="fas fa-exclamation-triangle"></i>
+                هل تحتاج إلى حصة إضافية؟
+              </h4>
+              <p className="text-sm text-yellow-800 mb-3">
+                إذا كنت بحاجة إلى زيادة حصتك من الرسائل أو قوائم الانتظار، يمكنك طلب ذلك من المدير
+              </p>
+              <button
+                className="inline-flex items-center gap-2 rounded-lg bg-yellow-600 px-4 py-2 text-white hover:bg-yellow-700 transition-colors text-sm font-medium"
+                disabled
+              >
+                <i className="fas fa-paper-plane"></i>
+                <span>طلب حصة إضافية (قريباً)</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

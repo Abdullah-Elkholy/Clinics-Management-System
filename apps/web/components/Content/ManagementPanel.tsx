@@ -4,55 +4,103 @@ import { PanelWrapper } from '../Common/PanelWrapper';
 import { PanelHeader } from '../Common/PanelHeader';
 import UserManagementPanel from './UserManagementPanel';
 import { useUserManagement } from '@/hooks/useUserManagement';
+import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/types/roles';
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { title } from 'process';
 
 export default function ManagementPanel() {
+  const { user: currentUser } = useAuth();
   const [state, actions] = useUserManagement();
 
   useEffect(() => {
     actions.fetchUsers();
   }, []);
 
-  // Calculate stats
-  const moderatorCount = state.users.filter((u) => u.role === UserRole.Moderator).length;
-  const secondaryAdminCount = state.users.filter((u) => u.role === UserRole.SecondaryAdmin).length;
-  const regularUserCount = state.users.filter((u) => u.role === UserRole.User).length;
-  const totalUsers = state.users.length;
+  // Memoize stats calculations to prevent unnecessary re-renders
+  const stats = useMemo(() => {
+    const moderators = state.users.filter((u) => u.role === UserRole.Moderator);
+    const secondaryAdmins = state.users.filter((u) => u.role === UserRole.SecondaryAdmin);
+    const regularUsers = state.users.filter((u) => u.role === UserRole.User);
+
+    return {
+      moderators,
+      secondaryAdmins,
+      regularUsers,
+    };
+  }, [state.users]);
+
+  // Get users managed by a specific moderator
+  const getUsersByModerator = (moderatorId: string): any[] => {
+    return state.users.filter(
+      (u) => u.role === UserRole.User && u.assignedModerator === moderatorId
+    );
+  };
+
+  // Get current user's managed users
+  const myManagedUsers = useMemo(() => {
+    return currentUser?.role === UserRole.Moderator
+      ? getUsersByModerator(currentUser.id)
+      : [];
+  }, [currentUser?.id, currentUser?.role, state.users]);
+
+  // Get panel header props based on role
+  const getPanelHeaderProps = () => {
+    if (!currentUser) return { title: 'إدارة المستخدمين', stats: [] };
+
+    switch (currentUser.role) {
+      case UserRole.PrimaryAdmin:
+        return {
+          title: 'إدارة المستخدمين',
+          description: 'إدارة حسابك والمديرين والمشرفين والمستخدمين',
+          icon: 'fa-users-cog',
+          stats: [
+            { label: 'إجمالي المستخدمين', value: state.users.length, color: 'blue' as const, icon: 'fa-users' },
+            { label: 'المديرون الثانويون', value: stats.secondaryAdmins.length, color: 'yellow' as const, icon: 'fa-user-tie' },
+            { label: 'المشرفون', value: stats.moderators.length, color: 'green' as const, icon: 'fa-user-shield' },
+            { label: 'المستخدمون العاديون', value: stats.regularUsers.length, color: 'purple' as const, icon: 'fa-user' },
+          ],
+        };
+
+      case UserRole.SecondaryAdmin:
+        return {
+          title: 'إدارة المستخدمين',
+          description: 'إدارة حسابك والمشرفين والمستخدمين الخاصين بهم',
+          icon: 'fa-users-cog',
+          stats: [
+            { label: 'إجمالي المستخدمين', value: state.users.length, color: 'blue' as const, icon: 'fa-users' },
+            { label: 'المشرفون', value: stats.moderators.length, color: 'green' as const, icon: 'fa-user-shield' },
+            { label: 'المستخدمون العاديون', value: stats.regularUsers.length, color: 'purple' as const, icon: 'fa-user' },
+          ],
+        };
+
+      case UserRole.Moderator:
+        return {
+          title: 'إدارة الحساب والمستخدمين',
+          description: 'إدارة حسابك والمستخدمين الخاصين بك',
+          icon: 'fa-users',
+          stats: [
+            { label: 'إجمالي المستخدمين الخاصين بك', value: myManagedUsers.length, color: 'green' as const, icon: 'fa-users' },
+            { label: 'المستخدمون النشطون', value: myManagedUsers.filter(u => u.isActive).length, color: 'blue' as const, icon: 'fa-user-check' },
+          ],
+        };
+
+      case UserRole.User:
+        return {
+          title: 'إدارة الحساب',
+          description: 'إدارة إعدادات حسابك والاطلاع على معلومات الحصة ومصادقة الواتساب.',
+          icon: 'fa-user-circle',
+          stats: [],
+        };
+
+      default:
+        return { title: 'إدارة المستخدمين', stats: [] };
+    }
+  };
 
   return (
     <PanelWrapper>
-      <PanelHeader
-        title="إدارة المستخدمين"
-        icon="fa-users"
-        description="إدارة المديرين والمشرفين والمستخدمين"
-        stats={[
-          {
-            label: 'إجمالي المستخدمين',
-            value: totalUsers,
-            icon: 'fa-users',
-            color: 'blue',
-          },
-          {
-            label: 'المديرون الثانويون',
-            value: secondaryAdminCount,
-            icon: 'fa-user-tie',
-            color: 'yellow',
-          },
-          {
-            label: 'المشرفون',
-            value: moderatorCount,
-            icon: 'fa-user-shield',
-            color: 'green',
-          },
-          {
-            label: 'المستخدمون العاديون',
-            value: regularUserCount,
-            icon: 'fa-user',
-            color: 'purple',
-          },
-        ]}
-      />
+      <PanelHeader {...getPanelHeaderProps()} />
       <UserManagementPanel />
     </PanelWrapper>
   );

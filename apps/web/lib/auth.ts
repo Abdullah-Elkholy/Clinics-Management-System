@@ -5,12 +5,23 @@ import { TEST_CREDENTIALS } from '../constants';
 export const authenticateUser = (username: string, password: string): User | null => {
   for (const [key, cred] of Object.entries(TEST_CREDENTIALS)) {
     if (cred.username === username && cred.password === password) {
+      // Normalize legacy role values to the canonical enum
+      const legacyRole = String(cred.role);
+      const normalizedRole: UserRoleEnum =
+        legacyRole === 'admin'
+          ? UserRoleEnum.PrimaryAdmin
+          : legacyRole === 'admin2'
+          ? UserRoleEnum.SecondaryAdmin
+          : legacyRole === 'moderator'
+          ? UserRoleEnum.Moderator
+          : UserRoleEnum.User;
+
       return {
         id: key.toLowerCase(),
         username: cred.username,
         firstName: cred.firstName,
         lastName: cred.lastName,
-        role: cred.role as UserRole,
+        role: normalizedRole as unknown as UserRole,
         isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
