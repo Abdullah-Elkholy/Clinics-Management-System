@@ -22,8 +22,8 @@
 
 import { UserRole } from '@/types/roles';
 // Import canonical User type from dedicated file
-export type { User, UserQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
-import type { User, UserQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
+export type { User, ModeratorQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
+import type { User, ModeratorQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
 
 /**
  * Service response wrapper
@@ -295,259 +295,367 @@ const mockUsers: User[] = [
 ];
 
 /**
- * Mock quotas
+ * Mock quotas - Now only for moderators
  */
-const mockQuotas: Record<string, UserQuota> = {
+const mockQuotas: Record<string, ModeratorQuota> = {
   '3': {
     id: 'quota_3',
-    userId: '3',
-    dailyMessageLimit: 100,
-    monthlyMessageLimit: 2000,
-    currentDayMessages: 45,
-    currentMonthMessages: 890,
-    dailyQueueLimit: 20,
-    monthlyQueueLimit: 400,
-    currentMonthQueues: 287,
-    currentDayQueues: 15,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '3',
+    messagesQuota: {
+      limit: 2000,
+      used: 890,
+      percentage: 45,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 400,
+      used: 287,
+      percentage: 72,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T10:30:00'),
   },
   '4': {
     id: 'quota_4',
-    userId: '4',
-    dailyMessageLimit: 100,
-    monthlyMessageLimit: 2000,
-    currentDayMessages: 32,
-    currentMonthMessages: 1520,
-    dailyQueueLimit: 20,
-    monthlyQueueLimit: 400,
-    currentMonthQueues: 145,
-    currentDayQueues: 8,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '4',
+    messagesQuota: {
+      limit: 2000,
+      used: 1520,
+      percentage: 76,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 400,
+      used: 145,
+      percentage: 36,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T09:15:00'),
   },
   '5': {
     id: 'quota_5',
-    userId: '5',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 20,
-    currentMonthMessages: 450,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 89,
-    currentDayQueues: 5,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '5',
+    messagesQuota: {
+      limit: 1000,
+      used: 450,
+      percentage: 45,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 89,
+      percentage: 45,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T08:45:00'),
   },
   '6': {
     id: 'quota_6',
-    userId: '6',
-    dailyMessageLimit: 100,
-    monthlyMessageLimit: 2000,
-    currentDayMessages: 68,
-    currentMonthMessages: 1680,
-    dailyQueueLimit: 20,
-    monthlyQueueLimit: 400,
-    currentMonthQueues: 312,
-    currentDayQueues: 18,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '6',
+    messagesQuota: {
+      limit: 2000,
+      used: 1680,
+      percentage: 84,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 400,
+      used: 312,
+      percentage: 78,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T11:20:00'),
   },
   '7': {
     id: 'quota_7',
-    userId: '7',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 28,
-    currentMonthMessages: 750,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 156,
-    currentDayQueues: 9,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '7',
+    messagesQuota: {
+      limit: 1000,
+      used: 750,
+      percentage: 75,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 156,
+      percentage: 78,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T07:30:00'),
   },
   '8': {
     id: 'quota_8',
-    userId: '8',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 15,
-    currentMonthMessages: 520,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 78,
-    currentDayQueues: 4,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '8',
+    messagesQuota: {
+      limit: 1000,
+      used: 520,
+      percentage: 52,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 78,
+      percentage: 39,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T06:00:00'),
   },
   '9': {
     id: 'quota_9',
-    userId: '9',
-    dailyMessageLimit: 100,
-    monthlyMessageLimit: 2000,
-    currentDayMessages: 55,
-    currentMonthMessages: 1680,
-    dailyQueueLimit: 20,
-    monthlyQueueLimit: 400,
-    currentMonthQueues: 234,
-    currentDayQueues: 12,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '9',
+    messagesQuota: {
+      limit: 2000,
+      used: 1680,
+      percentage: 84,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 400,
+      used: 234,
+      percentage: 59,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T10:45:00'),
   },
   '10': {
     id: 'quota_10',
-    userId: '10',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 22,
-    currentMonthMessages: 580,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 92,
-    currentDayQueues: 6,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '10',
+    messagesQuota: {
+      limit: 1000,
+      used: 580,
+      percentage: 58,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 92,
+      percentage: 46,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T12:00:00'),
   },
   '11': {
     id: 'quota_11',
-    userId: '11',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 35,
-    currentMonthMessages: 720,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 145,
-    currentDayQueues: 7,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '11',
+    messagesQuota: {
+      limit: 1000,
+      used: 720,
+      percentage: 72,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 145,
+      percentage: 73,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T09:00:00'),
   },
   '12': {
     id: 'quota_12',
-    userId: '12',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 0,
-    currentMonthMessages: 320,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 65,
-    currentDayQueues: 0,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '12',
+    messagesQuota: {
+      limit: 1000,
+      used: 320,
+      percentage: 32,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 65,
+      percentage: 33,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T04:30:00'),
   },
   '13': {
     id: 'quota_13',
-    userId: '13',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 42,
-    currentMonthMessages: 890,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 178,
-    currentDayQueues: 10,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '13',
+    messagesQuota: {
+      limit: 1000,
+      used: 890,
+      percentage: 89,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 178,
+      percentage: 89,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T11:30:00'),
   },
   '14': {
     id: 'quota_14',
-    userId: '14',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 18,
-    currentMonthMessages: 615,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 123,
-    currentDayQueues: 5,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '14',
+    messagesQuota: {
+      limit: 1000,
+      used: 615,
+      percentage: 62,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 123,
+      percentage: 62,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T08:15:00'),
   },
   '15': {
     id: 'quota_15',
-    userId: '15',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 48,
-    currentMonthMessages: 990,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 198,
-    currentDayQueues: 9,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '15',
+    messagesQuota: {
+      limit: 1000,
+      used: 990,
+      percentage: 99,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 198,
+      percentage: 99,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T13:00:00'),
   },
   '16': {
     id: 'quota_16',
-    userId: '16',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 25,
-    currentMonthMessages: 435,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 87,
-    currentDayQueues: 6,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '16',
+    messagesQuota: {
+      limit: 1000,
+      used: 435,
+      percentage: 44,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 87,
+      percentage: 44,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T07:45:00'),
   },
   '17': {
     id: 'quota_17',
-    userId: '17',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 32,
-    currentMonthMessages: 670,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 134,
-    currentDayQueues: 8,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '17',
+    messagesQuota: {
+      limit: 1000,
+      used: 670,
+      percentage: 67,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 134,
+      percentage: 67,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T10:00:00'),
   },
   '18': {
     id: 'quota_18',
-    userId: '18',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 0,
-    currentMonthMessages: 225,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 45,
-    currentDayQueues: 0,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '18',
+    messagesQuota: {
+      limit: 1000,
+      used: 225,
+      percentage: 23,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 45,
+      percentage: 23,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T05:00:00'),
   },
   '19': {
     id: 'quota_19',
-    userId: '19',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 38,
-    currentMonthMessages: 835,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 167,
-    currentDayQueues: 9,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '19',
+    messagesQuota: {
+      limit: 1000,
+      used: 835,
+      percentage: 84,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 167,
+      percentage: 84,
+      isLow: true,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T11:45:00'),
   },
   '20': {
     id: 'quota_20',
-    userId: '20',
-    dailyMessageLimit: 50,
-    monthlyMessageLimit: 1000,
-    currentDayMessages: 28,
-    currentMonthMessages: 560,
-    dailyQueueLimit: 10,
-    monthlyQueueLimit: 200,
-    currentMonthQueues: 112,
-    currentDayQueues: 7,
-    lastResetDate: new Date('2024-10-24'),
+    moderatorId: '20',
+    messagesQuota: {
+      limit: 1000,
+      used: 560,
+      percentage: 56,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    queuesQuota: {
+      limit: 200,
+      used: 112,
+      percentage: 56,
+      isLow: false,
+      warningThreshold: 80,
+    },
+    createdAt: new Date('2024-10-24'),
     updatedAt: new Date('2024-10-24T09:30:00'),
   },
 };
@@ -559,12 +667,12 @@ const mockQuotas: Record<string, UserQuota> = {
  */
 class UserManagementService {
   private users: Map<string, User> = new Map();
-  private quotas: Map<string, UserQuota> = new Map();
+  private quotas: Map<string, ModeratorQuota> = new Map();
 
   constructor() {
     // Initialize with mock data
     mockUsers.forEach((user) => this.users.set(user.id, { ...user }));
-    Object.values(mockQuotas).forEach((quota) => this.quotas.set(quota.userId, { ...quota }));
+    Object.values(mockQuotas).forEach((quota) => this.quotas.set(quota.moderatorId, { ...quota }));
   }
 
   /**
@@ -654,41 +762,30 @@ class UserManagementService {
 
       this.users.set(newUser.id, newUser);
 
-      // Create default quota for moderators and users
+      // Create default quota for moderators only
+      // Regular users consume their moderator's quota (no personal quota)
       if (payload.role === UserRole.Moderator) {
-        const moderatorQuota: UserQuota = {
+        const moderatorQuota: ModeratorQuota = {
           id: `quota_${newUser.id}`,
-          userId: newUser.id,
-          dailyMessageLimit: payload.initialQuota?.dailyMessageLimit ?? 100,
-          monthlyMessageLimit: payload.initialQuota?.monthlyMessageLimit ?? 2000,
-          currentDayMessages: 0,
-          currentMonthMessages: 0,
-          dailyQueueLimit: payload.initialQuota?.dailyQueueLimit ?? 20,
-          monthlyQueueLimit: payload.initialQuota?.monthlyQueueLimit ?? 400,
-          currentMonthQueues: 0,
-          currentDayQueues: 0,
-          lastResetDate: new Date(),
+          moderatorId: newUser.id,
+          messagesQuota: {
+            limit: payload.initialQuota?.messagesLimit ?? 1000,
+            used: 0,
+            percentage: 0,
+            isLow: false,
+            warningThreshold: 80,
+          },
+          queuesQuota: {
+            limit: payload.initialQuota?.queuesLimit ?? 20,
+            used: 0,
+            percentage: 0,
+            isLow: false,
+            warningThreshold: 80,
+          },
+          createdAt: new Date(),
           updatedAt: new Date(),
         };
         this.quotas.set(newUser.id, moderatorQuota);
-        newUser.quota = moderatorQuota;
-      } else if (payload.role === UserRole.User) {
-        const userQuota: UserQuota = {
-          id: `quota_${newUser.id}`,
-          userId: newUser.id,
-          dailyMessageLimit: payload.initialQuota?.dailyMessageLimit ?? 50,
-          monthlyMessageLimit: payload.initialQuota?.monthlyMessageLimit ?? 1000,
-          currentDayMessages: 0,
-          currentMonthMessages: 0,
-          dailyQueueLimit: payload.initialQuota?.dailyQueueLimit ?? 10,
-          monthlyQueueLimit: payload.initialQuota?.monthlyQueueLimit ?? 200,
-          currentMonthQueues: 0,
-          currentDayQueues: 0,
-          lastResetDate: new Date(),
-          updatedAt: new Date(),
-        };
-        this.quotas.set(newUser.id, userQuota);
-        newUser.quota = userQuota;
       }
 
       return { success: true, data: newUser };
@@ -758,13 +855,14 @@ class UserManagementService {
   }
 
   /**
-   * Get user quota
+   * Get moderator quota
+   * Returns the quota for a moderator (users don't have personal quotas)
    */
-  async getQuota(userId: string): Promise<UserServiceResponse<UserQuota>> {
+  async getQuota(moderatorId: string): Promise<UserServiceResponse<ModeratorQuota>> {
     try {
-      const quota = this.quotas.get(userId);
+      const quota = this.quotas.get(moderatorId);
       if (!quota) {
-        return { success: false, error: `Quota for user ${userId} not found` };
+        return { success: false, error: `Quota for moderator ${moderatorId} not found` };
       }
       return { success: true, data: { ...quota } };
     } catch (error) {
@@ -776,26 +874,32 @@ class UserManagementService {
   }
 
   /**
-   * Update user quota limits
+   * Update moderator quota limits
    */
   async updateQuotaLimits(
-    userId: string,
-    limits: { dailyLimit?: number; monthlyLimit?: number }
-  ): Promise<UserServiceResponse<UserQuota>> {
+    moderatorId: string,
+    limits: { messagesLimit?: number; queuesLimit?: number }
+  ): Promise<UserServiceResponse<ModeratorQuota>> {
     try {
-      const quota = this.quotas.get(userId);
+      const quota = this.quotas.get(moderatorId);
       if (!quota) {
-        return { success: false, error: `Quota for user ${userId} not found` };
+        return { success: false, error: `Quota for moderator ${moderatorId} not found` };
       }
 
-      const updated: UserQuota = {
+      const updated: ModeratorQuota = {
         ...quota,
-        ...(limits.dailyLimit !== undefined && { dailyQueueLimit: limits.dailyLimit }),
-        ...(limits.monthlyLimit !== undefined && { monthlyQueueLimit: limits.monthlyLimit }),
+        messagesQuota: {
+          ...quota.messagesQuota,
+          ...(limits.messagesLimit !== undefined && { limit: limits.messagesLimit }),
+        },
+        queuesQuota: {
+          ...quota.queuesQuota,
+          ...(limits.queuesLimit !== undefined && { limit: limits.queuesLimit }),
+        },
         updatedAt: new Date(),
       };
 
-      this.quotas.set(userId, updated);
+      this.quotas.set(moderatorId, updated);
       return { success: true, data: updated };
     } catch (error) {
       return {

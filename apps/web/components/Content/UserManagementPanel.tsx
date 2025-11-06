@@ -484,26 +484,7 @@ export default function UserManagementPanel() {
                       <div className="px-6 py-4 border-b border-gray-200">
                         <ModeratorQuotaDisplay
                           moderatorId={moderator.id}
-                          quota={moderator.quota ? {
-                            ...moderator.quota,
-                            moderatorId: moderator.id,
-                            messagesQuota: {
-                              limit: -1,
-                              used: 0,
-                              percentage: 0,
-                              isLow: false,
-                              warningThreshold: 80,
-                            },
-                            queuesQuota: {
-                              limit: -1,
-                              used: 0,
-                              percentage: 0,
-                              isLow: false,
-                              warningThreshold: 80,
-                            },
-                            createdAt: new Date(),
-                            updatedAt: new Date(),
-                          } as ModeratorQuota : undefined}
+                          quota={moderator.role === 'moderator' && 'quota' in moderator ? (moderator as any).quota as ModeratorQuota : undefined}
                           onEditMessages={(quota) => handleEditMessagesQuota(moderator, quota)}
                           onEditQueues={(quota) => handleEditQueuesQuota(moderator, quota)}
                         />

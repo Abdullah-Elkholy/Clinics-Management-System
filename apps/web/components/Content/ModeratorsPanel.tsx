@@ -506,10 +506,8 @@ export default function ModeratorsPanel() {
           <h3 className="font-bold text-lg">استخدام الحصة</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredModerators.map((moderator) => {
-              const messagesPercent =
-                (moderator.quota.consumedMessages / moderator.quota.messagesQuota) * 100;
-              const queuesPercent =
-                (moderator.quota.consumedQueues / moderator.quota.queuesQuota) * 100;
+              const messagesPercent = moderator.quota.messagesQuota.percentage;
+              const queuesPercent = moderator.quota.queuesQuota.percentage;
 
               return (
                 <div
@@ -523,7 +521,7 @@ export default function ModeratorsPanel() {
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">الرسائل</span>
                       <span className="text-sm font-semibold">
-                        {moderator.quota.consumedMessages} / {moderator.quota.messagesQuota}
+                        {moderator.quota.messagesQuota.used} / {moderator.quota.messagesQuota.limit === -1 ? 'غير محدود' : moderator.quota.messagesQuota.limit}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
@@ -545,7 +543,7 @@ export default function ModeratorsPanel() {
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">الطوابير</span>
                       <span className="text-sm font-semibold">
-                        {moderator.quota.consumedQueues} / {moderator.quota.queuesQuota}
+                        {moderator.quota.queuesQuota.used} / {moderator.quota.queuesQuota.limit === -1 ? 'غير محدود' : moderator.quota.queuesQuota.limit}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">

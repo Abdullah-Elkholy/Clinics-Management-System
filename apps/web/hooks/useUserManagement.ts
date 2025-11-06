@@ -33,7 +33,7 @@ import {
   CreateUserPayload,
   UpdateUserPayload,
   AssignModeratorPayload,
-  UserQuota,
+  ModeratorQuota,
   UserServiceResponse,
 } from '@/services/userManagementService';
 
@@ -44,7 +44,7 @@ export interface UseUserManagementState {
   users: User[];
   moderators: User[];
   selectedUser?: User;
-  quota?: UserQuota;
+  quota?: ModeratorQuota;
   loading: boolean;
   error: string | null;
 }
@@ -59,8 +59,8 @@ export interface UseUserManagementActions {
   createUser: (payload: CreateUserPayload) => Promise<boolean>;
   updateUser: (id: string, payload: UpdateUserPayload) => Promise<boolean>;
   deleteUser: (id: string) => Promise<boolean>;
-  getQuota: (userId: string) => Promise<void>;
-  updateQuotaLimits: (userId: string, limits: { dailyLimit?: number; monthlyLimit?: number }) => Promise<boolean>;
+  getQuota: (moderatorId: string) => Promise<void>;
+  updateQuotaLimits: (moderatorId: string, limits: { messagesLimit?: number; queuesLimit?: number }) => Promise<boolean>;
   assignModerator: (payload: AssignModeratorPayload) => Promise<boolean>;
   getUsersByModerator: (moderatorId: string) => Promise<User[] | null>;
   selectUser: (user?: User) => void;
@@ -77,7 +77,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
   const [users, setUsers] = useState<User[]>([]);
   const [moderators, setModerators] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | undefined>();
-  const [quota, setQuota] = useState<UserQuota | undefined>();
+  const [quota, setQuota] = useState<ModeratorQuota | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -272,9 +272,9 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    * Update quota limits
    */
   const updateQuotaLimits = useCallback(
-    async (userId: string, limits: { dailyLimit?: number; monthlyLimit?: number }): Promise<boolean> => {
+    async (moderatorId: string, limits: { messagesLimit?: number; queuesLimit?: number }): Promise<boolean> => {
       try {
-        const result = await userManagementService.updateQuotaLimits(userId, limits);
+        const result = await userManagementService.updateQuotaLimits(moderatorId, limits);
         if (result.success && result.data) {
           setQuota(result.data);
           addToast('تم تحديث الحصة بنجاح', 'success');

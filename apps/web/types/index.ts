@@ -4,7 +4,7 @@ export type { } from './roles';
 // Re-export canonical types from dedicated files
 export type { MessageTemplate } from './messageTemplate';
 export type { MessageCondition } from './messageCondition';
-export type { User, UserQuota, ModeratorUser, RegularUser, AdminUser, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, UserFilter, UserStats } from './user';
+export type { User, ModeratorUser, RegularUser, AdminUser, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, UserFilter, UserStats, ModeratorQuota } from './user';
 
 import type { MessageTemplate } from './messageTemplate';
 import type { MessageCondition } from './messageCondition';
