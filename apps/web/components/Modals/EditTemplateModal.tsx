@@ -345,7 +345,7 @@ export default function EditTemplateModal() {
               المتغيرات المتاحة:
             </h4>
             <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded-full font-medium">
-              انقر لإدراج المتغير
+              انقر لإدراج المتغير في محتوى الرسالة
             </span>
           </div>
           <div className="grid grid-cols-2 gap-2">

@@ -2,11 +2,14 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
+import ModeratorMessagesOverview from './ModeratorMessagesOverview';
+import { UserRole } from '@/types/roles';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
@@ -58,10 +61,24 @@ const USAGE_GUIDE_ITEMS = [
 
 export default function MessagesPanel() {
   const { selectedQueueId, queues, messageTemplates } = useQueue();
+  const { user } = useAuth();
   const { addToast } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select } = useSelectDialog();
+
+  /**
+   * Role-based rendering:
+   * - PrimaryAdmin or SecondaryAdmin: Show ModeratorMessagesOverview (moderator-centric view)
+   * - Moderator: Show existing queue-based layout
+   * - User: Show moderator-centric view (will see their assigned moderator's content)
+   */
+  const isAdminView = user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin);
+  const isUserView = user && user.role === UserRole.User;
+
+  if (isAdminView || isUserView) {
+    return <ModeratorMessagesOverview />;
+  }
 
   // State for search, filtering, sorting
   const [searchTerm, setSearchTerm] = useState('');

@@ -253,6 +253,6 @@ export const ACTION_CATEGORIES: Record<ActionType, { category: string; severity:
 export const PANEL_ACCESS: Record<string, UserRole[]> = {
   welcome: [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User],
   queues: [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User],
-  messages: [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator],
+  messages: [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User],
   management: [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin],
 };

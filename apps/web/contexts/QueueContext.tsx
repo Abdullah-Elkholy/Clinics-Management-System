@@ -1,9 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import type { Queue, Patient, MessageTemplate, MessageCondition } from '../types';
 import { SAMPLE_QUEUES } from '../constants';
 import { MOCK_MESSAGE_TEMPLATES } from '@/constants/mockData';
+import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
+import { groupQueuesByModerator } from '@/utils/moderatorAggregation';
 
 interface QueueContextType {
   queues: Queue[];
@@ -34,6 +36,7 @@ interface QueueContextType {
   addMessageCondition: (condition: Omit<MessageCondition, 'id'>) => void;
   removeMessageCondition: (id: string) => void;
   updateMessageCondition: (id: string, condition: Partial<MessageCondition>) => void;
+  moderators: ModeratorWithStats[];
 }
 
 const QueueContext = createContext<QueueContextType | null>(null);
@@ -47,6 +50,12 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
   const [selectedMessageTemplateId, setSelectedMessageTemplateId] = useState('1');
   const [messageConditions, setMessageConditions] = useState<MessageCondition[]>([]);
+
+  // Memoized list of moderators with aggregated stats
+  const moderators = useMemo(
+    () => groupQueuesByModerator(queues, messageTemplates, messageConditions),
+    [queues, messageTemplates, messageConditions]
+  );
 
   const addQueue = useCallback((queue: Omit<Queue, 'id'>) => {
     const newQueue: Queue = {
@@ -170,6 +179,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addMessageCondition,
         removeMessageCondition,
         updateMessageCondition,
+        moderators,
       }}
     >
       {children}

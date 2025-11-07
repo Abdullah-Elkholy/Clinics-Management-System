@@ -454,10 +454,10 @@ export default function UserManagementPanel() {
             <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-green-900 flex items-center gap-2">
                 <i className="fas fa-user-shield"></i>
-                إدارة المشرفون ومستخدميهم
+                إدارة المشرفون وحصصهم ومستخدميهم
               </h3>
               <p className="text-sm text-green-700 mt-2">
-                يمكنك هنا إضافة وتعديل وإدارة بيانات المشرفين ومستخدميهم في النظام
+                يمكنك هنا إضافة وتعديل وإدارة بيانات المشرفين وحصصهم في لرسائل والعيادات ومستخدميهم في النظام
               </p>
             </div>
 
