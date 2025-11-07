@@ -3,7 +3,7 @@
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { COUNTRY_CODES } from '@/constants';
-import { validateCountryCode, validateName, validatePhone, ValidationError } from '@/utils/validation';
+import { validateCountryCode, validateName, validatePhone, ValidationError, MAX_PHONE_DIGITS } from '@/utils/validation';
 import Modal from './Modal';
 import { useState } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
@@ -216,66 +216,73 @@ export default function EditPatientModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">كود الدولة</label>
-          <CountryCodeSelector
-            value={countryCode}
-            onChange={setCountryCode}
-            size="md"
-            showOptgroups={true}
-          />
-        </div>
-
-        {/* Custom Country Code Input */}
-        {countryCode === 'OTHER' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              أدخل كود الدولة المخصص *
-            </label>
-            <input
-              type="text"
-              value={customCountryCode}
-              onChange={(e) => handleFieldChange('customCountryCode', e.target.value)}
-              onBlur={handleFieldBlur}
-              placeholder="مثال: +44 (بريطانيا) أو +1 (أمريكا) أو +86 (الصين)"
+          <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف وكود الدولة *</label>
+          <div className="flex flex-wrap gap-2">
+            {/* Country Code Selector */}
+            <CountryCodeSelector
+              value={countryCode}
+              onChange={setCountryCode}
               disabled={isLoading}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-                errors.customCountryCode
+              hasError={!!errors.phone || !!errors.customCountryCode}
+              size="md"
+              showOptgroups={true}
+            />
+
+            {/* Custom Country Code Input (only when OTHER is selected) */}
+            {countryCode === 'OTHER' && (
+              <input
+                type="text"
+                value={customCountryCode}
+                onChange={(e) => {
+                  // Limit to 4 characters for country code format (+XXX)
+                  const value = e.target.value;
+                  if (value.length <= 4) {
+                    handleFieldChange('customCountryCode', value);
+                  }
+                }}
+                onBlur={handleFieldBlur}
+                placeholder="+966"
+                disabled={isLoading}
+                maxLength={4}
+                title="الصيغة: + متبوعة بـ 1-4 أرقام"
+                className={`w-20 px-2 py-2.5 border-2 rounded-lg focus:ring-2 focus:border-transparent transition-all text-center font-mono text-sm ${
+                  errors.customCountryCode
+                    ? 'border-red-500 focus:ring-red-500'
+                    : 'border-gray-300 focus:ring-blue-500'
+                }`}
+              />
+            )}
+
+            {/* Phone Input */}
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => handleFieldChange('phone', e.target.value)}
+              onBlur={handleFieldBlur}
+              placeholder="أدخل رقم الهاتف"
+              disabled={isLoading}
+              maxLength={MAX_PHONE_DIGITS}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              className={`min-w-40 flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all font-mono ${
+                errors.phone
                   ? 'border-red-500 focus:ring-red-500'
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
             />
-            {errors.customCountryCode && (
-              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
-                <i className="fas fa-exclamation-circle"></i>
-                {errors.customCountryCode}
-              </p>
-            )}
-            <p className="mt-1 text-xs text-gray-500">
-              <i className="fas fa-info-circle ml-1"></i>
-              الصيغة: + متبوعة بـ 1-4 أرقام (مثال: +44 أو +212)
-            </p>
           </div>
-        )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف *</label>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => handleFieldChange('phone', e.target.value)}
-            onBlur={handleFieldBlur}
-            placeholder="أدخل رقم الهاتف"
-            disabled={isLoading}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-              errors.phone
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 focus:ring-blue-500'
-            }`}
-          />
           {errors.phone && (
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
               <i className="fas fa-exclamation-circle"></i>
               {errors.phone}
+            </p>
+          )}
+
+          {errors.customCountryCode && (
+            <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+              <i className="fas fa-exclamation-circle"></i>
+              {errors.customCountryCode}
             </p>
           )}
         </div>

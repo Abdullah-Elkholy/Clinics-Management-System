@@ -7,15 +7,32 @@ export interface ValidationError {
   [key: string]: string;
 }
 
-// Phone validation (Egyptian numbers)
+// E.164 standard allows up to 15 digits for the national significant number (excluding the leading +)
+// Total user-entered characters may include '+' plus up to 15 digits -> 16 visible chars.
+// We expose the digit limit for inputs; UI components can add 1 if allowing the '+'.
+export const MAX_PHONE_DIGITS = 15; // does NOT include leading '+'
+
+// Phone validation - accepts 1 to 15 digits (E.164 compliant)
 export const validatePhone = (phone: string): string | null => {
   if (!phone) return 'رقم الهاتف مطلوب';
   
-  // Accept formats: +201234567890, 201234567890, 01234567890
-  const phoneRegex = /^(\+2|002)?01[0-2]\d{7}$/;
+  // Remove spaces and common separators
+  const cleaned = phone.replace(/[\s\-()]/g, '');
   
-  if (!phoneRegex.test(phone.replace(/\s/g, ''))) {
+  // Accept any combination of digits (with optional leading +) up to 15 digits
+  // Examples: 01012345678, 201012345678, +201012345678, +966123456789
+  const phoneRegex = /^(\+)?(\d{1,15})$/;
+  
+  if (!phoneRegex.test(cleaned)) {
     return 'رقم الهاتف غير صحيح';
+  }
+  
+  const digitCount = cleaned.replace(/\D/g, '').length;
+  if (digitCount < 7) {
+    return 'رقم الهاتف قصير جداً';
+  }
+  if (digitCount > 15) {
+    return 'رقم الهاتف طويل جداً';
   }
   
   return null;

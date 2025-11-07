@@ -2,7 +2,7 @@
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
-import { validateName, validatePhone, ValidationError, validateCountryCode } from '@/utils/validation';
+import { validateName, validatePhone, ValidationError, validateCountryCode, MAX_PHONE_DIGITS } from '@/utils/validation';
 import { COUNTRY_CODES } from '@/constants';
 import Modal from './Modal';
 import { useState } from 'react';
@@ -52,6 +52,23 @@ export default function AddPatientModal() {
     return patientErrors;
   };
 
+  // Validate only a specific field
+  const validateField = (index: number, fieldName: string, patient: PatientField): string | undefined => {
+    switch (fieldName) {
+      case 'name':
+        return validateName(patient.name, 'اسم المريض');
+      case 'phone':
+        return validatePhone(patient.phone);
+      case 'customCountryCode':
+        if (patient.countryCode === 'OTHER') {
+          return validateCountryCode(patient.customCountryCode || '', true);
+        }
+        return undefined;
+      default:
+        return undefined;
+    }
+  };
+
   // Toggle expand/collapse for a single patient
   const togglePatientExpanded = (index: number) => {
     const newExpanded = new Set(expandedPatients);
@@ -97,81 +114,102 @@ export default function AddPatientModal() {
     updated[index] = { ...updated[index], [field]: value };
     setPatients(updated);
     
-    // Clear error for this patient if it was filled
-    if (errors[`patient_${index}`]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[`patient_${index}`];
-        return newErrors;
-      });
-    }
+    // Don't clear errors on update - let handleFieldBlur do that on blur
   };
 
-  const handleFieldBlur = (index: number) => {
+  const handleFieldBlur = (index: number, fieldName: string) => {
     const patient = patients[index];
-    const patientErrors = validatePatient(index, patient);
+    const fieldError = validateField(index, fieldName, patient);
     
-    if (Object.keys(patientErrors).length > 0) {
-      setErrors((prev) => ({
-        ...prev,
-        [`patient_${index}`]: patientErrors,
-      }));
-    } else {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
+    setErrors((prev) => {
+      const patientErrors = prev[`patient_${index}`] ? { ...prev[`patient_${index}`] } : {};
+      
+      if (fieldError) {
+        patientErrors[fieldName] = fieldError;
+      } else {
+        delete patientErrors[fieldName];
+      }
+      
+      // Update errors for this patient
+      const newErrors = { ...prev };
+      if (Object.keys(patientErrors).length > 0) {
+        newErrors[`patient_${index}`] = patientErrors;
+      } else {
         delete newErrors[`patient_${index}`];
-        return newErrors;
-      });
-    }
+      }
+      
+      return newErrors;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate all patients
+    // Validate all patients - check that each patient has all required fields filled
     const newErrors: PatientErrors = {};
     let validCount = 0;
     const validPatients: Array<PatientField & { effectiveCountryCode: string }> = [];
     
     patients.forEach((patient, index) => {
-      // Only validate non-empty patients
-      if (patient.name.trim() || patient.phone.trim()) {
-        const patientErrors = validatePatient(index, patient);
+      const patientErrors: ValidationError = {};
+      
+      // Check if patient has any data entered
+      const hasAnyData = patient.name.trim() || patient.phone.trim() || patient.countryCode;
+      
+      if (hasAnyData) {
+        // If patient has any data, validate ALL fields (name and phone are required)
         
-        // Validate country code
+        // Name validation
+        const nameError = validateName(patient.name, 'اسم المريض');
+        if (nameError) patientErrors.name = nameError;
+        
+        // Phone validation
+        const phoneError = validatePhone(patient.phone);
+        if (phoneError) patientErrors.phone = phoneError;
+        
+        // Country Code validation
         const effectiveCountryCode = getEffectiveCountryCode(
           patient.countryCode,
           patient.customCountryCode || ''
         );
         const countryCodeError = validateCountryCode(effectiveCountryCode, true);
+        if (countryCodeError) patientErrors.country = countryCodeError;
         
-        if (countryCodeError) {
-          if (!patientErrors.country) {
-            patientErrors.country = countryCodeError;
-          }
+        // Custom country code validation (if OTHER is selected)
+        if (patient.countryCode === 'OTHER') {
+          const customCodeError = validateCountryCode(patient.customCountryCode || '', true);
+          if (customCodeError) patientErrors.customCountryCode = customCodeError;
         }
         
-        if (Object.keys(patientErrors).length > 0) {
-          newErrors[`patient_${index}`] = patientErrors;
-        } else {
+        // Add errors for this patient if any exist
+        if (Object.keys(patientErrors).length === 0) {
           validCount++;
           validPatients.push({
             ...patient,
             effectiveCountryCode
           });
+        } else {
+          newErrors[`patient_${index}`] = patientErrors;
         }
       }
     });
     
     setErrors(newErrors);
     
+    // Check if there are no valid patients to add
     if (validCount === 0) {
-      addToast('يرجى إدخال بيانات المرضى بشكل صحيح', 'error');
+      // Don't use toast if there are validation errors - they'll be shown in the form
+      if (Object.keys(newErrors).length === 0) {
+        // Only show toast if no data was entered at all
+        return;
+      }
+      // Validation errors are displayed in the form, no need for toast
       return;
     }
     
+    // If there are validation errors alongside valid patients, show them in the form only
     if (Object.keys(newErrors).length > 0) {
-      addToast(`يوجد أخطاء في ${Object.keys(newErrors).length} صفوف. يرجى التحقق`, 'error');
+      // Errors are displayed in the form validation alerts
       return;
     }
 
@@ -211,7 +249,7 @@ export default function AddPatientModal() {
         setErrors({});
       }}
       title="إضافة مرضى جدد"
-      size="2xl"
+      size="xl"
     >
       <form onSubmit={handleSubmit} className="flex flex-col h-full space-y-4">
         {/* Info Section */}
@@ -283,134 +321,148 @@ export default function AddPatientModal() {
                     : 'border-gray-200 bg-white hover:border-blue-300'
                 }`}
               >
-                {/* Patient Card Header */}
-                <div className={`px-4 py-3 border-b ${patientError ? 'bg-red-100' : 'bg-gradient-to-r from-blue-50 to-blue-100'}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => togglePatientExpanded(index)}
-                        disabled={isLoading}
-                        className="text-gray-600 hover:text-gray-800 p-1 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-                        title={isExpanded ? "طي" : "توسيع"}
-                      >
-                        <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} transition-transform`}></i>
-                      </button>
-                      <span className="text-sm font-semibold text-gray-700">
-                        <i className="fas fa-user-circle text-blue-600 ml-2"></i>
-                        المريض #{index + 1}
-                      </span>
-                    </div>
-                    {patients.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removePatientSlot(index)}
-                        disabled={isLoading}
-                        className="text-red-600 hover:text-red-700 text-sm px-2 py-1 rounded hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <i className="fas fa-trash ml-1"></i>
-                        حذف
-                      </button>
-                    )}
+                {/* Patient Card Header - Fully Clickable */}
+                <button
+                  type="button"
+                  onClick={() => togglePatientExpanded(index)}
+                  disabled={isLoading}
+                  className={`w-full px-4 py-3 border-b text-right flex items-center justify-between transition-all ${
+                    patientError ? 'bg-red-100' : 'bg-gradient-to-r from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-150'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  title={isExpanded ? "طي القسم" : "توسيع القسم"}
+                >
+                  <div className="flex items-center gap-2 flex-1">
+                    <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-gray-600 transition-transform`}></i>
+                    <span className="text-sm font-semibold text-gray-700">
+                      <i className="fas fa-user-circle text-blue-600 ml-2"></i>
+                      المريض #{index + 1}
+                    </span>
                   </div>
-                </div>
+                  {patients.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removePatientSlot(index);
+                      }}
+                      disabled={isLoading}
+                      className="text-red-600 hover:text-red-700 text-sm px-2 py-1 rounded hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 ml-2"
+                    >
+                      <i className="fas fa-trash ml-1"></i>
+                      حذف
+                    </button>
+                  )}
+                </button>
 
                 {/* Patient Form Fields - Collapsible */}
                 {isExpanded && (
                 <div className="p-4 space-y-3">
-                  {/* Name Field */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <i className="fas fa-signature text-gray-500 ml-1"></i>
-                      الاسم الكامل *
-                    </label>
-                    <input
-                      type="text"
-                      value={patient.name}
-                      onChange={(e) => updatePatient(index, 'name', e.target.value)}
-                      onBlur={() => handleFieldBlur(index)}
-                      placeholder="مثال: أحمد محمد علي"
-                      disabled={isLoading}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:border-transparent transition-all ${
-                        patientError?.name
-                          ? 'border-red-500 bg-red-50 focus:ring-red-500'
-                          : 'border-gray-300 focus:ring-blue-500'
-                      }`}
-                    />
-                    {patientError?.name && (
-                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
-                        <i className="fas fa-exclamation-circle"></i>
-                        {patientError.name}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Phone Section */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <i className="fas fa-phone text-gray-500 ml-1"></i>
-                      رقم الهاتف *
-                    </label>
-                    
-                    {/* Country Code + Phone */}
-                    <div className="flex gap-2">
-                      {/* Country Code Selector */}
-                      <CountryCodeSelector
-                        value={patient.countryCode}
-                        onChange={(value) => updatePatient(index, 'countryCode', value)}
+                  {/* Name & Phone Row */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Name Field */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <i className="fas fa-signature text-gray-500 ml-1"></i>
+                        الاسم الكامل *
+                      </label>
+                      <input
+                        type="text"
+                        value={patient.name}
+                        onChange={(e) => updatePatient(index, 'name', e.target.value)}
+                        onBlur={() => handleFieldBlur(index, 'name')}
+                        placeholder="مثال: أحمد محمد علي"
                         disabled={isLoading}
-                        hasError={!!patientError?.phone}
-                        size="sm"
-                        showOptgroups={true}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:border-transparent transition-all ${
+                          patientError?.name
+                            ? 'border-red-500 bg-red-50 focus:ring-red-500'
+                            : 'border-gray-300 focus:ring-blue-500'
+                        }`}
                       />
+                      {patientError?.name && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <i className="fas fa-exclamation-circle"></i>
+                          {patientError.name}
+                        </p>
+                      )}
+                    </div>
 
-                      {/* Phone Input */}
-                      {patient.countryCode === 'OTHER' ? (
-                        <input
-                          type="text"
-                          value={patient.customCountryCode || ''}
-                          onChange={(e) => updatePatient(index, 'customCountryCode', e.target.value)}
-                          onBlur={() => handleFieldBlur(index)}
-                          placeholder="مثال: +44 أو +1 أو +886"
+                    {/* Phone Field */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <i className="fas fa-phone text-gray-500 ml-1"></i>
+                        رقم الهاتف *
+                      </label>
+                      
+                      {/* Country Code + Custom Code + Phone */}
+                      <div className="flex flex-wrap gap-2">
+                        {/* Country Code Selector */}
+                        <CountryCodeSelector
+                          value={patient.countryCode}
+                          onChange={(value) => updatePatient(index, 'countryCode', value)}
                           disabled={isLoading}
-                          className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
-                            patientError?.customCountryCode
-                              ? 'border-red-500 bg-red-50 focus:ring-red-500'
-                              : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                          title="الصيغة: + متبوعة بـ 1-4 أرقام"
+                          hasError={!!patientError?.phone || !!patientError?.customCountryCode || !!patientError?.country}
+                          size="sm"
+                          showOptgroups={true}
                         />
-                      ) : (
+
+                        {/* Custom Country Code Input (only when OTHER is selected) */}
+                        {patient.countryCode === 'OTHER' && (
+                          <input
+                            type="text"
+                            value={patient.customCountryCode || ''}
+                            onChange={(e) => {
+                              // Limit to 4 characters for country code format (+XXX)
+                              const value = e.target.value;
+                              if (value.length <= 4) {
+                                updatePatient(index, 'customCountryCode', value);
+                              }
+                            }}
+                            onBlur={() => handleFieldBlur(index, 'customCountryCode')}
+                            placeholder="+966"
+                            disabled={isLoading}
+                            maxLength={4}
+                            title="الصيغة: + متبوعة بـ 1-4 أرقام"
+                            className={`w-20 px-2 py-2 border-2 rounded-lg text-sm focus:outline-none focus:ring-2 transition-all text-center font-mono ${
+                              patientError?.customCountryCode
+                                ? 'border-red-500 bg-red-50 focus:ring-red-500'
+                                : 'border-gray-300 hover:border-gray-400 focus:ring-blue-500'
+                            }`}
+                          />
+                        )}
+
+                        {/* Phone Input */}
                         <input
                           type="tel"
                           value={patient.phone}
                           onChange={(e) => updatePatient(index, 'phone', e.target.value)}
-                          onBlur={() => handleFieldBlur(index)}
+                          onBlur={() => handleFieldBlur(index, 'phone')}
                           placeholder="01012345678"
                           disabled={isLoading}
-                          className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${
+                          maxLength={MAX_PHONE_DIGITS}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className={`min-w-40 flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all font-mono ${
                             patientError?.phone
                               ? 'border-red-500 bg-red-50 focus:ring-red-500'
-                              : 'border-gray-300 hover:border-gray-400'
+                              : 'border-gray-300 hover:border-gray-400 focus:ring-blue-500'
                           }`}
                         />
+                      </div>
+
+                      {patientError?.phone && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <i className="fas fa-exclamation-circle"></i>
+                          {patientError.phone}
+                        </p>
+                      )}
+
+                      {patientError?.customCountryCode && (
+                        <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                          <i className="fas fa-exclamation-circle"></i>
+                          {patientError.customCountryCode}
+                        </p>
                       )}
                     </div>
-
-                    {patientError?.phone && (
-                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
-                        <i className="fas fa-exclamation-circle"></i>
-                        {patientError.phone}
-                      </p>
-                    )}
-
-                    {/* Custom Country Code Error */}
-                    {patientError?.customCountryCode && (
-                      <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
-                        <i className="fas fa-exclamation-circle"></i>
-                        {patientError.customCountryCode}
-                      </p>
-                    )}
                   </div>
 
                   {/* Custom Country Code Info */}
