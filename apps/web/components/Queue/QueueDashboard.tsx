@@ -727,8 +727,8 @@ export default function QueueDashboard() {
                     id: t.id, 
                     title: t.title 
                   })),
-                  onSave: (conditions: any) => {
-                    console.log('Conditions updated:', conditions);
+                  onSave: (_conditions: any) => {
+                    // intentionally no-op
                   },
                 });
               }}
@@ -747,8 +747,8 @@ export default function QueueDashboard() {
                       id: t.id, 
                       title: t.title 
                     })),
-                    onSave: (conditions: any) => {
-                      console.log('Conditions updated:', conditions);
+                    onSave: (_conditions: any) => {
+                      // intentionally no-op
                     },
                   });
                 }

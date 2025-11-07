@@ -120,7 +120,9 @@ afterAll(() => server.close())
 // helper to pre-seed localStorage
 global.seedLocalStorage = function (items = {}){
 	Object.keys(items).forEach(k => {
-		try { localStorage.setItem(k, items[k]) } catch(e) {}
+		try { localStorage.setItem(k, items[k]) } catch(e) {
+			// Silently ignore localStorage errors (e.g., quota exceeded, storage unavailable)
+		}
 	})
 }
 

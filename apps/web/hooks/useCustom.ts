@@ -10,7 +10,7 @@ import {
   validatePhone,
   validateName,
 } from '@/utils/validation';
-import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import { getEffectiveCountryCode, normalizePhoneNumber, logError } from '@/utils/core.utils';
 
 // ============================================================================
 // useFormValidation HOOK
@@ -274,7 +274,7 @@ export const useLocalStorage = <T,>(
         ? (options.deserializer || JSON.parse)(item)
         : initialValue;
     } catch (error) {
-      console.error(`Error reading from localStorage [${key}]:`, error);
+      logError('useLocalStorage:read', `Error reading from localStorage [${key}]: ${String(error)}`);
       return initialValue;
     }
   });
@@ -293,7 +293,7 @@ export const useLocalStorage = <T,>(
           );
         }
       } catch (error) {
-        console.error(`Error writing to localStorage [${key}]:`, error);
+        logError('useLocalStorage:write', `Error writing to localStorage [${key}]: ${String(error)}`);
       }
     },
     [key, storedValue, options]
@@ -307,7 +307,7 @@ export const useLocalStorage = <T,>(
         window.localStorage.removeItem(key);
       }
     } catch (error) {
-      console.error(`Error removing from localStorage [${key}]:`, error);
+      logError('useLocalStorage:remove', `Error removing from localStorage [${key}]: ${String(error)}`);
     }
   }, [key, initialValue]);
 

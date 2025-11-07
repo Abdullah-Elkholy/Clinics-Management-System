@@ -5,6 +5,7 @@
  */
 
 import { QueueMessageConfig, MessageCondition } from '@/types/messageCondition';
+import { logError } from '@/utils/core.utils';
 
 const STORAGE_KEY_PREFIX = 'queueConfig_';
 
@@ -19,7 +20,7 @@ export async function getQueueMessageConfig(queueId: string): Promise<QueueMessa
     }
     return JSON.parse(stored) as QueueMessageConfig;
   } catch (error) {
-    console.error('Failed to fetch queue message config:', error);
+    logError('MessageConfigService:getQueueMessageConfig', error);
     return null;
   }
 }
@@ -32,7 +33,7 @@ export async function saveQueueMessageConfig(queueId: string, config: QueueMessa
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${queueId}`, JSON.stringify(config));
     return true;
   } catch (error) {
-    console.error('Failed to save queue message config:', error);
+    logError('MessageConfigService:saveQueueMessageConfig', error);
     return false;
   }
 }
@@ -45,7 +46,7 @@ export async function deleteQueueMessageConfig(queueId: string): Promise<boolean
     localStorage.removeItem(`${STORAGE_KEY_PREFIX}${queueId}`);
     return true;
   } catch (error) {
-    console.error('Failed to delete queue message config:', error);
+    logError('MessageConfigService:deleteQueueMessageConfig', error);
     return false;
   }
 }
@@ -70,7 +71,7 @@ export async function addConditionToQueue(
     const success = await saveQueueMessageConfig(queueId, updated);
     return success ? updated : null;
   } catch (error) {
-    console.error('Failed to add condition:', error);
+    logError('MessageConfigService:addConditionToQueue', error);
     return null;
   }
 }
@@ -90,7 +91,7 @@ export async function removeConditionFromQueue(queueId: string, conditionId: str
     const success = await saveQueueMessageConfig(queueId, updated);
     return success ? updated : null;
   } catch (error) {
-    console.error('Failed to remove condition:', error);
+    logError('MessageConfigService:removeConditionFromQueue', error);
     return null;
   }
 }
@@ -118,7 +119,7 @@ export async function updateConditionInQueue(
     const success = await saveQueueMessageConfig(queueId, updated);
     return success ? updated : null;
   } catch (error) {
-    console.error('Failed to update condition:', error);
+    logError('MessageConfigService:updateConditionInQueue', error);
     return null;
   }
 }
@@ -142,7 +143,7 @@ export async function initializeQueueMessageConfig(
     const success = await saveQueueMessageConfig(queueId, config);
     return success ? config : null;
   } catch (error) {
-    console.error('Failed to initialize queue message config:', error);
+    logError('MessageConfigService:initializeQueueMessageConfig', error);
     return null;
   }
 }
@@ -164,7 +165,7 @@ export async function getAllQueueMessageConfigs(): Promise<QueueMessageConfig[]>
     }
     return configs;
   } catch (error) {
-    console.error('Failed to fetch all configs:', error);
+    logError('MessageConfigService:getAllQueueMessageConfigs', error);
     return [];
   }
 }

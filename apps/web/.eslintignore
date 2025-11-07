@@ -1,0 +1,14 @@
+# Build output and dependencies
+.next/
+node_modules/
+dist/
+
+# Project docs and generated content
+docs/
+coverage/
+
+# Generated type declarations
+*.d.ts
+
+# We intentionally DO lint config and test setup for consistency; remove prior exclusions
+

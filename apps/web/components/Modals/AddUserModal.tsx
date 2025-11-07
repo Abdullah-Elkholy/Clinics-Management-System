@@ -24,13 +24,6 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const modalData = getModalData('addUser');
   const contextRole = modalData?.role || role;
   
-  console.log('=== AddUserModal RENDER ===');
-  console.log('role prop:', role);
-  console.log('modalData:', modalData);
-  console.log('contextRole:', contextRole);
-  console.log('role type:', typeof role);
-  console.log('UserRole.Moderator value:', UserRole.Moderator);
-  
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
@@ -44,11 +37,9 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
 
   const isOpen = openModals.has('addUser');
-  console.log('isOpen:', isOpen);
   
   // Sync currentRole with contextRole whenever it changes
   useEffect(() => {
-    console.log('[useEffect sync contextRole] contextRole changed to:', contextRole);
     setCurrentRole(contextRole);
   }, [contextRole]);
 
@@ -138,8 +129,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
     try {
       setIsLoading(true);
       
-      const userRole = currentRole || UserRole.User;
-      console.log('[handleSubmit] Using currentRole:', currentRole, 'userRole:', userRole);
+  const userRole = currentRole || UserRole.User;
       const userPayload: any = {
         firstName,
         lastName,
@@ -179,31 +169,14 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   // Get modal title based on role - memoized to ensure it updates when role changes
   const modalTitle = useMemo(() => {
     let title = 'إضافة مستخدم جديد';
-    console.log('[modalTitle useMemo] ===== COMPUTING TITLE =====');
-    console.log('[modalTitle useMemo] currentRole value:', JSON.stringify(currentRole));
-    console.log('[modalTitle useMemo] currentRole type:', typeof currentRole);
-    console.log('[modalTitle useMemo] UserRole object:', UserRole);
-    console.log('[modalTitle useMemo] UserRole.Moderator:', UserRole.Moderator, 'type:', typeof UserRole.Moderator);
-    console.log('[modalTitle useMemo] UserRole.SecondaryAdmin:', UserRole.SecondaryAdmin, 'type:', typeof UserRole.SecondaryAdmin);
-    console.log('[modalTitle useMemo] currentRole === UserRole.Moderator:', currentRole === UserRole.Moderator);
-    console.log('[modalTitle useMemo] currentRole === "moderator":', currentRole === 'moderator');
-    console.log('[modalTitle useMemo] currentRole === "secondary_admin":', currentRole === 'secondary_admin');
     
     if (currentRole === UserRole.Moderator) {
       title = 'إضافة مشرف جديد';
-      console.log('[modalTitle useMemo] ✓ MATCHED MODERATOR');
     } else if (currentRole === UserRole.SecondaryAdmin) {
       title = 'إضافة مدير ثانوي جديد';
-      console.log('[modalTitle useMemo] ✓ MATCHED SECONDARY ADMIN');
     } else if (currentRole === UserRole.User) {
       title = 'إضافة مستخدم جديد';
-      console.log('[modalTitle useMemo] ✓ MATCHED USER');
-    } else {
-      console.log('[modalTitle useMemo] ✗ NO MATCH - using default');
     }
-    
-    console.log('[modalTitle useMemo] Final title:', title);
-    console.log('[modalTitle useMemo] ===== END COMPUTING =====');
     return title;
   }, [currentRole]);
 

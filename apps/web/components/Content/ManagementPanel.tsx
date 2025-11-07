@@ -7,7 +7,6 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/types/roles';
 import { useEffect, useState, useMemo } from 'react';
-import { title } from 'process';
 
 export default function ManagementPanel() {
   const { user: currentUser } = useAuth();

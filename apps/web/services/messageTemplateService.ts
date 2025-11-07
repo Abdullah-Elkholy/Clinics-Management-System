@@ -1,3 +1,4 @@
+import { logError } from '@/utils/core.utils';
 /**
  * Message Template Service
  * File: apps/web/services/messageTemplateService.ts
@@ -49,7 +50,7 @@ export async function getQueueTemplates(queueId: string): Promise<MessageTemplat
     const config: QueueTemplateConfig = JSON.parse(stored);
     return config.templates || [];
   } catch (error) {
-    console.error('Failed to fetch queue templates:', error);
+    logError('MessageTemplateService:getQueueTemplates', error);
     return [];
   }
 }
@@ -69,7 +70,7 @@ export async function getQueueTemplateConfig(queueId: string, queueName: string)
     }
     return JSON.parse(stored) as QueueTemplateConfig;
   } catch (error) {
-    console.error('Failed to fetch queue template config:', error);
+    logError('MessageTemplateService:getQueueTemplateConfig', error);
     return {
       queueId,
       queueName,
@@ -92,7 +93,7 @@ export async function saveQueueTemplates(queueId: string, queueName: string, tem
     localStorage.setItem(`${STORAGE_KEY_PREFIX}${queueId}`, JSON.stringify(config));
     return true;
   } catch (error) {
-    console.error('Failed to save queue templates:', error);
+    logError('MessageTemplateService:saveQueueTemplates', error);
     return false;
   }
 }
@@ -120,7 +121,7 @@ export async function createTemplate(
     
     return success ? newTemplate : null;
   } catch (error) {
-    console.error('Failed to create template:', error);
+    logError('MessageTemplateService:createTemplate', error);
     return null;
   }
 }
@@ -154,7 +155,7 @@ export async function updateTemplate(
     const success = await saveQueueTemplates(queueId, queueName, templates);
     return success ? templates[index] : null;
   } catch (error) {
-    console.error('Failed to update template:', error);
+    logError('MessageTemplateService:updateTemplate', error);
     return null;
   }
 }
@@ -169,7 +170,7 @@ export async function deleteTemplate(queueId: string, queueName: string, templat
     
     return await saveQueueTemplates(queueId, queueName, filtered);
   } catch (error) {
-    console.error('Failed to delete template:', error);
+    logError('MessageTemplateService:deleteTemplate', error);
     return false;
   }
 }
@@ -204,7 +205,7 @@ export async function duplicateTemplate(
 
     return success ? duplicate : null;
   } catch (error) {
-    console.error('Failed to duplicate template:', error);
+    logError('MessageTemplateService:duplicateTemplate', error);
     return null;
   }
 }
@@ -226,7 +227,7 @@ export async function getAllQueueTemplateConfigs(): Promise<QueueTemplateConfig[
     }
     return configs;
   } catch (error) {
-    console.error('Failed to fetch all configs:', error);
+    logError('MessageTemplateService:getAllQueueTemplateConfigs', error);
     return [];
   }
 }
@@ -240,7 +241,7 @@ export async function setDefaultTemplate(queueId: string, queueName: string, tem
     config.defaultTemplate = templateContent;
     return await saveQueueTemplates(queueId, queueName, config.templates);
   } catch (error) {
-    console.error('Failed to set default template:', error);
+    logError('MessageTemplateService:setDefaultTemplate', error);
     return false;
   }
 }
@@ -263,7 +264,7 @@ export async function toggleTemplateStatus(queueId: string, queueName: string, t
     const success = await saveQueueTemplates(queueId, queueName, templates);
     return success ? template : null;
   } catch (error) {
-    console.error('Failed to toggle template status:', error);
+    logError('MessageTemplateService:toggleTemplateStatus', error);
     return null;
   }
 }

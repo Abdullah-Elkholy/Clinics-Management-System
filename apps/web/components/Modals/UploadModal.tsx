@@ -135,7 +135,7 @@ export default function UploadModal() {
       });
       setEditablePreview(previewSlice);
     } catch (error) {
-      console.error('Error parsing excel:', error);
+      // Swallow console to avoid noisy logs; surface feedback to user
       addToast('حدث خطأ في قراءة الملف', 'error');
     }
   };
@@ -318,7 +318,6 @@ export default function UploadModal() {
       addToast('تم تحميل النموذج بنجاح', 'success');
     } catch (error) {
       addToast('حدث خطأ أثناء تحميل النموذج', 'error');
-      console.error('Error downloading sample:', error);
     }
   };
 

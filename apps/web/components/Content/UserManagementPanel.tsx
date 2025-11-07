@@ -47,9 +47,9 @@ export default function UserManagementPanel() {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [selectedModerator, setSelectedModerator] = useState<string | null>(null);
   
-  // Log whenever selectedRole changes
+  // Sync when selectedRole changes (no console logging)
   useEffect(() => {
-    console.log('[UserManagementPanel effect] selectedRole changed to:', selectedRole);
+    // placeholder effect for any side-effects if needed later
   }, [selectedRole]);
 
   // Set default tab based on user role
@@ -183,19 +183,11 @@ export default function UserManagementPanel() {
   };
 
   const handleAddUser = (role: UserRole, moderatorId?: string) => {
-    console.log('========== handleAddUser CALLED ==========');
-    console.log('Button role parameter:', role);
-    console.log('UserRole.Moderator constant value:', UserRole.Moderator);
-    console.log('Are they equal?', role === UserRole.Moderator);
-    
     setSelectedUser(null);
     setSelectedRole(role);
     setSelectedModerator(moderatorId || null);
-    
-    console.log('About to call openModal with role data');
     // Pass role through modal context data instead of just relying on component props
     openModal('addUser', { role });
-    console.log('==========================================');
   };
 
   const handleEditUser = (user: User) => {
@@ -1684,7 +1676,6 @@ export default function UserManagementPanel() {
       )}
 
       {/* Modals */}
-      {console.log('UserManagementPanel rendering AddUserModal with selectedRole:', selectedRole)}
       <EditUserModal selectedUser={selectedUser} />
       <EditAccountModal selectedUser={selectedUser} />
       <AddUserModal 

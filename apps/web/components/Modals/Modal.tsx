@@ -11,8 +11,6 @@ interface ModalProps {
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
   if (!isOpen) return null;
 
-  console.log('[Modal] Rendering with title:', title);
-
   const sizeClasses = {
     sm: 'max-w-sm',
     md: 'max-w-xl',

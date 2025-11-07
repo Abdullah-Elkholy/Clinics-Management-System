@@ -43,7 +43,6 @@ export default function Navigation() {
         setCurrentPanel('welcome');
       }
       // TODO: Call API to delete queue
-      console.log('Delete queue:', queueId);
     }
   };
 

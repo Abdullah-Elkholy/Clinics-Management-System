@@ -352,7 +352,5 @@ export const getErrorMessage = (error: unknown): string => {
  * @param error - Error object
  */
 export const logError = (context: string, error: unknown): void => {
-  if (process.env.NODE_ENV === 'development') {
-    console.error(`[${context}]`, error);
-  }
+  // Intentionally no-op to avoid console noise in the client
 };

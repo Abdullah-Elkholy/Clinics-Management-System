@@ -168,9 +168,7 @@ export const useGuard = (feature: Feature, errorMessage?: string): boolean => {
   const { user } = useAuth();
   const hasAccess = useMemo(() => canAccess(user?.role as UserRole | undefined, feature), [user?.role, feature]);
 
-  if (!hasAccess && errorMessage) {
-    console.warn(`Access denied: ${errorMessage}`);
-  }
+  // Intentionally avoid console logging here
 
   return hasAccess;
 };
