@@ -4,11 +4,12 @@ import { useModal } from '@/contexts/ModalContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, validatePhone, ValidationError, hasErrors } from '@/utils/validation';
+import { getModeratorInfo } from '@/utils/moderatorAggregation';
 import Modal from './Modal';
 import { useState } from 'react';
 
 export default function AddQueueModal() {
-  const { openModals, closeModal } = useModal();
+  const { openModals, closeModal, getModalData } = useModal();
   const { addQueue } = useQueue();
   const { addToast } = useUI();
   
@@ -18,6 +19,9 @@ export default function AddQueueModal() {
   const [touched, setTouched] = useState(false);
 
   const isOpen = openModals.has('addQueue');
+  const modalData = getModalData('addQueue');
+  const targetModeratorId = modalData?.moderatorId;
+  const moderatorInfo = targetModeratorId ? getModeratorInfo(targetModeratorId) : null;
 
   const validateField = (value: string) => {
     const error = validateName(value, 'اسم الطبيب');
@@ -62,6 +66,7 @@ export default function AddQueueModal() {
       
       addQueue({
         doctorName: doctorName.trim(),
+        moderatorId: targetModeratorId ? String(targetModeratorId) : undefined,
       });
 
       addToast('تم إضافة الطابور بنجاح', 'success');
@@ -91,10 +96,16 @@ export default function AddQueueModal() {
         setErrors({});
         setTouched(false);
       }}
-      title="إضافة طابور جديد"
+      title={moderatorInfo ? `إضافة طابور للمشرف: ${moderatorInfo.name} (@${moderatorInfo.username})` : 'إضافة طابور جديد'}
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {moderatorInfo && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
+            <i className="fas fa-user-tie text-blue-600"></i>
+            <span>سيتم ربط هذا الطابور تلقائياً بالمشرف <strong>{moderatorInfo.name}</strong></span>
+          </div>
+        )}
         {/* Validation Errors Alert - Only show if user touched field and there are errors */}
         {touched && hasErrors(errors) && (
           <div className="bg-red-50 border-2 border-red-400 rounded-lg p-4">
