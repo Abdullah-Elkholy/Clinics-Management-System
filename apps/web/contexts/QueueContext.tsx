@@ -1,11 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import type { Queue, Patient, MessageTemplate, MessageCondition } from '../types';
 import { SAMPLE_QUEUES } from '../constants';
 import { MOCK_MESSAGE_TEMPLATES } from '@/constants/mockData';
 import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
 import { groupQueuesByModerator } from '@/utils/moderatorAggregation';
+import { messageApiClient, type TemplateDto, type ConditionDto } from '@/services/api/messageApiClient';
 
 interface QueueContextType {
   queues: Queue[];
@@ -37,6 +38,8 @@ interface QueueContextType {
   removeMessageCondition: (id: string) => void;
   updateMessageCondition: (id: string, condition: Partial<MessageCondition>) => void;
   moderators: ModeratorWithStats[];
+  isLoadingTemplates: boolean;
+  templateError: string | null;
 }
 
 const QueueContext = createContext<QueueContextType | null>(null);
@@ -50,12 +53,60 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
   const [selectedMessageTemplateId, setSelectedMessageTemplateId] = useState('1');
   const [messageConditions, setMessageConditions] = useState<MessageCondition[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
 
   // Memoized list of moderators with aggregated stats
   const moderators = useMemo(
     () => groupQueuesByModerator(queues, messageTemplates, messageConditions),
     [queues, messageTemplates, messageConditions]
   );
+
+  // Load templates from API when selected queue changes
+  useEffect(() => {
+    if (!selectedQueueId) return;
+
+    const loadTemplates = async () => {
+      try {
+        setIsLoadingTemplates(true);
+        setTemplateError(null);
+        
+        // Try to load from API first
+        const response = await messageApiClient.getTemplates(Number(selectedQueueId));
+        
+        if (response.items && response.items.length > 0) {
+          // Convert TemplateDto to MessageTemplate with required fields
+          const templates: MessageTemplate[] = response.items.map((dto: TemplateDto) => ({
+            id: dto.id.toString(),
+            queueId: dto.queueId.toString(),
+            title: dto.title,
+            content: dto.content,
+            variables: [], // Extract from content if needed
+            isActive: dto.isActive ?? true,
+            createdAt: new Date(dto.createdAt),
+            updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
+            createdBy: '', // API should provide this, fallback to empty
+          }));
+          setMessageTemplates(templates);
+          if (templates.length > 0) {
+            setSelectedMessageTemplateId(templates[0].id);
+          }
+        } else {
+          // Fallback to mock data if API returns empty
+          setMessageTemplates(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
+        }
+      } catch (error) {
+        // On error, use mock data as fallback
+        console.warn('Failed to load templates from API, using mock data:', error);
+        setTemplateError('Using local templates (API unavailable)');
+        setMessageTemplates(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
+      } finally {
+        setIsLoadingTemplates(false);
+      }
+    };
+
+    loadTemplates();
+  }, [selectedQueueId]);
 
   // Helper function to generate GUID-like IDs
   const generateGUID = (prefix: string = ''): string => {
@@ -186,6 +237,8 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         removeMessageCondition,
         updateMessageCondition,
         moderators,
+        isLoadingTemplates,
+        templateError,
       }}
     >
       {children}

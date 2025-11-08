@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
@@ -8,6 +8,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
+import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import ModeratorMessagesOverview from './ModeratorMessagesOverview';
 import { UserRole } from '@/types/roles';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
@@ -85,6 +86,28 @@ export default function MessagesPanel() {
   const [expandedQueues, setExpandedQueues] = useState<Set<string | number>>(new Set());
   const [selectedConditionFilter, setSelectedConditionFilter] = useState<string | null>(null);
   const [highlightedConditionType, setHighlightedConditionType] = useState<string | null>(null);
+  const [userQuota, setUserQuota] = useState<MyQuotaDto | null>(null);
+  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+
+  /**
+   * Load user's quota from API on component mount
+   */
+  useEffect(() => {
+    const loadQuota = async () => {
+      try {
+        setIsLoadingQuota(true);
+        const quota = await messageApiClient.getMyQuota();
+        setUserQuota(quota);
+      } catch (err) {
+        // Fallback to mock data on error
+        setUserQuota(null);
+      } finally {
+        setIsLoadingQuota(false);
+      }
+    };
+
+    loadQuota();
+  }, []);
 
   // Toggle queue expansion
   const toggleQueueExpanded = useCallback((queueId: string | number) => {
@@ -223,11 +246,12 @@ export default function MessagesPanel() {
    * - Moderator: Personal quota
    */
   const getRoleContextStats = useMemo(() => {
-    const { messagesQuota } = MOCK_QUOTA;
+    // Use API data if available, fallback to MOCK_QUOTA
+    const quotaData = userQuota || MOCK_QUOTA.messagesQuota;
     const baseStats = {
-      total: messagesQuota.limit,
-      used: messagesQuota.used,
-      remaining: messagesQuota.limit - messagesQuota.used,
+      total: quotaData.limit,
+      used: quotaData.used,
+      remaining: quotaData.limit - quotaData.used,
     };
 
     // Since we're in moderator view (admins are redirected to ModeratorMessagesOverview)
@@ -252,7 +276,7 @@ export default function MessagesPanel() {
         info: ''
       },
     ];
-  }, []);
+  }, [userQuota]);
 
   return (
     <PanelWrapper>

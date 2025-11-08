@@ -112,14 +112,10 @@ namespace Clinics.Api.Controllers
                     Quota = quota != null ? new QuotaDto
                     {
                         Id = quota.Id,
-                        MessagesQuota = quota.MessagesQuota,
-                        ConsumedMessages = quota.ConsumedMessages,
-                        RemainingMessages = quota.RemainingMessages,
-                        QueuesQuota = quota.QueuesQuota,
-                        ConsumedQueues = quota.ConsumedQueues,
-                        RemainingQueues = quota.RemainingQueues,
-                        IsMessagesQuotaLow = quota.IsMessagesQuotaLow,
-                        IsQueuesQuotaLow = quota.IsQueuesQuotaLow,
+                        Limit = quota.MessagesQuota,
+                        Used = quota.ConsumedMessages,
+                        QueuesLimit = quota.QueuesQuota,
+                        QueuesUsed = quota.ConsumedQueues,
                         UpdatedAt = quota.UpdatedAt
                     } : null
                 };

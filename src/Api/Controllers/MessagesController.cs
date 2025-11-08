@@ -71,10 +71,12 @@ namespace Clinics.Api.Controllers
                         TemplateId = template.Id,
                         QueueId = p.QueueId,
                         SenderUserId = userId,
+                        ModeratorId = template.ModeratorId,  // Set moderator from template (or get from context)
                         Channel = req.Channel ?? "whatsapp",
                         RecipientPhone = p.PhoneNumber,
                         Content = content,
                         Status = "queued",
+                        Attempts = 0,  // Initialize attempts counter
                         CreatedAt = DateTime.UtcNow
                     };
                     messages.Add(msg);
@@ -111,6 +113,7 @@ namespace Clinics.Api.Controllers
         public async Task<IActionResult> RetryAll()
         {
             // Simple operation: requeue any failed tasks' messages
+            // IMPORTANT: Do NOT reset Attempts - preserve the count for retry history
             var failed = await _db.FailedTasks.ToListAsync();
             var requeued = 0;
             foreach(var f in failed)
@@ -121,7 +124,8 @@ namespace Clinics.Api.Controllers
                     if (msg != null)
                     {
                         msg.Status = "queued";
-                        msg.Attempts = 0;
+                        // DO NOT reset: msg.Attempts = 0;  // REMOVED - preserve attempts for history
+                        msg.LastAttemptAt = DateTime.UtcNow;  // Update last attempt timestamp
                         _db.FailedTasks.Remove(f);
                         requeued++;
                     }

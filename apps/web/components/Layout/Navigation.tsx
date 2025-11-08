@@ -224,19 +224,28 @@ export default function Navigation() {
                               ⛔ {mod.conflictCount}
                             </span>
                           )}
-                          {/* Add queue for this moderator */}
-                          <button
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded text-[11px] hover:bg-green-700 transition-colors"
+                          {/* Add queue for this moderator (use non-button inside a button to avoid nested <button>) */}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded text-[11px] hover:bg-green-700 transition-colors cursor-pointer"
                             title="إضافة طابور لهذا المشرف"
                             onClick={(e) => {
                               e.stopPropagation();
                               openModal('addQueue', { moderatorId: mod.moderatorId });
                             }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openModal('addQueue', { moderatorId: mod.moderatorId });
+                              }
+                            }}
                             aria-label={`إضافة طابور للمشرف ${mod.moderatorName}`}
                           >
                             <i className="fas fa-plus"></i>
                             إضافة طابور
-                          </button>
+                          </span>
                         </div>
                       </button>
                       {/* Queues under moderator */}

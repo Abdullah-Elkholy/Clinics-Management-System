@@ -135,11 +135,20 @@ namespace Clinics.Domain
         /// The moderator who owns this message template.
         /// All queues under this moderator can use these templates.
         /// </summary>
-        [Required]
-        public int ModeratorId { get; set; }
+        public int? ModeratorId { get; set; }
 
         [ForeignKey(nameof(ModeratorId))]
         public User? Moderator { get; set; }
+
+        /// <summary>
+        /// Queue this template belongs to (one-to-many: Queue -> Templates).
+        /// This makes templates per-queue instead of moderator-global.
+        /// Option A: Each queue can have its own templates.
+        /// </summary>
+        public int? QueueId { get; set; }
+
+        [ForeignKey(nameof(QueueId))]
+        public Queue? Queue { get; set; }
 
         [Required]
         public bool IsShared { get; set; }
@@ -149,6 +158,18 @@ namespace Clinics.Domain
 
         [Required]
         public DateTime CreatedAt { get; set; }
+
+        /// <summary>
+        /// Timestamp when template was last updated (for UI display, optimistic locking).
+        /// </summary>
+        public DateTime? UpdatedAt { get; set; }
+
+        /// <summary>
+        /// Navigation to optional condition (one-to-one).
+        /// Null TemplateId in MessageCondition = template has no custom condition (uses default).
+        /// Non-null TemplateId in MessageCondition = template has custom condition.
+        /// </summary>
+        public MessageCondition? Condition { get; set; }
     }
 
     [Table("Messages")]
@@ -161,7 +182,13 @@ namespace Clinics.Domain
 
         public int? TemplateId { get; set; }
 
+        [ForeignKey(nameof(TemplateId))]
+        public MessageTemplate? Template { get; set; }
+
         public int? QueueId { get; set; }
+
+        [ForeignKey(nameof(QueueId))]
+        public Queue? Queue { get; set; }
 
         public int? SenderUserId { get; set; }
 
@@ -169,8 +196,7 @@ namespace Clinics.Domain
         /// The moderator associated with this message.
         /// Tracks quota consumption and session usage per moderator.
         /// </summary>
-        [Required]
-        public int ModeratorId { get; set; }
+        public int? ModeratorId { get; set; }
 
         [ForeignKey(nameof(ModeratorId))]
         public User? Moderator { get; set; }
@@ -180,6 +206,11 @@ namespace Clinics.Domain
 
         [StringLength(20)]
         public string Channel { get; set; } = "whatsapp";
+
+        [Required]
+        [StringLength(20)]
+        [Phone]
+        public string? PatientPhone { get; set; }
 
         [Required]
         [StringLength(20)]
@@ -194,6 +225,9 @@ namespace Clinics.Domain
         [StringLength(20)]
         public string Status { get; set; } = "queued";
 
+        [StringLength(500)]
+        public string? ErrorMessage { get; set; }
+
         [Required]
         public int Attempts { get; set; }
 
@@ -203,6 +237,8 @@ namespace Clinics.Domain
 
         [Required]
         public DateTime CreatedAt { get; set; }
+
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 
     [Table("FailedTasks")]
@@ -407,4 +443,81 @@ namespace Clinics.Domain
         [Required]
         public DateTime UpdatedAt { get; set; }
     }
+
+    /// <summary>
+    /// MessageCondition: One-to-one relationship with MessageTemplate.
+    /// Represents optional condition criteria for template selection during message sending.
+    /// 
+    /// Semantics:
+    /// - Null TemplateId in MessageCondition = Template has NO condition (default template for queue)
+    /// - Non-null TemplateId in MessageCondition = Template has custom condition with this criteria
+    /// 
+    /// Validation:
+    /// - Unique index on TemplateId (max one condition per template)
+    /// - QueueId is required (each condition belongs to a specific queue)
+    /// - Operator must be one of: EQUAL, GREATER, LESS, RANGE
+    /// - Value required for EQUAL/GREATER/LESS; MinValue and MaxValue required for RANGE
+    /// </summary>
+    [Table("MessageConditions")]
+    public class MessageCondition
+    {
+        [Key]
+        public int Id { get; set; }
+
+        /// <summary>
+        /// One-to-one relationship with MessageTemplate.
+        /// Unique constraint ensures max one condition per template.
+        /// Null TemplateId = no condition (use default template for queue).
+        /// Non-null TemplateId with this condition object = template has custom condition.
+        /// </summary>
+        public int? TemplateId { get; set; }
+
+        [ForeignKey(nameof(TemplateId))]
+        public MessageTemplate? Template { get; set; }
+
+        /// <summary>
+        /// Queue this condition belongs to.
+        /// Each queue can have multiple conditions (one per template).
+        /// </summary>
+        [Required]
+        public int QueueId { get; set; }
+
+        [ForeignKey(nameof(QueueId))]
+        public Queue? Queue { get; set; }
+
+        /// <summary>
+        /// Operator: EQUAL, GREATER, LESS, RANGE
+        /// Determines how to compare the Value field(s).
+        /// </summary>
+        [Required]
+        [StringLength(20)]
+        public string Operator { get; set; } = "EQUAL";
+
+        /// <summary>
+        /// For EQUAL, GREATER, LESS: single comparison value.
+        /// Example: EQUAL=42 means "send when field = 42"
+        /// </summary>
+        public int? Value { get; set; }
+
+        /// <summary>
+        /// For RANGE: minimum boundary (inclusive).
+        /// Example: MinValue=10 with MaxValue=20 means "send when 10 <= field <= 20"
+        /// </summary>
+        public int? MinValue { get; set; }
+
+        /// <summary>
+        /// For RANGE: maximum boundary (inclusive).
+        /// Constraint: MinValue <= MaxValue must be enforced at service level.
+        /// </summary>
+        public int? MaxValue { get; set; }
+
+        [Required]
+        public DateTime CreatedAt { get; set; }
+
+        /// <summary>
+        /// Timestamp of last update (for UI, tracking changes).
+        /// </summary>
+        public DateTime? UpdatedAt { get; set; }
+    }
 }
+

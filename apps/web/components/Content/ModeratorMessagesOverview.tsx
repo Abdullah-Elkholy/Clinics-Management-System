@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
 import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
+import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
@@ -54,6 +55,28 @@ export default function ModeratorMessagesOverview() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedModerators, setExpandedModerators] = useState<Set<string | number>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
+  const [userQuota, setUserQuota] = useState<MyQuotaDto | null>(null);
+  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+
+  /**
+   * Load user's quota from API on component mount
+   */
+  useEffect(() => {
+    const loadQuota = async () => {
+      try {
+        setIsLoadingQuota(true);
+        const quota = await messageApiClient.getMyQuota();
+        setUserQuota(quota);
+      } catch (err) {
+        // Fallback to mock data on error
+        setUserQuota(null);
+      } finally {
+        setIsLoadingQuota(false);
+      }
+    };
+
+    loadQuota();
+  }, []);
 
   // Toggle moderator expansion
   const toggleModeratorExpanded = useCallback((moderatorId: string | number) => {
@@ -195,11 +218,12 @@ export default function ModeratorMessagesOverview() {
    * Role-based stats for admin view showing system-wide quota
    */
   const getAdminStats = useMemo(() => {
-    const { messagesQuota } = MOCK_QUOTA;
+    // Use API data if available, fallback to MOCK_QUOTA
+    const quotaData = userQuota || MOCK_QUOTA.messagesQuota;
     const baseStats = {
-      total: messagesQuota.limit,
-      used: messagesQuota.used,
-      remaining: messagesQuota.limit - messagesQuota.used,
+      total: quotaData.limit,
+      used: quotaData.used,
+      remaining: quotaData.limit - quotaData.used,
     };
 
     return [
@@ -228,7 +252,7 @@ export default function ModeratorMessagesOverview() {
         info: ''
       },
     ];
-  }, [moderators.length]);
+  }, [moderators.length, userQuota]);
 
   return (
     <PanelWrapper>

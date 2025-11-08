@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Clinics.Api.DTOs
 {
     /// <summary>
@@ -53,19 +55,52 @@ namespace Clinics.Api.DTOs
     }
 
     /// <summary>
-    /// Quota information for a moderator
+    /// Quota information for a moderator (admin list view with renamed fields).
     /// </summary>
     public class QuotaDto
     {
         public int Id { get; set; }
-        public int MessagesQuota { get; set; }
-        public int ConsumedMessages { get; set; }
-        public int RemainingMessages { get; set; }
-        public int QueuesQuota { get; set; }
-        public int ConsumedQueues { get; set; }
-        public int RemainingQueues { get; set; }
-        public bool IsMessagesQuotaLow { get; set; }
-        public bool IsQueuesQuotaLow { get; set; }
+        
+        /// <summary>
+        /// Maximum messages quota.
+        /// </summary>
+        public int Limit { get; set; }
+        
+        /// <summary>
+        /// Messages consumed so far.
+        /// </summary>
+        public int Used { get; set; }
+        
+        /// <summary>
+        /// Remaining messages (calculated).
+        /// </summary>
+        public int Remaining => Limit - Used;
+        
+        /// <summary>
+        /// Percentage of messages quota consumed (0-100).
+        /// </summary>
+        public decimal Percentage => Limit > 0 ? (decimal)(Used * 100) / Limit : 0;
+        
+        /// <summary>
+        /// Whether messages quota is low (> 80% consumed).
+        /// </summary>
+        public bool IsLow => Percentage > 80;
+        
+        /// <summary>
+        /// Maximum queues quota.
+        /// </summary>
+        public int QueuesLimit { get; set; }
+        
+        /// <summary>
+        /// Queues consumed.
+        /// </summary>
+        public int QueuesUsed { get; set; }
+        
+        /// <summary>
+        /// Remaining queues (calculated).
+        /// </summary>
+        public int QueuesRemaining => QueuesLimit - QueuesUsed;
+        
         public DateTime UpdatedAt { get; set; }
     }
 
@@ -155,5 +190,77 @@ namespace Clinics.Api.DTOs
         public bool IsShared { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
+    }
+
+    /// <summary>
+    /// Request to add quota to a moderator.
+    /// </summary>
+    public class AddQuotaRequest
+    {
+        [Required(ErrorMessage = "Limit (messages quota) is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "Limit must be at least 1")]
+        public int Limit { get; set; }
+
+        [Required(ErrorMessage = "Queues limit is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "Queues limit must be at least 1")]
+        public int QueuesLimit { get; set; }
+    }
+
+    /// <summary>
+    /// Request to update quota.
+    /// </summary>
+    public class UpdateQuotaRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Limit must be at least 1")]
+        public int? Limit { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Queues limit must be at least 1")]
+        public int? QueuesLimit { get; set; }
+    }
+
+    /// <summary>
+    /// Response for moderator's own quota with renamed fields.
+    /// </summary>
+    public class MyQuotaDto
+    {
+        /// <summary>
+        /// Maximum messages this moderator can send.
+        /// </summary>
+        public int Limit { get; set; }
+
+        /// <summary>
+        /// Messages consumed so far.
+        /// </summary>
+        public int Used { get; set; }
+
+        /// <summary>
+        /// Remaining messages.
+        /// </summary>
+        public int Remaining => Limit - Used;
+
+        /// <summary>
+        /// Percentage of quota consumed (0-100).
+        /// </summary>
+        public decimal Percentage => Limit > 0 ? (decimal)(Used * 100) / Limit : 0;
+
+        /// <summary>
+        /// Whether quota is low (> 80% consumed).
+        /// </summary>
+        public bool IsLowQuota => Percentage > 80;
+
+        /// <summary>
+        /// Maximum queues.
+        /// </summary>
+        public int QueuesLimit { get; set; }
+
+        /// <summary>
+        /// Queues consumed.
+        /// </summary>
+        public int QueuesUsed { get; set; }
+
+        /// <summary>
+        /// Remaining queues.
+        /// </summary>
+        public int QueuesRemaining => QueuesLimit - QueuesUsed;
     }
 }

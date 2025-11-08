@@ -35,16 +35,16 @@ public class TasksController : ControllerBase
                 .OrderByDescending(ft => ft.CreatedAt)
                 .Select(ft => new FailedTaskDto
                 {
-                    TaskId = ft.Id,
+                    Id = (int)ft.Id,
+                    QueueId = ft.QueueId ?? 0,
                     QueueName = ft.Queue != null ? ft.Queue.DoctorName : "غير محدد",
-                    PatientName = ft.Patient != null ? ft.Patient.FullName : "غير محدد",
-                    Phone = ft.Patient != null ? ft.Patient.PhoneNumber : ft.Message != null ? ft.Message.RecipientPhone : "",
-                    Message = ft.Message != null ? ft.Message.Content : "",
-                    Error = ft.Reason ?? "خطأ غير معروف",
-                    ErrorDetails = ft.ProviderResponse ?? "",
-                    RetryCount = ft.RetryCount,
-                    FailedAt = ft.CreatedAt,
-                    RetryHistory = new List<RetryHistoryItem>() // TODO: Implement retry history tracking
+                    PatientPhone = ft.Patient != null ? ft.Patient.PhoneNumber : ft.Message != null ? ft.Message.RecipientPhone : "",
+                    MessageContent = ft.Message != null ? ft.Message.Content : "",
+                    ErrorMessage = ft.Reason ?? "خطأ غير معروف",
+                    Attempts = ft.RetryCount,
+                    Status = ft.Message != null ? ft.Message.Status : "Failed",
+                    CreatedAt = ft.CreatedAt,
+                    LastAttemptAt = ft.Message != null ? ft.Message.LastAttemptAt : null
                 })
                 .ToListAsync();
 

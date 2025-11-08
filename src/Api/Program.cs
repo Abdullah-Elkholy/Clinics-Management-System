@@ -42,9 +42,12 @@ builder.Services.AddSwaggerGen();
 // (DbContext registration will be configured after we resolve the connection string below)
 
 // Services
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<QuotaService>();
+builder.Services.AddScoped<IUserContext, UserContext>();
+builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
 
 // JWT Auth
 builder.Services.AddAuthentication(options =>

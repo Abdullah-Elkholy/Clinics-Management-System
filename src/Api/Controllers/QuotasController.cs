@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
+using Clinics.Api.DTOs;
 using Clinics.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,108 +14,92 @@ namespace Clinics.Api.Controllers
     {
         private readonly ApplicationDbContext _db;
         private readonly QuotaService _quotaService;
+        private readonly IUserContext _userContext;
         private readonly ILogger<QuotasController> _logger;
 
-        public QuotasController(ApplicationDbContext db, QuotaService quotaService, ILogger<QuotasController> logger)
+        public QuotasController(ApplicationDbContext db, QuotaService quotaService, IUserContext userContext, ILogger<QuotasController> logger)
         {
             _db = db;
             _quotaService = quotaService;
+            _userContext = userContext;
             _logger = logger;
         }
 
         /// <summary>
         /// Get all quotas (admin only)
+        /// Returns DTOs with renamed fields: limit, used, remaining, percentage
         /// </summary>
         [HttpGet]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
-        public async Task<IActionResult> GetAll()
+        public async Task<ActionResult<ListResponse<QuotaDto>>> GetAll()
         {
             try
             {
                 var quotas = await _db.Quotas
                     .Include(q => q.Moderator)
-                    .Select(q => new
-                    {
-                        q.Id,
-                        q.ModeratorUserId,
-                        ModeratorName = q.Moderator != null ? q.Moderator.FullName : "Unknown",
-                        ModeratorUsername = q.Moderator != null ? q.Moderator.Username : "",
-                        q.MessagesQuota,
-                        q.ConsumedMessages,
-                        RemainingMessages = q.MessagesQuota - q.ConsumedMessages,
-                        q.QueuesQuota,
-                        q.ConsumedQueues,
-                        RemainingQueues = q.QueuesQuota - q.ConsumedQueues,
-                        q.UpdatedAt,
-                        IsMessagesQuotaLow = q.MessagesQuota > 0 && ((q.MessagesQuota - q.ConsumedMessages) * 100.0 / q.MessagesQuota) < 10,
-                        IsQueuesQuotaLow = q.QueuesQuota > 0 && ((q.QueuesQuota - q.ConsumedQueues) * 100.0 / q.QueuesQuota) < 10
-                    })
+                    .OrderBy(q => q.ModeratorUserId)
                     .ToListAsync();
 
-                return Ok(new { success = true, data = quotas });
+                var dtos = quotas.Select(q => new QuotaDto
+                {
+                    Id = q.Id,
+                    Limit = q.MessagesQuota,
+                    Used = q.ConsumedMessages,
+                    QueuesLimit = q.QueuesQuota,
+                    QueuesUsed = q.ConsumedQueues,
+                    UpdatedAt = q.UpdatedAt
+                }).ToList();
+
+                return Ok(new ListResponse<QuotaDto>
+                {
+                    Items = dtos,
+                    TotalCount = dtos.Count,
+                    PageNumber = 1,
+                    PageSize = dtos.Count
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching quotas");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب بيانات الحصص" });
+                return StatusCode(500, new { message = "Error fetching quotas" });
             }
         }
 
         /// <summary>
         /// Get quota for current user (their moderator's quota)
+        /// Returns renamed fields: limit (messagesQuota), used (consumedMessages)
         /// </summary>
         [HttpGet("me")]
-        public async Task<IActionResult> GetMyQuota()
+        public async Task<ActionResult<MyQuotaDto>> GetMyQuota()
         {
             try
             {
-                var userIdClaim = User.FindFirst("userId")?.Value;
-                if (userIdClaim == null || !int.TryParse(userIdClaim, out int userId))
-                    return Unauthorized(new { success = false, error = "غير مصرح" });
-
+                var userId = _userContext.GetUserId();
                 var quota = await _quotaService.GetQuotaForUserAsync(userId);
                 
                 if (quota == null)
                 {
-                    return Ok(new
+                    return Ok(new MyQuotaDto
                     {
-                        success = true,
-                        data = new
-                        {
-                            messagesQuota = 0,
-                            consumedMessages = 0,
-                            remainingMessages = 0,
-                            queuesQuota = 0,
-                            consumedQueues = 0,
-                            remainingQueues = 0,
-                            isMessagesQuotaLow = false,
-                            isQueuesQuotaLow = false,
-                            hasUnlimitedQuota = true
-                        }
+                        Limit = 0,
+                        Used = 0,
+                        QueuesLimit = 0,
+                        QueuesUsed = 0
                     });
                 }
 
-                return Ok(new
+                return Ok(new MyQuotaDto
                 {
-                    success = true,
-                    data = new
-                    {
-                        messagesQuota = quota.MessagesQuota,
-                        consumedMessages = quota.ConsumedMessages,
-                        remainingMessages = quota.RemainingMessages,
-                        queuesQuota = quota.QueuesQuota,
-                        consumedQueues = quota.ConsumedQueues,
-                        remainingQueues = quota.RemainingQueues,
-                        isMessagesQuotaLow = quota.IsMessagesQuotaLow,
-                        isQueuesQuotaLow = quota.IsQueuesQuotaLow,
-                        hasUnlimitedQuota = false
-                    }
+                    Limit = quota.MessagesQuota,
+                    Used = quota.ConsumedMessages,
+                    QueuesLimit = quota.QueuesQuota,
+                    QueuesUsed = quota.ConsumedQueues
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching user quota");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب بيانات الحصة" });
+                return StatusCode(500, new { message = "Error fetching quota" });
             }
         }
 
@@ -123,21 +108,43 @@ namespace Clinics.Api.Controllers
         /// </summary>
         [HttpPost("{moderatorId}/add")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
-        public async Task<IActionResult> AddQuota(int moderatorId, [FromBody] AddQuotaRequest request)
+        public async Task<ActionResult<MyQuotaDto>> AddQuota(int moderatorId, [FromBody] AddQuotaRequest request)
         {
             try
             {
-                if (request.AddMessages < 0 || request.AddQueues < 0)
-                    return BadRequest(new { success = false, error = "القيم يجب أن تكون موجبة" });
+                if (request.Limit <= 0 || request.QueuesLimit <= 0)
+                    return BadRequest(new { message = "Limit and QueuesLimit must be greater than 0" });
 
-                await _quotaService.AddQuotaAsync(moderatorId, request.AddMessages, request.AddQueues);
+                var existing = await _db.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
+                
+                if (existing != null)
+                    return BadRequest(new { message = "Quota already exists for this moderator" });
 
-                return Ok(new { success = true, message = "تم إضافة الحصة بنجاح" });
+                var quota = new Quota
+                {
+                    ModeratorUserId = moderatorId,
+                    MessagesQuota = request.Limit,
+                    ConsumedMessages = 0,
+                    QueuesQuota = request.QueuesLimit,
+                    ConsumedQueues = 0,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _db.Quotas.Add(quota);
+                await _db.SaveChangesAsync();
+
+                return Ok(new MyQuotaDto
+                {
+                    Limit = quota.MessagesQuota,
+                    Used = quota.ConsumedMessages,
+                    QueuesLimit = quota.QueuesQuota,
+                    QueuesUsed = quota.ConsumedQueues
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding quota");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إضافة الحصة" });
+                return StatusCode(500, new { message = "Error adding quota" });
             }
         }
 
@@ -146,52 +153,39 @@ namespace Clinics.Api.Controllers
         /// </summary>
         [HttpPut("{moderatorId}")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
-        public async Task<IActionResult> Update(int moderatorId, [FromBody] UpdateQuotaRequest request)
+        public async Task<ActionResult<MyQuotaDto>> Update(int moderatorId, [FromBody] UpdateQuotaRequest request)
         {
             try
             {
                 var existing = await _db.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
                 
                 if (existing == null)
-                {
-                    existing = new Quota
-                    {
-                        ModeratorUserId = moderatorId,
-                        MessagesQuota = request.MessagesQuota,
-                        ConsumedMessages = 0,
-                        QueuesQuota = request.QueuesQuota,
-                        ConsumedQueues = 0,
-                        UpdatedAt = DateTime.UtcNow
-                    };
-                    _db.Quotas.Add(existing);
-                }
-                else
-                {
-                    existing.MessagesQuota = request.MessagesQuota;
-                    existing.QueuesQuota = request.QueuesQuota;
-                    existing.UpdatedAt = DateTime.UtcNow;
-                }
+                    return NotFound(new { message = "Quota not found for this moderator" });
+
+                // Update only provided fields
+                if (request.Limit.HasValue && request.Limit.Value > 0)
+                    existing.MessagesQuota = request.Limit.Value;
+                
+                if (request.QueuesLimit.HasValue && request.QueuesLimit.Value > 0)
+                    existing.QueuesQuota = request.QueuesLimit.Value;
+                
+                existing.UpdatedAt = DateTime.UtcNow;
                 
                 await _db.SaveChangesAsync();
-                return Ok(new { success = true });
+                
+                return Ok(new MyQuotaDto
+                {
+                    Limit = existing.MessagesQuota,
+                    Used = existing.ConsumedMessages,
+                    QueuesLimit = existing.QueuesQuota,
+                    QueuesUsed = existing.ConsumedQueues
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating quota");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء تحديث الحصة" });
+                return StatusCode(500, new { message = "Error updating quota" });
             }
         }
-    }
-
-    public class AddQuotaRequest
-    {
-        public int AddMessages { get; set; }
-        public int AddQueues { get; set; }
-    }
-
-    public class UpdateQuotaRequest
-    {
-        public int MessagesQuota { get; set; }
-        public int QueuesQuota { get; set; }
     }
 }

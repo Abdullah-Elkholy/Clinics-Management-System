@@ -4,6 +4,7 @@ using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251108142847_AddMessageConditionAndQueueIdToTemplate")]
+    partial class AddMessageConditionAndQueueIdToTemplate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -97,23 +100,14 @@ namespace Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
-                    b.Property<string>("ErrorMessage")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
                     b.Property<DateTime?>("LastAttemptAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("ModeratorId")
+                    b.Property<int>("ModeratorId")
                         .HasColumnType("int");
 
                     b.Property<int?>("PatientId")
                         .HasColumnType("int");
-
-                    b.Property<string>("PatientPhone")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(100)
@@ -141,16 +135,9 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("TemplateId")
                         .HasColumnType("int");
 
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ModeratorId");
-
-                    b.HasIndex("QueueId");
-
-                    b.HasIndex("TemplateId");
 
                     b.HasIndex("Status", "CreatedAt");
 
@@ -272,10 +259,10 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsShared")
                         .HasColumnType("bit");
 
-                    b.Property<int?>("ModeratorId")
+                    b.Property<int>("ModeratorId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("QueueId")
+                    b.Property<int>("QueueId")
                         .HasColumnType("int");
 
                     b.Property<string>("Title")
@@ -587,21 +574,10 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.User", "Moderator")
                         .WithMany()
                         .HasForeignKey("ModeratorId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Clinics.Domain.Queue", "Queue")
-                        .WithMany()
-                        .HasForeignKey("QueueId");
-
-                    b.HasOne("Clinics.Domain.MessageTemplate", "Template")
-                        .WithMany()
-                        .HasForeignKey("TemplateId");
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Moderator");
-
-                    b.Navigation("Queue");
-
-                    b.Navigation("Template");
                 });
 
             modelBuilder.Entity("Clinics.Domain.MessageCondition", b =>
@@ -637,11 +613,14 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.User", "Moderator")
                         .WithMany()
                         .HasForeignKey("ModeratorId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
-                        .HasForeignKey("QueueId");
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Moderator");
 
