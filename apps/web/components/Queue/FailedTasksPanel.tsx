@@ -49,7 +49,7 @@ export default function FailedTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
-  const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<number>>>(new Map());
+  const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
   const [sessions, setSessions] = useState<Session[]>(MOCK_FAILED_SESSIONS as Session[]);
 
@@ -71,7 +71,7 @@ export default function FailedTasksPanel() {
   /**
    * Toggle patient selection - memoized
    */
-  const togglePatientSelection = useCallback((sessionId: string, patientId: number) => {
+  const togglePatientSelection = useCallback((sessionId: string, patientId: string) => {
     setSelectedPatients((prev) => {
       const newMap = new Map(prev);
       if (!newMap.has(sessionId)) {
@@ -156,8 +156,8 @@ export default function FailedTasksPanel() {
                       ...p,
                       status: 'جاري',
                       failureMetrics: p.failureMetrics
-                        ? { ...p.failureMetrics, retries: p.failureMetrics.retries + 1 }
-                        : { attempts: 0, retries: 1 },
+                        ? { ...p.failureMetrics, attempts: p.failureMetrics.attempts + 1 }
+                        : { attempts: 1 },
                     }
                   : p
               ),
@@ -178,7 +178,7 @@ export default function FailedTasksPanel() {
   /**
    * Retry single patient - memoized
    */
-  const retrySinglePatient = useCallback((sessionId: string, patientId: number) => {
+  const retrySinglePatient = useCallback((sessionId: string, patientId: string) => {
     setSessions((prev) =>
       prev.map((s) =>
         s.id === sessionId
@@ -190,8 +190,8 @@ export default function FailedTasksPanel() {
                       ...p,
                       status: 'جاري',
                       failureMetrics: p.failureMetrics
-                        ? { ...p.failureMetrics, retries: p.failureMetrics.retries + 1 }
-                        : { attempts: 0, retries: 1 },
+                        ? { ...p.failureMetrics, attempts: p.failureMetrics.attempts + 1 }
+                        : { attempts: 1 },
                     }
                   : p
               ),
@@ -213,8 +213,8 @@ export default function FailedTasksPanel() {
           ...p,
           status: 'جاري',
           failureMetrics: p.failureMetrics
-            ? { ...p.failureMetrics, retries: p.failureMetrics.retries + 1 }
-            : { attempts: 0, retries: 1 },
+            ? { ...p.failureMetrics, attempts: p.failureMetrics.attempts + 1 }
+            : { attempts: 1 },
         })),
       }))
     );
@@ -276,7 +276,7 @@ export default function FailedTasksPanel() {
   /**
    * Delete patient - memoized
    */
-  const handleDeletePatient = useCallback(async (sessionId: string, patientId: number) => {
+  const handleDeletePatient = useCallback(async (sessionId: string, patientId: string) => {
     const confirmed = await confirm(createDeleteConfirmation('هذا المريض'));
     if (confirmed) {
       setSessions((prev) =>
@@ -324,7 +324,7 @@ export default function FailedTasksPanel() {
     { key: 'phone', label: 'رقم الجوال', width: '15%' },
     { key: 'message', label: 'الرسالة', width: '25%', hasToggle: true },
     { key: 'reason', label: 'سبب الفشل', width: '18%' },
-    { key: 'retries', label: 'عدد المحاولات', width: '12%' },
+    { key: 'attempts', label: 'عدد المحاولات', width: '12%' },
     { key: 'actions', label: 'الإجراءات', width: '11%' },
   ], []);
 
@@ -356,9 +356,9 @@ export default function FailedTasksPanel() {
     reason: (
       <span className="text-red-700 font-medium text-sm">{patient.failedReason}</span>
     ),
-    retries: (
+    attempts: (
       <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-medium">
-        {patient.failureMetrics?.retries || 0}
+        {patient.failureMetrics?.attempts || 0}
       </span>
     ),
     actions: (
@@ -633,7 +633,7 @@ export default function FailedTasksPanel() {
                                   <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
                                   <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
                                   <td className="px-6 py-3 text-sm">{row.reason}</td>
-                                  <td className="px-6 py-3 text-sm">{row.retries}</td>
+                                  <td className="px-6 py-3 text-sm">{row.attempts}</td>
                                   <td className="px-6 py-3 text-sm">{row.actions}</td>
                                 </tr>
                               );

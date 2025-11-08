@@ -51,7 +51,7 @@ export default function OngoingTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
-  const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<number>>>(new Map());
+  const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
   const [pausedSessions, setPausedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-002']));
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
@@ -75,7 +75,7 @@ export default function OngoingTasksPanel() {
   /**
    * Toggle patient selection - memoized
    */
-  const togglePatientSelection = useCallback((sessionId: string, patientId: number) => {
+  const togglePatientSelection = useCallback((sessionId: string, patientId: string) => {
     setSelectedPatients((prev) => {
       const newMap = new Map(prev);
       if (!newMap.has(sessionId)) {
@@ -219,7 +219,7 @@ export default function OngoingTasksPanel() {
   /**
    * Toggle patient pause - memoized
    */
-  const togglePatientPause = useCallback((sessionId: string, patientId: number) => {
+  const togglePatientPause = useCallback((sessionId: string, patientId: string) => {
     setSessions((prev) =>
       prev.map((s) => {
         if (s.id !== sessionId) return s;
@@ -280,7 +280,7 @@ export default function OngoingTasksPanel() {
   /**
    * Delete patient - memoized
    */
-  const handleDeletePatient = useCallback(async (sessionId: string, patientId: number) => {
+  const handleDeletePatient = useCallback(async (sessionId: string, patientId: string) => {
     const confirmed = await confirm(createDeleteConfirmation('هذا المريض'));
     if (confirmed) {
       setSessions((prev) =>

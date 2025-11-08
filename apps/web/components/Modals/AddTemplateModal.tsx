@@ -43,13 +43,19 @@ export default function AddTemplateModal() {
   const handleConditionChange = (conditionId: string | null) => {
     // If selecting a default condition, check if one already exists
     if (conditionId && conditionId.startsWith('DEFAULT_')) {
-      const existingDefault = messageTemplates.find(
-        (t) => t.queueId === String(queueId) && t.conditionId?.startsWith('DEFAULT_')
+      const existingDefaultCondition = messageConditions.find(
+        (c) => c.queueId === String(queueId) && c.id?.startsWith('DEFAULT_')
       );
-      if (existingDefault) {
-        setExistingDefaultTemplate(existingDefault);
-        setShowDefaultWarning(true);
-        return;
+      if (existingDefaultCondition) {
+        // Find the template associated with this condition
+        const existingTemplate = messageTemplates.find(
+          (t) => t.id === existingDefaultCondition.templateId
+        );
+        if (existingTemplate) {
+          setExistingDefaultTemplate(existingTemplate);
+          setShowDefaultWarning(true);
+          return;
+        }
       }
     }
     setSelectedConditionId(conditionId);

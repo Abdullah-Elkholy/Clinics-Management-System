@@ -16,32 +16,31 @@ export interface LoginCredentials {
 }
 
 export interface Patient {
-  id: number;
-  name: string;
-  phone: string;
+  id: string;                  // GUID (UUID format)
+  queueId: string;             // GUID: foreign key to Queue
+  name: string;                // Patient full name
+  phone: string;               // E.164 format with country code
   countryCode?: string;
-  queue?: number;
   position?: number;
-  status?: string;
+  status?: string;             // 'pending' | 'active' | 'completed' | 'failed'
   failedReason?: string;
   // Consolidated failure tracking (replacing retryCount and failedAttempts)
   failureMetrics?: {
-    attempts: number;        // Total failed attempts
-    retries: number;         // Total retry attempts
+    attempts: number;        // Total send attempts (1=initial, 2+=retries). Backend Message.Attempts
     lastFailedAt?: string;   // Timestamp of last failure
     reason?: string;         // Failure reason
   };
   isPaused?: boolean;
   completedAt?: string;
   messagePreview?: string;
-  queueName?: string;
   selected?: boolean;
 }
 
 export interface Queue {
-  id: string;
+  id: string;                  // GUID (UUID format)
   doctorName: string;
-  moderatorId?: string;
+  moderatorId: string;         // GUID: references moderator user ID
+  isActive?: boolean;
 }
 
 export interface OngoingTask {

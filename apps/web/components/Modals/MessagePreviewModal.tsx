@@ -33,7 +33,12 @@ export default function MessagePreviewModal() {
   }));
 
   // Sort patients by queue position (الترتيب) - ascending order
-  const sortedPatients = [...previewPatients].sort((a, b) => a.queue - b.queue);
+  const sortedPatients = [...previewPatients].sort((a, b) => {
+    // Sort by queueId (treating as string GUID)
+    const queueIdA = a.queueId || '';
+    const queueIdB = b.queueId || '';
+    return queueIdA.localeCompare(queueIdB);
+  });
 
   // Real values for message variables
   const currentQueuePosition = currentCQP !== undefined ? parseInt(String(currentCQP)) : 3;  // CQP value
@@ -52,7 +57,7 @@ export default function MessagePreviewModal() {
   // Resolve all patients using the service
   const patientArray = sortedPatients
     .filter((p) => selectedPatientIds.includes(p.id) && !removedPatients.includes(String(p.id)))
-    .map((p) => ({ id: String(p.id), name: p.name, position: p.queue }));
+    .map((p) => ({ id: String(p.id), name: p.name, position: p.position || 0 }));
 
   const resolutions = resolvePatientMessages(
     messageConfig,

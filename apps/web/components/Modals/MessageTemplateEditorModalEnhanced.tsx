@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { MessageTemplate, MessageTemplateCategory } from '@/types/messageTemplate';
+import { MessageTemplate } from '@/types/messageTemplate';
 
 interface MessageTemplateEditorModalProps {
   template?: MessageTemplate;

@@ -5,27 +5,25 @@
  * Defines structure for message templates and conditions per queue
  */
 
-export type MessageTemplateCategory = 'greeting' | 'reminder' | 'alert' | 'confirmation' | 'thank_you' | 'custom';
-
 export interface MessageTemplate {
-  id: string;                    // unique uuid
-  queueId: string;               // which queue this template belongs to
-  title: string;                 // template name (e.g., "Welcome Message")
-  description?: string;          // optional description
-  content: string;               // template text with placeholders
-  variables: string[];           // list of variables in template
-  isActive: boolean;             // whether template is in use
-  priority?: number;             // order when multiple templates available
-  conditionId?: string;          // optional associated condition (for conditional message rendering)
+  id: string;                  // GUID (UUID format)
+  queueId: string;             // GUID: which queue this template belongs to
+  title: string;               // template name (e.g., "Welcome Message")
+  description?: string;        // optional description
+  content: string;             // template text with placeholders
+  variables: string[];         // list of variables in template
+  isActive: boolean;           // whether template is in use
+  priority?: number;           // order when multiple templates available
+  conditionId?: string;        // GUID (one-to-one): optional associated condition
   
   // Metadata
   createdAt: Date;
   updatedAt?: Date;
-  createdBy: string;             // user who created it
+  createdBy: string;           // GUID: user ID who created it
   
   // Usage stats
-  usageCount?: number;           // how many times sent
-  successRate?: number;          // % of successfully sent messages
+  usageCount?: number;         // how many times sent
+  successRate?: number;        // % of successfully sent messages
 }
 
 export interface QueueTemplateConfig {

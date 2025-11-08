@@ -216,17 +216,51 @@ export default function MessagesPanel() {
     return `${operatorText} ${valueText}`;
   };
 
+  /**
+   * Role-based stats calculation for message quotas
+   * - PrimaryAdmin: System-wide quota (sum of all)
+   * - SecondaryAdmin: Assigned teams quota
+   * - Moderator: Personal quota
+   */
+  const getRoleContextStats = useMemo(() => {
+    const { messagesQuota } = MOCK_QUOTA;
+    const baseStats = {
+      total: messagesQuota.limit,
+      used: messagesQuota.used,
+      remaining: messagesQuota.limit - messagesQuota.used,
+    };
+
+    // Since we're in moderator view (admins are redirected to ModeratorMessagesOverview)
+    // Display moderator-specific labels
+    return [
+      {
+        label: 'حصتي من الرسائل',
+        value: baseStats.total.toString(),
+        color: 'blue' as const,
+        info: 'عدد الرسائل المسموح لي بإرسالها'
+      },
+      {
+        label: 'الرسائل المستخدمة',
+        value: baseStats.used.toString(),
+        color: 'yellow' as const,
+        info: 'من حصتي الشخصية'
+      },
+      {
+        label: 'الرسائل المتبقية',
+        value: baseStats.remaining.toString(),
+        color: 'green' as const,
+        info: ''
+      },
+    ];
+  }, []);
+
   return (
     <PanelWrapper>
       <PanelHeader
         icon="fa-envelope"
         title="إدارة قوالب الرسائل"
         description="إدارة قوالب الرسائل لكل طابور بشكل منفصل وسهل"
-        stats={[
-          { label: 'إجمالي الرسائل في الحصة', value: MOCK_QUOTA.messagesQuota.limit.toString(), color: 'blue' },
-          { label: 'الرسائل المستهلكة', value: MOCK_QUOTA.messagesQuota.used.toString(), color: 'yellow' },
-          { label: 'الرسائل المتبقية', value: (MOCK_QUOTA.messagesQuota.limit - MOCK_QUOTA.messagesQuota.used).toString(), color: 'green' },
-        ]}
+        stats={getRoleContextStats}
         actions={[]}
       />
 
@@ -390,13 +424,12 @@ export default function MessagesPanel() {
                                   );
                                 })
                                 .sort((a, b) => {
-                                  // Get conditions for both templates
-                                  const conditionA = a.conditionId 
-                                    ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === a.conditionId)
-                                    : null;
-                                  const conditionB = b.conditionId 
-                                    ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === b.conditionId)
-                                    : null;
+                                  // Get conditions for both templates (conditions now link to templates via templateId)
+                                  const conditionsA = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === a.id);
+                                  const conditionsB = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === b.id);
+                                  
+                                  const conditionA = conditionsA.length > 0 ? conditionsA[0] : null;
+                                  const conditionB = conditionsB.length > 0 ? conditionsB[0] : null;
 
                                   // Check if conditions are default
                                   const isDefaultA = conditionA && conditionA.id.startsWith('DEFAULT_');
@@ -457,11 +490,9 @@ export default function MessagesPanel() {
                                   return 0;
                                 })
                                 .map((template) => {
-                                const condition = template.conditionId 
-                                  ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === template.conditionId)
-                                  : null;
-                                
-                                // Check if this is a default condition
+                                const condition = MOCK_QUEUE_MESSAGE_CONDITIONS.find(
+                                  (c) => c.templateId === template.id
+                                );                                // Check if this is a default condition
                                 const isDefaultCondition = condition && condition.id.startsWith('DEFAULT_');
                                 
                                 // Check if this template's condition is conflicting
@@ -542,7 +573,7 @@ export default function MessagesPanel() {
                                         <button
                                           onClick={async () => {
                                             // Check if this is the default template (has DEFAULT_ condition)
-                                            const templateCondition = MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === template.conditionId);
+                                            const templateCondition = MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.templateId === template.id);
                                             const isDefault = templateCondition && templateCondition.id.startsWith('DEFAULT_');
                                             
                                             if (isDefault) {

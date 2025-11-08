@@ -40,8 +40,8 @@ export default function QueueDashboard() {
   const [isEditingETS, setIsEditingETS] = useState(false);
   
   const [patients, setPatients] = useState(SAMPLE_PATIENTS);
-  const [selectedPatients, setSelectedPatients] = useState<number[]>([]);
-  const [editingQueueId, setEditingQueueId] = useState<number | null>(null);
+  const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingQueueValue, setEditingQueueValue] = useState('');
   const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
   
@@ -231,7 +231,7 @@ export default function QueueDashboard() {
   /**
    * Toggle patient selection - memoized
    */
-  const togglePatientSelection = useCallback((id: number) => {
+  const togglePatientSelection = useCallback((id: string) => {
     setSelectedPatients((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
@@ -348,44 +348,20 @@ export default function QueueDashboard() {
   /**
    * Start editing queue position - memoized
    */
-  const startEditingQueue = useCallback((patientId: number, currentQueue: number) => {
+  const startEditingQueue = useCallback((patientId: string, currentPosition: number | undefined) => {
     setEditingQueueId(patientId);
-    setEditingQueueValue(currentQueue.toString());
+    setEditingQueueValue((currentPosition || 0).toString());
   }, []);
 
   /**
    * Save queue edit - memoized
    */
-  const saveQueueEdit = useCallback((patientId: number) => {
-    const newQueue = parseInt(editingQueueValue, 10);
-    if (!isNaN(newQueue) && newQueue > 0) {
-      setPatients((prev) => {
-        const editingPatient = prev.find((p) => p.id === patientId);
-        if (!editingPatient) return prev;
-
-        const oldQueue = editingPatient.queue;
-        const conflictingPatient = prev.find((p) => p.id !== patientId && p.queue === newQueue);
-
-        if (conflictingPatient) {
-          return prev.map((p) => {
-            if (p.id === patientId) {
-              return { ...p, queue: newQueue };
-            }
-            if (oldQueue < newQueue) {
-              if (p.queue > oldQueue && p.queue <= newQueue) {
-                return { ...p, queue: p.queue - 1 };
-              }
-            } else {
-              if (p.queue >= newQueue && p.queue < oldQueue) {
-                return { ...p, queue: p.queue + 1 };
-              }
-            }
-            return p;
-          });
-        } else {
-          return prev.map((p) => (p.id === patientId ? { ...p, queue: newQueue } : p));
-        }
-      });
+  const saveQueueEdit = useCallback((patientId: string) => {
+    const newPosition = parseInt(editingQueueValue, 10);
+    if (!isNaN(newPosition) && newPosition > 0) {
+      setPatients((prev) =>
+        prev.map((p) => (p.id === patientId ? { ...p, position: newPosition } : p))
+      );
       setEditingQueueId(null);
     }
   }, [editingQueueValue]);
@@ -410,11 +386,11 @@ export default function QueueDashboard() {
   ], []);
 
   /**
-   * Memoize table data rows - sorted by queue
+   * Memoize table data rows - sorted by position
    */
   const tableRows = useMemo(() =>
     patients
-      .sort((a, b) => a.queue - b.queue)
+      .sort((a, b) => (a.position || 0) - (b.position || 0))
       .map((patient) => ({
         id: patient.id,
         checkbox: (
@@ -451,10 +427,10 @@ export default function QueueDashboard() {
           ) : (
             <div className="flex gap-2 items-center">
               <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-medium">
-                #{patient.queue}
+                #{patient.position || '-'}
               </span>
               <button
-                onClick={() => startEditingQueue(patient.id, patient.queue)}
+                onClick={() => startEditingQueue(patient.id, patient.position)}
                 title="تعديل ترتيب الانتظار"
                 className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded text-xs"
               >

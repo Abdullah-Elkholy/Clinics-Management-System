@@ -16,11 +16,11 @@ export const MOCK_ONGOING_SESSIONS = [
     failedCount: 1,
     isPaused: false,
     patients: [
-      { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 1, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك أحمد، ترتيبك الحالي هو 1' },
-      { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 2, status: 'جاري', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك فاطمة، ترتيبك الحالي هو 2' },
-      { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 3, status: 'فشل', failureMetrics: { attempts: 2, retries: 1, reason: 'خطأ في الاتصال' }, isPaused: false, failedReason: 'خطأ في الاتصال', messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 3' },
-      { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 4, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 4' },
-      { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 5, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 5' },
+      { id: "patient-uuid-1", name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queueId: "queue-uuid-1", status: 'تم', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك أحمد، ترتيبك الحالي هو 1' },
+      { id: "patient-uuid-2", name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queueId: "queue-uuid-2", status: 'جاري', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك فاطمة، ترتيبك الحالي هو 2' },
+      { id: "patient-uuid-3", name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queueId: "queue-uuid-3", status: 'فشل', failureMetrics: { attempts: 2, reason: 'خطأ في الاتصال' }, isPaused: false, failedReason: 'خطأ في الاتصال', messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 3' },
+      { id: "patient-uuid-4", name: 'نور الدين', phone: '01011223344', countryCode: '+20', queueId: "queue-uuid-4", status: 'تم', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 4' },
+      { id: "patient-uuid-5", name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queueId: "queue-uuid-5", status: 'قيد الانتظار', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 5' },
     ],
   },
   {
@@ -34,8 +34,8 @@ export const MOCK_ONGOING_SESSIONS = [
     failedCount: 0,
     isPaused: true,
     patients: [
-      { id: 6, name: 'علي حسن', phone: '01098765432', countryCode: '+20', queue: 1, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: true, messagePreview: 'مرحباً بك علي، ترتيبك الحالي هو 1' },
-      { id: 7, name: 'ليلى محمد', phone: '01055667788', countryCode: '+20', queue: 2, status: 'تم', failureMetrics: { attempts: 0, retries: 0 }, isPaused: true, messagePreview: 'مرحباً بك ليلى، ترتيبك الحالي هو 2' },
+      { id: "patient-uuid-6", name: 'علي حسن', phone: '01098765432', countryCode: '+20', queueId: "queue-uuid-1", status: 'تم', failureMetrics: { attempts: 0 }, isPaused: true, messagePreview: 'مرحباً بك علي، ترتيبك الحالي هو 1' },
+      { id: "patient-uuid-7", name: 'ليلى محمد', phone: '01055667788', countryCode: '+20', queueId: "queue-uuid-2", status: 'تم', failureMetrics: { attempts: 0 }, isPaused: true, messagePreview: 'مرحباً بك ليلى، ترتيبك الحالي هو 2' },
     ],
   },
 ];
@@ -50,41 +50,40 @@ export const MOCK_FAILED_SESSIONS = [
     failedAt: '2025-01-14 09:15:30',
     totalPatients: 12,
     failedCount: 3,
-    retryCount: 1,
     patients: [
       {
-        id: 101,
+        id: "patient-uuid-101",
         name: 'محمود إبراهيم',
         phone: '01012345678',
         countryCode: '+20',
-        queue: 1,
+        queueId: "queue-uuid-1",
         status: 'فشل',
         failedReason: 'فشل الاتصال بالخادم',
-        failureMetrics: { attempts: 1, retries: 1, reason: 'فشل الاتصال بالخادم' },
+        failureMetrics: { attempts: 1, reason: 'فشل الاتصال بالخادم' },
         isPaused: false,
         messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 1',
       },
       {
-        id: 102,
+        id: "patient-uuid-102",
         name: 'نور علي',
         phone: '01087654321',
         countryCode: '+20',
-        queue: 2,
+        queueId: "queue-uuid-2",
         status: 'فشل',
         failedReason: 'رقم جوال غير صحيح',
-        failureMetrics: { attempts: 2, retries: 2, reason: 'رقم جوال غير صحيح' },
+        failureMetrics: { attempts: 2, reason: 'رقم جوال غير صحيح' },
         isPaused: false,
         messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 2',
       },
       {
-        id: 103,
+        id: "patient-uuid-103",
         name: 'سارة محمد',
         phone: '01098765432',
         countryCode: '+20',
-        queue: 3,
+        queueId: "queue-uuid-3",
         status: 'فشل',
         failedReason: 'انقطاع الإنترنت',
-        failureMetrics: { attempts: 1, retries: 0, reason: 'انقطاع الإنترنت' },
+        failureMetrics: { attempts: 1, reason: 'انقطاع الإنترنت' },
         isPaused: false,
         messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 3',
       },
@@ -99,17 +98,16 @@ export const MOCK_FAILED_SESSIONS = [
     failedAt: '2025-01-14 13:45:00',
     totalPatients: 7,
     failedCount: 1,
-    retryCount: 0,
     patients: [
       {
-        id: 104,
+        id: "patient-uuid-104",
         name: 'فيصل أحمد',
         phone: '01011223344',
         countryCode: '+20',
-        queue: 1,
+        queueId: "queue-uuid-1",
         status: 'فشل',
         failedReason: 'حد التأخير تم تجاوزه',
-        failureMetrics: { attempts: 1, retries: 1, reason: 'حد التأخير تم تجاوزه' },
+        failureMetrics: { attempts: 1, reason: 'حد التأخير تم تجاوزه' },
         isPaused: false,
         messagePreview: 'مرحباً بك فيصل، ترتيبك الحالي هو 1',
       },
@@ -128,8 +126,8 @@ export const MOCK_COMPLETED_SESSIONS = [
     totalPatients: 5,
     sentCount: 5,
     patients: [
-      { id: 4, name: 'علي حسن', phone: '01055667788', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 09:15:33', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك علي، ترتيبك الحالي هو 1' },
-      { id: 5, name: 'ليلى محمد', phone: '01011223344', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 09:28:47', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك ليلى، ترتيبك الحالي هو 2' },
+      { id: "patient-uuid-4", name: 'علي حسن', phone: '01055667788', countryCode: '+20', queueId: "queue-uuid-1", status: 'تم', completedAt: '2025-01-14 09:15:33', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك علي، ترتيبك الحالي هو 1' },
+      { id: "patient-uuid-5", name: 'ليلى محمد', phone: '01011223344', countryCode: '+20', queueId: "queue-uuid-2", status: 'تم', completedAt: '2025-01-14 09:28:47', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك ليلى، ترتيبك الحالي هو 2' },
     ],
   },
   {
@@ -142,24 +140,24 @@ export const MOCK_COMPLETED_SESSIONS = [
     totalPatients: 8,
     sentCount: 8,
     patients: [
-      { id: 201, name: 'خديجة علي', phone: '01098765432', countryCode: '+20', queue: 1, status: 'تم', completedAt: '2025-01-14 11:20:15', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك خديجة، ترتيبك الحالي هو 1' },
-      { id: 202, name: 'زيدان حسن', phone: '01012345678', countryCode: '+20', queue: 2, status: 'تم', completedAt: '2025-01-14 11:35:42', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك زيدان، ترتيبك الحالي هو 2' },
+      { id: "patient-uuid-201", name: 'خديجة علي', phone: '01098765432', countryCode: '+20', queueId: "queue-uuid-1", status: 'تم', completedAt: '2025-01-14 11:20:15', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك خديجة، ترتيبك الحالي هو 1' },
+      { id: "patient-uuid-202", name: 'زيدان حسن', phone: '01012345678', countryCode: '+20', queueId: "queue-uuid-2", status: 'تم', completedAt: '2025-01-14 11:35:42', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك زيدان، ترتيبك الحالي هو 2' },
     ],
   },
 ];
 
 export const MOCK_QUEUE_PATIENTS = [
-  { id: 1, name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queue: 3, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك أحمد، ترتيبك الحالي هو 3' },
-  { id: 2, name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queue: 5, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك فاطمة، ترتيبك الحالي هو 5' },
-  { id: 3, name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queue: 2, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 2' },
-  { id: 4, name: 'نور الدين', phone: '01011223344', countryCode: '+20', queue: 7, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 7' },
-  { id: 5, name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queue: 1, status: 'قيد الانتظار', failureMetrics: { attempts: 0, retries: 0 }, isPaused: false, messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 1' },
+  { id: "patient-uuid-1", name: 'أحمد محمد', phone: '01012345678', countryCode: '+20', queueId: "queue-uuid-3", position: 3, status: 'قيد الانتظار', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك أحمد، ترتيبك الحالي هو 3' },
+  { id: "patient-uuid-2", name: 'فاطمة علي', phone: '01087654321', countryCode: '+20', queueId: "queue-uuid-5", position: 5, status: 'قيد الانتظار', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك فاطمة، ترتيبك الحالي هو 5' },
+  { id: "patient-uuid-3", name: 'محمود حسن', phone: '01098765432', countryCode: '+20', queueId: "queue-uuid-2", position: 2, status: 'قيد الانتظار', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك محمود، ترتيبك الحالي هو 2' },
+  { id: "patient-uuid-4", name: 'نور الدين', phone: '01011223344', countryCode: '+20', queueId: "queue-uuid-7", position: 7, status: 'قيد الانتظار', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك نور، ترتيبك الحالي هو 7' },
+  { id: "patient-uuid-5", name: 'سارة إبراهيم', phone: '01055667788', countryCode: '+20', queueId: "queue-uuid-1", position: 1, status: 'قيد الانتظار', failureMetrics: { attempts: 0 }, isPaused: false, messagePreview: 'مرحباً بك سارة، ترتيبك الحالي هو 1' },
 ];
 
 export const MOCK_QUEUES = [
-  { id: '1', doctorName: 'د. أحمد محمد', moderatorId: 'mod1' },
-  { id: '2', doctorName: 'د. فاطمة علي', moderatorId: 'mod1' },
-  { id: '3', doctorName: 'د. محمود سالم', moderatorId: 'mod2' },
+  { id: 'queue-uuid-1', doctorName: 'د. أحمد محمد', moderatorId: 'moderator-uuid-1' },
+  { id: 'queue-uuid-2', doctorName: 'د. فاطمة علي', moderatorId: 'moderator-uuid-1' },
+  { id: 'queue-uuid-3', doctorName: 'د. محمود سالم', moderatorId: 'moderator-uuid-2' },
 ];
 
 export const MOCK_MESSAGE_TEMPLATES = [
@@ -169,9 +167,9 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة الموعد',
     content: 'مرحباً {PN}، موعدك اليوم في العيادة. الموضع الحالي: {CQP}',
     description: 'رسالة ترحيب وتأكيد الموعد مع إظهار الموضع الحالي',
-    queueId: '1',
-    moderatorId: 'mod1',
-    conditionId: 'DEFAULT_Q1', // Default condition for Queue 1
+    queueId: 'queue-uuid-1',
+    moderatorId: 'moderator-uuid-1',
+    conditionId: 'DEFAULT_Q-queue-uuid-1', // Default condition for Queue 1
     isActive: true,
     variables: [],
     createdBy: 'أحمد محمد',
@@ -184,9 +182,9 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة التذكير',
     content: 'تذكير: لديك موعد في العيادة خلال {ETR} دقيقة',
     description: 'تذكير بوقت الموعد المتبقي',
-    queueId: '1',
-    moderatorId: 'mod1',
-    conditionId: '1', // Condition: wait time > 5 minutes
+    queueId: 'queue-uuid-1',
+    moderatorId: 'moderator-uuid-1',
+    conditionId: 'condition-uuid-1', // Condition: wait time > 5 minutes
     isActive: true,
     variables: [],
     createdBy: 'فاطمة علي',
@@ -199,9 +197,9 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة استقبال',
     content: 'أهلاً وسهلاً {PN}، يرجى الانتظار قليلاً. ترتيبك: {PQP}',
     description: 'رسالة استقبال بسيطة مع ترتيب الانتظار',
-    queueId: '1',
-    moderatorId: 'mod1',
-    conditionId: '2', // Condition: queue position < 3
+    queueId: 'queue-uuid-1',
+    moderatorId: 'moderator-uuid-1',
+    conditionId: 'condition-uuid-2', // Condition: queue position < 3
     isActive: true,
     variables: [],
     createdBy: 'سارة حسن',
@@ -214,9 +212,9 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة الأولوية العالية',
     content: 'السلام عليكم {PN}، أنت القادم للكشف مباشرة. يرجى التوجه للعيادة الآن.',
     description: 'رسالة مخصصة للمرضى ذوي الأولوية العالية',
-    queueId: '1',
-    moderatorId: 'mod1',
-    conditionId: '3', // Condition: priority = HIGH
+    queueId: 'queue-uuid-1',
+    moderatorId: 'moderator-uuid-1',
+    conditionId: 'condition-uuid-3', // Condition: priority = HIGH
     isActive: true,
     variables: [],
     createdBy: 'محمود خالد',
@@ -229,8 +227,8 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة تأجيل الموعد',
     content: 'نأسف {PN}، العيادة مغلقة حالياً. سيتم إعادة جدولة موعدك قريباً.',
     description: 'رسالة توضيح تأجيل الموعد',
-    queueId: '1',
-    moderatorId: 'mod1',
+    queueId: 'queue-uuid-1',
+    moderatorId: 'moderator-uuid-1',
     conditionId: null, // No condition for inactive template
     isActive: false,
     variables: [],
@@ -244,8 +242,8 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة شكر وتقييم',
     content: 'شكراً لك {PN} على زيارتك. يرجى تقييم خدمتنا من خلال الرابط: [رابط التقييم]',
     description: 'رسالة شكر مع طلب التقييم',
-    queueId: '1',
-    moderatorId: 'mod1',
+    queueId: 'queue-uuid-1',
+    moderatorId: 'moderator-uuid-1',
     conditionId: null, // Optional condition
     isActive: true,
     variables: [],
@@ -259,9 +257,9 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة الموعد - العيادة 2',
     content: 'مرحباً {PN}، موعدك عند د. فاطمة علي. الموضع الحالي: {CQP}',
     description: 'رسالة ترحيب وتأكيد الموعد',
-    queueId: '2',
-    moderatorId: 'mod1',
-    conditionId: 'DEFAULT_Q2', // Default condition for Queue 2
+    queueId: 'queue-uuid-2',
+    moderatorId: 'moderator-uuid-1',
+    conditionId: 'DEFAULT_Q-queue-uuid-2', // Default condition for Queue 2
     isActive: true,
     variables: [],
     createdBy: 'فاطمة علي',
@@ -274,9 +272,9 @@ export const MOCK_MESSAGE_TEMPLATES = [
     title: 'رسالة الموعد - العيادة 3',
     content: 'مرحباً {PN}، موعدك عند د. محمود سالم. الموضع الحالي: {CQP}',
     description: 'رسالة ترحيب وتأكيد الموعد',
-    queueId: '3',
-    moderatorId: 'mod2',
-    conditionId: 'DEFAULT_Q3', // Default condition for Queue 3
+    queueId: 'queue-uuid-3',
+    moderatorId: 'moderator-uuid-2',
+    conditionId: 'DEFAULT_Q-queue-uuid-3', // Default condition for Queue 3
     isActive: true,
     variables: [],
     createdBy: 'محمود خالد',
@@ -288,7 +286,7 @@ export const MOCK_MESSAGE_TEMPLATES = [
 export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
   // Default condition for Queue 1
   {
-    id: 'DEFAULT_Q1',
+    id: 'DEFAULT_Q-queue-uuid-1',
     name: 'القالب الافتراضي',
     priority: 0,
     enabled: true,
@@ -296,14 +294,14 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
     value: 0,
     minValue: undefined,
     maxValue: undefined,
-    template: '1',
-    queueId: '1',
-    moderatorId: 'mod1',
+    template: 'مرحباً {PN}، موعدك اليوم في العيادة. الموضع الحالي: {CQP}',
+    templateId: '1',
+    queueId: 'queue-uuid-1',
     description: 'القالب الافتراضي لقائمة الانتظار 1 - يستخدم عند عدم توفر شروط أخرى',
   },
   // Default condition for Queue 2
   {
-    id: 'DEFAULT_Q2',
+    id: 'DEFAULT_Q-queue-uuid-2',
     name: 'القالب الافتراضي',
     priority: 0,
     enabled: true,
@@ -311,14 +309,14 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
     value: 0,
     minValue: undefined,
     maxValue: undefined,
-    template: '7',
-    queueId: '2',
-    moderatorId: 'mod1',
+    template: 'مرحباً {PN}، موعدك عند د. فاطمة علي. الموضع الحالي: {CQP}',
+    templateId: '7',
+    queueId: 'queue-uuid-2',
     description: 'القالب الافتراضي لقائمة الانتظار 2 - يستخدم عند عدم توفر شروط أخرى',
   },
   // Default condition for Queue 3
   {
-    id: 'DEFAULT_Q3',
+    id: 'DEFAULT_Q-queue-uuid-3',
     name: 'القالب الافتراضي',
     priority: 0,
     enabled: true,
@@ -326,14 +324,14 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
     value: 0,
     minValue: undefined,
     maxValue: undefined,
-    template: '8',
-    queueId: '3',
-    moderatorId: 'mod2',
+    template: 'مرحباً {PN}، موعدك عند د. محمود سالم. الموضع الحالي: {CQP}',
+    templateId: '8',
+    queueId: 'queue-uuid-3',
     description: 'القالب الافتراضي لقائمة الانتظار 3 - يستخدم عند عدم توفر شروط أخرى',
   },
   // Condition 1: Applied to template 2 (رسالة التذكير)
   {
-    id: '1',
+    id: 'condition-uuid-1',
     name: 'مرضى العيادة الرئيسية',
     priority: 1,
     enabled: true,
@@ -341,14 +339,14 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
     value: 5,
     minValue: undefined,
     maxValue: undefined,
-    template: '2',
-    queueId: '1',
-    moderatorId: 'mod1',
+    template: 'تذكير: لديك موعد في العيادة خلال {ETR} دقيقة',
+    templateId: '2',
+    queueId: 'queue-uuid-1',
     description: 'تطبيق على رسالة التذكير عندما ينتظر المريض أكثر من 5 دقائق',
   },
   // Condition 2: Applied to template 3 (رسالة استقبال)
   {
-    id: '2',
+    id: 'condition-uuid-2',
     name: 'ترتيب متقدم',
     priority: 2,
     enabled: true,
@@ -356,14 +354,14 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
     value: 3,
     minValue: undefined,
     maxValue: undefined,
-    template: '3',
-    queueId: '1',
-    moderatorId: 'mod1',
+    template: 'أهلاً وسهلاً {PN}، يرجى الانتظار قليلاً. ترتيبك: {PQP}',
+    templateId: '3',
+    queueId: 'queue-uuid-1',
     description: 'تطبيق على رسالة الاستقبال عندما يكون ترتيب المريض أقل من 3',
   },
   // Condition 3: Applied to template 4 (رسالة الأولوية)
   {
-    id: '3',
+    id: 'condition-uuid-3',
     name: 'حالة أولوية عالية',
     priority: 3,
     enabled: true,
@@ -371,9 +369,9 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
     value: 1,
     minValue: undefined,
     maxValue: undefined,
-    template: '4',
-    queueId: '1',
-    moderatorId: 'mod1',
+    template: 'السلام عليكم {PN}، أنت القادم للكشف مباشرة. يرجى التوجه للعيادة الآن.',
+    templateId: '4',
+    queueId: 'queue-uuid-1',
     description: 'تطبيق على رسالة الأولوية عندما تكون أولوية المريض = 1 (عالية)',
   },
 ];
@@ -391,7 +389,7 @@ export const MOCK_QUEUE_MESSAGE_CONDITIONS = [
  */
 export const MOCK_QUOTA = {
   id: 'quota-moderator-current',
-  moderatorId: 'current-moderator',
+  moderatorId: 'moderator-uuid-1',
   messagesQuota: {
     limit: 1000,
     used: 450,
@@ -409,3 +407,7 @@ export const MOCK_QUOTA = {
   createdAt: new Date(),
   updatedAt: new Date(),
 };
+
+
+
+

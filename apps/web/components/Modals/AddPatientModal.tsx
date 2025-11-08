@@ -538,3 +538,6 @@ export default function AddPatientModal() {
     </Modal>
   );
 }
+
+
+

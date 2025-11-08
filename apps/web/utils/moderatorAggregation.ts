@@ -20,10 +20,16 @@ export interface QueueWithConflicts extends Queue {
 }
 
 /**
- * Mock data: Map of moderator IDs to their names and usernames
+ * Mock data: Map of moderator GUIDs to their names and usernames
  * In production, this would come from API or context
  */
 const MODERATOR_MAP: Record<string | number, { name: string; username: string }> = {
+  'moderator-uuid-1': { name: 'أحمد محمد', username: 'ahmed_doctor' },
+  'moderator-uuid-2': { name: 'فاطمة علي', username: 'fatima_clinic' },
+  'moderator-uuid-3': { name: 'محمود عبده', username: 'mahmoud_med' },
+  'moderator-uuid-4': { name: 'سارة إبراهيم', username: 'sarah_health' },
+  'moderator-uuid-5': { name: 'خالد حسن', username: 'khaled_dr' },
+  // Legacy numeric IDs (for backward compatibility)
   1: { name: 'أحمد محمد', username: 'ahmed_doctor' },
   2: { name: 'فاطمة علي', username: 'fatima_clinic' },
   3: { name: 'محمود عبده', username: 'mahmoud_med' },

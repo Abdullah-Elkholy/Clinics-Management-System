@@ -49,24 +49,30 @@ export default function EditTemplateModal() {
         setTitle(template.title);
         setDescription(template.description || '');
         setContent(template.content);
-        setSelectedConditionId(template.conditionId || null);
+        // Find the condition for this template to get its condition ID
+        const templateCondition = messageConditions.find((c) => c.templateId === template.id);
+        setSelectedConditionId(templateCondition?.id || null);
       }
     }
-  }, [isOpen, templateId, messageTemplates]);
+  }, [isOpen, templateId, messageTemplates, messageConditions]);
 
   // Handle condition selection
   const handleConditionChange = (conditionId: string | null) => {
     // If selecting a different default condition, check if one already exists elsewhere
-    if (conditionId && conditionId.startsWith('DEFAULT_') && currentTemplate?.conditionId !== conditionId) {
-      const existingDefault = messageTemplates.find(
-        (t) => t.queueId === currentTemplate?.queueId && 
-               t.id !== currentTemplate?.id &&
-               t.conditionId?.startsWith('DEFAULT_')
+    const currentTemplateCondition = messageConditions.find((c) => c.templateId === currentTemplate?.id);
+    if (conditionId && conditionId.startsWith('DEFAULT_') && currentTemplateCondition?.id !== conditionId) {
+      const existingDefaultCondition = messageConditions.find(
+        (c) => c.queueId === currentTemplate?.queueId && 
+               c.templateId !== currentTemplate?.id &&
+               c.id?.startsWith('DEFAULT_')
       );
-      if (existingDefault) {
-        setExistingDefaultTemplate(existingDefault);
-        setShowDefaultWarning(true);
-        return;
+      if (existingDefaultCondition) {
+        const existingTemplate = messageTemplates.find((t) => t.id === existingDefaultCondition.templateId);
+        if (existingTemplate) {
+          setExistingDefaultTemplate(existingTemplate);
+          setShowDefaultWarning(true);
+          return;
+        }
       }
     }
     setSelectedConditionId(conditionId);
@@ -228,23 +234,23 @@ export default function EditTemplateModal() {
           title,
           description,
           content,
-          conditionId: conditionIdToUse || undefined,
           updatedAt: new Date(),
+          conditionId: conditionIdToUse || undefined,
         });
+        
+        addToast('تم تحديث قالب الرسالة بنجاح', 'success');
+        setTitle('');
+        setDescription('');
+        setContent('');
+        setErrors({});
+        setSelectedConditionId(null);
+        setSelectedOperator(null);
+        setSelectedValue(undefined);
+        setSelectedMinValue(undefined);
+        setSelectedMaxValue(undefined);
+        setCurrentTemplate(null);
+        closeModal('editTemplate');
       }
-      
-      addToast('تم تحديث قالب الرسالة بنجاح', 'success');
-      setTitle('');
-      setDescription('');
-      setContent('');
-      setErrors({});
-      setSelectedConditionId(null);
-      setSelectedOperator(null);
-      setSelectedValue(undefined);
-      setSelectedMinValue(undefined);
-      setSelectedMaxValue(undefined);
-      setCurrentTemplate(null);
-      closeModal('editTemplate');
     } catch (error) {
       addToast('حدث خطأ أثناء تحديث القالب', 'error');
     } finally {

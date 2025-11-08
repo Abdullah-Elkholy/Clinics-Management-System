@@ -57,10 +57,16 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [queues, messageTemplates, messageConditions]
   );
 
+  // Helper function to generate GUID-like IDs
+  const generateGUID = (prefix: string = ''): string => {
+    const base = `${prefix}${prefix ? '-' : ''}uuid-${Math.random().toString(36).substr(2, 9)}-${Date.now().toString(36)}`;
+    return base;
+  };
+
   const addQueue = useCallback((queue: Omit<Queue, 'id'>) => {
     const newQueue: Queue = {
       ...queue,
-      id: Date.now().toString(),
+      id: generateGUID('queue'),
     };
     setQueues((prev) => [...prev, newQueue]);
   }, []);
@@ -78,7 +84,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addPatient = useCallback((patient: Omit<Patient, 'id'>) => {
     const newPatient: Patient = {
       ...patient,
-      id: Date.now(),
+      id: generateGUID(),
     };
     setPatients((prev) => [...prev, newPatient]);
   }, []);
@@ -114,7 +120,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addMessageTemplate = useCallback((template: Omit<MessageTemplate, 'id'>) => {
     const newTemplate: MessageTemplate = {
       ...template,
-      id: Date.now().toString(),
+      id: generateGUID('template'),
     };
     setMessageTemplates((prev) => [...prev, newTemplate]);
   }, []);
@@ -133,7 +139,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (messageConditions.length >= 5) return;
     const newCondition: MessageCondition = {
       ...condition,
-      id: Date.now().toString(),
+      id: generateGUID('condition'),
     };
     setMessageConditions((prev) => [...prev, newCondition]);
   }, [messageConditions.length]);

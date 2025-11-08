@@ -191,18 +191,52 @@ export default function ModeratorMessagesOverview() {
     );
   }, [moderators, searchTerm]);
 
+  /**
+   * Role-based stats for admin view showing system-wide quota
+   */
+  const getAdminStats = useMemo(() => {
+    const { messagesQuota } = MOCK_QUOTA;
+    const baseStats = {
+      total: messagesQuota.limit,
+      used: messagesQuota.used,
+      remaining: messagesQuota.limit - messagesQuota.used,
+    };
+
+    return [
+      {
+        label: 'عدد المشرفين',
+        value: moderators.length.toString(),
+        color: 'blue' as const,
+        info: 'إجمالي المشرفين في النظام'
+      },
+      {
+        label: 'إجمالي الرسائل في النظام',
+        value: baseStats.total.toString(),
+        color: 'blue' as const,
+        info: 'مجموع رسائل جميع الفرق'
+      },
+      {
+        label: 'الرسائل المستخدمة',
+        value: baseStats.used.toString(),
+        color: 'yellow' as const,
+        info: 'من المجموع الكلي للنظام'
+      },
+      {
+        label: 'الرسائل المتبقية',
+        value: baseStats.remaining.toString(),
+        color: 'green' as const,
+        info: ''
+      },
+    ];
+  }, [moderators.length]);
+
   return (
     <PanelWrapper>
       <PanelHeader
         icon="fa-envelope"
         title="إدارة قوالب الرسائل - عرض المشرفين"
         description="إدارة قوالب الرسائل لكل مشرف بشكل شامل وسهل"
-        stats={[
-          { label: 'عدد المشرفين', value: moderators.length.toString(), color: 'blue' },
-          { label: 'إجمالي الرسائل في الحصة', value: MOCK_QUOTA.messagesQuota.limit.toString(), color: 'blue' },
-          { label: 'الرسائل المستهلكة', value: MOCK_QUOTA.messagesQuota.used.toString(), color: 'yellow' },
-          { label: 'الرسائل المتبقية', value: (MOCK_QUOTA.messagesQuota.limit - MOCK_QUOTA.messagesQuota.used).toString(), color: 'green' },
-        ]}
+        stats={getAdminStats}
         actions={[]}
       />
 
@@ -464,14 +498,11 @@ export default function ModeratorMessagesOverview() {
                                             <tbody>
                                               {queueTemplates
                                                 .sort((a, b) => {
-                                                  const conditionA = a.conditionId 
-                                                    ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === a.conditionId)
-                                                    : null;
-                                                  const conditionB = b.conditionId 
-                                                    ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === b.conditionId)
-                                                    : null;
-
-                                                  const isDefaultA = conditionA && conditionA.id.startsWith('DEFAULT_');
+                                                  const conditionsA = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === a.id);
+                                                  const conditionsB = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === b.id);
+                                                  
+                                                  const conditionA = conditionsA.length > 0 ? conditionsA[0] : null;
+                                                  const conditionB = conditionsB.length > 0 ? conditionsB[0] : null;                                                  const isDefaultA = conditionA && conditionA.id.startsWith('DEFAULT_');
                                                   const isDefaultB = conditionB && conditionB.id.startsWith('DEFAULT_');
 
                                                   if (isDefaultA && !isDefaultB) return -1;
@@ -480,9 +511,7 @@ export default function ModeratorMessagesOverview() {
                                                   return 0;
                                                 })
                                                 .map((template) => {
-                                                  const condition = template.conditionId 
-                                                    ? MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.id === template.conditionId)
-                                                    : null;
+                                                  const condition = MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.templateId === template.id);
                                                   const isDefaultCondition = condition && condition.id.startsWith('DEFAULT_');
 
                                                   return (

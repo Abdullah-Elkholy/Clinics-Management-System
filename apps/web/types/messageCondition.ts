@@ -1,13 +1,15 @@
 export type ConditionOperator = 'EQUAL' | 'GREATER' | 'LESS' | 'RANGE';
 
 export interface MessageCondition {
-  id: string; // unique id (uuid)
-  name?: string; // friendly name for admin
-  priority: number; // 1 = highest priority (checked first)
+  id: string;                          // GUID (UUID format)
+  queueId?: string;                    // GUID: queue this condition belongs to
+  templateId?: string;                 // GUID: template this condition triggers
+  name?: string;                       // friendly name for admin
+  priority: number;                    // 1 = highest priority (checked first)
   enabled?: boolean;
 
-  // matching operator
-  operator: ConditionOperator;
+  // matching operator (standardized UPPERCASE)
+  operator: ConditionOperator;         // EQUAL | GREATER | LESS | RANGE
   // value used for EQUAL / GREATER / LESS
   value?: number;
   // for RANGE
@@ -16,6 +18,10 @@ export interface MessageCondition {
 
   // message template (use placeholders: {PN}, {PQP}, {ETR}, {DN})
   template: string;
+  
+  // Metadata
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface QueueMessageConfig {

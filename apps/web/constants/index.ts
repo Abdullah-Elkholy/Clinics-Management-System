@@ -50,9 +50,9 @@ export const ROLE_NAMES = {
 };
 
 export const SAMPLE_QUEUES = [
-  { id: '1', doctorName: 'د. أحمد محمد', moderatorId: 'mod1' },
-  { id: '2', doctorName: 'د. فاطمة علي', moderatorId: 'mod1' },
-  { id: '3', doctorName: 'د. محمود سالم', moderatorId: 'mod2' },
+  { id: 'queue-uuid-1', doctorName: 'د. أحمد محمد', moderatorId: 'moderator-uuid-1' },
+  { id: 'queue-uuid-2', doctorName: 'د. فاطمة علي', moderatorId: 'moderator-uuid-1' },
+  { id: 'queue-uuid-3', doctorName: 'د. محمود سالم', moderatorId: 'moderator-uuid-2' },
 ];
 
 export const SAMPLE_MESSAGE_TEMPLATES = [

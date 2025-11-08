@@ -1,4 +1,6 @@
 import { logError } from '@/utils/core.utils';
+import type { MessageTemplate } from '@/types/messageTemplate';
+
 /**
  * Message Template Service
  * File: apps/web/services/messageTemplateService.ts
@@ -7,20 +9,7 @@ import { logError } from '@/utils/core.utils';
  * Storage: localStorage with key pattern `queueTemplates_${queueId}`
  */
 
-export interface MessageTemplate {
-  id: string;
-  queueId: string;
-  title: string;
-  description?: string;
-  content: string;
-  variables: string[];
-  isActive: boolean;
-  priority?: number;
-  
-  createdBy: string;
-  createdAt: Date;
-  updatedAt?: Date;
-}
+export type { MessageTemplate } from '@/types/messageTemplate';
 
 export interface QueueTemplateConfig {
   queueId: string;
