@@ -8,9 +8,8 @@ namespace Clinics.Api.DTOs
     public class CreateModeratorRequest
     {
         public string Username { get; set; } = null!;
-        public string FullName { get; set; } = null!;
-        public string? Email { get; set; }
-        public string? PhoneNumber { get; set; }
+        public string FirstName { get; set; } = null!;
+        public string? LastName { get; set; }
         public string? Password { get; set; }
         public string? WhatsAppPhoneNumber { get; set; }
     }
@@ -20,9 +19,8 @@ namespace Clinics.Api.DTOs
     /// </summary>
     public class UpdateModeratorRequest
     {
-        public string? FullName { get; set; }
-        public string? Email { get; set; }
-        public string? PhoneNumber { get; set; }
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
         public string? WhatsAppPhoneNumber { get; set; }
         public bool? IsActive { get; set; }
     }
@@ -34,9 +32,9 @@ namespace Clinics.Api.DTOs
     {
         public int Id { get; set; }
         public string Username { get; set; } = null!;
-        public string FullName { get; set; } = null!;
-        public string? Email { get; set; }
-        public string? PhoneNumber { get; set; }
+        public string FirstName { get; set; } = null!;
+        public string? LastName { get; set; }
+        public string FullName => string.IsNullOrEmpty(LastName) ? FirstName : $"{FirstName} {LastName}";
         public string? WhatsAppPhoneNumber { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -110,9 +108,8 @@ namespace Clinics.Api.DTOs
     public class AddUserToModeratorRequest
     {
         public string Username { get; set; } = null!;
-        public string FullName { get; set; } = null!;
-        public string? Email { get; set; }
-        public string? PhoneNumber { get; set; }
+        public string FirstName { get; set; } = null!;
+        public string? LastName { get; set; }
         public string? Password { get; set; }
     }
 
@@ -123,10 +120,10 @@ namespace Clinics.Api.DTOs
     {
         public int Id { get; set; }
         public string Username { get; set; } = null!;
-        public string FullName { get; set; } = null!;
+        public string FirstName { get; set; } = null!;
+        public string? LastName { get; set; }
+        public string FullName => string.IsNullOrEmpty(LastName) ? FirstName : $"{FirstName} {LastName}";
         public string Role { get; set; } = null!;
-        public string? Email { get; set; }
-        public string? PhoneNumber { get; set; }
         public int? ModeratorId { get; set; }
         public string? ModeratorName { get; set; }
         public bool IsActive { get; set; }

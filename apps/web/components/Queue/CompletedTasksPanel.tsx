@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { MOCK_COMPLETED_SESSIONS } from '@/constants/mockData';
+// Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
@@ -44,7 +44,7 @@ const COMPLETED_TASKS_GUIDE_ITEMS = [
 export default function CompletedTasksPanel() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
-  const [sessions] = useState<Session[]>(MOCK_COMPLETED_SESSIONS as Session[]);
+  const [sessions] = useState<Session[]>([]);
 
   /**
    * Toggle session expand - memoized

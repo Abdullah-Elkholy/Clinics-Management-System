@@ -9,7 +9,7 @@ namespace Clinics.Api.Services
 {
     public interface ITokenService
     {
-        string CreateToken(int userId, string username, string role, string fullName);
+        string CreateToken(int userId, string username, string role, string firstName, string? lastName = null);
     }
 
     public class TokenService : ITokenService
@@ -20,14 +20,15 @@ namespace Clinics.Api.Services
             _config = config;
         }
 
-        public string CreateToken(int userId, string username, string role, string fullName)
+        public string CreateToken(int userId, string username, string role, string firstName, string? lastName = null)
         {
             var claims = new[] {
                 new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
                 new Claim(ClaimTypes.Name, username),
                 new Claim(ClaimTypes.Role, role),
                 new Claim("role", role),
-                new Claim("fullName", fullName),
+                new Claim("firstName", firstName),
+                new Claim("lastName", lastName ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 

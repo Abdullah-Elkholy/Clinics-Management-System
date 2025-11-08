@@ -87,7 +87,7 @@ export default function EditQueueModal() {
           <label className="block text-sm font-medium text-gray-700 mb-2">اسم الطبيب *</label>
           <input
             type="text"
-            value={doctorName}
+            value={doctorName ?? ''}
             onChange={(e) => handleFieldChange(e.target.value)}
             onBlur={handleFieldBlur}
             placeholder="أدخل اسم الطبيب"

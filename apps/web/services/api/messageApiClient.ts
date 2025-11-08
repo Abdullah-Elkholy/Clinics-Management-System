@@ -118,7 +118,11 @@ export interface ApiError {
 // API Client Configuration
 // ============================================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+const getApiBaseUrl = (): string => {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  // Ensure /api is appended if not already present
+  return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+};
 
 /**
  * Get auth token from localStorage
@@ -135,6 +139,7 @@ async function fetchAPI<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getAuthToken();
 

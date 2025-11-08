@@ -8,9 +8,10 @@ export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -19,16 +20,34 @@ export default function LoginScreen() {
       return;
     }
 
-    const success = login(username, password);
-    if (!success) {
-      setError('بيانات تسجيل الدخول غير صحيحة');
+    setIsLoading(true);
+    try {
+      const success = await login(username, password);
+      if (!success) {
+        setError('بيانات تسجيل الدخول غير صحيحة أو حدث خطأ في الخادم');
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'حدث خطأ أثناء تسجيل الدخول';
+      setError(errorMsg || 'بيانات تسجيل الدخول غير صحيحة');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleQuickLogin = (username: string, password: string) => {
-    const success = login(username, password);
-    if (success) {
-      setError('');
+  const handleQuickLogin = async (username: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const success = await login(username, password);
+      if (success) {
+        setError('');
+      } else {
+        setError('بيانات تسجيل الدخول غير صحيحة أو حدث خطأ في الخادم');
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'حدث خطأ أثناء تسجيل الدخول';
+      setError(errorMsg || 'بيانات تسجيل الدخول غير صحيحة');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -87,9 +106,10 @@ export default function LoginScreen() {
 
           <button
             type="submit"
-            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-medium"
+            disabled={isLoading}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            تسجيل الدخول
+            {isLoading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
           </button>
         </form>
 
@@ -102,7 +122,8 @@ export default function LoginScreen() {
                 key={key}
                 type="button"
                 onClick={() => handleQuickLogin(cred.username, cred.password)}
-                className="w-full p-2 text-left bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 transition"
+                disabled={isLoading}
+                className="w-full p-2 text-left bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center justify-between">
                   <div>

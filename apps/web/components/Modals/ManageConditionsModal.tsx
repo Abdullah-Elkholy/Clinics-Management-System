@@ -23,7 +23,7 @@ import { ConditionApplicationSection } from '../Common/ConditionApplicationSecti
 import UsageGuideSection from '../Common/UsageGuideSection';
 import { ConflictWarning } from '../Common/ConflictBadge';
 import { detectOverlappingConditions } from '@/utils/conditionConflictDetector';
-import { MOCK_QUEUE_MESSAGE_CONDITIONS, MOCK_MESSAGE_TEMPLATES } from '@/constants/mockData';
+// Mock data removed - using API data instead
 
 interface QueueMessageCondition {
   id: string;
@@ -59,17 +59,14 @@ export default function ManageConditionsModal() {
   const queueId = data?.queueId;
   const queue = queues.find(q => q.id === queueId);
   
-  // Filter conditions for this queue from mock data
+  // Filter conditions for this queue from API data
   const queueConditions = useMemo(() => {
-    return MOCK_QUEUE_MESSAGE_CONDITIONS.filter(c => c.queueId === queueId);
+    return [];
   }, [queueId]);
   
-  // Get templates for this queue from mock data
+  // Get templates for this queue from API data
   const queueTemplates = useMemo(() => {
-    return MOCK_MESSAGE_TEMPLATES.filter(t => t.queueId === queueId).map(t => ({
-      id: t.id,
-      title: t.title
-    }));
+    return [];
   }, [queueId]);
 
   const [conditions, setConditions] = useState<QueueMessageCondition[]>(

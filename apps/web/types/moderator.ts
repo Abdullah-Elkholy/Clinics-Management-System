@@ -29,7 +29,7 @@ export interface UserBase {
   id: number;
   username: string;
   firstName: string;
-  lastName: string;
+  lastName?: string;
   email: string;
   phoneNumber?: string;
   isActive: boolean;

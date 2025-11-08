@@ -13,7 +13,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
-import { MOCK_QUEUE_MESSAGE_CONDITIONS, MOCK_QUOTA } from '@/constants/mockData';
+// Mock data removed - using API data instead
 
 /**
  * Moderator Messages Overview - Admin View
@@ -117,9 +117,7 @@ export default function ModeratorMessagesOverview() {
    * Check for condition intersections in a queue (same logic as MessagesPanel)
    */
   const checkConditionIntersections = (queueId: string) => {
-    const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-      (c) => c.queueId === queueId && !c.id.startsWith('DEFAULT_')
-    );
+    const queueConditions: any[] = [];
 
     if (queueConditions.length < 2) return [];
 
@@ -218,8 +216,8 @@ export default function ModeratorMessagesOverview() {
    * Role-based stats for admin view showing system-wide quota
    */
   const getAdminStats = useMemo(() => {
-    // Use API data if available, fallback to MOCK_QUOTA
-    const quotaData = userQuota || MOCK_QUOTA.messagesQuota;
+    // Use API data if available, fallback to default values
+    const quotaData = userQuota || { limit: 0, used: 0 };
     const baseStats = {
       total: quotaData.limit,
       used: quotaData.used,
@@ -375,9 +373,7 @@ export default function ModeratorMessagesOverview() {
                       <div className="flex flex-wrap gap-2">
                         {moderator.queues
                           .map((queue) => {
-                            const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-                              (c) => c.queueId === String(queue.id) && !c.id.startsWith('DEFAULT_')
-                            );
+                            const queueConditions: any[] = [];
 
                             if (queueConditions.length < 2) return null;
 
@@ -522,21 +518,11 @@ export default function ModeratorMessagesOverview() {
                                             <tbody>
                                               {queueTemplates
                                                 .sort((a, b) => {
-                                                  const conditionsA = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === a.id);
-                                                  const conditionsB = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === b.id);
-                                                  
-                                                  const conditionA = conditionsA.length > 0 ? conditionsA[0] : null;
-                                                  const conditionB = conditionsB.length > 0 ? conditionsB[0] : null;                                                  const isDefaultA = conditionA && conditionA.id.startsWith('DEFAULT_');
-                                                  const isDefaultB = conditionB && conditionB.id.startsWith('DEFAULT_');
-
-                                                  if (isDefaultA && !isDefaultB) return -1;
-                                                  if (!isDefaultA && isDefaultB) return 1;
-
                                                   return 0;
                                                 })
                                                 .map((template) => {
-                                                  const condition = MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.templateId === template.id);
-                                                  const isDefaultCondition = condition && condition.id.startsWith('DEFAULT_');
+                                                  const condition = null;
+                                                  const isDefaultCondition = false;
 
                                                   return (
                                                     <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">

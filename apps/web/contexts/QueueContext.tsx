@@ -2,11 +2,12 @@
 
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import type { Queue, Patient, MessageTemplate, MessageCondition } from '../types';
-import { SAMPLE_QUEUES } from '../constants';
-import { MOCK_MESSAGE_TEMPLATES } from '@/constants/mockData';
 import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
 import { groupQueuesByModerator } from '@/utils/moderatorAggregation';
 import { messageApiClient, type TemplateDto, type ConditionDto } from '@/services/api/messageApiClient';
+import { queuesApiClient, type QueueDto } from '@/services/api/queuesApiClient';
+import { queueDtoToModel, templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface QueueContextType {
   queues: Queue[];
@@ -45,16 +46,52 @@ interface QueueContextType {
 const QueueContext = createContext<QueueContextType | null>(null);
 
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [queues, setQueues] = useState<Queue[]>(SAMPLE_QUEUES);
+  const { user: currentUser } = useAuth();
+  const [queues, setQueues] = useState<Queue[]>([]);
+  const [queuesLoading, setQueuesLoading] = useState(false);
+  const [queuesError, setQueuesError] = useState<string | null>(null);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [currentPosition, setCurrentPosition] = useState(3);
   const [estimatedTimePerSession, setEstimatedTimePerSession] = useState(15);
-  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
+  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
   const [selectedMessageTemplateId, setSelectedMessageTemplateId] = useState('1');
   const [messageConditions, setMessageConditions] = useState<MessageCondition[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
+
+  // Load queues on mount (only if authenticated)
+  useEffect(() => {
+    // Don't load if user is not authenticated
+    if (!currentUser) {
+      setQueues([]);
+      return;
+    }
+
+    const loadQueues = async () => {
+      try {
+        setQueuesLoading(true);
+        setQueuesError(null);
+        
+        const response = await queuesApiClient.getQueues();
+        
+        if (response.items && response.items.length > 0) {
+          const queuesData: Queue[] = response.items.map(queueDtoToModel);
+          setQueues(queuesData);
+        } else {
+          setQueues([]);
+        }
+      } catch (error) {
+        console.warn('Failed to load queues from API:', error);
+        setQueuesError('Failed to load queues');
+        setQueues([]);
+      } finally {
+        setQueuesLoading(false);
+      }
+    };
+
+    loadQueues();
+  }, [currentUser]);
 
   // Memoized list of moderators with aggregated stats
   const moderators = useMemo(
@@ -71,35 +108,44 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsLoadingTemplates(true);
         setTemplateError(null);
         
-        // Try to load from API first
-        const response = await messageApiClient.getTemplates(Number(selectedQueueId));
+        // Fetch templates from API for the selected queue
+        const templateResponse = await messageApiClient.getTemplates(Number(selectedQueueId));
         
-        if (response.items && response.items.length > 0) {
-          // Convert TemplateDto to MessageTemplate with required fields
-          const templates: MessageTemplate[] = response.items.map((dto: TemplateDto) => ({
-            id: dto.id.toString(),
-            queueId: dto.queueId.toString(),
-            title: dto.title,
-            content: dto.content,
-            variables: [], // Extract from content if needed
-            isActive: dto.isActive ?? true,
-            createdAt: new Date(dto.createdAt),
-            updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
-            createdBy: '', // API should provide this, fallback to empty
-          }));
+        if (templateResponse.items && templateResponse.items.length > 0) {
+          // Convert TemplateDto to MessageTemplate
+          const templates: MessageTemplate[] = templateResponse.items.map((dto: TemplateDto) =>
+            templateDtoToModel(dto, selectedQueueId)
+          );
           setMessageTemplates(templates);
           if (templates.length > 0) {
             setSelectedMessageTemplateId(templates[0].id);
           }
+
+          // Fetch conditions for this queue
+          try {
+            const conditionResponse = await messageApiClient.getConditions(Number(selectedQueueId));
+            if (conditionResponse.items && conditionResponse.items.length > 0) {
+              const conditions: MessageCondition[] = conditionResponse.items.map((dto: ConditionDto, idx: number) =>
+                conditionDtoToModel(dto, idx)
+              );
+              setMessageConditions(conditions);
+            } else {
+              setMessageConditions([]);
+            }
+          } catch (condError) {
+            console.warn('Failed to load conditions:', condError);
+            setMessageConditions([]);
+          }
         } else {
-          // Fallback to mock data if API returns empty
-          setMessageTemplates(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
+          setMessageTemplates([]);
+          setMessageConditions([]);
         }
       } catch (error) {
-        // On error, use mock data as fallback
-        console.warn('Failed to load templates from API, using mock data:', error);
-        setTemplateError('Using local templates (API unavailable)');
-        setMessageTemplates(MOCK_MESSAGE_TEMPLATES as MessageTemplate[]);
+        // On error, show message but don't revert to mock data for production safety
+        console.warn('Failed to load templates from API:', error);
+        setTemplateError('Unable to load templates');
+        setMessageTemplates([]);
+        setMessageConditions([]);
       } finally {
         setIsLoadingTemplates(false);
       }

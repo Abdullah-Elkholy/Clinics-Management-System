@@ -131,7 +131,7 @@ export default function AddQueueModal() {
           </label>
           <input
             type="text"
-            value={doctorName}
+            value={doctorName ?? ''}
             onChange={(e) => handleFieldChange(e.target.value)}
             onBlur={handleFieldBlur}
             placeholder="أدخل اسم الطبيب"

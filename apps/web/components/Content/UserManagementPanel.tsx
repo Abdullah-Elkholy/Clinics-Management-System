@@ -196,12 +196,13 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteUser = async (user: User) => {
-    const confirmed = await confirm(createDeleteConfirmation(`${user.firstName} ${user.lastName}`));
+    const fullName = user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName;
+    const confirmed = await confirm(createDeleteConfirmation(fullName));
     if (!confirmed) return;
 
     const success = await actions.deleteUser(user.id);
     if (success) {
-      addToast(`تم حذف المستخدم ${user.firstName} ${user.lastName} بنجاح`, 'success');
+      addToast(`تم حذف المستخدم ${fullName} بنجاح`, 'success');
       setSelectedUser(null);
     }
   };
@@ -212,12 +213,13 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteModerator = async (moderator: User) => {
-    const confirmed = await confirm(createDeleteConfirmation(`${moderator.firstName} ${moderator.lastName}`));
+    const fullName = moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName;
+    const confirmed = await confirm(createDeleteConfirmation(fullName));
     if (!confirmed) return;
 
     const success = await actions.deleteUser(moderator.id);
     if (success) {
-      addToast(`تم حذف المشرف ${moderator.firstName} ${moderator.lastName} بنجاح`, 'success');
+      addToast(`تم حذف المشرف ${fullName} بنجاح`, 'success');
       setSelectedUser(null);
     }
   };
@@ -254,7 +256,8 @@ export default function UserManagementPanel() {
         updatedQuota
       );
       if (result.success) {
-        addToast(`تم تحديث حصة ${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName} بنجاح`, 'success');
+        const fullName = selectedModeratorForQuota.lastName ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : selectedModeratorForQuota.firstName;
+        addToast(`تم تحديث حصة ${fullName} بنجاح`, 'success');
         setShowQuotaModal(false);
         setSelectedModeratorForQuota(null);
         setSelectedQuota(null);
@@ -436,16 +439,6 @@ export default function UserManagementPanel() {
           </div>
         )}
 
-        {/* Empty State */}
-        {!state.loading && moderators.length === 0 && activeTab === 'moderators' && (
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-12 text-center">
-            <i className="fas fa-users text-4xl text-gray-400 mb-4 block"></i>
-            <p className="text-gray-600 mb-2">لا توجد مشرفون</p>
-            <p className="text-sm text-gray-500">
-              لا يوجد مشرفون متاحون حالياً
-            </p>
-          </div>
-        )}
 
         {/* Moderators Section */}
         {activeTab === 'moderators' && (
@@ -461,8 +454,18 @@ export default function UserManagementPanel() {
               </p>
             </div>
 
+            {/* Empty State */}
+            {!state.loading && moderators.length === 0 && activeTab === 'moderators' && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-12 text-center">
+                <i className="fas fa-users text-4xl text-gray-400 mb-4 block"></i>
+                <p className="text-gray-600 mb-2">لا توجد مشرفون</p>
+                <p className="text-sm text-gray-500">
+                  لا يوجد مشرفون متاحون حالياً
+                </p>
+              </div>
+            )}
             {/* Add Moderator Button */}
-            {moderators.length > 0 && (
+            {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
               <div>
                 <button
                   onClick={() => handleAddUser(UserRole.Moderator)}
@@ -503,7 +506,7 @@ export default function UserManagementPanel() {
                       </span>
                       <div className="text-right">
                         <h3 className="font-semibold text-gray-900">
-                          {moderator.firstName} {moderator.lastName}
+                          {moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName}
                         </h3>
                       </div>
                     </div>
@@ -607,7 +610,7 @@ export default function UserManagementPanel() {
                                   className={`hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
                                 >
                                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                                    {user.firstName} {user.lastName}
+                                    {user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName}
                                   </td>
                                   <td className="px-6 py-4 text-sm text-gray-600">
                                     @{user.username}
@@ -681,7 +684,7 @@ export default function UserManagementPanel() {
             )}
 
             {/* Secondary Admins Cards */}
-            {secondaryAdmins.length > 0 && (
+            {currentUser?.role === UserRole.PrimaryAdmin && (
               <>
                 {/* Add Secondary Admin Button */}
                 <div>
@@ -694,6 +697,7 @@ export default function UserManagementPanel() {
                     <span>إضافة مدير ثانوي جديد</span>
                   </button>
                 </div>
+                {secondaryAdmins.length > 0 && (
                 <div className="space-y-4">
               {secondaryAdmins.map((admin) => {
                 const isExpanded = expandedSecondaryAdmins.has(admin.id);
@@ -717,7 +721,7 @@ export default function UserManagementPanel() {
                         ></i>
                         <div className="text-right">
                           <h3 className="font-semibold text-gray-900">
-                            {admin.firstName} {admin.lastName}
+                            {admin.lastName ? `${admin.firstName} ${admin.lastName}` : admin.firstName}
                           </h3>
                         </div>
                       </div>
@@ -774,6 +778,7 @@ export default function UserManagementPanel() {
                 );
               })}
                 </div>
+                )}
               </>
             )}
           </div>
@@ -827,7 +832,9 @@ export default function UserManagementPanel() {
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-600 font-medium">الاسم الكامل</p>
                   <p className="text-sm text-gray-900 font-semibold mt-1">
-                    {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.firstName} {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.lastName || 'لم يتم تعيين'}
+                    {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.lastName 
+                      ? `${state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.firstName} ${state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.lastName}`
+                      : state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.firstName || 'لم يتم تعيين'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
@@ -1343,7 +1350,7 @@ export default function UserManagementPanel() {
                                 <i className="fas fa-user text-purple-600"></i>
                               </div>
                               <div className="text-sm font-medium text-gray-900">
-                                {user.firstName} {user.lastName}
+                                {user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName}
                               </div>
                             </div>
                           </td>

@@ -26,7 +26,7 @@ namespace Clinics.Infrastructure.Services
             _signingKeyBytes = DeriveSigningKey();
         }
 
-        public string CreateToken(int userId, string username, string role, string fullName)
+        public string CreateToken(int userId, string username, string role, string firstName, string? lastName = null)
         {
             var claims = new[] 
             {
@@ -34,7 +34,8 @@ namespace Clinics.Infrastructure.Services
                 new Claim(ClaimTypes.Name, username),
                 new Claim(ClaimTypes.Role, role),
                 new Claim("role", role),
-                new Claim("fullName", fullName),
+                new Claim("firstName", firstName),
+                new Claim("lastName", lastName ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 

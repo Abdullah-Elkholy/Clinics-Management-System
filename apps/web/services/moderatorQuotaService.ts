@@ -1,9 +1,11 @@
 /**
  * Moderator Quota Management Service
  * Handles quota CRUD operations and calculations
+ * Integrates with backend quota endpoints
  */
 
 import { ModeratorQuota } from '@/types/user';
+import { messageApiClient, type MyQuotaDto, type QuotaDto } from '@/services/api/messageApiClient';
 
 interface QuotaServiceResponse<T> {
   success: boolean;
@@ -11,41 +13,36 @@ interface QuotaServiceResponse<T> {
   error?: string;
 }
 
-// Mock quota storage (in production, this would be backend API calls)
-const quotaStorage = new Map<string, ModeratorQuota>();
-
 class ModeratorQuotaService {
   /**
-   * Get quota for a moderator
+   * Get quota for current user (authenticated moderator)
    */
-  async getQuota(moderatorId: string): Promise<QuotaServiceResponse<ModeratorQuota>> {
+  async getMyQuota(): Promise<QuotaServiceResponse<ModeratorQuota>> {
     try {
-      const quota = quotaStorage.get(moderatorId);
-      if (!quota) {
-        // Return default quota if not found
-        const defaultQuota: ModeratorQuota = {
-          id: `quota-${moderatorId}`,
-          moderatorId,
-          messagesQuota: {
-            limit: -1, // Unlimited by default
-            used: 0,
-            percentage: 0,
-            isLow: false,
-            warningThreshold: 80,
-          },
-          queuesQuota: {
-            limit: -1, // Unlimited by default
-            used: 0,
-            percentage: 0,
-            isLow: false,
-            warningThreshold: 80,
-          },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        return { success: true, data: defaultQuota };
-      }
-      return { success: true, data: { ...quota } };
+      const quotaDto = await messageApiClient.getMyQuota();
+      
+      const quota: ModeratorQuota = {
+        id: `quota-current`,
+        moderatorId: 'current',
+        messagesQuota: {
+          limit: quotaDto.limit,
+          used: quotaDto.used,
+          percentage: quotaDto.percentage,
+          isLow: quotaDto.isLowQuota,
+          warningThreshold: 80,
+        },
+        queuesQuota: {
+          limit: quotaDto.queuesLimit,
+          used: quotaDto.queuesUsed,
+          percentage: Math.round((quotaDto.queuesUsed / quotaDto.queuesLimit) * 100),
+          isLow: (quotaDto.queuesUsed / quotaDto.queuesLimit) >= 0.8,
+          warningThreshold: 80,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      return { success: true, data: quota };
     } catch (error) {
       return {
         success: false,
@@ -55,9 +52,44 @@ class ModeratorQuotaService {
   }
 
   /**
-   * Update quota for a moderator (supports SET or ADD mode)
-   * When mode is 'add', the new values are added to existing limits
-   * When mode is 'set', the new values replace existing limits
+   * Get quota for a specific moderator (admin only)
+   */
+  async getQuota(moderatorId: string): Promise<QuotaServiceResponse<ModeratorQuota>> {
+    try {
+      const quotaDto = await messageApiClient.getQuota(parseInt(moderatorId));
+      
+      const quota: ModeratorQuota = {
+        id: `quota-${moderatorId}`,
+        moderatorId,
+        messagesQuota: {
+          limit: quotaDto.limit,
+          used: quotaDto.used,
+          percentage: quotaDto.percentage,
+          isLow: quotaDto.isLow,
+          warningThreshold: 80,
+        },
+        queuesQuota: {
+          limit: quotaDto.queuesLimit,
+          used: quotaDto.queuesUsed,
+          percentage: Math.round((quotaDto.queuesUsed / quotaDto.queuesLimit) * 100),
+          isLow: (quotaDto.queuesUsed / quotaDto.queuesLimit) >= 0.8,
+          warningThreshold: 80,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(quotaDto.updatedAt),
+      };
+
+      return { success: true, data: quota };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to fetch quota: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      };
+    }
+  }
+
+  /**
+   * Update quota for a moderator (via backend API)
    */
   async updateQuota(
     moderatorId: string,
@@ -65,128 +97,19 @@ class ModeratorQuotaService {
     mode: 'set' | 'add' = 'set'
   ): Promise<QuotaServiceResponse<ModeratorQuota>> {
     try {
-      const existing = quotaStorage.get(moderatorId);
-      const current = existing || {
-        id: `quota-${moderatorId}`,
-        moderatorId,
-        messagesQuota: {
-          limit: -1,
-          used: 0,
-          percentage: 0,
-          isLow: false,
-          warningThreshold: 80,
-        },
-        queuesQuota: {
-          limit: -1,
-          used: 0,
-          percentage: 0,
-          isLow: false,
-          warningThreshold: 80,
-        },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      // Merge updates with mode support
-      let updated: ModeratorQuota = {
-        ...current,
-        moderatorId, // Don't allow changing moderator ID
-        updatedAt: new Date(),
-      };
-
-      // Handle messages quota
-      if (updates.messagesQuota) {
-        if (mode === 'add') {
-          const addAmount = updates.messagesQuota.limit;
-          const currentLimit = current.messagesQuota.limit;
-          
-          // If current is unlimited (-1), adding keeps it unlimited
-          if (currentLimit === -1) {
-            updated.messagesQuota = {
-              ...current.messagesQuota,
-              limit: -1,
-            };
-          } else if (addAmount === -1) {
-            // If adding unlimited, result is unlimited
-            updated.messagesQuota = {
-              ...current.messagesQuota,
-              limit: -1,
-            };
-          } else {
-            // Add to existing limit
-            updated.messagesQuota = {
-              ...current.messagesQuota,
-              limit: currentLimit + addAmount,
-            };
-          }
-        } else {
-          // SET mode - replace the value
-          updated.messagesQuota = {
-            ...current.messagesQuota,
-            limit: updates.messagesQuota.limit,
-          };
-        }
-      }
-
-      // Handle queues quota
-      if (updates.queuesQuota) {
-        if (mode === 'add') {
-          const addAmount = updates.queuesQuota.limit;
-          const currentLimit = current.queuesQuota.limit;
-          
-          // If current is unlimited (-1), adding keeps it unlimited
-          if (currentLimit === -1) {
-            updated.queuesQuota = {
-              ...current.queuesQuota,
-              limit: -1,
-            };
-          } else if (addAmount === -1) {
-            // If adding unlimited, result is unlimited
-            updated.queuesQuota = {
-              ...current.queuesQuota,
-              limit: -1,
-            };
-          } else {
-            // Add to existing limit
-            updated.queuesQuota = {
-              ...current.queuesQuota,
-              limit: currentLimit + addAmount,
-            };
-          }
-        } else {
-          // SET mode - replace the value
-          updated.queuesQuota = {
-            ...current.queuesQuota,
-            limit: updates.queuesQuota.limit,
-          };
-        }
-      }
-
-      // Recalculate percentages and warnings
-      if (updated.messagesQuota.limit > 0) {
-        updated.messagesQuota.percentage = Math.round(
-          (updated.messagesQuota.used / updated.messagesQuota.limit) * 100
-        );
-        updated.messagesQuota.isLow =
-          updated.messagesQuota.percentage >= updated.messagesQuota.warningThreshold;
+      if (mode === 'add') {
+        await messageApiClient.addQuota(parseInt(moderatorId), {
+          limit: updates.messagesQuota?.limit || 0,
+          queuesLimit: updates.queuesQuota?.limit || 0,
+        });
       } else {
-        updated.messagesQuota.percentage = 0;
-        updated.messagesQuota.isLow = false;
+        await messageApiClient.updateQuota(parseInt(moderatorId), {
+          limit: updates.messagesQuota?.limit,
+          queuesLimit: updates.queuesQuota?.limit,
+        });
       }
-
-      if (updated.queuesQuota.limit > 0) {
-        updated.queuesQuota.percentage = Math.round(
-          (updated.queuesQuota.used / updated.queuesQuota.limit) * 100
-        );
-        updated.queuesQuota.isLow =
-          updated.queuesQuota.percentage >= updated.queuesQuota.warningThreshold;
-      } else {
-        updated.queuesQuota.percentage = 0;
-        updated.queuesQuota.isLow = false;
-      }
-
-      quotaStorage.set(moderatorId, updated);
-      return { success: true, data: { ...updated } };
+      
+      return this.getQuota(moderatorId);
     } catch (error) {
       return {
         success: false,
@@ -196,7 +119,7 @@ class ModeratorQuotaService {
   }
 
   /**
-   * Add usage to quota (accumulative)
+   * Add usage to a moderator's quota
    */
   async addUsage(
     moderatorId: string,
@@ -210,14 +133,23 @@ class ModeratorQuotaService {
       }
 
       const quota = quotaResult.data;
+      const quotaType = type === 'messages' ? quota.messagesQuota : quota.queuesQuota;
 
+      // Update with new usage value
+      const updates: Partial<ModeratorQuota> = {};
       if (type === 'messages') {
-        quota.messagesQuota.used += amount;
+        updates.messagesQuota = {
+          ...quotaType,
+          used: quotaType.used + amount,
+        };
       } else {
-        quota.queuesQuota.used += amount;
+        updates.queuesQuota = {
+          ...quotaType,
+          used: quotaType.used + amount,
+        };
       }
 
-      return this.updateQuota(moderatorId, quota);
+      return this.updateQuota(moderatorId, updates, 'set');
     } catch (error) {
       return {
         success: false,
@@ -243,7 +175,6 @@ class ModeratorQuotaService {
       const quotaType =
         type === 'messages' ? quota.messagesQuota : quota.queuesQuota;
 
-      // If limit is -1, it's unlimited
       if (quotaType.limit === -1) {
         return true;
       }
@@ -255,25 +186,43 @@ class ModeratorQuotaService {
   }
 
   /**
-   * Get all quotas (for admin view)
+   * Get all quotas (admin only)
    */
   async getAllQuotas(): Promise<QuotaServiceResponse<ModeratorQuota[]>> {
     try {
-      const quotas = Array.from(quotaStorage.values());
-      return { success: true, data: quotas };
+      const response = await messageApiClient.getAllQuotas();
+      
+      if (response.items && response.items.length > 0) {
+        const quotas: ModeratorQuota[] = response.items.map((dto: QuotaDto, idx: number) => ({
+          id: `quota-${idx}`,
+          moderatorId: dto.id.toString(),
+          messagesQuota: {
+            limit: dto.limit,
+            used: dto.used,
+            percentage: dto.percentage,
+            isLow: dto.isLow,
+            warningThreshold: 80,
+          },
+          queuesQuota: {
+            limit: dto.queuesLimit,
+            used: dto.queuesUsed,
+            percentage: Math.round((dto.queuesUsed / dto.queuesLimit) * 100),
+            isLow: (dto.queuesUsed / dto.queuesLimit) >= 0.8,
+            warningThreshold: 80,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(dto.updatedAt),
+        }));
+        return { success: true, data: quotas };
+      }
+
+      return { success: true, data: [] };
     } catch (error) {
       return {
         success: false,
         error: `Failed to fetch quotas: ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
-  }
-
-  /**
-   * Reset quota storage (for testing/demo)
-   */
-  clearAllQuotas(): void {
-    quotaStorage.clear();
   }
 }
 

@@ -27,7 +27,7 @@ namespace Clinics.Api.Controllers
         /// </summary>
         [HttpGet]
         [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] string? role = null)
         {
             try
             {
@@ -40,7 +40,11 @@ namespace Clinics.Api.Controllers
                 // Admins see all users
                 if (currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin")
                 {
-                    // All users
+                    // All users - optionally filter by role if provided
+                    if (!string.IsNullOrWhiteSpace(role))
+                    {
+                        query = query.Where(u => u.Role == role);
+                    }
                 }
                 // Moderators see only their managed users
                 else if (currentUser?.Role == "moderator")
@@ -53,7 +57,12 @@ namespace Clinics.Api.Controllers
                 }
 
                 var users = await query.ToListAsync();
-                return Ok(new { success = true, data = users });
+                return Ok(new { 
+                    items = users,
+                    totalCount = users.Count,
+                    pageNumber = 1,
+                    pageSize = users.Count
+                });
             }
             catch (Exception ex)
             {
@@ -114,8 +123,12 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FullName))
-                    return BadRequest(new { success = false, error = "Username and FullName required" });
+                if (string.IsNullOrWhiteSpace(req.Username))
+                    return BadRequest(new { success = false, error = "Username is required" });
+
+                // FirstName is required
+                if (string.IsNullOrWhiteSpace(req.FirstName))
+                    return BadRequest(new { success = false, error = "FirstName is required" });
 
                 // Check if username exists
                 var existingUser = await _db.Users
@@ -148,11 +161,10 @@ namespace Clinics.Api.Controllers
                 var user = new User
                 {
                     Username = req.Username,
-                    FullName = req.FullName,
+                    FirstName = req.FirstName.Trim(),
+                    LastName = req.LastName?.Trim(),
                     Role = desiredRoleName,
-                    ModeratorId = req.ModeratorId,
-                    Email = req.Email,
-                    PhoneNumber = req.PhoneNumber
+                    ModeratorId = req.ModeratorId
                 };
 
                 if (!string.IsNullOrEmpty(req.Password))
@@ -164,7 +176,7 @@ namespace Clinics.Api.Controllers
                 _db.Users.Add(user);
                 await _db.SaveChangesAsync();
 
-                return Ok(new { success = true, data = user });
+                return Ok(user);
             }
             catch (Exception ex)
             {
@@ -197,17 +209,23 @@ namespace Clinics.Api.Controllers
                         return Forbid();
                 }
 
-                if (!string.IsNullOrEmpty(req.FullName))
-                    targetUser.FullName = req.FullName;
+                // Update firstName if provided
+                if (!string.IsNullOrEmpty(req.FirstName))
+                    targetUser.FirstName = req.FirstName.Trim();
 
-                if (!string.IsNullOrEmpty(req.Email))
-                    targetUser.Email = req.Email;
+                // Update lastName if provided
+                if (req.LastName != null)
+                    targetUser.LastName = req.LastName.Trim();
 
-                if (!string.IsNullOrEmpty(req.PhoneNumber))
-                    targetUser.PhoneNumber = req.PhoneNumber;
+                // Handle password update if provided
+                if (!string.IsNullOrEmpty(req.Password))
+                {
+                    var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+                    targetUser.PasswordHash = hasher.HashPassword(targetUser, req.Password);
+                }
 
                 await _db.SaveChangesAsync();
-                return Ok(new { success = true, data = targetUser });
+                return Ok(targetUser);
             }
             catch (Exception ex)
             {
@@ -299,29 +317,5 @@ namespace Clinics.Api.Controllers
                 return StatusCode(500, new { success = false, error = "Error resetting password" });
             }
         }
-    }
-
-    /// <summary>
-    /// Request to create a user
-    /// </summary>
-    public class CreateUserRequest
-    {
-        public string Username { get; set; } = null!;
-        public string FullName { get; set; } = null!;
-        public string? Email { get; set; }
-        public string? PhoneNumber { get; set; }
-        public string? Password { get; set; }
-        public string? Role { get; set; }
-        public int? ModeratorId { get; set; }
-    }
-
-    /// <summary>
-    /// Request to update a user
-    /// </summary>
-    public class UpdateUserRequest
-    {
-        public string? FullName { get; set; }
-        public string? Email { get; set; }
-        public string? PhoneNumber { get; set; }
     }
 }

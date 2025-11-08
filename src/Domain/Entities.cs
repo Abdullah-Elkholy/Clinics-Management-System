@@ -19,7 +19,10 @@ namespace Clinics.Domain
 
         [Required]
         [StringLength(100)]
-        public string FullName { get; set; } = null!;
+        public string FirstName { get; set; } = null!;
+
+        [StringLength(100)]
+        public string? LastName { get; set; }
 
         [Required]
         [StringLength(50)]
@@ -44,13 +47,22 @@ namespace Clinics.Domain
         [NotMapped]
         public UserRole RoleEnum => UserRoleExtensions.FromRoleName(Role);
 
-        [StringLength(20)]
-        [Phone]
-        public string? PhoneNumber { get; set; }
-
-        [StringLength(100)]
-        [EmailAddress]
-        public string? Email { get; set; }
+        // Computed FullName for backward compatibility
+        [NotMapped]
+        public string FullName
+        {
+            get => string.IsNullOrWhiteSpace(LastName) ? FirstName : $"{FirstName} {LastName}";
+            set
+            {
+                // Parse fullName to firstName and lastName
+                var parts = value.Split(' ', System.StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 0)
+                {
+                    FirstName = parts[0];
+                    LastName = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : null;
+                }
+            }
+        }
     }
 
     [Table("Queues")]

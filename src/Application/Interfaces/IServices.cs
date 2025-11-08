@@ -8,7 +8,7 @@ namespace Clinics.Application.Interfaces
     /// </summary>
     public interface ITokenService
     {
-        string CreateToken(int userId, string username, string role, string fullName);
+        string CreateToken(int userId, string username, string role, string firstName, string? lastName = null);
         Task<bool> ValidateTokenAsync(string token);
     }
 

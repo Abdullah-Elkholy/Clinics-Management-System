@@ -10,7 +10,7 @@ import { validateName, validateTextareaRequired, ValidationError } from '@/utils
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
 import { useState } from 'react';
-import { MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
+// Mock data removed - using API data instead
 
 export default function AddTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -278,7 +278,7 @@ export default function AddTemplateModal() {
           </label>
           <input
             type="text"
-            value={title}
+            value={title ?? ''}
             onChange={(e) => handleFieldChange('title', e.target.value)}
             onBlur={() => handleFieldBlur('title')}
             placeholder="أدخل عنوان القالب"
@@ -302,7 +302,7 @@ export default function AddTemplateModal() {
             محتوى الرسالة *
           </label>
           <textarea
-            value={content}
+            value={content ?? ''}
             onChange={(e) => handleFieldChange('content', e.target.value)}
             onBlur={() => handleFieldBlur('content')}
             rows={4}

@@ -5,7 +5,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createBulkDeleteConfirmation, createDeleteConfirmation } from '@/utils/confirmationHelpers';
-import { MOCK_FAILED_SESSIONS } from '@/constants/mockData';
+// Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
@@ -52,7 +52,7 @@ export default function FailedTasksPanel() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
-  const [sessions, setSessions] = useState<Session[]>(MOCK_FAILED_SESSIONS as Session[]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -73,16 +73,14 @@ export default function FailedTasksPanel() {
         
         if (response.items && response.items.length > 0) {
           // Transform API response to Session format if needed
-          // For now, use mock data as fallback
-          setSessions(MOCK_FAILED_SESSIONS as Session[]);
+          setSessions([]);
         } else {
-          setSessions(MOCK_FAILED_SESSIONS as Session[]);
+          setSessions([]);
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to load failed tasks';
         setError(errorMessage);
-        // Fallback to mock data on error
-        setSessions(MOCK_FAILED_SESSIONS as Session[]);
+        setSessions([]);
       } finally {
         setIsLoading(false);
       }

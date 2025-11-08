@@ -11,7 +11,7 @@ export default function Header() {
   if (!user) return null;
 
   const roleDisplay = getRoleDisplayName(user.role);
-  const fullName = `${user.firstName} ${user.lastName}`;
+  const fullName = user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName;
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-40">

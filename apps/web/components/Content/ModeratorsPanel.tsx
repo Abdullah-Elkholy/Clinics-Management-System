@@ -68,7 +68,7 @@ export default function ModeratorsPanel() {
       if (response.success && response.data) {
         setState((prev) => ({
           ...prev,
-          moderators: response.data as ModeratorDetails[],
+          moderators: response.data as unknown as ModeratorDetails[],
           loading: false,
         }));
       } else {
@@ -206,10 +206,11 @@ export default function ModeratorsPanel() {
     }
   }, [state.selectedModerator, userFormData, fetchModerators]);
 
-  const filteredModerators = state.moderators.filter((m) =>
-    `${m.firstName} ${m.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.username.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredModerators = state.moderators.filter((m) => {
+    const fullName = m.lastName ? `${m.firstName} ${m.lastName}` : m.firstName;
+    return fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+           m.username.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   return (
     <PanelWrapper isLoading={state.loading}>
@@ -386,7 +387,7 @@ export default function ModeratorsPanel() {
                   {/* Header */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="font-bold text-lg text-gray-900">{moderator.firstName} {moderator.lastName}</h3>
+                      <h3 className="font-bold text-lg text-gray-900">{moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName}</h3>
                       <p className="text-sm text-gray-600 mt-1">
                         <span className="text-gray-500">@</span>
                         {moderator.username}
@@ -514,7 +515,7 @@ export default function ModeratorsPanel() {
                   key={moderator.id}
                   className="bg-white border border-gray-200 rounded-lg p-6"
                 >
-                  <h4 className="font-bold text-gray-900 mb-4">{moderator.firstName} {moderator.lastName}</h4>
+                  <h4 className="font-bold text-gray-900 mb-4">{moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName}</h4>
 
                   {/* Messages Quota */}
                   <div className="mb-6">
@@ -571,7 +572,7 @@ export default function ModeratorsPanel() {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-lg">
-              مستخدمو {state.selectedModerator.firstName} {state.selectedModerator.lastName}
+              مستخدمو {state.selectedModerator.lastName ? `${state.selectedModerator.firstName} ${state.selectedModerator.lastName}` : state.selectedModerator.firstName}
             </h3>
             <button
               onClick={() => setShowAddUserModal(true)}
