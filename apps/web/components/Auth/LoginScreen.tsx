@@ -22,13 +22,13 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      const success = await login(username, password);
-      if (!success) {
-        setError('بيانات تسجيل الدخول غير صحيحة أو حدث خطأ في الخادم');
+      const result = await login(username, password);
+      if (!result.success) {
+        setError(result.error || 'فشل تسجيل الدخول');
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'حدث خطأ أثناء تسجيل الدخول';
-      setError(errorMsg || 'بيانات تسجيل الدخول غير صحيحة');
+      setError(errorMsg || 'فشل تسجيل الدخول');
     } finally {
       setIsLoading(false);
     }
@@ -37,15 +37,15 @@ export default function LoginScreen() {
   const handleQuickLogin = async (username: string, password: string) => {
     setIsLoading(true);
     try {
-      const success = await login(username, password);
-      if (success) {
+      const result = await login(username, password);
+      if (result.success) {
         setError('');
       } else {
-        setError('بيانات تسجيل الدخول غير صحيحة أو حدث خطأ في الخادم');
+        setError(result.error || 'فشل تسجيل الدخول');
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'حدث خطأ أثناء تسجيل الدخول';
-      setError(errorMsg || 'بيانات تسجيل الدخول غير صحيحة');
+      setError(errorMsg || 'فشل تسجيل الدخول');
     } finally {
       setIsLoading(false);
     }

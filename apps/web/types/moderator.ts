@@ -313,33 +313,6 @@ export interface MessageFilter {
   searchTerm?: string;
 }
 
-// Context Types
-export interface AuthContextType {
-  user: User | null;
-  isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
-  isAuthenticated: boolean;
-}
-
-export interface UIContextType {
-  isLoading: boolean;
-  notification: {
-    type: 'success' | 'error' | 'warning' | 'info';
-    message: string;
-  } | null;
-  showNotification: (
-    type: 'success' | 'error' | 'warning' | 'info',
-    message: string,
-    duration?: number
-  ) => void;
-  dismissNotification: () => void;
-  openModal: (id: string, data?: any) => void;
-  closeModal: (id: string) => void;
-  isModalOpen: (id: string) => boolean;
-  getModalData: (id: string) => any;
-}
-
 // Event Types
 export interface ModeratorEvent {
   type: 'created' | 'updated' | 'deleted' | 'activated' | 'deactivated';

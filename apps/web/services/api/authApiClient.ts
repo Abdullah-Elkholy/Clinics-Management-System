@@ -19,9 +19,20 @@ export interface LoginResponse {
   }>;
 }
 
-export interface ApiError {
-  message: string;
+export class ApiError extends Error {
   statusCode: number;
+  details?: any;
+  constructor(message: string, statusCode: number, details?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.statusCode = statusCode;
+    this.details = details;
+    // Ensure instanceof works
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
+  toJSON() {
+    return { name: this.name, message: this.message, statusCode: this.statusCode, details: this.details };
+  }
 }
 
 // ============================================
@@ -63,10 +74,8 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
   }
 
   if (!response.ok) {
-    throw {
-      message: data?.errors?.[0]?.message || data?.message || 'Login failed',
-      statusCode: response.status,
-    } as ApiError;
+    const message = (typeof data === 'string' ? data : (data?.errors?.[0]?.message || data?.message)) || response.statusText || 'Login failed';
+    throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
   }
 
   return data as LoginResponse;
@@ -101,10 +110,8 @@ export async function getCurrentUser() {
   }
 
   if (!response.ok) {
-    throw {
-      message: data?.message || 'Failed to get current user',
-      statusCode: response.status,
-    } as ApiError;
+    const message = (typeof data === 'string' ? data : data?.message) || response.statusText || 'Failed to get current user';
+    throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
   }
 
   return data;

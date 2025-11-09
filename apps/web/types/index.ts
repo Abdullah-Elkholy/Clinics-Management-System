@@ -64,6 +64,7 @@ export interface Toast {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info' | 'warning';
+  debugData?: Record<string, any>; // Optional raw error/debug info for development
 }
 
 export interface AuthState {

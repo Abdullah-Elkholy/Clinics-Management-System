@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import '../styles/app.css';
+import { UIProvider } from '../contexts/UIContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { QueueProvider } from '../contexts/QueueContext';
-import { UIProvider } from '../contexts/UIContext';
 import { ModalProvider } from '../contexts/ModalContext';
 import { ConfirmationProvider } from '../contexts/ConfirmationContext';
 import { InputDialogProvider } from '../contexts/InputDialogContext';
 import { SelectDialogProvider } from '../contexts/SelectDialogContext';
+import ToastContainer from '../components/Common/ToastContainer';
 
 export const metadata: Metadata = {
   title: 'نظام إدارة العيادات الطبية',
@@ -27,21 +28,23 @@ export default function RootLayout({
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
       </head>
       <body className="font-arabic bg-gray-50 text-gray-900">
-        <AuthProvider>
-          <QueueProvider>
-            <UIProvider>
+        {/** Provider order adjusted: UIProvider now wraps AuthProvider so AuthContext can trigger global toasts */}
+        <UIProvider>
+          <AuthProvider>
+            <QueueProvider>
               <ModalProvider>
                 <ConfirmationProvider>
                   <InputDialogProvider>
                     <SelectDialogProvider>
                       {children}
+                      <ToastContainer />
                     </SelectDialogProvider>
                   </InputDialogProvider>
                 </ConfirmationProvider>
               </ModalProvider>
-            </UIProvider>
-          </QueueProvider>
-        </AuthProvider>
+            </QueueProvider>
+          </AuthProvider>
+        </UIProvider>
       </body>
     </html>
   );

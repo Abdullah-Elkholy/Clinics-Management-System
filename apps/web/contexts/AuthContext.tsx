@@ -1,12 +1,17 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { useUI } from './UIContext';
 import type { User, AuthState } from '../types';
 import { UserRole } from '@/types/roles';
 import { login as loginApi, logout as logoutApi } from '@/services/api/authApiClient';
 
+// Retry/backoff configuration
+const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
+
+// Type definition for Auth context shape
 interface AuthContextType extends AuthState {
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -18,139 +23,262 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isAuthenticated: false,
   });
 
-  const login = useCallback(async (username: string, password: string): Promise<boolean> => {
-    try {
-      const response = await loginApi({ username, password });
-      
-      if (response.success && response.data?.accessToken) {
-        // Store token in localStorage
-        localStorage.setItem('token', response.data.accessToken);
+  const { addToast } = useUI();
+
+  // Refs for managing retry/backoff and preemption
+  const attemptIdRef = useRef(0); // Incremented on each new login attempt
+  const lastToastMessageRef = useRef<string>(''); // Track last toast to avoid duplicates
+
+  const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    // Increment attempt ID to enable preemption of older retry loops
+    const myAttemptId = ++attemptIdRef.current;
+
+    // Check offline at the start
+    if (!navigator.onLine) {
+      const offlineMsg = 'أنت غير متصل بالإنترنت';
+      if (lastToastMessageRef.current !== offlineMsg) {
+        const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true' 
+          ? { error: 'Network offline', timestamp: new Date().toISOString() } 
+          : undefined;
+        addToast(offlineMsg, 'error', debugData);
+        lastToastMessageRef.current = offlineMsg;
+      }
+      return { success: false, error: offlineMsg };
+    }
+
+    let finalError: string | undefined;
+
+    // Retry loop with exponential backoff
+    for (let attemptNumber = 0; attemptNumber <= RETRY_DELAYS.length; attemptNumber++) {
+      // Check if this attempt was preempted by a newer login call
+      if (myAttemptId !== attemptIdRef.current) {
+        // A newer attempt started; silently abort retries
+        return { success: false, error: undefined };
+      }
+
+      // Delay before retry (skip for first attempt)
+      if (attemptNumber > 0) {
+        const delayMs = RETRY_DELAYS[attemptNumber - 1];
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+
+        // Re-check preemption and offline after delay
+        if (myAttemptId !== attemptIdRef.current) {
+          return { success: false, error: undefined };
+        }
+        if (!navigator.onLine) {
+          const offlineMsg = 'أنت غير متصل بالإنترنت';
+          if (lastToastMessageRef.current !== offlineMsg) {
+            const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true' 
+              ? { error: 'Network went offline during retry', attempt: attemptNumber + 1, timestamp: new Date().toISOString() } 
+              : undefined;
+            addToast(offlineMsg, 'error', debugData);
+            lastToastMessageRef.current = offlineMsg;
+          }
+          return { success: false, error: offlineMsg };
+        }
+      }
+
+      try {
+        const response = await loginApi({ username, password });
         
-        // Decode token to get user info (JWT payload is base64-encoded JSON)
-        const parts = response.data.accessToken.split('.');
-        if (parts.length === 3) {
-          try {
-            // Properly decode Base64 with UTF-8 support for Arabic characters
-            // atob() doesn't handle UTF-8 properly, so we use a helper function
-            const decodeBase64 = (str: string): string => {
-              try {
-                // Replace URL-safe Base64 characters: - becomes +, _ becomes /
-                const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-                // Decode using TextDecoder for proper UTF-8 handling
-                const binaryString = atob(base64);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
+        if (response.success && response.data?.accessToken) {
+          // Store token in localStorage
+          localStorage.setItem('token', response.data.accessToken);
+          
+          // Decode token to get user info (JWT payload is base64-encoded JSON)
+          const parts = response.data.accessToken.split('.');
+          if (parts.length === 3) {
+            try {
+              // Properly decode Base64 with UTF-8 support for Arabic characters
+              // atob() doesn't handle UTF-8 properly, so we use a helper function
+              const decodeBase64 = (str: string): string => {
+                try {
+                  // Replace URL-safe Base64 characters: - becomes +, _ becomes /
+                  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+                  // Decode using TextDecoder for proper UTF-8 handling
+                  const binaryString = atob(base64);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  return new TextDecoder('utf-8').decode(bytes);
+                } catch (e) {
+                  console.error('❌ Base64 decoding failed:', e);
+                  throw new Error('Failed to decode JWT payload');
                 }
-                return new TextDecoder('utf-8').decode(bytes);
-              } catch (e) {
-                console.error('❌ Base64 decoding failed:', e);
-                throw new Error('Failed to decode JWT payload');
+              };
+              
+              const decoded = JSON.parse(decodeBase64(parts[1]));
+              
+              // Debug: Log full JWT payload to inspect structure
+              console.log('🔐 Full JWT Payload:', JSON.stringify(decoded, null, 2));
+              
+              // Extract role - Try MULTIPLE possible claim keys that JWT might use
+              // JWT standard claim type keys can be in different formats
+              const roleFromDirect = decoded.role;  // Direct "role" claim
+              const roleFromClaimType = decoded['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];  // ClaimTypes.Role
+              const roleFromAllClaims = Object.entries(decoded).find(([k, v]) => k.toLowerCase().includes('role'));
+              
+              const roleValue = roleFromDirect || roleFromClaimType || (roleFromAllClaims ? roleFromAllClaims[1] : undefined);
+              
+              console.log('🔐 Role Extraction Debug:', {
+                roleFromDirect: `"${roleFromDirect}"`,
+                roleFromClaimType: `"${roleFromClaimType}"`,
+                roleFromAllClaims: roleFromAllClaims ? `${roleFromAllClaims[0]} = "${roleFromAllClaims[1]}"` : 'NOT_FOUND',
+                finalRoleValue: `"${roleValue}"`,
+                isRolePrimaryAdmin: roleValue === 'primary_admin',
+                isRoleString: typeof roleValue === 'string',
+              });
+              
+              // Ensure we have a valid role value
+              const finalRole = (roleValue as UserRole) || UserRole.User;
+              
+              // Validate that the role is one of the allowed values
+              const validRoles: UserRole[] = [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User];
+              const isValidRole = validRoles.includes(finalRole);
+              
+              console.log('🔐 Role Validation:', {
+                roleValue: finalRole,
+                isValidRole: isValidRole,
+                validRoles: validRoles,
+                matchesPrimaryAdmin: finalRole === UserRole.PrimaryAdmin,
+              });
+              
+              if (!isValidRole) {
+                console.warn(`⚠️ Invalid role "${finalRole}", defaulting to User role`);
               }
-            };
-            
-            const decoded = JSON.parse(decodeBase64(parts[1]));
-            
-            // Debug: Log full JWT payload to inspect structure
-            console.log('🔐 Full JWT Payload:', JSON.stringify(decoded, null, 2));
-            
-            // Extract role - Try MULTIPLE possible claim keys that JWT might use
-            // JWT standard claim type keys can be in different formats
-            const roleFromDirect = decoded.role;  // Direct "role" claim
-            const roleFromClaimType = decoded['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];  // ClaimTypes.Role
-            const roleFromAllClaims = Object.entries(decoded).find(([k, v]) => k.toLowerCase().includes('role'));
-            
-            const roleValue = roleFromDirect || roleFromClaimType || (roleFromAllClaims ? roleFromAllClaims[1] : undefined);
-            
-            console.log('🔐 Role Extraction Debug:', {
-              roleFromDirect: `"${roleFromDirect}"`,
-              roleFromClaimType: `"${roleFromClaimType}"`,
-              roleFromAllClaims: roleFromAllClaims ? `${roleFromAllClaims[0]} = "${roleFromAllClaims[1]}"` : 'NOT_FOUND',
-              finalRoleValue: `"${roleValue}"`,
-              isRolePrimaryAdmin: roleValue === 'primary_admin',
-              isRoleString: typeof roleValue === 'string',
-            });
-            
-            // Ensure we have a valid role value
-            const finalRole = (roleValue as UserRole) || UserRole.User;
-            
-            // Validate that the role is one of the allowed values
-            const validRoles: UserRole[] = [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User];
-            const isValidRole = validRoles.includes(finalRole);
-            
-            console.log('🔐 Role Validation:', {
-              roleValue: finalRole,
-              isValidRole: isValidRole,
-              validRoles: validRoles,
-              matchesPrimaryAdmin: finalRole === UserRole.PrimaryAdmin,
-            });
-            
-            if (!isValidRole) {
-              console.warn(`⚠️ Invalid role "${finalRole}", defaulting to User role`);
-            }
-            
-            // Map JWT claims to User object
-            // Note: JwtTokenService creates claims with keys: "firstName", "lastName", "role"
-            const user: User = {
-              id: decoded.sub || decoded.userId || '',
-              username: decoded.name || decoded.username || username,
-              firstName: decoded.firstName || 'User',
-              lastName: decoded.lastName || '',
-              role: finalRole,
-              isActive: true,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            };
-            
-            // Debug: Log names specifically to verify Arabic characters are properly decoded
-            console.log('🔐 User Names (UTF-8 Check):', {
-              firstName: `"${user.firstName}"`,
-              lastName: `"${user.lastName}"`,
-              firstNameLength: user.firstName.length,
-              lastNameLength: user.lastName.length,
-              firstNameCharCodes: user.firstName.split('').map(c => c.charCodeAt(0)),
-              lastNameCharCodes: user.lastName.split('').map(c => c.charCodeAt(0)),
-            });
-            
-            console.log('👤 User object after mapping:', { ...user, isActive: user.isActive });
-            
-            setAuthState({
-              user,
-              isAuthenticated: true,
-            });
-            return true;
-          } catch (e) {
-            console.warn('Failed to decode JWT:', e);
-            // Still set user as authenticated even if decode fails
-            setAuthState({
-              user: {
-                id: '1',
-                username,
-                firstName: username,
-                lastName: '',
-                role: UserRole.User,
+              
+              // Map JWT claims to User object
+              // Note: JwtTokenService creates claims with keys: "firstName", "lastName", "role"
+              const user: User = {
+                id: decoded.sub || decoded.userId || '',
+                username: decoded.name || decoded.username || username,
+                firstName: decoded.firstName || 'User',
+                lastName: decoded.lastName || '',
+                role: finalRole,
                 isActive: true,
                 createdAt: new Date(),
                 updatedAt: new Date(),
-              },
-              isAuthenticated: true,
-            });
-            return true;
+              };
+              
+              // Debug: Log names specifically to verify Arabic characters are properly decoded
+              console.log('🔐 User Names (UTF-8 Check):', {
+                firstName: `"${user.firstName}"`,
+                lastName: `"${user.lastName}"`,
+                firstNameLength: user.firstName.length,
+                lastNameLength: user.lastName.length,
+                firstNameCharCodes: user.firstName.split('').map(c => c.charCodeAt(0)),
+                lastNameCharCodes: user.lastName.split('').map(c => c.charCodeAt(0)),
+              });
+              
+              console.log('👤 User object after mapping:', { ...user, isActive: user.isActive });
+              
+              setAuthState({
+                user,
+                isAuthenticated: true,
+              });
+              return { success: true };
+            } catch (e) {
+              console.warn('Failed to decode JWT:', e);
+              // Still set user as authenticated even if decode fails
+              setAuthState({
+                user: {
+                  id: '1',
+                  username,
+                  firstName: username,
+                  lastName: '',
+                  role: UserRole.User,
+                  isActive: true,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
+                isAuthenticated: true,
+              });
+              return { success: true };
+            }
           }
         }
+
+        // If response is not success, treat as retryable or non-retryable error
+        // Note: login() will throw ApiError if !response.ok, so we only reach here if response.ok but response.success is false
+        const err = new Error('Login response not successful') as any;
+        err.statusCode = 400; // Treat as client error since response was OK but login failed
+        err.message = 'فشل تسجيل الدخول';
+        throw err;
+      } catch (error) {
+        const err = error as any;
+
+        // Rich error log to avoid {} empty object in console
+        try {
+          console.error(`Login error (attempt ${attemptNumber + 1}/${RETRY_DELAYS.length + 1}):`, {
+            raw: err,
+            type: typeof err,
+            keys: err ? Object.keys(err) : [],
+            name: err?.name,
+            message: err?.message,
+            statusCode: err?.statusCode,
+            stack: err?.stack,
+            details: err?.details,
+          });
+        } catch {}
+
+        // Determine if this is retryable
+        const isRetryable = typeof err?.statusCode !== 'number' || err.statusCode >= 500;
+        const isCredentialError = err?.statusCode === 401 || err?.statusCode === 403;
+
+        if (isCredentialError) {
+          // Never retry on credential errors; return immediately without toast
+          finalError = 'بيانات تسجيل الدخول غير صحيحة';
+          break;
+        }
+
+        // Set finalError for potential retry or final return
+        if (typeof err?.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+          // Non-credential 4xx; not retryable
+          finalError = err?.message || 'فشل طلب تسجيل الدخول';
+          break;
+        } else if (typeof err?.statusCode === 'number' && err.statusCode >= 500) {
+          // Server error; retryable
+          finalError = 'حدث خطأ في الخادم، يرجى المحاولة لاحقاً';
+        } else {
+          // Network or unknown error; retryable
+          finalError = err?.message || 'حدث خطأ أثناء الاتصال بالخادم';
+        }
+
+        // If not retryable, break immediately
+        if (!isRetryable) {
+          break;
+        }
+
+        // Continue to next attempt (if any remain)
+        if (attemptNumber < RETRY_DELAYS.length) {
+          console.log(`⏳ Retrying login in ${RETRY_DELAYS[attemptNumber]}ms...`);
+        }
       }
-    } catch (error) {
-      // Improve error logging to see actual error message
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : (error && typeof error === 'object' && 'message' in error)
-        ? (error as any).message
-        : 'Unknown error';
-      console.error('Login error:', errorMessage, error);
-      return false;
     }
-    return false;
-  }, []);
+
+    // Return final error after retries exhausted or on non-retryable failure
+    if (finalError) {
+      // Only toast if not a credential error (credential errors show inline on form)
+      if (!(finalError === 'بيانات تسجيل الدخول غير صحيحة')) {
+        if (lastToastMessageRef.current !== finalError) {
+          // Pass debug data if debug mode is enabled
+          const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true' 
+            ? { 
+                error: finalError, 
+                attempts: RETRY_DELAYS.length + 1,
+                timestamp: new Date().toISOString() 
+              } 
+            : undefined;
+          addToast(finalError, 'error', debugData);
+          lastToastMessageRef.current = finalError;
+        }
+      }
+      return { success: false, error: finalError };
+    }
+
+    return { success: false, error: 'فشل تسجيل الدخول' };
+  }, [addToast]);
 
   const logout = useCallback(() => {
     logoutApi();

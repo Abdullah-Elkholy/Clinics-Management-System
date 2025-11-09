@@ -5,7 +5,7 @@ import type { Toast } from '../types';
 
 interface UIContextType {
   toasts: Toast[];
-  addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => void;
   removeToast: (id: string) => void;
   currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done';
   setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done') => void;
@@ -20,9 +20,9 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done'>('welcome');
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
 
-  const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning') => {
+  const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => {
     const id = Date.now().toString();
-    const toast: Toast = { id, message, type };
+    const toast: Toast = { id, message, type, debugData };
     setToasts((prev) => [...prev, toast]);
 
     setTimeout(() => {

@@ -11,6 +11,8 @@ import { useAuth } from '@/contexts/AuthContext';
 
 interface QueueContextType {
   queues: Queue[];
+  queuesLoading: boolean;
+  queuesError: string | null;
   addQueue: (queue: Omit<Queue, 'id'>) => void;
   updateQueue: (id: string, queue: Partial<Queue>) => void;
   deleteQueue: (id: string) => void;
@@ -266,6 +268,8 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <QueueContext.Provider
       value={{
         queues,
+        queuesLoading,
+        queuesError,
         addQueue,
         updateQueue,
         deleteQueue,

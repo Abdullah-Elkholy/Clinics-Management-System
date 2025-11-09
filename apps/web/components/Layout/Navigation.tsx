@@ -15,7 +15,7 @@ import { TabItem } from './TabItem';
 import { QueueListItem } from './QueueListItem';
 
 export default function Navigation() {
-  const { queues, selectedQueueId, setSelectedQueueId, moderators } = useQueue();
+  const { queues, selectedQueueId, setSelectedQueueId, moderators, queuesLoading } = useQueue();
   const { currentPanel, setCurrentPanel } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
@@ -23,7 +23,8 @@ export default function Navigation() {
   const { user } = useAuth();
 
   // Custom width state for resizing
-  const [customWidth, setCustomWidth] = React.useState<number | null>(null);
+  // Default to 400px (expanded) to match expand button behavior
+  const [customWidth, setCustomWidth] = React.useState<number | null>(400);
   const isResizing = React.useRef(false);
   const wasCollapsedByDrag = React.useRef(false); // Track if we collapsed due to dragging narrow
   
@@ -201,20 +202,37 @@ export default function Navigation() {
       } as React.CSSProperties}
       className={`
       fixed right-0 top-20 md:top-24 bg-white shadow-lg border-l border-gray-200 flex flex-col z-30
-      transition-all ${isResizing.current ? '' : 'duration-300 ease-in-out'} overflow-y-auto
+      transition-all ${isResizing.current ? '' : 'duration-300 ease-in-out'} overflow-hidden
       h-[calc(100vh-5rem)] md:h-[calc(100vh-6rem)] group
-      ${customWidth ? '' : (isCollapsed ? 'w-14 sm:w-16' : 'w-48 sm:w-56 md:w-64 lg:w-72')}
+      ${customWidth ? '' : (isCollapsed ? 'w-14 sm:w-16' : 'w-96')}
     `}
-      data-sidebar-width={customWidth || (isCollapsed ? 56 : 192)}
+      data-sidebar-width={customWidth || (isCollapsed ? 56 : 400)}
     >
+      {/* Loading overlay when queues are loading */}
+      {queuesLoading && (
+        <div className="absolute inset-0 z-50 bg-white/70 flex items-center justify-center">
+          <div className="flex items-center gap-3">
+            <svg className="w-6 h-6 text-blue-600 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            <span className="text-sm text-gray-700">جاري التحميل...</span>
+          </div>
+        </div>
+      )}
       {/* Resize Handle - Left edge (RTL) */}
       <div
         onMouseDown={handleResizeStart}
         className="absolute left-0 top-0 bottom-0 w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize opacity-0 group-hover:opacity-100 transition-opacity z-40"
         title="Drag to resize sidebar"
       />
-      {/* Header with Toggle */}
-      <SidebarHeader isCollapsed={isIconOnly} onToggle={handleToggleCollapse} />
+      {/* Header with Toggle - Fixed (sticky) at top */}
+      <div className="flex-shrink-0">
+        <SidebarHeader isCollapsed={isIconOnly} onToggle={handleToggleCollapse} />
+      </div>
+      
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto">
 
       {/* Main Navigation */}
       <nav className={`border-b border-gray-200 flex-shrink-0 overflow-hidden ${isCollapsed ? 'p-1' : 'px-2 py-3 sm:px-3 md:px-4'}`}>
@@ -629,6 +647,7 @@ export default function Navigation() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
