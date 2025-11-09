@@ -184,6 +184,12 @@ async function fetchAPI<T>(
  * Get all templates for a specific queue
  */
 export async function getTemplates(queueId?: number): Promise<ListResponse<TemplateDto>> {
+  // Validate queueId is a valid number
+  if (queueId !== undefined && isNaN(queueId)) {
+    console.error('Invalid queueId provided to getTemplates:', queueId);
+    return { items: [], totalCount: 0, pageNumber: 0, pageSize: 0 };
+  }
+  
   const params = new URLSearchParams();
   if (queueId !== undefined) {
     params.append('queueId', queueId.toString());
@@ -236,6 +242,12 @@ export async function deleteTemplate(id: number): Promise<void> {
  * Get all conditions for a specific queue
  */
 export async function getConditions(queueId: number): Promise<ListResponse<ConditionDto>> {
+  // Validate queueId is a valid number
+  if (isNaN(queueId)) {
+    console.error('Invalid queueId provided to getConditions:', queueId);
+    return { items: [], totalCount: 0, pageNumber: 0, pageSize: 0 };
+  }
+  
   return fetchAPI(`/conditions?queueId=${queueId}`);
 }
 

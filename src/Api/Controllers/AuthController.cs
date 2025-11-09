@@ -25,7 +25,8 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest? req)
+        // [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+        public async Task<IActionResult> Login([FromBody] LoginRequest? req)
         {
             try
             {
@@ -124,7 +125,11 @@ namespace Clinics.Api.Controllers
         [Microsoft.AspNetCore.Authorization.Authorize]
         public async Task<IActionResult> GetCurrentUser()
         {
-            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier);
+            // Try multiple claim types for user ID
+            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier)
+                ?? User.Claims.FirstOrDefault(c => c.Type == "sub")
+                ?? User.Claims.FirstOrDefault(c => c.Type == "userId");
+                
             if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
             {
                 return Unauthorized();

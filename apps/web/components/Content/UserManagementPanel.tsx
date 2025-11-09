@@ -86,22 +86,18 @@ export default function UserManagementPanel() {
   const handleExportLogs = async () => {
     setIsExporting(true);
     try {
-      // Mock data - in production this would come from your backend
-      const mockLogs = [
-        { timestamp: '2025-11-04 14:30:22.156', level: 'Information', message: 'User authenticated successfully', source: 'AuthService.cs:45', userId: 'user_001', userName: 'أحمد علي' },
-        { timestamp: '2025-11-04 14:29:45.892', level: 'Debug', message: 'Database query executed: SELECT * FROM Users', source: 'UserRepository.cs:123', userId: 'user_002', userName: 'فاطمة محمود' },
-        { timestamp: '2025-11-04 14:28:10.445', level: 'Warning', message: 'Slow query detected: execution time 2500ms', source: 'QueryExecutor.cs:78', userId: 'user_003', userName: 'عمر حسن' },
-        { timestamp: '2025-11-04 14:25:33.712', level: 'Error', message: 'Connection timeout: Failed to connect to database', source: 'DbContext.cs:56', userId: 'system', userName: 'النظام' },
-        { timestamp: '2025-11-04 14:22:15.334', level: 'Verbose', message: 'Cache hit for key: patient_123', source: 'CacheService.cs:92', userId: 'cache_engine', userName: 'محرك التخزين المؤقت' },
-        { timestamp: '2025-11-04 14:15:02.101', level: 'Fatal', message: 'Application crash: Unhandled exception', source: 'Program.cs:1', userId: 'system', userName: 'النظام' },
+      // TODO: Fetch actual logs from backend API
+      // For now, export current user's settings as placeholder
+      const logData = [
+        { timestamp: new Date().toISOString(), level: 'Information', message: 'User settings exported', source: 'UserManagementPanel.tsx', userId: currentUser?.id, userName: currentUser?.firstName }
       ];
 
       // Prepare CSV content
       const headers = ['الوقت', 'المستوى', 'الرسالة', 'المصدر', 'معرف المستخدم', 'اسم المستخدم'];
       const csvContent = [
         headers.join(','),
-        ...mockLogs.map(log =>
-          [log.timestamp, log.level, `"${log.message}"`, log.source, log.userId, log.userName].join(',')
+        ...logData.map(log =>
+          [log.timestamp, log.level, `"${log.message}"`, log.source, log.userId || 'N/A', log.userName || 'N/A'].join(',')
         ),
       ].join('\n');
 
@@ -147,14 +143,21 @@ export default function UserManagementPanel() {
   };
 
   // Get role badge color and label
-  const getRoleInfo = (role: UserRole) => {
-    switch (role) {
+  const getRoleInfo = (role: UserRole | string) => {
+    // Normalize role value for comparison
+    const normalizedRole = String(role).toLowerCase().trim();
+    
+    switch (normalizedRole) {
+      case 'primary_admin':
       case UserRole.PrimaryAdmin:
         return { label: 'المدير الأساسي', color: 'bg-red-100 text-red-800' };
+      case 'secondary_admin':
       case UserRole.SecondaryAdmin:
         return { label: 'مدير ثانوي', color: 'bg-orange-100 text-orange-800' };
+      case 'moderator':
       case UserRole.Moderator:
         return { label: 'مشرف', color: 'bg-green-100 text-green-800' };
+      case 'user':
       case UserRole.User:
         return { label: 'مستخدم', color: 'bg-blue-100 text-blue-800' };
       default:
@@ -812,12 +815,11 @@ export default function UserManagementPanel() {
                 </div>
                 <button
                   onClick={() => {
-                    const currentAdmin = state.users.find((u) => u.role === UserRole.PrimaryAdmin);
-                    if (currentAdmin) {
-                      setSelectedUser(currentAdmin);
+                    if (currentUser) {
+                      setSelectedUser(currentUser);
                       openModal('editAccount');
                     } else {
-                      addToast('لم يتم العثور على بيانات المدير الأساسي', 'error');
+                      addToast('لم يتم العثور على بيانات المستخدم', 'error');
                     }
                   }}
                   className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2 text-white hover:bg-blue-700 transition-colors font-medium whitespace-nowrap"
@@ -832,22 +834,22 @@ export default function UserManagementPanel() {
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-600 font-medium">الاسم الكامل</p>
                   <p className="text-sm text-gray-900 font-semibold mt-1">
-                    {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.lastName 
-                      ? `${state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.firstName} ${state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.lastName}`
-                      : state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.firstName || 'لم يتم تعيين'}
+                    {currentUser?.lastName 
+                      ? `${currentUser?.firstName} ${currentUser?.lastName}`
+                      : currentUser?.firstName || 'لم يتم تعيين'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-600 font-medium">اسم المستخدم</p>
                   <p className="text-sm text-gray-900 font-semibold mt-1">
-                    {state.users.find((u) => u.role === UserRole.PrimaryAdmin)?.username || 'لم يتم تعيين'}
+                    {currentUser?.username || 'لم يتم تعيين'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-600 font-medium">نوع الحساب</p>
                   <p className="text-sm text-red-700 font-semibold mt-1 flex items-center gap-2">
                     <i className="fas fa-crown text-red-600"></i>
-                    المدير الأساسي
+                    {currentUser?.role ? getRoleInfo(currentUser.role).label : 'غير معروف'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">

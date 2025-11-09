@@ -157,7 +157,10 @@ namespace Clinics.Api.DTOs
 
         public int PageSize { get; set; }
 
-        public int TotalPages => (TotalCount + PageSize - 1) / PageSize;
+        // Guard against divide-by-zero when PageSize is not provided
+        public int TotalPages => PageSize <= 0
+            ? (TotalCount > 0 ? 1 : 0)
+            : (TotalCount + PageSize - 1) / PageSize;
 
         public bool HasPreviousPage => PageNumber > 1;
 

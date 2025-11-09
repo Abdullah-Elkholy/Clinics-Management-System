@@ -2,13 +2,16 @@
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { validateName, ValidationError } from '@/utils/validation';
+import { queuesApiClient } from '@/services/api/queuesApiClient';
 import Modal from './Modal';
 import { useState } from 'react';
 
 export default function EditQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { updateQueue } = useQueue();
   const [doctorName, setDoctorName] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -40,7 +43,7 @@ export default function EditQueueModal() {
     validateField(doctorName);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched(true);
     
@@ -54,16 +57,24 @@ export default function EditQueueModal() {
     try {
       setIsLoading(true);
       
-      // Simulate API call
-      setTimeout(() => {
-        addToast('تم تحديث اسم الطبيب بنجاح', 'success');
-        setDoctorName('');
-        setErrors({});
-        closeModal('editQueue');
-        setIsLoading(false);
-      }, 500);
+      // Make API call to update queue
+      await queuesApiClient.updateQueue(Number(data?.queueId), {
+        doctorName: doctorName.trim(),
+      });
+
+      // Update local state after successful API call
+      updateQueue(data?.queueId, {
+        doctorName: doctorName.trim(),
+      });
+
+      addToast('تم تحديث اسم الطبيب بنجاح', 'success');
+      setDoctorName('');
+      setErrors({});
+      closeModal('editQueue');
     } catch (err) {
+      console.error('Failed to update queue:', err);
       addToast('حدث خطأ أثناء تحديث الطابور', 'error');
+    } finally {
       setIsLoading(false);
     }
   };

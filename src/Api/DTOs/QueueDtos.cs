@@ -32,6 +32,7 @@ namespace Clinics.Api.DTOs
         public string DoctorName { get; set; } = null!;
         public string? Description { get; set; }
         public int CreatedBy { get; set; }
+        public int ModeratorId { get; set; }  // Add moderator ID so frontend can group by moderator
         public int CurrentPosition { get; set; }
         public int? EstimatedWaitMinutes { get; set; }
         public int PatientCount { get; set; }

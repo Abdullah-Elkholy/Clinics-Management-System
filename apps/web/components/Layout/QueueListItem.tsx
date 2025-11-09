@@ -37,11 +37,16 @@ export function QueueListItem({
     onDelete?.(id);
   };
 
+  // Icon-only mode when collapsed
+  const isIconOnly = isCollapsed;
+
   return (
     <div
       className={`
-        w-full transition-all duration-200 ease-out rounded-lg group flex items-center gap-2
-        ${isCollapsed ? 'p-2.5 justify-center' : 'px-4 py-3'}
+        w-full overflow-hidden transition-all duration-200 ease-out rounded-lg group flex
+        ${isCollapsed
+          ? 'flex-col p-2 items-center'
+          : 'flex-row items-center px-1 sm:px-2 md:px-3 py-2 gap-1 min-w-0'}
         ${className}
       `}
     >
@@ -51,8 +56,10 @@ export function QueueListItem({
         title={isCollapsed ? doctorName : undefined}
         aria-label={`الطابور: ${doctorName}`}
         className={`
-          flex-1 transition-all duration-200 ease-out rounded-lg group
-          ${isCollapsed ? 'p-2.5 flex justify-center' : 'px-4 py-3 text-right border-r-4'}
+          transition-all duration-200 ease-out rounded-lg group overflow-hidden min-w-0
+          ${isCollapsed
+            ? 'p-2 flex justify-center w-full'
+            : 'flex-1 px-1 sm:px-2 md:px-3 py-1.5 sm:py-2 text-right border-r-4 flex items-center justify-between'}
           ${isSelected
             ? isCollapsed
               ? 'bg-blue-100 text-blue-600 border-l-4 border-l-blue-600'
@@ -65,15 +72,15 @@ export function QueueListItem({
         `}
       >
         {isCollapsed ? (
-          <i className="fas fa-hospital text-base group-hover:scale-110 transition-transform duration-200"></i>
+          <i className="fas fa-hospital text-lg group-hover:scale-110 transition-transform duration-200"></i>
         ) : (
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-2 flex-1">
-              <i className="fas fa-hospital text-gray-400 group-hover:text-blue-600 transition-colors duration-200"></i>
-              <div className="truncate flex-1">
-                <p className="font-medium text-sm truncate">{doctorName}</p>
+          <div className="flex items-center justify-between w-full overflow-hidden min-w-0">
+            <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
+              <i className="fas fa-hospital text-sm sm:text-base text-gray-400 group-hover:text-blue-600 transition-colors duration-200 flex-shrink-0"></i>
+              <div className="truncate flex-1 min-w-0">
+                <p className="font-medium text-xs sm:text-sm truncate">{doctorName}</p>
                 {isSelected && (
-                  <p className="text-xs text-gray-500 mt-0.5">طابور نشط</p>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">طابور نشط</p>
                 )}
               </div>
             </div>
@@ -81,31 +88,58 @@ export function QueueListItem({
         )}
       </button>
 
-      {/* Action Buttons - Show only when not collapsed */}
-      {!isCollapsed && (onEdit || onDelete) && (
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          {onEdit && (
-            <button
-              onClick={handleEdit}
-              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors duration-200"
-              title="تحرير الطابور"
-              aria-label="تحرير الطابور"
-            >
-              <i className="fas fa-edit text-sm"></i>
-            </button>
-          )}
-          {onDelete && (
-            <button
-              onClick={handleDelete}
-              className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors duration-200"
-              title="حذف الطابور"
-              aria-label="حذف الطابور"
-            >
-              <i className="fas fa-trash text-sm"></i>
-            </button>
-          )}
-        </div>
-      )}
+      {/* Action Buttons - Beside tile in expanded, below in collapsed */}
+      {onEdit || onDelete ? (
+        !isCollapsed ? (
+          // Expanded mode: buttons beside the tile
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {onEdit && (
+              <button
+                onClick={handleEdit}
+                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors duration-200"
+                title="تحرير الطابور"
+                aria-label="تحرير الطابور"
+              >
+                <i className="fas fa-edit text-sm"></i>
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={handleDelete}
+                className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors duration-200"
+                title="حذف الطابور"
+                aria-label="حذف الطابور"
+              >
+                <i className="fas fa-trash text-sm"></i>
+              </button>
+            )}
+          </div>
+        ) : (
+          // Collapsed mode: stacked icons below
+          <div className="w-full flex flex-col items-center gap-1 mt-1">
+            {onEdit && (
+              <button
+                onClick={handleEdit}
+                className="w-7 h-7 rounded-full bg-white text-gray-600 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center border border-gray-200"
+                title="تحرير الطابور"
+                aria-label="تحرير الطابور"
+              >
+                <i className="fas fa-edit text-xs"></i>
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={handleDelete}
+                className="w-7 h-7 rounded-full bg-white text-gray-600 hover:text-red-600 hover:bg-red-50 flex items-center justify-center border border-gray-200"
+                title="حذف الطابور"
+                aria-label="حذف الطابور"
+              >
+                <i className="fas fa-trash text-xs"></i>
+              </button>
+            )}
+          </div>
+        )
+      ) : null}
     </div>
   );
 }

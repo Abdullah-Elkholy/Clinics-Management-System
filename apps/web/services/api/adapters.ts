@@ -83,7 +83,10 @@ export function queueDtoToModel(dto: QueueDto): Queue {
   return {
     id: dto.id.toString(),
     doctorName: dto.doctorName,
-    moderatorId: dto.createdBy.toString(), // Use createdBy as moderatorId for consistency
+    // Prefer explicit moderatorId from API; fall back to createdBy if missing for backward compatibility
+    moderatorId: (dto as any).moderatorId !== undefined && (dto as any).moderatorId !== null
+      ? (dto as any).moderatorId.toString()
+      : dto.createdBy.toString(),
     isActive: dto.isActive,
   };
 }

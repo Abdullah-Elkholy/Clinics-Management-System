@@ -847,7 +847,7 @@ export default function QueueDashboard() {
           icon="fa-users"
           title="لا يوجد مرضى"
           message="لم يتم إضافة أي مريض بعد. ابدأ بإضافة مريض جديد"
-          actionLabel="إضافة مريض أول"
+          actionLabel="إضافة مريض"
           onAction={() => openModal('addPatient')}
         />
       ) : (

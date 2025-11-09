@@ -32,8 +32,11 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                // Get current user ID
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                // Get current user ID with fallback claim types
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+                    
                 if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
                 {
                     return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });

@@ -3,8 +3,10 @@
 import { useModal } from '@/contexts/ModalContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { useUI } from '@/contexts/UIContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { validateName, validatePhone, ValidationError, hasErrors } from '@/utils/validation';
 import { getModeratorInfo } from '@/utils/moderatorAggregation';
+import { queuesApiClient } from '@/services/api/queuesApiClient';
 import Modal from './Modal';
 import { useState } from 'react';
 
@@ -12,6 +14,7 @@ export default function AddQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addQueue } = useQueue();
   const { addToast } = useUI();
+  const { user: currentUser } = useAuth();
   
   const [doctorName, setDoctorName] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
@@ -57,16 +60,28 @@ export default function AddQueueModal() {
       setErrors({ doctorName: error });
       return; // Prevent submission if validation fails
     }
-    
+
     try {
       setIsLoading(true);
       
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      
-      addQueue({
+      // Make API call to create queue
+      // If a moderatorId is provided in modal data (e.g., admin creating for moderator), use it
+      // Otherwise, use the current user's ID
+      const createdByUserId = currentUser?.id ? Number(currentUser.id) : 0;
+      const queueModeratorId = targetModeratorId ? Number(targetModeratorId) : createdByUserId;
+
+      const newQueue = await queuesApiClient.createQueue({
         doctorName: doctorName.trim(),
-        moderatorId: targetModeratorId ? String(targetModeratorId) : undefined,
+        moderatorId: queueModeratorId,
+        createdBy: createdByUserId,
+        currentPosition: 1,
+        isActive: true,
+      });
+
+      // Add to local state after successful API call using the returned queue ID
+      addQueue({
+        doctorName: newQueue.doctorName,
+        moderatorId: String(newQueue.moderatorId),
       });
 
       addToast('تم إضافة الطابور بنجاح', 'success');
@@ -76,8 +91,11 @@ export default function AddQueueModal() {
       setErrors({});
       setTouched(false);
       closeModal('addQueue');
-    } catch (error) {
-      addToast('حدث خطأ أثناء إضافة الطابور', 'error');
+    } catch (error: any) {
+      // Better error handling
+      const errorMessage = error?.message || error?.error || JSON.stringify(error) || 'حدث خطأ غير معروف';
+      console.error('Failed to add queue:', errorMessage);
+      addToast(`حدث خطأ: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);
     }

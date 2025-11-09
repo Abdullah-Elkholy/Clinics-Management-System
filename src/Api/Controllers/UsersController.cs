@@ -31,14 +31,34 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                // Extract user ID from JWT claims - try multiple claim types
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) 
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null)
+                {
+                    _logger.LogError("No user ID claim found in JWT");
+                    return Unauthorized(new { error = "User ID not found in token" });
+                }
+
+                if (!int.TryParse(userIdClaim.Value, out var currentUserId))
+                {
+                    _logger.LogError($"Invalid user ID format: {userIdClaim.Value}");
+                    return BadRequest(new { error = "Invalid user ID format" });
+                }
+
                 var currentUser = await _db.Users.FindAsync(currentUserId);
+                if (currentUser == null)
+                {
+                    _logger.LogWarning($"User not found in database: {currentUserId}");
+                    return NotFound(new { error = "Current user not found" });
+                }
 
                 IQueryable<User> query = _db.Users;
 
                 // Admins see all users
-                if (currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin")
+                if (currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin")
                 {
                     // All users - optionally filter by role if provided
                     if (!string.IsNullOrWhiteSpace(role))
@@ -47,7 +67,7 @@ namespace Clinics.Api.Controllers
                     }
                 }
                 // Moderators see only their managed users
-                else if (currentUser?.Role == "moderator")
+                else if (currentUser.Role == "moderator")
                 {
                     query = query.Where(u => u.ModeratorId == currentUserId);
                 }
@@ -57,17 +77,33 @@ namespace Clinics.Api.Controllers
                 }
 
                 var users = await query.ToListAsync();
+                
+                // Convert to DTO to avoid circular reference serialization issues
+                var userDtos = users.Select(u => new 
+                {
+                    u.Id,
+                    u.Username,
+                    u.FirstName,
+                    u.LastName,
+                    u.Role,
+                    u.ModeratorId
+                }).ToList();
+                
                 return Ok(new { 
-                    items = users,
-                    totalCount = users.Count,
+                    items = userDtos,
+                    totalCount = userDtos.Count,
                     pageNumber = 1,
-                    pageSize = users.Count
+                    pageSize = userDtos.Count
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching users");
-                return StatusCode(500, new { success = false, error = "Error fetching users" });
+                _logger.LogError($"Exception type: {ex.GetType().Name}");
+                _logger.LogError($"Exception message: {ex.Message}");
+                _logger.LogError($"Inner exception: {ex.InnerException?.Message}");
+                _logger.LogError($"Stack trace: {ex.StackTrace}");
+                return StatusCode(500, new { success = false, error = "Error fetching users", details = ex.Message, innerException = ex.InnerException?.Message });
             }
         }
 
@@ -79,8 +115,13 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 var targetUser = await _db.Users.FindAsync(id);
@@ -194,8 +235,13 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 var targetUser = await _db.Users.FindAsync(id);
@@ -243,8 +289,13 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 var targetUser = await _db.Users.FindAsync(id);
@@ -290,8 +341,13 @@ namespace Clinics.Api.Controllers
                 if (req == null || string.IsNullOrWhiteSpace(req.Password))
                     return BadRequest(new { success = false, error = "Password is required" });
 
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 var targetUser = await _db.Users.FindAsync(id);

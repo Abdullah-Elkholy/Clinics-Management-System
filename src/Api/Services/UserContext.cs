@@ -10,7 +10,7 @@ namespace Clinics.Api.Services
     public interface IUserContext
     {
         /// <summary>
-        /// Get the current user's ID from claims (ClaimTypes.NameIdentifier or custom "userId").
+        /// Get the current user's ID from claims (tries multiple claim types: ClaimTypes.NameIdentifier, "sub", or "userId").
         /// </summary>
         int GetUserId();
 
@@ -56,17 +56,17 @@ namespace Clinics.Api.Services
             if (user == null)
                 throw new InvalidOperationException("HttpContext or user is null");
 
-            // Try ClaimTypes.NameIdentifier first (standard claim)
-            var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier);
+            // Try multiple claim types for user ID (in order of preference)
+            var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier);          // ASP.NET standard
+            if (userIdClaim == null)
+                userIdClaim = user.FindFirst("sub");                              // JWT standard (RFC 7519)
+            if (userIdClaim == null)
+                userIdClaim = user.FindFirst("userId");                           // Custom claim (backward compatibility)
+
             if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
                 return userId;
 
-            // Fallback to custom "userId" claim (for backward compatibility)
-            userIdClaim = user.FindFirst("userId");
-            if (userIdClaim != null && int.TryParse(userIdClaim.Value, out userId))
-                return userId;
-
-            throw new InvalidOperationException("User ID claim not found");
+            throw new InvalidOperationException("User ID claim not found or invalid format");
         }
 
         public string GetRole()

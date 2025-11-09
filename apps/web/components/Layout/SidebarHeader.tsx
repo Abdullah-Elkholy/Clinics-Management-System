@@ -12,38 +12,33 @@ interface SidebarHeaderProps {
 }
 
 export function SidebarHeader({ isCollapsed, onToggle }: SidebarHeaderProps) {
+  const aria = isCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  const title = isCollapsed ? 'توسيع الشريط الجانبي (Alt+S)' : 'طي الشريط الجانبي (Alt+S)';
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
       onClick={onToggle}
-      className="px-3 py-3 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white hover:from-gray-100 hover:to-gray-50 transition-colors duration-200 cursor-pointer"
-      title={isCollapsed ? 'توسيع الشريط الجانبي' : 'طي الشريط الجانبي'}
+      className={`h-12 px-3 py-3 border-b border-gray-200 flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} bg-gradient-to-r from-gray-50 to-white hover:from-gray-100 hover:to-gray-50 transition-colors duration-200 cursor-pointer flex-shrink-0`}
+      title={title}
+      aria-label={aria}
     >
       {!isCollapsed && (
         <h2 className="text-xs font-bold text-gray-600 uppercase tracking-wider truncate">
           القائمة
         </h2>
       )}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-        title={isCollapsed ? 'توسيع الشريط الجانبي (Alt+S)' : 'طي الشريط الجانبي (Alt+S)'}
-        aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className={`
-          p-2 rounded-lg transition-all duration-200 ease-out
-          hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500
-          ${isCollapsed ? 'ml-auto' : ''}
-          group
-        `}
-      >
-        <i
-          className={`
-            fas transition-transform duration-300 ease-out text-gray-600 group-hover:text-blue-600
-            ${isCollapsed ? 'fa-chevron-left' : 'fa-chevron-right'}
-          `}
-        ></i>
-      </button>
+      {/* Icon only; entire tile is clickable. No isolated button, no extra hover color. */}
+      <i
+        className={`fas ${isCollapsed ? 'fa-chevron-left' : 'fa-chevron-right'} text-gray-600`}
+        aria-hidden="true"
+      ></i>
     </div>
   );
 }

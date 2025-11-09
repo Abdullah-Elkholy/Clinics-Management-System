@@ -30,7 +30,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parts = response.data.accessToken.split('.');
         if (parts.length === 3) {
           try {
-            const decoded = JSON.parse(atob(parts[1]));
+            // Properly decode Base64 with UTF-8 support for Arabic characters
+            // atob() doesn't handle UTF-8 properly, so we use a helper function
+            const decodeBase64 = (str: string): string => {
+              try {
+                // Replace URL-safe Base64 characters: - becomes +, _ becomes /
+                const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+                // Decode using TextDecoder for proper UTF-8 handling
+                const binaryString = atob(base64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                return new TextDecoder('utf-8').decode(bytes);
+              } catch (e) {
+                console.error('❌ Base64 decoding failed:', e);
+                throw new Error('Failed to decode JWT payload');
+              }
+            };
+            
+            const decoded = JSON.parse(decodeBase64(parts[1]));
+            
+            // Debug: Log full JWT payload to inspect structure
+            console.log('🔐 Full JWT Payload:', JSON.stringify(decoded, null, 2));
+            
+            // Extract role - Try MULTIPLE possible claim keys that JWT might use
+            // JWT standard claim type keys can be in different formats
+            const roleFromDirect = decoded.role;  // Direct "role" claim
+            const roleFromClaimType = decoded['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];  // ClaimTypes.Role
+            const roleFromAllClaims = Object.entries(decoded).find(([k, v]) => k.toLowerCase().includes('role'));
+            
+            const roleValue = roleFromDirect || roleFromClaimType || (roleFromAllClaims ? roleFromAllClaims[1] : undefined);
+            
+            console.log('🔐 Role Extraction Debug:', {
+              roleFromDirect: `"${roleFromDirect}"`,
+              roleFromClaimType: `"${roleFromClaimType}"`,
+              roleFromAllClaims: roleFromAllClaims ? `${roleFromAllClaims[0]} = "${roleFromAllClaims[1]}"` : 'NOT_FOUND',
+              finalRoleValue: `"${roleValue}"`,
+              isRolePrimaryAdmin: roleValue === 'primary_admin',
+              isRoleString: typeof roleValue === 'string',
+            });
+            
+            // Ensure we have a valid role value
+            const finalRole = (roleValue as UserRole) || UserRole.User;
+            
+            // Validate that the role is one of the allowed values
+            const validRoles: UserRole[] = [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User];
+            const isValidRole = validRoles.includes(finalRole);
+            
+            console.log('🔐 Role Validation:', {
+              roleValue: finalRole,
+              isValidRole: isValidRole,
+              validRoles: validRoles,
+              matchesPrimaryAdmin: finalRole === UserRole.PrimaryAdmin,
+            });
+            
+            if (!isValidRole) {
+              console.warn(`⚠️ Invalid role "${finalRole}", defaulting to User role`);
+            }
             
             // Map JWT claims to User object
             // Note: JwtTokenService creates claims with keys: "firstName", "lastName", "role"
@@ -39,11 +96,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               username: decoded.name || decoded.username || username,
               firstName: decoded.firstName || 'User',
               lastName: decoded.lastName || '',
-              role: (decoded.role as UserRole) || UserRole.User,
+              role: finalRole,
               isActive: true,
               createdAt: new Date(),
               updatedAt: new Date(),
             };
+            
+            // Debug: Log names specifically to verify Arabic characters are properly decoded
+            console.log('🔐 User Names (UTF-8 Check):', {
+              firstName: `"${user.firstName}"`,
+              lastName: `"${user.lastName}"`,
+              firstNameLength: user.firstName.length,
+              lastNameLength: user.lastName.length,
+              firstNameCharCodes: user.firstName.split('').map(c => c.charCodeAt(0)),
+              lastNameCharCodes: user.lastName.split('').map(c => c.charCodeAt(0)),
+            });
+            
+            console.log('👤 User object after mapping:', { ...user, isActive: user.isActive });
             
             setAuthState({
               user,

@@ -7,6 +7,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+import { messageApiClient } from '@/services/api/messageApiClient';
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
 import { useState } from 'react';
@@ -185,46 +186,31 @@ export default function AddTemplateModal() {
     try {
       setIsLoading(true);
       
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      
-      let conditionIdToUse: string | undefined = undefined;
-      
-      // If an operator is selected, create a new condition with the actual data
-      if (selectedOperator && selectedOperator !== 'DEFAULT') {
-        // Generate a unique ID for the condition
-        const conditionId = `cond_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        // Store the condition data - this will be displayed in the table
-        // Note: In a real app, this would be saved to database
-        // For now, we'll just display it in the condition selection
-        const conditionDescription = 
-          selectedOperator === 'RANGE' 
-            ? `${selectedMinValue} - ${selectedMaxValue}`
-            : `${selectedValue}`;
-        
-        addToast(`تم إنشاء الشرط: ${selectedOperator} ${conditionDescription}`, 'success');
-        conditionIdToUse = conditionId;
-      } else if (selectedOperator === 'DEFAULT') {
-        // For DEFAULT, use a special condition ID
-        conditionIdToUse = `DEFAULT_Q${queueId}`;
+      // Validate queue ID
+      if (!queueId) {
+        addToast('يجب تحديد طابور', 'error');
+        return;
       }
-      
-      // Create new template object with condition ID
-      const newTemplate = {
+
+      // Make API call to create template
+      const newTemplateDto = await messageApiClient.createTemplate({
         title,
-        description,
         content,
-        queueId: String(queueId),
+        queueId: Number(queueId),
         isActive: true,
-        createdAt: new Date(),
-        variables: [],  // Initialize with empty variables
-        createdBy: 'Current User',  // TODO: Get actual user from context
-        conditionId: conditionIdToUse || undefined,
-      };
-      
-      // Add template through context
-      addMessageTemplate(newTemplate);
+      });
+
+      // Add template to local state after successful API call
+      addMessageTemplate({
+        title: newTemplateDto.title,
+        content: newTemplateDto.content,
+        queueId: String(newTemplateDto.queueId),
+        isActive: newTemplateDto.isActive,
+        variables: [],
+        createdBy: '',
+        createdAt: new Date(newTemplateDto.createdAt),
+      });
+
       addToast('تم إضافة قالب الرسالة بنجاح', 'success');
       
       // Reset form
@@ -239,6 +225,7 @@ export default function AddTemplateModal() {
       setSelectedMaxValue(undefined);
       closeModal('addTemplate');
     } catch (error) {
+      console.error('Failed to add template:', error);
       addToast('حدث خطأ أثناء إضافة القالب', 'error');
     } finally {
       setIsLoading(false);

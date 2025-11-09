@@ -13,21 +13,34 @@ import { useState, useEffect, useCallback } from 'react';
 const SIDEBAR_STORAGE_KEY = 'clinic-sidebar-collapsed';
 
 export function useSidebarCollapse(defaultCollapsed: boolean = false) {
-  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  // Persisted user preference for collapse
+  const [userCollapsed, setUserCollapsed] = useState(defaultCollapsed);
   const [isHydrated, setIsHydrated] = useState(false);
 
   // Initialize from localStorage on mount
   useEffect(() => {
-    const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    const stored = typeof window !== 'undefined' ? localStorage.getItem(SIDEBAR_STORAGE_KEY) : null;
     if (stored !== null) {
-      setIsCollapsed(JSON.parse(stored));
+      try {
+        setUserCollapsed(JSON.parse(stored));
+      } catch {
+        setUserCollapsed(defaultCollapsed);
+      }
+    } else {
+      // No stored preference: default to collapsed on small screens, else use provided default
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setUserCollapsed(true);
+      } else {
+        setUserCollapsed(defaultCollapsed);
+      }
     }
+
     setIsHydrated(true);
-  }, []);
+  }, [defaultCollapsed]);
 
   // Save to localStorage when state changes
   const toggleCollapse = useCallback(() => {
-    setIsCollapsed((prev) => {
+    setUserCollapsed((prev) => {
       const newState = !prev;
       localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(newState));
       return newState;
@@ -36,9 +49,12 @@ export function useSidebarCollapse(defaultCollapsed: boolean = false) {
 
   // For manual setting
   const setCollapsed = useCallback((collapsed: boolean) => {
-    setIsCollapsed(collapsed);
+    setUserCollapsed(collapsed);
     localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(collapsed));
   }, []);
+
+  // Effective collapse strictly follows user preference; on small screens the expanded width is smaller
+  const isCollapsed = userCollapsed;
 
   return {
     isCollapsed,

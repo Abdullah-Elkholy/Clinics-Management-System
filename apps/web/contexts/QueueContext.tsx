@@ -74,9 +74,11 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setQueuesError(null);
         
         const response = await queuesApiClient.getQueues();
-        
-        if (response.items && response.items.length > 0) {
-          const queuesData: Queue[] = response.items.map(queueDtoToModel);
+
+        // The API can return either { items: QueueDto[] } or { data: QueueDto[] }
+        const list = (response as any)?.items ?? (response as any)?.data ?? [];
+        if (Array.isArray(list) && list.length > 0) {
+          const queuesData: Queue[] = list.map((dto: any) => queueDtoToModel(dto as QueueDto));
           setQueues(queuesData);
         } else {
           setQueues([]);
@@ -103,13 +105,22 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (!selectedQueueId) return;
 
+    // Validate that selectedQueueId is a valid number
+    const queueIdNum = Number(selectedQueueId);
+    if (isNaN(queueIdNum)) {
+      console.warn('Invalid queueId:', selectedQueueId);
+      setMessageTemplates([]);
+      setMessageConditions([]);
+      return;
+    }
+
     const loadTemplates = async () => {
       try {
         setIsLoadingTemplates(true);
         setTemplateError(null);
         
         // Fetch templates from API for the selected queue
-        const templateResponse = await messageApiClient.getTemplates(Number(selectedQueueId));
+        const templateResponse = await messageApiClient.getTemplates(queueIdNum);
         
         if (templateResponse.items && templateResponse.items.length > 0) {
           // Convert TemplateDto to MessageTemplate
@@ -123,7 +134,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           // Fetch conditions for this queue
           try {
-            const conditionResponse = await messageApiClient.getConditions(Number(selectedQueueId));
+            const conditionResponse = await messageApiClient.getConditions(queueIdNum);
             if (conditionResponse.items && conditionResponse.items.length > 0) {
               const conditions: MessageCondition[] = conditionResponse.items.map((dto: ConditionDto, idx: number) =>
                 conditionDtoToModel(dto, idx)

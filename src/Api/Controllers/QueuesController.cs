@@ -39,6 +39,7 @@ namespace Clinics.Api.Controllers
                     DoctorName = q.DoctorName,
                     Description = q.Description,
                     CreatedBy = q.CreatedBy,
+                    ModeratorId = q.ModeratorId,
                     CurrentPosition = q.CurrentPosition,
                     EstimatedWaitMinutes = q.EstimatedWaitMinutes,
                     PatientCount = _db.Patients.Count(p => p.QueueId == q.Id)
@@ -56,6 +57,7 @@ namespace Clinics.Api.Controllers
                 DoctorName = q.DoctorName,
                 Description = q.Description,
                 CreatedBy = q.CreatedBy,
+                ModeratorId = q.ModeratorId,
                 CurrentPosition = q.CurrentPosition,
                 EstimatedWaitMinutes = q.EstimatedWaitMinutes,
                 PatientCount = await _db.Patients.CountAsync(p => p.QueueId == q.Id)
@@ -79,7 +81,10 @@ namespace Clinics.Api.Controllers
                 }
 
                 // Get current user ID
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+                    
                 if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
                 {
                     return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
@@ -121,7 +126,8 @@ namespace Clinics.Api.Controllers
                     Id = q.Id, 
                     DoctorName = q.DoctorName, 
                     Description = q.Description, 
-                    CreatedBy = q.CreatedBy, 
+                    CreatedBy = q.CreatedBy,
+                    ModeratorId = q.ModeratorId,
                     CurrentPosition = q.CurrentPosition, 
                     EstimatedWaitMinutes = q.EstimatedWaitMinutes, 
                     PatientCount = 0 

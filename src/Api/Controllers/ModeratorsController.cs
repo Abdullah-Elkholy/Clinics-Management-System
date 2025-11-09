@@ -62,8 +62,13 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 // Moderators can only view their own details, admins can view any
@@ -442,8 +447,13 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 // Users can only view their moderator's session, moderators can view their own
