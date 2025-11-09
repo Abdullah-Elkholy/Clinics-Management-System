@@ -60,6 +60,17 @@ class UserManagementService {
 
   async createUser(payload: any): Promise<UserServiceResponse<User>> {
     try {
+      // Defensive: coerce moderatorId to number if provided as string
+      if (payload.moderatorId && typeof payload.moderatorId === 'string') {
+        payload.moderatorId = parseInt(payload.moderatorId, 10);
+        if (Number.isNaN(payload.moderatorId)) {
+          return {
+            success: false,
+            error: 'معرّف المشرف غير صالح',
+          };
+        }
+      }
+
       const user = await usersApiClient.createUser({
         firstName: payload.firstName,
         lastName: payload.lastName || '',

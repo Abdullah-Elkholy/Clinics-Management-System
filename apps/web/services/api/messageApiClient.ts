@@ -177,6 +177,81 @@ async function fetchAPI<T>(
 }
 
 // ============================================
+// Retry & Timeout Utilities
+// ============================================
+
+/**
+ * Configuration for retry behavior
+ */
+interface RetryConfig {
+  maxAttempts: number;
+  delayMs: number;
+  backoffMultiplier: number;
+  timeoutMs: number;
+}
+
+const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxAttempts: 2, // 1 initial + 1 retry
+  delayMs: 500,
+  backoffMultiplier: 1.5,
+  timeoutMs: 8000,
+};
+
+/**
+ * Executes a fetch operation with automatic retry on network failures.
+ * Does NOT retry on 4xx client errors (validation, auth, not found).
+ * Does retry on 5xx server errors and network timeouts.
+ * 
+ * @param operation - Async function that returns a Promise
+ * @param config - Retry configuration (uses defaults if not provided)
+ * @returns Promise result or throws ApiError on all attempts failure
+ */
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  config: Partial<RetryConfig> = {}
+): Promise<T> {
+  const finalConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+  let lastError: Error | ApiError | null = null;
+  let delay = finalConfig.delayMs;
+
+  for (let attempt = 1; attempt <= finalConfig.maxAttempts; attempt++) {
+    try {
+      // Wrap in timeout
+      return await Promise.race([
+        operation(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error('Request timeout')), finalConfig.timeoutMs)
+        ),
+      ]);
+    } catch (error) {
+      lastError = error as Error | ApiError;
+      
+      // Don't retry on client errors (4xx) or validation errors
+      if (
+        error &&
+        typeof error === 'object' &&
+        'statusCode' in error &&
+        (error as ApiError).statusCode >= 400 &&
+        (error as ApiError).statusCode < 500
+      ) {
+        throw error; // Throw immediately on 4xx
+      }
+
+      // If this is the last attempt, throw
+      if (attempt === finalConfig.maxAttempts) {
+        throw error;
+      }
+
+      // Wait before retrying
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay *= finalConfig.backoffMultiplier;
+    }
+  }
+
+  throw lastError || new Error('Operation failed after retries');
+}
+
+// ============================================
 // Templates API
 // ============================================
 
@@ -206,32 +281,38 @@ export async function getTemplate(id: number): Promise<TemplateDto> {
 }
 
 /**
- * Create a new template
+ * Create a new template (with automatic retry on network failures)
  */
 export async function createTemplate(data: CreateTemplateRequest): Promise<TemplateDto> {
-  return fetchAPI('/templates', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return withRetry(() =>
+    fetchAPI('/templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  );
 }
 
 /**
- * Update an existing template
+ * Update an existing template (with automatic retry on network failures)
  */
 export async function updateTemplate(id: number, data: UpdateTemplateRequest): Promise<TemplateDto> {
-  return fetchAPI(`/templates/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return withRetry(() =>
+    fetchAPI(`/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  );
 }
 
 /**
- * Delete a template
+ * Delete a template (with automatic retry on network failures)
  */
 export async function deleteTemplate(id: number): Promise<void> {
-  return fetchAPI(`/templates/${id}`, {
-    method: 'DELETE',
-  });
+  return withRetry(() =>
+    fetchAPI(`/templates/${id}`, {
+      method: 'DELETE',
+    })
+  );
 }
 
 // ============================================
@@ -259,32 +340,38 @@ export async function getCondition(id: number): Promise<ConditionDto> {
 }
 
 /**
- * Create a new condition
+ * Create a new condition (with automatic retry on network failures)
  */
 export async function createCondition(data: CreateConditionRequest): Promise<ConditionDto> {
-  return fetchAPI('/conditions', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  return withRetry(() =>
+    fetchAPI('/conditions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  );
 }
 
 /**
- * Update an existing condition
+ * Update an existing condition (with automatic retry on network failures)
  */
 export async function updateCondition(id: number, data: UpdateConditionRequest): Promise<ConditionDto> {
-  return fetchAPI(`/conditions/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  return withRetry(() =>
+    fetchAPI(`/conditions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  );
 }
 
 /**
- * Delete a condition
+ * Delete a condition (with automatic retry on network failures)
  */
 export async function deleteCondition(id: number): Promise<void> {
-  return fetchAPI(`/conditions/${id}`, {
-    method: 'DELETE',
-  });
+  return withRetry(() =>
+    fetchAPI(`/conditions/${id}`, {
+      method: 'DELETE',
+    })
+  );
 }
 
 // ============================================

@@ -136,9 +136,10 @@ export default function UserManagementPanel() {
   };
 
   // Get users managed by a specific moderator
+  // Uses assignedModerator field (frontend semantic mapping of backend moderatorId)
   const getUsersByModerator = (moderatorId: string): User[] => {
     return state.users.filter(
-      (u) => u.role === UserRole.User && u.assignedModerator === moderatorId
+      (u) => u.role === UserRole.User && (u as any).assignedModerator === moderatorId
     );
   };
 
@@ -189,8 +190,8 @@ export default function UserManagementPanel() {
     setSelectedUser(null);
     setSelectedRole(role);
     setSelectedModerator(moderatorId || null);
-    // Pass role through modal context data instead of just relying on component props
-    openModal('addUser', { role });
+    // Pass both role and moderatorId through modal context data
+    openModal('addUser', { role, moderatorId });
   };
 
   const handleEditUser = (user: User) => {

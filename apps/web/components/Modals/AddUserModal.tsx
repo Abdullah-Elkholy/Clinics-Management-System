@@ -20,9 +20,10 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const { addToast } = useUI();
   const [, actions] = useUserManagement();
   
-  // Try to get role from modal context data (passed via openModal)
+  // Get role and moderatorId from modal context data (takes precedence) or fallback to props
   const modalData = getModalData('addUser');
   const contextRole = modalData?.role || role;
+  const contextModeratorId = modalData?.moderatorId || moderatorId;
   
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -42,6 +43,17 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   useEffect(() => {
     setCurrentRole(contextRole);
   }, [contextRole]);
+
+  // Clear moderatorId validation error when a moderatorId becomes available
+  useEffect(() => {
+    if (contextModeratorId && errors.moderatorId) {
+      setErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors.moderatorId;
+        return newErrors;
+      });
+    }
+  }, [contextModeratorId, errors.moderatorId]);
 
   // Generate random password
   const generateRandomPassword = () => {
@@ -88,8 +100,8 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       newErrors.confirmPassword = 'كلمات المرور غير متطابقة';
     }
 
-    // Enforce: User role requires moderatorId
-    if (currentRole === UserRole.User && !moderatorId) {
+    // Enforce: User role requires moderatorId (use contextModeratorId - canonical source)
+    if (currentRole === UserRole.User && !contextModeratorId) {
       newErrors.moderatorId = 'يجب تعيين مشرف للمستخدم';
     }
     
@@ -144,8 +156,18 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       };
 
       // Add moderator ID if this is a regular user
-      if (userRole === UserRole.User && moderatorId) {
-        userPayload.moderatorId = moderatorId;
+      // Coerce string to number to match backend expectation
+      if (userRole === UserRole.User && contextModeratorId) {
+        const moderatorIdNum = typeof contextModeratorId === 'string' 
+          ? parseInt(contextModeratorId, 10) 
+          : contextModeratorId;
+        
+        if (Number.isNaN(moderatorIdNum)) {
+          addToast('معرّف المشرف غير صالح', 'error');
+          return;
+        }
+        
+        userPayload.moderatorId = moderatorIdNum;
       }
 
       const success = await actions.createUser(userPayload);
@@ -298,11 +320,11 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
               معلومات المشرف
             </p>
             <div className="bg-white rounded p-3 border border-blue-100">
-              {moderatorId ? (
+              {contextModeratorId ? (
                 <p className="text-sm text-gray-700">
                   <span className="font-medium">المشرف المعين:</span>
                   <br />
-                  <span className="text-blue-600">{moderatorId}</span>
+                  <span className="text-blue-600">{contextModeratorId}</span>
                   <br />
                   <span className="text-xs text-gray-500 mt-1 block">
                     سيرث هذا المستخدم جميع بيانات المشرف بما في ذلك الحصص والرسائل والعيادات
@@ -399,8 +421,8 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading || (currentRole === UserRole.User && !moderatorId)}
-            title={currentRole === UserRole.User && !moderatorId ? 'يجب تعيين مشرف لإضافة مستخدم' : ''}
+            disabled={isLoading || (currentRole === UserRole.User && !contextModeratorId)}
+            title={currentRole === UserRole.User && !contextModeratorId ? 'يجب تعيين مشرف لإضافة مستخدم' : ''}
             className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (

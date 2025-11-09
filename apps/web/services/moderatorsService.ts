@@ -1,8 +1,18 @@
 /**
- * Moderators Service
- * Handles all moderator-related API operations
- * Note: Components now use API clients directly via QueueContext
- * This service is kept for backward compatibility
+ * DEPRECATED: Moderators Service
+ * 
+ * This service is no longer maintained and should not be used.
+ * All moderator operations are now handled through:
+ * - QueueContext: For template/condition management and moderator aggregation
+ * - usersApiClient: For user/moderator data fetching
+ * - messageApiClient: For message and quota operations
+ * 
+ * To migrate from this service:
+ * 1. Replace moderator fetching with usersApiClient.getUsers({ role: 'moderator' })
+ * 2. Use QueueContext for template/condition mutations with optimistic updates
+ * 3. Use messageApiClient for quota and message operations
+ * 
+ * This file is kept only for reference and will be removed in a future version.
  */
 
 'use client';

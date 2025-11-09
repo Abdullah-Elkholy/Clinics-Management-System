@@ -202,6 +202,7 @@ export async function deleteUser(userId: number): Promise<void> {
 
 /**
  * Convert UserDto to frontend User model
+ * Maps backend numerator moderatorId to frontend semantic field assignedModerator
  */
 export function userDtoToModel(dto: UserDto): any {
   return {
@@ -213,7 +214,8 @@ export function userDtoToModel(dto: UserDto): any {
     isActive: dto.isActive,
     createdAt: new Date(dto.createdAt),
     updatedAt: new Date(dto.updatedAt),
-    moderatorId: dto.moderatorId,
+    moderatorId: dto.moderatorId, // keep for reference; use assignedModerator in frontend logic
+    assignedModerator: dto.moderatorId ? dto.moderatorId.toString() : undefined, // canonical field for filtering
   };
 }
 

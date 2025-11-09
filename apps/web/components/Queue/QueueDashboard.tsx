@@ -768,6 +768,9 @@ export default function QueueDashboard() {
                 const queueConditions = (messageConfig?.conditions || []).filter((c: any) => c.queueId === selectedQueueId);
                 const hasConditions = queueConditions && queueConditions.length > 0;
 
+                // Get the actual default template text from config
+                const defaultTemplateText = messageConfig?.defaultTemplate || '';
+                
                 return (
                   <div className="flex flex-col gap-6">
                     <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
@@ -775,16 +778,31 @@ export default function QueueDashboard() {
                         <i className="fas fa-message text-blue-600"></i>
                         الرسالة الافتراضية:
                       </h4>
-                      <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
-                        <p className="text-gray-800 text-sm leading-relaxed font-medium">
-                          مرحباً {'{PN}'}, ترتيبك {'{PQP}'} والموضع الحالي {'{CQP}'},
-                          الوقت المتبقي المقدر {'{ETR}'} دقيقة
-                        </p>
-                        <p className="text-xs text-gray-600 mt-3">
-                          <i className="fas fa-info-circle text-blue-500 ml-1"></i>
-                          {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
-                        </p>
-                      </div>
+                      {defaultTemplateText ? (
+                        <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                          <p className="text-gray-800 text-sm leading-relaxed font-medium whitespace-pre-wrap">
+                            {defaultTemplateText}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-3 border-t border-blue-200 pt-3">
+                            <i className="fas fa-info-circle text-blue-500 ml-1"></i>
+                            المتغيرات المتاحة: {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
+                          <div className="flex items-start gap-3">
+                            <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0"></i>
+                            <div className="flex-1">
+                              <p className="text-sm text-amber-800 font-semibold">
+                                لم يتم تحميل نص الرسالة الافتراضية
+                              </p>
+                              <p className="text-xs text-amber-700 mt-1">
+                                يرجى التحقق من إعدادات الشروط أو إعادة تحميل الصفحة
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     {hasConditions && (
