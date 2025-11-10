@@ -18,6 +18,7 @@ namespace Clinics.Infrastructure
         public DbSet<WhatsAppSession> WhatsAppSessions => Set<WhatsAppSession>();
         public DbSet<MessageSession> MessageSessions => Set<MessageSession>();
         public DbSet<ModeratorSettings> ModeratorSettings => Set<ModeratorSettings>();
+        public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -92,6 +93,18 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<MessageSession>().Property(s => s.StartTime).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<ModeratorSettings>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<ModeratorSettings>().Property(m => m.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // AuditLog configuration
+            modelBuilder.Entity<AuditLog>().HasIndex(a => new { a.EntityType, a.EntityId });
+            modelBuilder.Entity<AuditLog>().HasIndex(a => a.Action);
+            modelBuilder.Entity<AuditLog>().HasIndex(a => a.ActorUserId);
+            modelBuilder.Entity<AuditLog>().HasIndex(a => a.CreatedAt);
+            modelBuilder.Entity<AuditLog>()
+                .HasOne(a => a.Actor)
+                .WithMany()
+                .HasForeignKey(a => a.ActorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            modelBuilder.Entity<AuditLog>().Property(a => a.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
         }
     }
 }

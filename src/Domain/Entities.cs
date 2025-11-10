@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace Clinics.Domain
 {
     [Table("Users")]
-    public class User
+    public class User : ISoftDeletable
     {
         [Key]
         public int Id { get; set; }
@@ -63,10 +63,26 @@ namespace Clinics.Domain
                 }
             }
         }
+
+        // Audit fields
+        [Required]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? UpdatedAt { get; set; }
+
+        public int? UpdatedBy { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
     [Table("Queues")]
-    public class Queue
+    public class Queue : ISoftDeletable
     {
         [Key]
         public int Id { get; set; }
@@ -93,10 +109,26 @@ namespace Clinics.Domain
 
         [Required]
         public int EstimatedWaitMinutes { get; set; } = 15;
+
+        // Audit fields
+        [Required]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? UpdatedAt { get; set; }
+
+        public int? UpdatedBy { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
     [Table("Patients")]
-    public class Patient
+    public class Patient : ISoftDeletable
     {
         [Key]
         public int Id { get; set; }
@@ -122,10 +154,26 @@ namespace Clinics.Domain
         [Required]
         [StringLength(20)]
         public string Status { get; set; } = "waiting";
+
+        // Audit fields
+        [Required]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? UpdatedAt { get; set; }
+
+        public int? UpdatedBy { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
     [Table("MessageTemplates")]
-    public class MessageTemplate
+    public class MessageTemplate : ISoftDeletable
     {
         [Key]
         public int Id { get; set; }
@@ -200,10 +248,21 @@ namespace Clinics.Domain
         /// Placeholder: operator/values are neutral/empty when HasCondition=false.
         /// </summary>
         public MessageCondition? Condition { get; set; }
+
+        // Audit fields (UpdatedBy already present; ensure it exists)
+        public int? UpdatedBy { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
     [Table("Messages")]
-    public class Message
+    public class Message : ISoftDeletable
     {
         [Key]
         public long Id { get; set; }
@@ -269,6 +328,19 @@ namespace Clinics.Domain
         public DateTime CreatedAt { get; set; }
 
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        // Audit fields
+        public int? CreatedBy { get; set; }
+
+        public int? UpdatedBy { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
     [Table("FailedTasks")]
@@ -354,6 +426,22 @@ namespace Clinics.Domain
 
         [NotMapped]
         public bool IsQueuesQuotaLow => QueuesQuota > 0 && (RemainingQueues * 100.0 / QueuesQuota) < 10;
+
+        // Audit fields
+        [Required]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public int? CreatedBy { get; set; }
+
+        public int? UpdatedBy { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
 
@@ -489,7 +577,7 @@ namespace Clinics.Domain
     /// - Value required for EQUAL/GREATER/LESS; MinValue and MaxValue required for RANGE
     /// </summary>
     [Table("MessageConditions")]
-    public class MessageCondition
+    public class MessageCondition : ISoftDeletable
     {
         [Key]
         public int Id { get; set; }
@@ -517,7 +605,7 @@ namespace Clinics.Domain
         public Queue? Queue { get; set; }
 
         /// <summary>
-        /// Operator: EQUAL, GREATER, LESS, RANGE
+        /// Operator: EQUAL, GREATER, LESS, RANGE, DEFAULT
         /// Determines how to compare the Value field(s).
         /// </summary>
         [Required]
@@ -543,12 +631,89 @@ namespace Clinics.Domain
         public int? MaxValue { get; set; }
 
         [Required]
-        public DateTime CreatedAt { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>
         /// Timestamp of last update (for UI, tracking changes).
         /// </summary>
         public DateTime? UpdatedAt { get; set; }
+
+        // Audit fields
+        public int? CreatedBy { get; set; }
+
+        public int? UpdatedBy { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
+    }
+
+    /// <summary>
+    /// AuditLog entity tracks all significant operations for compliance and debugging.
+    /// Used to log: Create, Update, SoftDelete, Restore, Purge, and quota operations.
+    /// </summary>
+    [Table("AuditLogs")]
+    public class AuditLog
+    {
+        [Key]
+        public int Id { get; set; }
+
+        /// <summary>
+        /// The type of action performed (Create, Update, SoftDelete, Restore, Purge, etc.)
+        /// </summary>
+        [Required]
+        public AuditAction Action { get; set; }
+
+        /// <summary>
+        /// The entity type being modified (e.g., "Queue", "Patient", "MessageTemplate").
+        /// </summary>
+        [Required]
+        [StringLength(50)]
+        public string EntityType { get; set; } = null!;
+
+        /// <summary>
+        /// The primary key of the entity being modified.
+        /// </summary>
+        [Required]
+        public int EntityId { get; set; }
+
+        /// <summary>
+        /// The ID of the user who performed the action.
+        /// </summary>
+        public int? ActorUserId { get; set; }
+
+        [ForeignKey(nameof(ActorUserId))]
+        public User? Actor { get; set; }
+
+        /// <summary>
+        /// Timestamp when the action occurred.
+        /// </summary>
+        [Required]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// JSON representation of changes (new values after operation, or reason for deletion).
+        /// Stored as string for flexibility across entity types.
+        /// Example: {"QueueId":5,"PatientCount":0,"MessageCount":0}
+        /// </summary>
+        [Column(TypeName = "nvarchar(max)")]
+        public string? Changes { get; set; }
+
+        /// <summary>
+        /// Optional notes or reason for the operation (e.g., "User requested deletion", "Quota recovery").
+        /// </summary>
+        [StringLength(500)]
+        public string? Notes { get; set; }
+
+        /// <summary>
+        /// Optional JSON for additional context (e.g., quota released: 100, cascade impact).
+        /// </summary>
+        [Column(TypeName = "nvarchar(max)")]
+        public string? Metadata { get; set; }
     }
 }
 
