@@ -59,13 +59,28 @@ namespace Clinics.Api.DTOs
 
         public bool IsActive { get; set; }
 
+        /// <summary>
+        /// Whether this template is the default for its queue.
+        /// Exactly one template per queue has IsDefault = true.
+        /// Default templates cannot have an attached condition.
+        /// </summary>
+        public bool IsDefault { get; set; }
+
+        /// <summary>
+        /// Whether this template has an active (custom) condition.
+        /// IsDefault=0, HasCondition=false → "بدون شرط"
+        /// IsDefault=1, HasCondition=false → "افتراضي"
+        /// IsDefault=0, HasCondition=true → active rule (e.g., "أكبر من 5")
+        /// </summary>
+        public bool HasCondition { get; set; }
+
         public DateTime CreatedAt { get; set; }
 
         public DateTime? UpdatedAt { get; set; }
 
         /// <summary>
-        /// Null = template uses default condition (no custom criteria).
-        /// Non-null = template has custom condition with these criteria.
+        /// Optional reference to related condition (for UI detail view).
+        /// May be null or present; client can also fetch from /conditions?queueId=X endpoint.
         /// </summary>
         public ConditionDto? Condition { get; set; }
     }

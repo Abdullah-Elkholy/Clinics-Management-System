@@ -70,10 +70,11 @@ namespace Clinics.Api.Controllers
                     Id = t.Id,
                     Title = t.Title,
                     Content = t.Content,
-                    ModeratorId = t.ModeratorId ?? 0,
-                    QueueId = t.QueueId ?? 0,
-                    IsShared = t.IsShared,
+                    ModeratorId = t.ModeratorId,
+                    QueueId = t.QueueId,
                     IsActive = t.IsActive,
+                    IsDefault = t.IsDefault,
+                    HasCondition = t.HasCondition,
                     CreatedAt = t.CreatedAt,
                     UpdatedAt = t.UpdatedAt
                 }).ToList();
@@ -122,7 +123,6 @@ namespace Clinics.Api.Controllers
                 {
                     Title = req.Title,
                     Content = req.Content,
-                    IsShared = req.IsShared,
                     IsActive = req.IsActive,
                     CreatedBy = userId,
                     ModeratorId = queue.ModeratorId,
@@ -139,10 +139,11 @@ namespace Clinics.Api.Controllers
                     Id = template.Id,
                     Title = template.Title,
                     Content = template.Content,
-                    ModeratorId = template.ModeratorId ?? 0,
-                    QueueId = template.QueueId ?? 0,
-                    IsShared = template.IsShared,
+                    ModeratorId = template.ModeratorId,
+                    QueueId = template.QueueId,
                     IsActive = template.IsActive,
+                    IsDefault = template.IsDefault,
+                    HasCondition = template.HasCondition,
                     CreatedAt = template.CreatedAt,
                     UpdatedAt = template.UpdatedAt
                 };
@@ -178,9 +179,6 @@ namespace Clinics.Api.Controllers
                 if (!string.IsNullOrEmpty(req.Content))
                     existing.Content = req.Content;
 
-                if (req.IsShared.HasValue)
-                    existing.IsShared = req.IsShared.Value;
-
                 if (req.IsActive.HasValue)
                     existing.IsActive = req.IsActive.Value;
 
@@ -192,10 +190,11 @@ namespace Clinics.Api.Controllers
                     Id = existing.Id,
                     Title = existing.Title,
                     Content = existing.Content,
-                    ModeratorId = existing.ModeratorId ?? 0,
-                    QueueId = existing.QueueId ?? 0,
-                    IsShared = existing.IsShared,
+                    ModeratorId = existing.ModeratorId,
+                    QueueId = existing.QueueId,
                     IsActive = existing.IsActive,
+                    IsDefault = existing.IsDefault,
+                    HasCondition = existing.HasCondition,
                     CreatedAt = existing.CreatedAt,
                     UpdatedAt = existing.UpdatedAt
                 };
@@ -233,6 +232,96 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(ex, "Error deleting template");
                 return StatusCode(500, new { message = "Error deleting template" });
+            }
+        }
+
+        /// <summary>
+        /// PUT /api/templates/{id}/default
+        /// Set this template as the default for its queue.
+        /// - Atomically unsets IsDefault on all other templates in the same queue.
+        /// - Removes any condition attached to this template (default templates have no conditions).
+        /// </summary>
+        [HttpPut("{id}/default")]
+        public async Task<ActionResult<TemplateDto>> SetAsDefault(int id)
+        {
+            try
+            {
+                var template = await _db.MessageTemplates.FindAsync(id);
+                if (template == null)
+                    return NotFound(new { message = "Template not found" });
+
+                if (template.QueueId <= 0)
+                    return BadRequest(new { message = "Template must belong to a queue to be set as default" });
+
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
+
+                // Verify ownership
+                if (!isAdmin && template.ModeratorId != moderatorId)
+                    return Forbid();
+
+                using (var transaction = await _db.Database.BeginTransactionAsync())
+                {
+                    try
+                    {
+                        // Unset all other templates in the same queue
+                        var others = await _db.MessageTemplates
+                            .Where(t => t.QueueId == template.QueueId && t.Id != id && t.IsDefault)
+                            .ToListAsync();
+                        foreach (var other in others)
+                        {
+                            other.IsDefault = false;
+                            other.UpdatedAt = DateTime.UtcNow;
+                        }
+
+                        // Remove any condition on this template
+                        var condition = await _db.Set<MessageCondition>()
+                            .FirstOrDefaultAsync(c => c.TemplateId == id);
+                        if (condition != null)
+                        {
+                            // Convert to placeholder condition (hasCondition=false semantics)
+                            condition.Operator = "DEFAULT";
+                            condition.Value = null;
+                            condition.MinValue = null;
+                            condition.MaxValue = null;
+                            condition.UpdatedAt = DateTime.UtcNow;
+                        }
+
+                        // Set this template as default (must have hasCondition=false)
+                        template.IsDefault = true;
+                        template.HasCondition = false;
+                        template.UpdatedAt = DateTime.UtcNow;
+
+                        await _db.SaveChangesAsync();
+                        await transaction.CommitAsync();
+
+                        var dto = new TemplateDto
+                        {
+                            Id = template.Id,
+                            Title = template.Title,
+                            Content = template.Content,
+                            ModeratorId = template.ModeratorId,
+                            QueueId = template.QueueId,
+                            IsActive = template.IsActive,
+                            IsDefault = template.IsDefault,
+                            HasCondition = template.HasCondition,
+                            CreatedAt = template.CreatedAt,
+                            UpdatedAt = template.UpdatedAt
+                        };
+
+                        return Ok(dto);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting template as default");
+                return StatusCode(500, new { message = "Error setting template as default" });
             }
         }
     }

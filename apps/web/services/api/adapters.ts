@@ -21,6 +21,8 @@ export function templateDtoToModel(dto: TemplateDto, queueId?: string): MessageT
     content: dto.content,
     variables: extractVariablesFromTemplate(dto.content),
     isActive: dto.isActive ?? true,
+    isDefault: dto.isDefault ?? false,
+    hasCondition: dto.hasCondition ?? false,  // NEW: true if active condition, false if placeholder/no-rule
     createdAt: new Date(dto.createdAt),
     updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
     createdBy: '', // Backend may not provide this; align with API response
@@ -32,47 +34,29 @@ export function templateDtoToModel(dto: TemplateDto, queueId?: string): MessageT
  * Assumes conditions are listed in priority order
  */
 export function conditionDtoToModel(dto: ConditionDto, index: number): MessageCondition {
-  // Parse operator - map to allowed ConditionOperator values
   const operatorMap: Record<string, ConditionOperator> = {
-    'EQUAL': 'EQUAL',
-    'GREATER': 'GREATER',
-    'LESS': 'LESS',
-    'RANGE': 'RANGE',
+    EQUAL: 'EQUAL',
+    GREATER: 'GREATER',
+    LESS: 'LESS',
+    RANGE: 'RANGE',
   };
-  
+
   const operator: ConditionOperator = operatorMap[dto.operator] || 'EQUAL';
-  
-  // Parse numeric values
-  let value: number | undefined;
-  let minValue: number | undefined;
-  let maxValue: number | undefined;
-
-  if (dto.value !== undefined && dto.value !== null) {
-    const parsed = parseFloat(dto.value);
-    value = !isNaN(parsed) ? parsed : undefined;
-  }
-
-  if (dto.minValue !== undefined && dto.minValue !== null) {
-    const parsed = parseFloat(dto.minValue);
-    minValue = !isNaN(parsed) ? parsed : undefined;
-  }
-
-  if (dto.maxValue !== undefined && dto.maxValue !== null) {
-    const parsed = parseFloat(dto.maxValue);
-    maxValue = !isNaN(parsed) ? parsed : undefined;
-  }
 
   return {
     id: dto.id.toString(),
-    templateId: dto.templateId.toString(),
-    name: `Condition ${index + 1}`, // Fallback; backend should provide name if needed
-    priority: index, // Assign priority based on order
-    enabled: true, // Backend may not track this; default to true
+    queueId: dto.queueId.toString(),
+    templateId: dto.templateId !== undefined && dto.templateId !== null ? dto.templateId.toString() : undefined,
+    name: `Condition ${index + 1}`,
+    priority: index,
+    enabled: true,
     operator,
-    value,
-    minValue,
-    maxValue,
-    template: '', // Will be populated by caller if needed
+    value: dto.value ?? undefined,
+    minValue: dto.minValue ?? undefined,
+    maxValue: dto.maxValue ?? undefined,
+    template: '',
+    createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
+    updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
   };
 }
 

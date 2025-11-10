@@ -132,6 +132,10 @@ namespace Clinics.Api.Controllers
             if (template == null)
                 return BadRequest(new { message = "Template not found in this queue" });
 
+            // Reject if template is default (default templates cannot have conditions)
+            if (template.IsDefault)
+                return BadRequest(new { message = "Default templates cannot have custom conditions. Unset as default first." });
+
             // Verify moderator owns the queue
             var queue = await _context.Set<Queue>()
                 .FirstOrDefaultAsync(q => q.Id == request.QueueId);

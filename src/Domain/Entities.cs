@@ -75,9 +75,6 @@ namespace Clinics.Domain
         [StringLength(100)]
         public string DoctorName { get; set; } = null!;
 
-        [StringLength(500)]
-        public string? Description { get; set; }
-
         [Required]
         public int CreatedBy { get; set; }
 
@@ -92,9 +89,10 @@ namespace Clinics.Domain
         public User? Moderator { get; set; }
 
         [Required]
-        public int CurrentPosition { get; set; }
+        public int CurrentPosition { get; set; } = 1;
 
-        public int? EstimatedWaitMinutes { get; set; }
+        [Required]
+        public int EstimatedWaitMinutes { get; set; } = 15;
     }
 
     [Table("Patients")]
@@ -147,7 +145,8 @@ namespace Clinics.Domain
         /// The moderator who owns this message template.
         /// All queues under this moderator can use these templates.
         /// </summary>
-        public int? ModeratorId { get; set; }
+        [Required]
+        public int ModeratorId { get; set; }
 
         [ForeignKey(nameof(ModeratorId))]
         public User? Moderator { get; set; }
@@ -155,18 +154,37 @@ namespace Clinics.Domain
         /// <summary>
         /// Queue this template belongs to (one-to-many: Queue -> Templates).
         /// This makes templates per-queue instead of moderator-global.
-        /// Option A: Each queue can have its own templates.
+        /// Where each queue can have its own templates.
         /// </summary>
-        public int? QueueId { get; set; }
+        [Required]
+        public int QueueId { get; set; }
 
         [ForeignKey(nameof(QueueId))]
         public Queue? Queue { get; set; }
 
         [Required]
-        public bool IsShared { get; set; }
-
-        [Required]
         public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// Whether this template is the default for its queue.
+        /// Exactly one template per queue must have IsDefault = true.
+        /// Default templates cannot have an attached condition.
+        /// Enforced by unique filtered index: (QueueId, IsDefault) WHERE IsDefault = 1.
+        /// </summary>
+        [Required]
+        public bool IsDefault { get; set; } = false;
+
+        /// <summary>
+        /// Whether this template has an active (custom) condition.
+        /// When HasCondition = false: Condition is a placeholder (operator/values neutral or empty).
+        ///   - If IsDefault = 1: "افتراضي" (uses condition only to maintain 1:1 relationship).
+        ///   - If IsDefault = 0: "بدون شرط" (non-default template without custom criteria).
+        /// When HasCondition = true: Condition contains active operator/values that determine when this template is selected.
+        ///   - IsDefault must be 0.
+        ///   - Condition defines: EQUAL/GREATER/LESS/RANGE logic for patient field comparison.
+        /// </summary>
+        [Required]
+        public bool HasCondition { get; set; } = false;
 
         [Required]
         public DateTime CreatedAt { get; set; }
@@ -177,9 +195,9 @@ namespace Clinics.Domain
         public DateTime? UpdatedAt { get; set; }
 
         /// <summary>
-        /// Navigation to optional condition (one-to-one).
-        /// Null TemplateId in MessageCondition = template has no custom condition (uses default).
-        /// Non-null TemplateId in MessageCondition = template has custom condition.
+        /// Navigation to one-to-one condition (mandatory relationship).
+        /// Always present: either placeholder (HasCondition=false) or active (HasCondition=true).
+        /// Placeholder: operator/values are neutral/empty when HasCondition=false.
         /// </summary>
         public MessageCondition? Condition { get; set; }
     }
@@ -482,7 +500,8 @@ namespace Clinics.Domain
         /// Null TemplateId = no condition (use default template for queue).
         /// Non-null TemplateId with this condition object = template has custom condition.
         /// </summary>
-        public int? TemplateId { get; set; }
+        [Required]
+        public int TemplateId { get; set; }
 
         [ForeignKey(nameof(TemplateId))]
         public MessageTemplate? Template { get; set; }

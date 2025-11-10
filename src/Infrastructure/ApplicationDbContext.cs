@@ -57,7 +57,16 @@ namespace Clinics.Infrastructure
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<FailedTask>().HasIndex(f => f.RetryCount);
-            modelBuilder.Entity<Quota>().HasIndex(q => q.ModeratorUserId);
+            
+            // Quota: enforce one-to-one with Moderator via unique index
+            modelBuilder.Entity<Quota>().HasIndex(q => q.ModeratorUserId).IsUnique();
+            
+            // MessageTemplate: enforce exactly one default per queue via filtered unique index
+            modelBuilder.Entity<MessageTemplate>()
+                .HasIndex(t => new { t.QueueId, t.IsDefault })
+                .IsUnique()
+                .HasFilter("[QueueId] IS NOT NULL AND [IsDefault] = 1");
+            
             modelBuilder.Entity<MessageSession>().HasIndex(s => new { s.Status, s.StartTime });
 
             modelBuilder.Entity<User>()

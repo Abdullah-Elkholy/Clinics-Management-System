@@ -101,6 +101,7 @@ export interface MessageTemplate {
   moderatorId: number;
   isShared: boolean;
   isActive: boolean;
+  isDefault: boolean;
   category?: string;
   tags?: string[];
   variables?: string[];

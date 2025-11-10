@@ -157,11 +157,15 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        // Apply any pending migrations (seeding is handled by migrations)
+        
+        // Apply any pending migrations (including seeded data in migration)
         db.Database.Migrate();
     }
 }
-catch { }
+catch (Exception ex)
+{
+    app.Services.GetRequiredService<ILogger<Program>>().LogError(ex, "Error during migration");
+}
 
 
 // schedule hangfire recurring job every 15 seconds (demo)

@@ -2,7 +2,7 @@
  * Mock Data Fixtures - DEPRECATED
  *
  * This file is deprecated. All data now comes from the backend API.
- * Kept for backward compatibility; all exports return empty arrays/objects.
+ * Kept for backward compatibility; returns empty arrays.
  */
 
 import type { TemplateDto, ConditionDto } from '../api/messageApiClient';

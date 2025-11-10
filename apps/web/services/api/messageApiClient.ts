@@ -13,18 +13,22 @@ export interface TemplateDto {
   content: string;
   queueId: number;
   isActive: boolean;
+  isDefault: boolean;
+  hasCondition: boolean;  // true = active condition, false = placeholder/no-rule
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ConditionDto {
   id: number;
-  templateId: number;
+  templateId?: number;
+  queueId: number;
   operator: string;
-  value?: string;
-  minValue?: string;
-  maxValue?: string;
+  value?: number;
+  minValue?: number;
+  maxValue?: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreateTemplateRequest {
@@ -42,17 +46,18 @@ export interface UpdateTemplateRequest {
 
 export interface CreateConditionRequest {
   templateId: number;
+  queueId: number;
   operator: string;
-  value?: string;
-  minValue?: string;
-  maxValue?: string;
+  value?: number;
+  minValue?: number;
+  maxValue?: number;
 }
 
 export interface UpdateConditionRequest {
   operator?: string;
-  value?: string;
-  minValue?: string;
-  maxValue?: string;
+  value?: number;
+  minValue?: number;
+  maxValue?: number;
 }
 
 export interface MyQuotaDto {
@@ -135,7 +140,7 @@ function getAuthToken(): string | null {
 /**
  * Make authenticated fetch request
  */
-async function fetchAPI<T>(
+export async function fetchAPI<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
@@ -311,6 +316,17 @@ export async function deleteTemplate(id: number): Promise<void> {
   return withRetry(() =>
     fetchAPI(`/templates/${id}`, {
       method: 'DELETE',
+    })
+  );
+}
+
+/**
+ * Set a template as default for its queue (sets isDefault=true, hasCondition=false)
+ */
+export async function setTemplateAsDefault(id: number): Promise<TemplateDto> {
+  return withRetry(() =>
+    fetchAPI(`/templates/${id}/default`, {
+      method: 'PUT',
     })
   );
 }
@@ -532,6 +548,7 @@ export const messageApiClient = {
   createTemplate,
   updateTemplate,
   deleteTemplate,
+  setTemplateAsDefault,
   
   // Conditions
   getConditions,
@@ -559,6 +576,7 @@ export const messageApiClient = {
   
   // Utilities
   formatApiError,
+  fetchAPI,
 };
 
 export default messageApiClient;
