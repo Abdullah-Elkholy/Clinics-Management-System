@@ -37,7 +37,6 @@ namespace Clinics.Api.Controllers
                 .Select(q => new QueueDto {
                     Id = q.Id,
                     DoctorName = q.DoctorName,
-                    Description = q.Description,
                     CreatedBy = q.CreatedBy,
                     ModeratorId = q.ModeratorId,
                     CurrentPosition = q.CurrentPosition,
@@ -55,7 +54,6 @@ namespace Clinics.Api.Controllers
             var dto = new QueueDto {
                 Id = q.Id,
                 DoctorName = q.DoctorName,
-                Description = q.Description,
                 CreatedBy = q.CreatedBy,
                 ModeratorId = q.ModeratorId,
                 CurrentPosition = q.CurrentPosition,
@@ -107,10 +105,9 @@ namespace Clinics.Api.Controllers
                 var q = new Queue 
                 { 
                     DoctorName = req.DoctorName, 
-                    Description = req.Description, 
                     CreatedBy = userId,
                     CurrentPosition = 1, 
-                    EstimatedWaitMinutes = req.EstimatedWaitMinutes 
+                    EstimatedWaitMinutes = req.EstimatedWaitMinutes ?? 15
                 };
                 
                 _db.Queues.Add(q);
@@ -125,7 +122,6 @@ namespace Clinics.Api.Controllers
                 { 
                     Id = q.Id, 
                     DoctorName = q.DoctorName, 
-                    Description = q.Description, 
                     CreatedBy = q.CreatedBy,
                     ModeratorId = q.ModeratorId,
                     CurrentPosition = q.CurrentPosition, 
@@ -154,8 +150,7 @@ namespace Clinics.Api.Controllers
             var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == id);
             if (q == null) return NotFound(new { success = false });
             q.DoctorName = req.DoctorName;
-            q.Description = req.Description;
-            if (req.EstimatedWaitMinutes.HasValue) q.EstimatedWaitMinutes = req.EstimatedWaitMinutes;
+            if (req.EstimatedWaitMinutes.HasValue) q.EstimatedWaitMinutes = req.EstimatedWaitMinutes.Value;
             if (req.CurrentPosition.HasValue) q.CurrentPosition = req.CurrentPosition.Value;
             await _db.SaveChangesAsync();
             return Ok(new { success = true, queue = q });
