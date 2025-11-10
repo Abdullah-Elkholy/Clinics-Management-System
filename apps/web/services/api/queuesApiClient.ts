@@ -175,6 +175,54 @@ export async function deleteQueue(queueId: number): Promise<void> {
   });
 }
 
+/**
+ * List deleted queues in trash (soft-deleted within 30 days)
+ */
+export async function getTrashQueues(options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<QueueDto>> {
+  const params = new URLSearchParams();
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return fetchAPI(`/queues/trash/list${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * List permanently deleted queues (archived, soft-deleted over 30 days)
+ * Admin only
+ */
+export async function getArchivedQueues(options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<QueueDto>> {
+  const params = new URLSearchParams();
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return fetchAPI(`/queues/archived/list${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * Restore a deleted queue from trash (within 30-day window)
+ */
+export async function restoreQueue(queueId: number): Promise<QueueDto> {
+  return fetchAPI(`/queues/${queueId}/restore`, {
+    method: 'POST',
+  });
+}
+
 // ============================================
 // Error Handling Helper
 // ============================================
@@ -203,6 +251,9 @@ export const queuesApiClient = {
   createQueue,
   updateQueue,
   deleteQueue,
+  getTrashQueues,
+  getArchivedQueues,
+  restoreQueue,
   formatApiError,
 };
 

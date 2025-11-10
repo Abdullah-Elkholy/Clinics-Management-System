@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
+using Clinics.Api.Services;
+using Clinics.Infrastructure.Repositories;
+using Clinics.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Clinics.Api.DTOs;
@@ -15,11 +18,25 @@ namespace Clinics.Api.Controllers
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<UsersController> _logger;
+        private readonly ISoftDeleteTTLQueries<User> _ttlQueries;
+        private readonly IModeratorCascadeService _moderatorCascadeService;
+        private readonly IUserContext _userContext;
+        private readonly Clinics.Api.Services.IUserCascadeService _userCascadeService;
 
-        public UsersController(ApplicationDbContext db, ILogger<UsersController> logger)
+        public UsersController(
+            ApplicationDbContext db,
+            ILogger<UsersController> logger,
+            IGenericUnitOfWork unitOfWork,
+            IModeratorCascadeService moderatorCascadeService,
+            IUserContext userContext,
+            Clinics.Api.Services.IUserCascadeService userCascadeService)
         {
             _db = db;
             _logger = logger;
+            _ttlQueries = unitOfWork.TTLQueries<User>();
+            _moderatorCascadeService = moderatorCascadeService;
+            _userContext = userContext;
+            _userCascadeService = userCascadeService;
         }
 
         /// <summary>
@@ -311,14 +328,19 @@ namespace Clinics.Api.Controllers
 
                 // Cannot delete if user has sub-users
                 var hasManagedUsers = await _db.Users
-                    .Where(u => u.ModeratorId == id)
+                    .Where(u => u.ModeratorId == id && !u.IsDeleted)
                     .AnyAsync();
 
                 if (hasManagedUsers)
                     return BadRequest(new { success = false, error = "Cannot delete user with managed users" });
 
-                _db.Users.Remove(targetUser);
-                await _db.SaveChangesAsync();
+                // Soft-delete user
+                var (success, errorMessage) = await _userCascadeService.SoftDeleteUserAsync(id, currentUserId);
+                
+                if (!success)
+                {
+                    return BadRequest(new { success = false, error = errorMessage });
+                }
 
                 return Ok(new { success = true });
             }
@@ -371,6 +393,146 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(ex, "Error resetting password");
                 return StatusCode(500, new { success = false, error = "Error resetting password" });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/users/trash?page=1&pageSize=10
+        /// Get soft-deleted users (trash). Admins see all; moderators see managed users.
+        /// </summary>
+        [HttpGet("trash")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> GetTrash([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var currentUserId = _userContext.GetUserId();
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
+
+                var query = _ttlQueries.QueryTrash(30).AsQueryable();
+
+                // Moderators see only their managed users
+                if (!isAdmin && moderatorId.HasValue)
+                {
+                    query = query.Where(u => u.ModeratorId == moderatorId.Value);
+                }
+
+                var total = await query.CountAsync();
+                var users = await query
+                    .OrderByDescending(u => u.DeletedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(u => new
+                    {
+                        u.Id,
+                        u.FirstName,
+                        u.LastName,
+                        u.Username,
+                        u.Role,
+                        u.ModeratorId,
+                        u.DeletedAt,
+                        DaysRemainingInTrash = _ttlQueries.GetDaysRemainingInTrash(u, 30),
+                        u.DeletedBy
+                    })
+                    .ToListAsync();
+
+                return Ok(new { success = true, data = users, total, page, pageSize });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching trash users");
+                return StatusCode(500, new { message = "Error fetching trash users" });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/users/archived?page=1&pageSize=10
+        /// Admin-only endpoint to view archived users (soft-deleted 30+ days ago).
+        /// </summary>
+        [HttpGet("archived")]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
+        public async Task<IActionResult> GetArchived([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var query = _ttlQueries.QueryArchived(30).AsQueryable();
+
+                var total = await query.CountAsync();
+                var users = await query
+                    .OrderByDescending(u => u.DeletedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(u => new
+                    {
+                        u.Id,
+                        u.FirstName,
+                        u.LastName,
+                        u.Username,
+                        u.Role,
+                        u.ModeratorId,
+                        u.DeletedAt,
+                        DaysDeleted = u.DeletedAt.HasValue ? (int)(DateTime.UtcNow - u.DeletedAt.Value).TotalDays : 0,
+                        u.DeletedBy,
+                        Note = "Read-only: Restore window expired"
+                    })
+                    .ToListAsync();
+
+                return Ok(new { success = true, data = users, total, page, pageSize });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching archived users");
+                return StatusCode(500, new { message = "Error fetching archived users" });
+            }
+        }
+
+        /// <summary>
+        /// POST /api/users/{id}/restore
+        /// Restore a soft-deleted user from trash.
+        /// Moderators cannot restore admins. Only admins can restore.
+        /// </summary>
+        [HttpPost("{id}/restore")]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
+        public async Task<IActionResult> Restore(int id)
+        {
+            try
+            {
+                var userId = _userContext.GetUserId();
+
+                var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id);
+                if (user == null)
+                    return NotFound(new { success = false, error = "User not found", statusCode = 404 });
+
+                // Check if user is not deleted
+                if (!user.IsDeleted)
+                    return BadRequest(new { success = false, error = "User is not in trash", statusCode = 400 });
+
+                // Attempt restore
+                var result = await _moderatorCascadeService.RestoreModeratorAsync(user, userId, ttlDays: 30);
+
+                if (!result.Success)
+                {
+                    if (result.StatusCode == 409)
+                    {
+                        return Conflict(new
+                        {
+                            success = false,
+                            error = result.Message,
+                            errorCode = result.ErrorCode,
+                            statusCode = 409,
+                            metadata = result.Metadata
+                        });
+                    }
+                    return StatusCode(result.StatusCode, new { success = false, error = result.Message, statusCode = result.StatusCode });
+                }
+
+                return Ok(new { success = true, data = user, statusCode = 200 });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error restoring user {UserId}", id);
+                return StatusCode(500, new { message = "Error restoring user" });
             }
         }
     }

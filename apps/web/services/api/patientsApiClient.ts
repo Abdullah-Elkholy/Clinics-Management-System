@@ -75,6 +75,56 @@ export async function deletePatient(id: number): Promise<void> {
 }
 
 /**
+ * List deleted patients in trash (soft-deleted within 30 days)
+ */
+export async function getTrashPatients(queueId: number, options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<PatientDto>> {
+  const params = new URLSearchParams();
+  params.append('queueId', queueId.toString());
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return messageApiClient.fetchAPI(`/patients/trash/list?${queryString}`);
+}
+
+/**
+ * List permanently deleted patients (archived, soft-deleted over 30 days)
+ * Admin only
+ */
+export async function getArchivedPatients(queueId: number, options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<PatientDto>> {
+  const params = new URLSearchParams();
+  params.append('queueId', queueId.toString());
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return messageApiClient.fetchAPI(`/patients/archived/list?${queryString}`);
+}
+
+/**
+ * Restore a deleted patient from trash (within 30-day window)
+ */
+export async function restorePatient(id: number): Promise<PatientDto> {
+  return messageApiClient.fetchAPI(`/patients/${id}/restore`, {
+    method: 'POST',
+  });
+}
+
+/**
  * Reorder patients in a queue atomically
  * If a position conflict occurs, the conflicting patient and all with greater positions shift +1
  */
@@ -93,6 +143,9 @@ export const patientsApiClient = {
   updatePatient,
   deletePatient,
   reorderPatients,
+  getTrashPatients,
+  getArchivedPatients,
+  restorePatient,
 };
 
 export default patientsApiClient;

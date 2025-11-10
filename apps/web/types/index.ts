@@ -34,6 +34,10 @@ export interface Patient {
   completedAt?: string;
   messagePreview?: string;
   selected?: boolean;
+  // Soft-delete fields (30-day trash window)
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: number;
 }
 
 export interface Queue {
@@ -41,6 +45,10 @@ export interface Queue {
   doctorName: string;
   moderatorId: string;         // GUID: references moderator user ID
   isActive?: boolean;
+  // Soft-delete fields (30-day trash window)
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: number;
 }
 
 export interface OngoingTask {

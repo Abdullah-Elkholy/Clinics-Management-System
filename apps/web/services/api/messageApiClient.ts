@@ -321,6 +321,62 @@ export async function deleteTemplate(id: number): Promise<void> {
 }
 
 /**
+ * List deleted templates in trash (soft-deleted within 30 days)
+ */
+export async function getTrashTemplates(queueId: number, options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<TemplateDto>> {
+  const params = new URLSearchParams();
+  params.append('queueId', queueId.toString());
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return withRetry(() =>
+    fetchAPI(`/templates/trash/list?${queryString}`)
+  );
+}
+
+/**
+ * List permanently deleted templates (archived, soft-deleted over 30 days)
+ * Admin only
+ */
+export async function getArchivedTemplates(queueId: number, options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<TemplateDto>> {
+  const params = new URLSearchParams();
+  params.append('queueId', queueId.toString());
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return withRetry(() =>
+    fetchAPI(`/templates/archived/list?${queryString}`)
+  );
+}
+
+/**
+ * Restore a deleted template from trash (within 30-day window)
+ */
+export async function restoreTemplate(id: number): Promise<TemplateDto> {
+  return withRetry(() =>
+    fetchAPI(`/templates/${id}/restore`, {
+      method: 'POST',
+    })
+  );
+}
+
+/**
  * Set a template as default for its queue (sets isDefault=true, hasCondition=false)
  */
 export async function setTemplateAsDefault(id: number): Promise<TemplateDto> {
@@ -549,6 +605,9 @@ export const messageApiClient = {
   updateTemplate,
   deleteTemplate,
   setTemplateAsDefault,
+  getTrashTemplates,
+  getArchivedTemplates,
+  restoreTemplate,
   
   // Conditions
   getConditions,

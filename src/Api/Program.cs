@@ -5,6 +5,8 @@ using Serilog;
 using Serilog.Events;
 using Microsoft.EntityFrameworkCore;
 using Clinics.Infrastructure;
+using Clinics.Infrastructure.Repositories;
+using Clinics.Infrastructure.Services;
 using Clinics.Domain;
 using System.Linq;
 using Clinics.Api.Services;
@@ -48,6 +50,16 @@ builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<QuotaService>();
 builder.Services.AddScoped<IUserContext, UserContext>();
 builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
+// Cascade services for soft-delete operations
+builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
+builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<Clinics.Api.Services.IQueueCascadeService, Clinics.Api.Services.QueueCascadeService>();
+// Also register the Infrastructure QueueCascadeService for QuotaService which depends on it
+builder.Services.AddScoped<Clinics.Infrastructure.Services.IQueueCascadeService, Clinics.Infrastructure.Services.QueueCascadeService>();
+builder.Services.AddScoped<Clinics.Api.Services.ITemplateCascadeService, Clinics.Api.Services.TemplateCascadeService>();
+builder.Services.AddScoped<Clinics.Api.Services.IPatientCascadeService, Clinics.Api.Services.PatientCascadeService>();
+builder.Services.AddScoped<Clinics.Api.Services.IUserCascadeService, Clinics.Api.Services.UserCascadeService>();
+builder.Services.AddScoped<IModeratorCascadeService, ModeratorCascadeService>();
 
 // JWT Auth
 builder.Services.AddAuthentication(options =>

@@ -94,6 +94,11 @@ export interface User {
   createdAt: Date;                 // Account creation timestamp
   updatedAt: Date;                 // Last profile update timestamp
   lastLogin?: Date;                // Last successful login
+  
+  // Soft-delete fields (30-day trash window)
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: number;
 }
 
 /**

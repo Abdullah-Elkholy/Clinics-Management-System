@@ -17,15 +17,18 @@ namespace Clinics.Api.Controllers
         private readonly ApplicationDbContext _db;
         private readonly QuotaService _quotaService;
         private readonly ILogger<QueuesController> _logger;
+        private readonly Clinics.Api.Services.IQueueCascadeService _queueCascadeService;
 
         public QueuesController(
             ApplicationDbContext db, 
             QuotaService quotaService,
-            ILogger<QueuesController> logger)
+            ILogger<QueuesController> logger,
+            Clinics.Api.Services.IQueueCascadeService queueCascadeService)
         {
             _db = db;
             _quotaService = quotaService;
             _logger = logger;
+            _queueCascadeService = queueCascadeService;
         }
 
         [HttpGet]
@@ -165,22 +168,23 @@ namespace Clinics.Api.Controllers
                 var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == id);
                 if (q == null) return NotFound(new { success = false });
 
-                // Get the user who created this queue to release their quota
-                var createdByUserId = q.CreatedBy;
-
-                // Remove related patients (simple cascade)
-                var patients = await _db.Patients.Where(p => p.QueueId == id).ToListAsync();
-                if (patients.Any()) _db.Patients.RemoveRange(patients);
+                // Get current user ID for audit
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
                 
-                _db.Queues.Remove(q);
-                await _db.SaveChangesAsync();
+                // Soft-delete queue and cascade to related entities
+                var (success, errorMessage) = await _queueCascadeService.SoftDeleteQueueAsync(id, userId);
+                
+                if (!success)
+                {
+                    return BadRequest(new { success = false, error = errorMessage });
+                }
 
                 // Release queue quota back to the user's moderator
-                if (createdByUserId > 0)
+                if (q.CreatedBy > 0)
                 {
-                    await _quotaService.ReleaseQueueQuotaAsync(createdByUserId);
-                    _logger.LogInformation("Released queue quota for user {UserId} after deleting queue {QueueId}", 
-                        createdByUserId, id);
+                    await _quotaService.ReleaseQueueQuotaAsync(q.CreatedBy);
+                    _logger.LogInformation("Released queue quota for user {UserId} after soft-deleting queue {QueueId}", 
+                        q.CreatedBy, id);
                 }
 
                 return Ok(new { success = true });
@@ -208,5 +212,142 @@ namespace Clinics.Api.Controllers
             await _db.SaveChangesAsync();
             return Ok(new { success = true });
         }
+
+        /// <summary>
+        /// Get soft-deleted queues within the 30-day trash window.
+        /// Moderators see only their queues; admins see all.
+        /// </summary>
+        [HttpGet("trash")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> GetTrash([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                if (user == null) return Unauthorized();
+
+                var query = _db.Queues
+                    .AsNoTracking()
+                    .Where(q => q.IsDeleted && q.DeletedAt >= DateTime.UtcNow.AddDays(-30));
+
+                // Non-admin users see only their own queues
+                if (user.Role != "primary_admin" && user.Role != "secondary_admin")
+                {
+                    query = query.Where(q => q.ModeratorId == userId);
+                }
+
+                var total = await query.CountAsync();
+                var trashQueues = await query
+                    .OrderByDescending(q => q.DeletedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(q => new
+                    {
+                        q.Id,
+                        q.DoctorName,
+                        q.ModeratorId,
+                        DeletedAt = q.DeletedAt!.Value,
+                        DaysRemainingInTrash = (int)Math.Ceiling((q.DeletedAt!.Value.AddDays(30) - DateTime.UtcNow).TotalDays),
+                        DeletedBy = q.DeletedBy
+                    })
+                    .ToListAsync();
+
+                return Ok(new { success = true, data = trashQueues, total, page, pageSize });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching trash queues");
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المحذوفة" });
+            }
+        }
+
+        /// <summary>
+        /// Get soft-deleted queues older than 30 days (archived, read-only).
+        /// Admin-only endpoint.
+        /// </summary>
+        [HttpGet("archived")]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
+        public async Task<IActionResult> GetArchived([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var query = _db.Queues
+                    .AsNoTracking()
+                    .Where(q => q.IsDeleted && q.DeletedAt < DateTime.UtcNow.AddDays(-30));
+
+                var total = await query.CountAsync();
+                var archivedQueues = await query
+                    .OrderByDescending(q => q.DeletedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(q => new
+                    {
+                        q.Id,
+                        q.DoctorName,
+                        q.ModeratorId,
+                        DeletedAt = q.DeletedAt!.Value,
+                        DaysDeleted = (int)Math.Ceiling((DateTime.UtcNow - q.DeletedAt!.Value).TotalDays),
+                        DeletedBy = q.DeletedBy,
+                        Note = "Read-only: Restore window expired"
+                    })
+                    .ToListAsync();
+
+                return Ok(new { success = true, data = archivedQueues, total, page, pageSize });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching archived queues");
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المؤرشفة" });
+            }
+        }
+
+        /// <summary>
+        /// Restore a soft-deleted queue.
+        /// Enforces 30-day restore TTL and quota checks.
+        /// </summary>
+        [HttpPost("{id}/restore")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> Restore(int id)
+        {
+            try
+            {
+                var queue = await _db.Queues.FirstOrDefaultAsync(q => q.Id == id && q.IsDeleted);
+                if (queue == null) 
+                    return NotFound(new { success = false, error = "Queue not found or not deleted" });
+
+                // Check if moderator owns this queue (non-admins only)
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                if (user != null && user.Role != "primary_admin" && user.Role != "secondary_admin")
+                {
+                    if (queue.ModeratorId != userId)
+                        return Forbid();
+                }
+
+                // Attempt restore via cascade service
+                var restoreResult = await _quotaService.RestoreQueueAsync(queue, userId);
+                
+                if (!restoreResult.Success)
+                {
+                    return StatusCode(restoreResult.StatusCode, new 
+                    { 
+                        success = false, 
+                        error = restoreResult.Message,
+                        errorCode = restoreResult.ErrorCode,
+                        metadata = restoreResult.Metadata
+                    });
+                }
+
+                await _db.SaveChangesAsync();
+                return Ok(new { success = true, data = queue });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error restoring queue {QueueId}", id);
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استعادة الطابور" });
+            }
+        }
     }
 }
+

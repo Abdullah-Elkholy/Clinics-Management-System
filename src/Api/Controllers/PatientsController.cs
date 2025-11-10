@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
+using Clinics.Api.Services;
+using Clinics.Infrastructure.Repositories;
+using Clinics.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 
@@ -14,11 +17,22 @@ namespace Clinics.Api.Controllers
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<PatientsController> _logger;
+        private readonly ISoftDeleteTTLQueries<Patient> _ttlQueries;
+        private readonly IUserContext _userContext;
+        private readonly Clinics.Api.Services.IPatientCascadeService _patientCascadeService;
 
-        public PatientsController(ApplicationDbContext db, ILogger<PatientsController> logger)
+        public PatientsController(
+            ApplicationDbContext db,
+            ILogger<PatientsController> logger,
+            IGenericUnitOfWork unitOfWork,
+            IUserContext userContext,
+            Clinics.Api.Services.IPatientCascadeService patientCascadeService)
         {
             _db = db;
             _logger = logger;
+            _ttlQueries = unitOfWork.TTLQueries<Patient>();
+            _userContext = userContext;
+            _patientCascadeService = patientCascadeService;
         }
 
         /// <summary>
@@ -178,7 +192,7 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// DELETE /api/patients/{id}
-        /// Delete a patient and shift remaining patients' positions.
+        /// Soft-delete a patient
         /// </summary>
         [HttpDelete("{id}")]
         [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
@@ -190,32 +204,17 @@ namespace Clinics.Api.Controllers
                 if (patient == null)
                     return NotFound(new { message = "Patient not found" });
 
-                using (var transaction = await _db.Database.BeginTransactionAsync())
+                var userId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
+                
+                // Soft-delete patient
+                var (success, errorMessage) = await _patientCascadeService.SoftDeletePatientAsync(id, userId);
+                
+                if (!success)
                 {
-                    try
-                    {
-                        int queueId = patient.QueueId;
-                        int deletedPosition = patient.Position;
-
-                        // Shift down all patients with position > deletedPosition
-                        var toShift = await _db.Patients
-                            .Where(p => p.QueueId == queueId && p.Position > deletedPosition)
-                            .ToListAsync();
-                        foreach (var p in toShift)
-                            p.Position = p.Position - 1;
-
-                        _db.Patients.Remove(patient);
-                        await _db.SaveChangesAsync();
-                        await transaction.CommitAsync();
-
-                        return NoContent();
-                    }
-                    catch
-                    {
-                        await transaction.RollbackAsync();
-                        throw;
-                    }
+                    return BadRequest(new { success = false, error = errorMessage });
                 }
+
+                return NoContent();
             }
             catch (Exception ex)
             {
@@ -291,6 +290,167 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(ex, "Error reordering patients");
                 return StatusCode(500, new { message = "Error reordering patients" });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/patients/trash?queueId=1&page=1&pageSize=10
+        /// Get soft-deleted patients (trash) for a queue.
+        /// </summary>
+        [HttpGet("trash")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> GetTrash([FromQuery] int? queueId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
+
+                if (!queueId.HasValue)
+                    return BadRequest(new { success = false, error = "queueId is required", statusCode = 400 });
+
+                // Verify queue access
+                var queue = await _db.Queues.FindAsync(queueId.Value);
+                if (queue == null)
+                    return NotFound(new { success = false, error = "Queue not found", statusCode = 404 });
+
+                if (!isAdmin && queue.ModeratorId != moderatorId)
+                    return Forbid();
+
+                var query = _ttlQueries.QueryTrash(30)
+                    .Where(p => p.QueueId == queueId.Value)
+                    .AsQueryable();
+
+                var total = await query.CountAsync();
+                var patients = await query
+                    .OrderByDescending(p => p.DeletedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(p => new
+                    {
+                        p.Id,
+                        p.FullName,
+                        p.PhoneNumber,
+                        p.Position,
+                        p.Status,
+                        p.DeletedAt,
+                        DaysRemainingInTrash = _ttlQueries.GetDaysRemainingInTrash(p, 30),
+                        p.DeletedBy
+                    })
+                    .ToListAsync();
+
+                return Ok(new { success = true, data = patients, total, page, pageSize });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching trash patients");
+                return StatusCode(500, new { message = "Error fetching trash patients" });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/patients/archived?queueId=1&page=1&pageSize=10
+        /// Admin-only endpoint to view archived patients (soft-deleted 30+ days ago).
+        /// </summary>
+        [HttpGet("archived")]
+        [Authorize(Roles = "primary_admin,secondary_admin")]
+        public async Task<IActionResult> GetArchived([FromQuery] int? queueId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                if (!queueId.HasValue)
+                    return BadRequest(new { success = false, error = "queueId is required", statusCode = 400 });
+
+                var query = _ttlQueries.QueryArchived(30)
+                    .Where(p => p.QueueId == queueId.Value)
+                    .AsQueryable();
+
+                var total = await query.CountAsync();
+                var patients = await query
+                    .OrderByDescending(p => p.DeletedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(p => new
+                    {
+                        p.Id,
+                        p.FullName,
+                        p.PhoneNumber,
+                        p.Position,
+                        p.Status,
+                        p.DeletedAt,
+                        DaysDeleted = p.DeletedAt.HasValue ? (int)(DateTime.UtcNow - p.DeletedAt.Value).TotalDays : 0,
+                        p.DeletedBy,
+                        Note = "Read-only: Restore window expired"
+                    })
+                    .ToListAsync();
+
+                return Ok(new { success = true, data = patients, total, page, pageSize });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching archived patients");
+                return StatusCode(500, new { message = "Error fetching archived patients" });
+            }
+        }
+
+        /// <summary>
+        /// POST /api/patients/{id}/restore
+        /// Restore a soft-deleted patient from trash.
+        /// </summary>
+        [HttpPost("{id}/restore")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> Restore(int id)
+        {
+            try
+            {
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
+
+                var patient = await _db.Patients.IgnoreQueryFilters().FirstOrDefaultAsync(p => p.Id == id);
+                if (patient == null)
+                    return NotFound(new { success = false, error = "Patient not found", statusCode = 404 });
+
+                // Verify queue access
+                var queue = await _db.Queues.FindAsync(patient.QueueId);
+                if (queue == null)
+                    return NotFound(new { success = false, error = "Patient's queue not found", statusCode = 404 });
+
+                if (!isAdmin && queue.ModeratorId != moderatorId)
+                    return Forbid();
+
+                // Check if patient is not deleted
+                if (!patient.IsDeleted)
+                    return BadRequest(new { success = false, error = "Patient is not in trash", statusCode = 400 });
+
+                // Check TTL
+                if (!_ttlQueries.IsRestoreAllowed(patient, 30))
+                {
+                    var daysElapsed = patient.DeletedAt.HasValue
+                        ? (int)(DateTime.UtcNow - patient.DeletedAt.Value).TotalDays
+                        : 0;
+                    return Conflict(new
+                    {
+                        success = false,
+                        error = $"Restore window has expired. Patient was deleted {daysElapsed} days ago; restore is allowed within 30 days.",
+                        errorCode = "restore_window_expired",
+                        statusCode = 409,
+                        metadata = new { daysElapsed, ttlDays = 30 }
+                    });
+                }
+
+                // Restore patient
+                patient.IsDeleted = false;
+                patient.DeletedAt = null;
+                patient.DeletedBy = null;
+                _db.Patients.Update(patient);
+                await _db.SaveChangesAsync();
+
+                return Ok(new { success = true, data = patient, statusCode = 200 });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error restoring patient {PatientId}", id);
+                return StatusCode(500, new { message = "Error restoring patient" });
             }
         }
     }

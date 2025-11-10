@@ -22,6 +22,11 @@ export interface MessageCondition {
   // Metadata
   createdAt?: Date;
   updatedAt?: Date;
+  
+  // Soft-delete fields (30-day trash window)
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: number;
 }
 
 export interface QueueMessageConfig {

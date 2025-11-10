@@ -26,6 +26,11 @@ export interface MessageTemplate {
   // Usage stats
   usageCount?: number;         // how many times sent
   successRate?: number;        // % of successfully sent messages
+  
+  // Soft-delete fields (30-day trash window)
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: number;
 }
 
 export interface QueueTemplateConfig {
