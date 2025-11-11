@@ -449,9 +449,7 @@ export default function MessagesPanel() {
                                   return 0;
                                 })
                                 .map((template) => {
-                                const condition = null;
-                                // Check if this is a default condition
-                                const isDefaultCondition = false;
+                                const condition = template.condition || null;
                                 
                                 // Check if this template's condition is conflicting
                                 const conflictingIds = getConflictingConditionIds(String(queue.id));
@@ -473,7 +471,7 @@ export default function MessagesPanel() {
                                     </td>
                                     <td className="px-4 py-2">
                                       {condition ? (
-                                        isDefaultCondition ? (
+                                        condition.operator === 'DEFAULT' ? (
                                           <span className="text-green-600 font-medium bg-green-50 px-3 py-1 rounded-full text-sm">
                                             ✓ افتراضي
                                           </span>

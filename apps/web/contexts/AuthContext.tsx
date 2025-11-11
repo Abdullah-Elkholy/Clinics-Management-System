@@ -110,8 +110,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               
               const decoded = JSON.parse(decodeBase64(parts[1]));
               
-              // Debug: Log full JWT payload to inspect structure
-              console.log('🔐 Full JWT Payload:', JSON.stringify(decoded, null, 2));
+              // Debug JWT parsing (disabled in production; uncomment for troubleshooting)
+              // console.log('🔐 Full JWT Payload:', JSON.stringify(decoded, null, 2));
               
               // Extract role - Try MULTIPLE possible claim keys that JWT might use
               // JWT standard claim type keys can be in different formats
@@ -121,14 +121,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               
               const roleValue = roleFromDirect || roleFromClaimType || (roleFromAllClaims ? roleFromAllClaims[1] : undefined);
               
-              console.log('🔐 Role Extraction Debug:', {
-                roleFromDirect: `"${roleFromDirect}"`,
-                roleFromClaimType: `"${roleFromClaimType}"`,
-                roleFromAllClaims: roleFromAllClaims ? `${roleFromAllClaims[0]} = "${roleFromAllClaims[1]}"` : 'NOT_FOUND',
-                finalRoleValue: `"${roleValue}"`,
-                isRolePrimaryAdmin: roleValue === 'primary_admin',
-                isRoleString: typeof roleValue === 'string',
-              });
+              // Debug role extraction (disabled in production)
+              if (process.env.NODE_ENV === 'development') {
+                // console.log('🔐 Role Extraction Debug:', {
+                //   roleFromDirect: `"${roleFromDirect}"`,
+                //   roleFromClaimType: `"${roleFromClaimType}"`,
+                //   roleFromAllClaims: roleFromAllClaims ? `${roleFromAllClaims[0]} = "${roleFromAllClaims[1]}"` : 'NOT_FOUND',
+                //   finalRoleValue: `"${roleValue}"`,
+                //   isRolePrimaryAdmin: roleValue === 'primary_admin',
+                //   isRoleString: typeof roleValue === 'string',
+                // });
+              }
               
               // Ensure we have a valid role value
               const finalRole = (roleValue as UserRole) || UserRole.User;
@@ -137,15 +140,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const validRoles: UserRole[] = [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User];
               const isValidRole = validRoles.includes(finalRole);
               
-              console.log('🔐 Role Validation:', {
-                roleValue: finalRole,
-                isValidRole: isValidRole,
-                validRoles: validRoles,
-                matchesPrimaryAdmin: finalRole === UserRole.PrimaryAdmin,
-              });
+              // Debug role validation (disabled in production)
+              if (process.env.NODE_ENV === 'development' && !isValidRole) {
+                // console.log('🔐 Role Validation:', {
+                //   roleValue: finalRole,
+                //   isValidRole: isValidRole,
+                //   validRoles: validRoles,
+                //   matchesPrimaryAdmin: finalRole === UserRole.PrimaryAdmin,
+                // });
+              }
               
               if (!isValidRole) {
-                console.warn(`⚠️ Invalid role "${finalRole}", defaulting to User role`);
+                // console.warn(`⚠️ Invalid role "${finalRole}", defaulting to User role`);
               }
               
               // Map JWT claims to User object
@@ -161,17 +167,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 updatedAt: new Date(),
               };
               
-              // Debug: Log names specifically to verify Arabic characters are properly decoded
-              console.log('🔐 User Names (UTF-8 Check):', {
-                firstName: `"${user.firstName}"`,
-                lastName: `"${user.lastName}"`,
-                firstNameLength: user.firstName.length,
-                lastNameLength: user.lastName.length,
-                firstNameCharCodes: user.firstName.split('').map(c => c.charCodeAt(0)),
-                lastNameCharCodes: user.lastName.split('').map(c => c.charCodeAt(0)),
-              });
-              
-              console.log('👤 User object after mapping:', { ...user, isActive: user.isActive });
+              // Debug UTF-8 name verification (disabled in production)
+              if (process.env.NODE_ENV === 'development') {
+                // console.log('🔐 User Names (UTF-8 Check):', {
+                //   firstName: `"${user.firstName}"`,
+                //   lastName: `"${user.lastName}"`,
+                //   firstNameLength: user.firstName.length,
+                //   lastNameLength: user.lastName.length,
+                // });
+              }
               
               setAuthState({
                 user,
@@ -252,7 +256,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Continue to next attempt (if any remain)
         if (attemptNumber < RETRY_DELAYS.length) {
-          console.log(`⏳ Retrying login in ${RETRY_DELAYS[attemptNumber]}ms...`);
+          // Debug: log retry attempts (disabled in production)
+          if (process.env.NODE_ENV === 'development') {
+            // console.log(`⏳ Retrying login in ${RETRY_DELAYS[attemptNumber]}ms...`);
+          }
         }
       }
     }

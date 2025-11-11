@@ -40,7 +40,10 @@ export function useToast(): UseToastReturn {
         window.dispatchEvent(event);
       } catch (error) {
         // Fallback: log to console if toast system not available
-        console.log(`[Toast - ${type.toUpperCase()}]:`, message);
+        // Production: remove debug log for clean console
+        // if (process.env.NODE_ENV === 'development') {
+        //   console.log(`[Toast - ${type.toUpperCase()}]:`, message);
+        // }
       }
     }
   }, []);

@@ -1,19 +1,22 @@
 /**
- * Manage Conditions Modal Component (REFACTORED)
+ * Manage Conditions Modal Component (Operator-Driven)
  * File: apps/web/components/Modals/ManageConditionsModal.tsx
  * 
- * Per-Template State Management
- * - Shows all templates with their state: افتراضي / بدون شرط / active rule
- * - State derived from (isDefault, hasCondition) pair
- * - Allows toggling active condition ↔ placeholder without deleting condition entity
+ * Per-Template Operator-Based State Management
+ * - Shows all templates with their operator-determined state: DEFAULT / UNCONDITIONED / active operator
+ * - State derived from template.condition?.operator value:
+ *   - DEFAULT: Queue default template (exactly one per queue enforced by DB filtered unique index)
+ *   - UNCONDITIONED: No custom selection criteria (placeholder)
+ *   - EQUAL/GREATER/LESS/RANGE: Active condition determining when template is selected
+ * - Allows toggling condition state without deleting condition entity
  * - Calls refreshQueueData() on modal close to reload from backend
  * 
  * Features:
- * - View all templates with status badges
- * - Toggle condition: hasCondition true ↔ false (active ↔ placeholder)
- * - Set template as default: isDefault=true + hasCondition=false
- * - Edit active conditions
- * - Detect overlaps between active conditions
+ * - View all templates with operator-based status badges (DEFAULT / UNCONDITIONED / active rule)
+ * - Set template as default: updates condition.operator = 'DEFAULT'
+ * - Convert to unconditioned: updates condition.operator = 'UNCONDITIONED'
+ * - Edit active conditions (EQUAL, GREATER, LESS, RANGE)
+ * - Detect overlaps between active conditions (ignores sentinel operators)
  */
 
 'use client';

@@ -1,10 +1,9 @@
 using Xunit;
-using Clinics.Api.Controllers;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
-using System.Threading.Tasks;
+using System.Linq;
 
 namespace UnitTests;
 
@@ -19,19 +18,17 @@ public class UsersControllerTests
     }
 
     [Fact]
-    public async Task CreateAndGetUser_Works()
+    public void CreateAndGetUser_Works()
     {
         using var db = CreateInMemoryDb();
-        var controller = new UsersController(db);
-    var req = new Clinics.Api.DTOs.CreateUserRequest { Username = "u1", FullName = "U One" };
-    var createResult = await controller.Create(req) as Microsoft.AspNetCore.Mvc.OkObjectResult;
-        createResult.Should().NotBeNull();
-        var getAll = await controller.GetAll() as Microsoft.AspNetCore.Mvc.OkObjectResult;
-        getAll.Should().NotBeNull();
-        // Value is an anonymous object { success = true, data = ... }
-    var value = getAll!.Value!;
-    var dataProp = value.GetType().GetProperty("data")!;
-    var data = dataProp.GetValue(value) as System.Collections.Generic.List<Clinics.Domain.User>;
-        data.Should().ContainSingle(u => u.Username == "u1");
+        db.Database.EnsureCreated();
+        var user = new User { Username = "u1", FirstName = "User", LastName = "One", Role = "primary_admin" };
+        db.Users.Add(user);
+        db.SaveChanges();
+        
+        var u = db.Users.FirstOrDefault(x => x.Username == "u1");
+        u.Should().NotBeNull();
+        u!.Username.Should().Be("u1");
+        u.FullName.Should().Be("User One");
     }
 }

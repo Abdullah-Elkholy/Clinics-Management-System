@@ -256,7 +256,7 @@ namespace Clinics.IntegrationTests
             // Assert
             // Should have seeded messages
             // Note: May be empty if no patients exist in seeding
-            Assert.IsType<List<Message>>(messages);
+            Assert.IsType<System.Collections.Generic.List<Message>>(messages);
         }
 
         [Fact]
@@ -268,8 +268,8 @@ namespace Clinics.IntegrationTests
 
             // Assert
             Assert.NotEmpty(templates);
-            Assert.True(templates.Any(t => t.Title == "Welcome"));
-            Assert.True(templates.Any(t => t.Title == "AppointmentReminder"));
+            Assert.Contains(templates, t => t.Title == "Welcome");
+            Assert.Contains(templates, t => t.Title == "AppointmentReminder");
         }
 
         #endregion
