@@ -39,7 +39,7 @@ interface ModalData {
 }
 
 /**
- * Get display status for a template based on (isDefault, hasCondition) pair
+ * Get display status for a template based on operator type
  */
 function getTemplateStatus(template: MessageTemplate): {
   label: string;
@@ -47,31 +47,33 @@ function getTemplateStatus(template: MessageTemplate): {
   icon: string;
   description: string;
 } {
-  if (template.isDefault && !template.hasCondition) {
+  const operator = template.condition?.operator;
+  
+  if (operator === 'DEFAULT') {
     return {
       label: 'افتراضي',
       color: 'bg-blue-100 text-blue-800 border-blue-300',
       icon: 'fa-star',
-      description: 'قالب افتراضي (بدون شرط مخصص)',
+      description: 'قالب افتراضي (DEFAULT)',
     };
   }
-  if (!template.isDefault && !template.hasCondition) {
+  if (operator === 'UNCONDITIONED') {
     return {
       label: 'بدون شرط',
       color: 'bg-gray-100 text-gray-800 border-gray-300',
       icon: 'fa-ban',
-      description: 'قالب بدون شرط مخصص',
+      description: 'قالب بدون شرط مخصص (UNCONDITIONED)',
     };
   }
-  if (!template.isDefault && template.hasCondition) {
+  if (operator && ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(operator)) {
     return {
       label: 'شرط مخصص',
       color: 'bg-green-100 text-green-800 border-green-300',
       icon: 'fa-check-circle',
-      description: 'قالب له شرط مخصص',
+      description: `قالب له شرط مخصص (${operator})`,
     };
   }
-  // Should not reach here (invalid state: isDefault=true && hasCondition=true)
+  // Default fallback
   return {
     label: 'خطأ',
     color: 'bg-red-100 text-red-800 border-red-300',
@@ -251,7 +253,7 @@ export default function ManageConditionsModal() {
   ]);
 
   const handleSetAsDefault = useCallback(async (template: MessageTemplate) => {
-    if (template.isDefault) {
+    if (template.condition?.operator === 'DEFAULT') {
       addToast('هذا القالب محدد بالفعل كافتراضي', 'info');
       return;
     }
@@ -281,23 +283,23 @@ export default function ManageConditionsModal() {
     const condition = templateConditionMap.get(template.id);
     if (!condition) return;
 
-    if (template.hasCondition) {
+    if (template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator)) {
       // Convert active to placeholder
       try {
         setIsLoading(true);
         const conditionBackendId = Number(condition.id);
         if (isNaN(conditionBackendId)) throw new Error('معرف الشرط غير صالح');
 
-        // Update to placeholder: EQUAL operator, null values
+        // Update to placeholder: UNCONDITIONED operator
         await messageApiClient.updateCondition(conditionBackendId, {
-          operator: 'EQUAL',
+          operator: 'UNCONDITIONED',
           value: undefined,
           minValue: undefined,
           maxValue: undefined,
         });
 
         updateMessageCondition(condition.id, {
-          operator: 'EQUAL' as any,
+          operator: 'UNCONDITIONED' as any,
           value: undefined,
           minValue: undefined,
           maxValue: undefined,
@@ -305,7 +307,7 @@ export default function ManageConditionsModal() {
 
         addToast('تم تحويل الشرط إلى بدون شرط بنجاح', 'success');
         
-        // Refresh to get hasCondition=false
+        // Refresh to get unconditioned state
         if (selectedQueueId) {
           await refreshQueueData(selectedQueueId);
         }
@@ -341,7 +343,7 @@ export default function ManageConditionsModal() {
   const activeConditions = useMemo(
     () => messageConditions.filter(c => {
       const template = queueTemplates.find(t => t.id === c.templateId);
-      return template && template.hasCondition;
+      return template && template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator);
     }),
     [messageConditions, queueTemplates]
   );
@@ -506,7 +508,7 @@ export default function ManageConditionsModal() {
                         </div>
 
                         {/* Condition Display (for active conditions) */}
-                        {template.hasCondition && condition && (
+                        {template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator) && condition && (
                           <p className="text-xs bg-white bg-opacity-60 px-2 py-1.5 rounded border border-opacity-50">
                             <span className="font-semibold">الشرط: </span>
                             {getConditionDisplayText(condition)}
@@ -515,7 +517,7 @@ export default function ManageConditionsModal() {
 
                         {/* Action Buttons */}
                         <div className="flex gap-2 pt-2">
-                          {!template.isDefault && (
+                          {template.condition?.operator !== 'DEFAULT' && (
                             <button
                               onClick={() => handleSetAsDefault(template)}
                               disabled={isLoading}
@@ -527,7 +529,7 @@ export default function ManageConditionsModal() {
                             </button>
                           )}
 
-                          {template.hasCondition && (
+                          {template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator) && (
                             <button
                               onClick={() => handleToggleCondition(template)}
                               disabled={isLoading}
@@ -539,7 +541,7 @@ export default function ManageConditionsModal() {
                             </button>
                           )}
 
-                          {!template.isDefault && (
+                          {template.condition?.operator !== 'DEFAULT' && (
                             <button
                               onClick={() => handleEditCondition(template)}
                               disabled={isLoading}
@@ -547,7 +549,7 @@ export default function ManageConditionsModal() {
                               title="تعديل الشرط"
                             >
                               <i className="fas fa-edit"></i>
-                              {template.hasCondition ? 'تعديل' : 'إضافة شرط'}
+                              {template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator) ? 'تعديل' : 'إضافة شرط'}
                             </button>
                           )}
                         </div>

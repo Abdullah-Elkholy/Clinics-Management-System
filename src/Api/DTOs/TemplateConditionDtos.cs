@@ -42,6 +42,10 @@ namespace Clinics.Api.DTOs
 
     /// <summary>
     /// DTO for returning a message template to the client.
+    /// Template state is encoded via its associated Condition.Operator:
+    ///   - DEFAULT: This template is the queue default.
+    ///   - UNCONDITIONED: Template has no custom criteria ("بدون شرط").
+    ///   - EQUAL/GREATER/LESS/RANGE: Active condition rules.
     /// </summary>
     public class TemplateDto
     {
@@ -59,28 +63,13 @@ namespace Clinics.Api.DTOs
 
         public bool IsActive { get; set; }
 
-        /// <summary>
-        /// Whether this template is the default for its queue.
-        /// Exactly one template per queue has IsDefault = true.
-        /// Default templates cannot have an attached condition.
-        /// </summary>
-        public bool IsDefault { get; set; }
-
-        /// <summary>
-        /// Whether this template has an active (custom) condition.
-        /// IsDefault=0, HasCondition=false → "بدون شرط"
-        /// IsDefault=1, HasCondition=false → "افتراضي"
-        /// IsDefault=0, HasCondition=true → active rule (e.g., "أكبر من 5")
-        /// </summary>
-        public bool HasCondition { get; set; }
-
         public DateTime CreatedAt { get; set; }
 
         public DateTime? UpdatedAt { get; set; }
 
         /// <summary>
-        /// Optional reference to related condition (for UI detail view).
-        /// May be null or present; client can also fetch from /conditions?queueId=X endpoint.
+        /// Associated condition for this template. 
+        /// Operator encodes state: DEFAULT=queue default, UNCONDITIONED=no criteria, or an active operator.
         /// </summary>
         public ConditionDto? Condition { get; set; }
     }
@@ -88,9 +77,10 @@ namespace Clinics.Api.DTOs
     /// <summary>
     /// DTO for creating a message condition (defines when a template is selected).
     /// 
-    /// Semantics:
-    /// - Null TemplateId = Condition represents "no custom condition" (default template)
-    /// - Non-null TemplateId = Condition belongs to this template
+    /// Operators:
+    /// - UNCONDITIONED: No selection criteria (values must be null).
+    /// - DEFAULT: Queue default template (unique per queue, values must be null).
+    /// - EQUAL/GREATER/LESS/RANGE: Active conditions with numeric comparison.
     /// </summary>
     public class CreateConditionRequest
     {
@@ -101,8 +91,8 @@ namespace Clinics.Api.DTOs
         public int QueueId { get; set; }
 
         [Required(ErrorMessage = "Operator is required")]
-        [RegularExpression("^(EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be EQUAL, GREATER, LESS, or RANGE")]
-        public string Operator { get; set; } = "EQUAL";
+        [RegularExpression("^(UNCONDITIONED|DEFAULT|EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS, or RANGE")]
+        public string Operator { get; set; } = "UNCONDITIONED";
 
         /// <summary>
         /// For EQUAL, GREATER, LESS operators.
@@ -122,10 +112,11 @@ namespace Clinics.Api.DTOs
 
     /// <summary>
     /// DTO for updating a message condition.
+    /// Supports transitioning between UNCONDITIONED, DEFAULT, and active operators.
     /// </summary>
     public class UpdateConditionRequest
     {
-        [RegularExpression("^(EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be EQUAL, GREATER, LESS, or RANGE")]
+        [RegularExpression("^(UNCONDITIONED|DEFAULT|EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS, or RANGE")]
         public string? Operator { get; set; }
 
         public int? Value { get; set; }

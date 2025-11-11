@@ -235,7 +235,6 @@ export default function EditTemplateModal() {
           description,
           content,
           updatedAt: new Date(),
-          conditionId: conditionIdToUse || undefined,
         });
         
         addToast('تم تحديث قالب الرسالة بنجاح', 'success');

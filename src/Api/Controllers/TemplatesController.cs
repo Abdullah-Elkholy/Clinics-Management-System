@@ -84,10 +84,20 @@ namespace Clinics.Api.Controllers
                     ModeratorId = t.ModeratorId,
                     QueueId = t.QueueId,
                     IsActive = t.IsActive,
-                    IsDefault = t.IsDefault,
-                    HasCondition = t.HasCondition,
                     CreatedAt = t.CreatedAt,
-                    UpdatedAt = t.UpdatedAt
+                    UpdatedAt = t.UpdatedAt,
+                    Condition = t.Condition != null ? new ConditionDto
+                    {
+                        Id = t.Condition.Id,
+                        TemplateId = t.Condition.TemplateId,
+                        QueueId = t.Condition.QueueId,
+                        Operator = t.Condition.Operator,
+                        Value = t.Condition.Value,
+                        MinValue = t.Condition.MinValue,
+                        MaxValue = t.Condition.MaxValue,
+                        CreatedAt = t.Condition.CreatedAt,
+                        UpdatedAt = t.Condition.UpdatedAt
+                    } : null
                 }).ToList();
 
                 return Ok(new ListResponse<TemplateDto>
@@ -153,10 +163,20 @@ namespace Clinics.Api.Controllers
                     ModeratorId = template.ModeratorId,
                     QueueId = template.QueueId,
                     IsActive = template.IsActive,
-                    IsDefault = template.IsDefault,
-                    HasCondition = template.HasCondition,
                     CreatedAt = template.CreatedAt,
-                    UpdatedAt = template.UpdatedAt
+                    UpdatedAt = template.UpdatedAt,
+                    Condition = template.Condition != null ? new ConditionDto
+                    {
+                        Id = template.Condition.Id,
+                        TemplateId = template.Condition.TemplateId,
+                        QueueId = template.Condition.QueueId,
+                        Operator = template.Condition.Operator,
+                        Value = template.Condition.Value,
+                        MinValue = template.Condition.MinValue,
+                        MaxValue = template.Condition.MaxValue,
+                        CreatedAt = template.Condition.CreatedAt,
+                        UpdatedAt = template.Condition.UpdatedAt
+                    } : null
                 };
 
                 return CreatedAtAction(nameof(Get), new { id = template.Id }, dto);
@@ -204,10 +224,20 @@ namespace Clinics.Api.Controllers
                     ModeratorId = existing.ModeratorId,
                     QueueId = existing.QueueId,
                     IsActive = existing.IsActive,
-                    IsDefault = existing.IsDefault,
-                    HasCondition = existing.HasCondition,
                     CreatedAt = existing.CreatedAt,
-                    UpdatedAt = existing.UpdatedAt
+                    UpdatedAt = existing.UpdatedAt,
+                    Condition = existing.Condition != null ? new ConditionDto
+                    {
+                        Id = existing.Condition.Id,
+                        TemplateId = existing.Condition.TemplateId,
+                        QueueId = existing.Condition.QueueId,
+                        Operator = existing.Condition.Operator,
+                        Value = existing.Condition.Value,
+                        MinValue = existing.Condition.MinValue,
+                        MaxValue = existing.Condition.MaxValue,
+                        CreatedAt = existing.Condition.CreatedAt,
+                        UpdatedAt = existing.Condition.UpdatedAt
+                    } : null
                 };
 
                 return Ok(dto);
@@ -258,8 +288,8 @@ namespace Clinics.Api.Controllers
         /// <summary>
         /// PUT /api/templates/{id}/default
         /// Set this template as the default for its queue.
-        /// - Atomically unsets IsDefault on all other templates in the same queue.
-        /// - Removes any condition attached to this template (default templates have no conditions).
+        /// - Creates or updates a condition with Operator='DEFAULT' for this template.
+        /// - Atomically removes DEFAULT operator from all other templates in the same queue.
         /// </summary>
         [HttpPut("{id}/default")]
         public async Task<ActionResult<TemplateDto>> SetAsDefault(int id)
@@ -284,32 +314,43 @@ namespace Clinics.Api.Controllers
                 {
                     try
                     {
-                        // Unset all other templates in the same queue
-                        var others = await _db.MessageTemplates
-                            .Where(t => t.QueueId == template.QueueId && t.Id != id && t.IsDefault)
+                        // Set all other conditions in the same queue to UNCONDITIONED
+                        var otherConditions = await _db.Set<MessageCondition>()
+                            .Where(c => c.QueueId == template.QueueId && c.TemplateId != id)
                             .ToListAsync();
-                        foreach (var other in others)
+                        foreach (var other in otherConditions)
                         {
-                            other.IsDefault = false;
+                            other.Operator = "UNCONDITIONED";
+                            other.Value = null;
+                            other.MinValue = null;
+                            other.MaxValue = null;
                             other.UpdatedAt = DateTime.UtcNow;
                         }
 
-                        // Remove any condition on this template
+                        // Get or create condition for this template with DEFAULT operator
                         var condition = await _db.Set<MessageCondition>()
                             .FirstOrDefaultAsync(c => c.TemplateId == id);
                         if (condition != null)
                         {
-                            // Convert to placeholder condition (hasCondition=false semantics)
                             condition.Operator = "DEFAULT";
                             condition.Value = null;
                             condition.MinValue = null;
                             condition.MaxValue = null;
                             condition.UpdatedAt = DateTime.UtcNow;
                         }
+                        else
+                        {
+                            condition = new MessageCondition
+                            {
+                                TemplateId = id,
+                                QueueId = template.QueueId,
+                                Operator = "DEFAULT",
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+                            _db.Set<MessageCondition>().Add(condition);
+                        }
 
-                        // Set this template as default (must have hasCondition=false)
-                        template.IsDefault = true;
-                        template.HasCondition = false;
                         template.UpdatedAt = DateTime.UtcNow;
 
                         await _db.SaveChangesAsync();
@@ -323,10 +364,20 @@ namespace Clinics.Api.Controllers
                             ModeratorId = template.ModeratorId,
                             QueueId = template.QueueId,
                             IsActive = template.IsActive,
-                            IsDefault = template.IsDefault,
-                            HasCondition = template.HasCondition,
                             CreatedAt = template.CreatedAt,
-                            UpdatedAt = template.UpdatedAt
+                            UpdatedAt = template.UpdatedAt,
+                            Condition = condition != null ? new ConditionDto
+                            {
+                                Id = condition.Id,
+                                TemplateId = condition.TemplateId,
+                                QueueId = condition.QueueId,
+                                Operator = condition.Operator,
+                                Value = condition.Value,
+                                MinValue = condition.MinValue,
+                                MaxValue = condition.MaxValue,
+                                CreatedAt = condition.CreatedAt,
+                                UpdatedAt = condition.UpdatedAt
+                            } : null
                         };
 
                         return Ok(dto);
@@ -377,7 +428,7 @@ namespace Clinics.Api.Controllers
                         t.ModeratorId,
                         t.QueueId,
                         t.IsActive,
-                        t.IsDefault,
+                        DefaultOperator = t.Condition != null && t.Condition.Operator == "DEFAULT" ? "DEFAULT" : null,
                         t.DeletedAt,
                         DaysRemainingInTrash = _ttlQueries.GetDaysRemainingInTrash(t, 30),
                         t.DeletedBy
@@ -418,7 +469,7 @@ namespace Clinics.Api.Controllers
                         t.ModeratorId,
                         t.QueueId,
                         t.IsActive,
-                        t.IsDefault,
+                        DefaultOperator = t.Condition != null && t.Condition.Operator == "DEFAULT" ? "DEFAULT" : null,
                         t.DeletedAt,
                         DaysDeleted = t.DeletedAt.HasValue ? (int)(DateTime.UtcNow - t.DeletedAt.Value).TotalDays : 0,
                         t.DeletedBy,

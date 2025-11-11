@@ -21,8 +21,7 @@ export function templateDtoToModel(dto: TemplateDto, queueId?: string): MessageT
     content: dto.content,
     variables: extractVariablesFromTemplate(dto.content),
     isActive: dto.isActive ?? true,
-    isDefault: dto.isDefault ?? false,
-    hasCondition: dto.hasCondition ?? false,  // NEW: true if active condition, false if placeholder/no-rule
+    condition: dto.condition ? conditionDtoToModel(dto.condition) : undefined,
     createdAt: new Date(dto.createdAt),
     updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
     createdBy: '', // Backend may not provide this; align with API response
@@ -33,8 +32,10 @@ export function templateDtoToModel(dto: TemplateDto, queueId?: string): MessageT
  * Convert backend ConditionDto to frontend MessageCondition
  * Assumes conditions are listed in priority order
  */
-export function conditionDtoToModel(dto: ConditionDto, index: number): MessageCondition {
+export function conditionDtoToModel(dto: ConditionDto, index?: number): MessageCondition {
   const operatorMap: Record<string, ConditionOperator> = {
+    UNCONDITIONED: 'UNCONDITIONED',
+    DEFAULT: 'DEFAULT',
     EQUAL: 'EQUAL',
     GREATER: 'GREATER',
     LESS: 'LESS',
@@ -47,8 +48,8 @@ export function conditionDtoToModel(dto: ConditionDto, index: number): MessageCo
     id: dto.id.toString(),
     queueId: dto.queueId.toString(),
     templateId: dto.templateId !== undefined && dto.templateId !== null ? dto.templateId.toString() : undefined,
-    name: `Condition ${index + 1}`,
-    priority: index,
+    name: `Condition ${(index ?? 0) + 1}`,
+    priority: index ?? 0,
     enabled: true,
     operator,
     value: dto.value ?? undefined,

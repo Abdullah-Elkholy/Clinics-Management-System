@@ -213,27 +213,6 @@ namespace Clinics.Domain
         [Required]
         public bool IsActive { get; set; } = true;
 
-        /// <summary>
-        /// Whether this template is the default for its queue.
-        /// Exactly one template per queue must have IsDefault = true.
-        /// Default templates cannot have an attached condition.
-        /// Enforced by unique filtered index: (QueueId, IsDefault) WHERE IsDefault = 1.
-        /// </summary>
-        [Required]
-        public bool IsDefault { get; set; } = false;
-
-        /// <summary>
-        /// Whether this template has an active (custom) condition.
-        /// When HasCondition = false: Condition is a placeholder (operator/values neutral or empty).
-        ///   - If IsDefault = 1: "افتراضي" (uses condition only to maintain 1:1 relationship).
-        ///   - If IsDefault = 0: "بدون شرط" (non-default template without custom criteria).
-        /// When HasCondition = true: Condition contains active operator/values that determine when this template is selected.
-        ///   - IsDefault must be 0.
-        ///   - Condition defines: EQUAL/GREATER/LESS/RANGE logic for patient field comparison.
-        /// </summary>
-        [Required]
-        public bool HasCondition { get; set; } = false;
-
         [Required]
         public DateTime CreatedAt { get; set; }
 
@@ -244,8 +223,10 @@ namespace Clinics.Domain
 
         /// <summary>
         /// Navigation to one-to-one condition (mandatory relationship).
-        /// Always present: either placeholder (HasCondition=false) or active (HasCondition=true).
-        /// Placeholder: operator/values are neutral/empty when HasCondition=false.
+        /// Condition.Operator encodes template state:
+        ///   - DEFAULT: This template is the queue default (selected when no active condition matches). Exactly one per queue enforced by filtered unique index.
+        ///   - UNCONDITIONED: Template has no custom selection criteria ("بدون شرط"). Used for templates without specific rules.
+        ///   - EQUAL/GREATER/LESS/RANGE: Active condition determining when this template is selected.
         /// </summary>
         public MessageCondition? Condition { get; set; }
 
@@ -585,8 +566,11 @@ namespace Clinics.Domain
         /// <summary>
         /// One-to-one relationship with MessageTemplate.
         /// Unique constraint ensures max one condition per template.
-        /// Null TemplateId = no condition (use default template for queue).
-        /// Non-null TemplateId with this condition object = template has custom condition.
+        /// The Operator encodes the semantic state of the template:
+        ///   - DEFAULT: This template is the queue default (fallback when no active condition matches).
+        ///              Exactly one per queue enforced by filtered unique index: WHERE Operator = 'DEFAULT'.
+        ///   - UNCONDITIONED: No custom criteria; template selection is unconditioned ("بدون شرط").
+        ///   - EQUAL/GREATER/LESS/RANGE: Active condition; template selected when patient field matches operator/values.
         /// </summary>
         [Required]
         public int TemplateId { get; set; }
@@ -605,28 +589,36 @@ namespace Clinics.Domain
         public Queue? Queue { get; set; }
 
         /// <summary>
-        /// Operator: EQUAL, GREATER, LESS, RANGE, DEFAULT
-        /// Determines how to compare the Value field(s).
+        /// Operator encodes template state and selection logic:
+        ///   - UNCONDITIONED: No values required (all numeric fields null); template has no selection criteria.
+        ///   - DEFAULT: No values required; this is queue default (fallback). Unique per queue.
+        ///   - EQUAL: Single value required; send when field == Value.
+        ///   - GREATER: Single value required; send when field > Value.
+        ///   - LESS: Single value required; send when field < Value.
+        ///   - RANGE: MinValue and MaxValue required; send when MinValue <= field <= MaxValue.
         /// </summary>
         [Required]
         [StringLength(20)]
-        public string Operator { get; set; } = "EQUAL";
+        public string Operator { get; set; } = "UNCONDITIONED";
 
         /// <summary>
         /// For EQUAL, GREATER, LESS: single comparison value.
-        /// Example: EQUAL=42 means "send when field = 42"
+        /// Example: EQUAL with Value=42 means "send when field = 42"
+        /// Must be null for UNCONDITIONED, DEFAULT, or RANGE.
         /// </summary>
         public int? Value { get; set; }
 
         /// <summary>
         /// For RANGE: minimum boundary (inclusive).
         /// Example: MinValue=10 with MaxValue=20 means "send when 10 <= field <= 20"
+        /// Must be null for UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS.
         /// </summary>
         public int? MinValue { get; set; }
 
         /// <summary>
         /// For RANGE: maximum boundary (inclusive).
         /// Constraint: MinValue <= MaxValue must be enforced at service level.
+        /// Must be null for UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS.
         /// </summary>
         public int? MaxValue { get; set; }
 

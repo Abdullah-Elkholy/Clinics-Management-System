@@ -80,6 +80,17 @@ namespace Clinics.Api.DTOs
         }
     }
 
+    /// <summary>
+    /// DTO for updating a patient's position in their queue.
+    /// Position must be >= 1. If moved, conflicting patients shift accordingly.
+    /// </summary>
+    public class UpdatePatientPositionRequest
+    {
+        [Required(ErrorMessage = "Position is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "Position must be greater than or equal to 1")]
+        public int Position { get; set; }
+    }
+
     // Legacy DTO - kept for backward compatibility if needed
     public class PatientCreateRequest
     {

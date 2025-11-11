@@ -13,8 +13,7 @@ export interface TemplateDto {
   content: string;
   queueId: number;
   isActive: boolean;
-  isDefault: boolean;
-  hasCondition: boolean;  // true = active condition, false = placeholder/no-rule
+  condition?: ConditionDto;  // operator-driven state: DEFAULT, UNCONDITIONED, or active rule
   createdAt: string;
   updatedAt: string;
 }
@@ -377,7 +376,7 @@ export async function restoreTemplate(id: number): Promise<TemplateDto> {
 }
 
 /**
- * Set a template as default for its queue (sets isDefault=true, hasCondition=false)
+ * Set a template as default for its queue (sets condition.operator to DEFAULT)
  */
 export async function setTemplateAsDefault(id: number): Promise<TemplateDto> {
   return withRetry(() =>

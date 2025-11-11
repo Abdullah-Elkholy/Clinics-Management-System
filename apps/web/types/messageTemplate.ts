@@ -13,10 +13,8 @@ export interface MessageTemplate {
   content: string;             // template text with placeholders
   variables: string[];         // list of variables in template
   isActive: boolean;           // whether template is in use
-  isDefault: boolean;          // whether this is the default template for the queue
-  hasCondition: boolean;       // whether this template has an active condition (true) or is a placeholder/no-rule (false)
+  condition?: MessageCondition; // associated condition (determines template role: DEFAULT/UNCONDITIONED/active)
   priority?: number;           // order when multiple templates available
-  conditionId?: string;        // GUID (one-to-one): optional associated condition
   
   // Metadata
   createdAt: Date;
@@ -33,6 +31,8 @@ export interface MessageTemplate {
   deletedBy?: number;
 }
 
+import { MessageCondition } from './messageCondition';
+
 export interface QueueTemplateConfig {
   queueId: string;
   queueName: string;
@@ -43,7 +43,6 @@ export interface QueueTemplateConfig {
 
 export interface TemplateWithConditions extends MessageTemplate {
   conditionCount?: number;       // how many conditions use this template
-  conditions?: any[];            // actual conditions (from messageCondition.ts)
 }
 
 // Available placeholders

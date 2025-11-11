@@ -139,61 +139,89 @@ public class QueueCascadeService : IQueueCascadeService
                 return (false, "Deletion timestamp missing");
             }
 
-            var daysDeleted = (DateTime.UtcNow - queue.DeletedAt.Value).TotalDays;
+            var deletedAtValue = queue.DeletedAt.Value;
+            var daysDeleted = (DateTime.UtcNow - deletedAtValue).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
                 return (false, "restore_window_expired");
             }
 
-            // TODO: Check quota before restoring
+            // Capture operation snapshot timestamp to ensure consistency across all transaction operations
+            var operationTimestamp = DateTime.UtcNow;
 
-            // Restore queue
-            queue.IsDeleted = false;
-            queue.DeletedAt = null;
-            queue.DeletedBy = null;
-
-            // Restore related patients, templates, conditions
-            var patients = await _db.Patients
-                .Where(p => p.QueueId == queueId && p.IsDeleted && p.DeletedAt.HasValue && p.DeletedAt >= queue.DeletedAt)
-                .ToListAsync();
-
-            foreach (var patient in patients)
+            // Wrap restore in explicit transaction for atomicity
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+            try
             {
-                patient.IsDeleted = false;
-                patient.DeletedAt = null;
-                patient.DeletedBy = null;
-            }
+                // TODO: Check quota before restoring
 
-            var templates = await _db.MessageTemplates
-                .Where(t => t.QueueId == queueId && t.IsDeleted && t.DeletedAt.HasValue && t.DeletedAt >= queue.DeletedAt)
-                .ToListAsync();
+                // Restore queue
+                queue.IsDeleted = false;
+                queue.DeletedAt = null;
+                queue.DeletedBy = null;
 
-            foreach (var template in templates)
-            {
-                template.IsDeleted = false;
-                template.DeletedAt = null;
-                template.DeletedBy = null;
-
-                // Restore related conditions
-                var conditions = await _db.Set<MessageCondition>()
-                    .Where(c => c.TemplateId == template.Id && c.IsDeleted && c.DeletedAt.HasValue && c.DeletedAt >= queue.DeletedAt)
+                // Restore related patients
+                // Only restoring patients deleted during cascade window (DeletedAt >= parent deletion timestamp)
+                var patients = await _db.Patients
+                    .Where(p => p.QueueId == queueId && p.IsDeleted && p.DeletedAt.HasValue && p.DeletedAt >= deletedAtValue)
                     .ToListAsync();
 
-                foreach (var condition in conditions)
+                foreach (var patient in patients)
                 {
-                    condition.IsDeleted = false;
-                    condition.DeletedAt = null;
-                    condition.DeletedBy = null;
+                    patient.IsDeleted = false;
+                    patient.DeletedAt = null;
+                    patient.DeletedBy = null;
                 }
+
+                var templates = await _db.MessageTemplates
+                    .Where(t => t.QueueId == queueId && t.IsDeleted && t.DeletedAt.HasValue && t.DeletedAt >= deletedAtValue)
+                    .ToListAsync();
+
+                // Optimize: preload all conditions for restored templates in a single query to avoid N+1 pattern
+                var templateIds = templates.Select(t => t.Id).ToList();
+                var allConditions = templateIds.Count > 0
+                    ? await _db.Set<MessageCondition>()
+                        .Where(c => templateIds.Contains(c.TemplateId)
+                            && c.IsDeleted
+                            && c.DeletedAt.HasValue
+                            && c.DeletedAt >= deletedAtValue)
+                        .ToListAsync()
+                    : new List<MessageCondition>();
+
+                var conditionsByTemplate = allConditions.GroupBy(c => c.TemplateId).ToDictionary(g => g.Key, g => g.ToList());
+
+                foreach (var template in templates)
+                {
+                    template.IsDeleted = false;
+                    template.DeletedAt = null;
+                    template.DeletedBy = null;
+
+                    // Restore related conditions from preloaded data (no additional DB queries)
+                    if (conditionsByTemplate.TryGetValue(template.Id, out var conditions))
+                    {
+                        foreach (var condition in conditions)
+                        {
+                            condition.IsDeleted = false;
+                            condition.DeletedAt = null;
+                            condition.DeletedBy = null;
+                        }
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation(
+                    "Queue {QueueId} restored at {Timestamp}",
+                    queueId, operationTimestamp);
+
+                return (true, "");
             }
-
-            await _db.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "Queue {QueueId} restored at {Timestamp}",
-                queueId, DateTime.UtcNow);
-
-            return (true, "");
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
         catch (Exception ex)
         {

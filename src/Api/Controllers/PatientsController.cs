@@ -20,19 +20,22 @@ namespace Clinics.Api.Controllers
         private readonly ISoftDeleteTTLQueries<Patient> _ttlQueries;
         private readonly IUserContext _userContext;
         private readonly Clinics.Api.Services.IPatientCascadeService _patientCascadeService;
+        private readonly IPatientPositionService _patientPositionService;
 
         public PatientsController(
             ApplicationDbContext db,
             ILogger<PatientsController> logger,
             IGenericUnitOfWork unitOfWork,
             IUserContext userContext,
-            Clinics.Api.Services.IPatientCascadeService patientCascadeService)
+            Clinics.Api.Services.IPatientCascadeService patientCascadeService,
+            IPatientPositionService patientPositionService)
         {
             _db = db;
             _logger = logger;
             _ttlQueries = unitOfWork.TTLQueries<Patient>();
             _userContext = userContext;
             _patientCascadeService = patientCascadeService;
+            _patientPositionService = patientPositionService;
         }
 
         /// <summary>
@@ -75,7 +78,8 @@ namespace Clinics.Api.Controllers
         /// <summary>
         /// POST /api/patients
         /// Create a new patient in a queue.
-        /// If DesiredPosition is provided, insert at that position and shift conflicts +1.
+        /// Position is auto-assigned as max(active)+1. Client position is ignored.
+        /// New patients are always inserted at the end of the active queue baseline.
         /// </summary>
         [HttpPost]
         [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
@@ -86,29 +90,19 @@ namespace Clinics.Api.Controllers
                 if (!ModelState.IsValid)
                     return BadRequest(ModelState);
 
-                // Determine insertion position. If DesiredPosition provided, shift existing patients at/after that position.
+                // Determine insertion position: max(active patients) + 1. Only count active (!IsDeleted) patients.
+                // Client-provided position is ignored per business rule (baseline always at end).
                 var maxPos = await _db.Patients
-                    .Where(p => p.QueueId == req.QueueId)
+                    .Where(p => p.QueueId == req.QueueId && !p.IsDeleted)
                     .MaxAsync(p => (int?)p.Position) ?? 0;
 
-                var insertPos = req.Position.HasValue && req.Position.Value > 0
-                    ? Math.Min(req.Position.Value, maxPos + 1)
-                    : maxPos + 1;
+                var insertPos = maxPos + 1;
 
                 using (var transaction = await _db.Database.BeginTransactionAsync())
                 {
                     try
                     {
-                        // Shift positions by +1 for patients with Position >= insertPos
-                        if (insertPos <= maxPos)
-                        {
-                            var toShift = await _db.Patients
-                                .Where(p => p.QueueId == req.QueueId && p.Position >= insertPos)
-                                .ToListAsync();
-                            foreach (var p in toShift)
-                                p.Position = p.Position + 1;
-                        }
-
+                        // No shift needed: new patients always inserted at end (maxPos + 1)
                         var patient = new Patient
                         {
                             QueueId = req.QueueId,
@@ -144,6 +138,40 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(ex, "Error creating patient");
                 return StatusCode(500, new { message = "Error creating patient" });
+            }
+        }
+
+        /// <summary>
+        /// PATCH /api/patients/{id}/position
+        /// Update a patient's position with atomic conflict resolution.
+        /// Position < 1 is coerced to 1. If occupied, shifts occupant and all >= position by +1.
+        /// </summary>
+        [HttpPatch("{id}/position")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> UpdatePosition(int id, [FromBody] UpdatePatientPositionRequest req)
+        {
+            try
+            {
+                if (req == null || req.Position < 1)
+                {
+                    return BadRequest(new { error = "invalid_position", message = "Position must be >= 1" });
+                }
+
+                var (success, errorMessage) = await _patientPositionService.UpdatePatientPositionAsync(id, req.Position);
+
+                if (!success)
+                {
+                    return errorMessage == "patient_not_found"
+                        ? NotFound(new { error = "patient_not_found", message = "Patient not found" })
+                        : StatusCode(500, new { error = errorMessage, message = "Error updating patient position" });
+                }
+
+                return Ok(new { success = true, message = "Patient position updated successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating patient position for patient {PatientId}", id);
+                return StatusCode(500, new { error = "error_updating_position", message = "An error occurred while updating patient position" });
             }
         }
 

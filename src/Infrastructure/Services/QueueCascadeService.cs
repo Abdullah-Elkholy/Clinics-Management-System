@@ -135,7 +135,7 @@ namespace Clinics.Infrastructure.Services
 
             return await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
-                // Check if moderator has available quota
+                // Check moderator quota: count active queues and compare to limit
                 var quotaRepo = _unitOfWork.Repository<Quota>();
                 var quotas = await quotaRepo.GetByPredicateAsync(q => q.ModeratorUserId == queue.ModeratorId);
                 
@@ -145,14 +145,17 @@ namespace Clinics.Infrastructure.Services
                 }
 
                 var quota = quotas.First();
-                if (quota.QueuesQuota <= quota.ConsumedQueues)
+                
+                // Count active (non-deleted) queues for this moderator
+                var queueRepo = _unitOfWork.Repository<Queue>();
+                var activeQueueCount = await queueRepo.GetByPredicateAsync(q => q.ModeratorId == queue.ModeratorId && !q.IsDeleted);
+                
+                if (activeQueueCount.Count >= quota.QueuesQuota)
                 {
                     return RestoreResult.QuotaInsufficient("Queues", 
-                        quota.QueuesQuota - quota.ConsumedQueues, 1);
+                        quota.QueuesQuota - activeQueueCount.Count, 1);
                 }
 
-                var queueRepo = _unitOfWork.Repository<Queue>();
-                
                 // Restore the queue
                 await queueRepo.RestoreAsync(queue);
 
@@ -172,8 +175,8 @@ namespace Clinics.Infrastructure.Services
                     }
                 }
 
-                // Consume quota
-                quota.ConsumedQueues++;
+                // Update quota consumed count (track current active count)
+                quota.ConsumedQueues = activeQueueCount.Count + 1;
                 await quotaRepo.UpdateAsync(quota);
 
                 // Save changes

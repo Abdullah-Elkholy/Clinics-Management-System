@@ -206,8 +206,6 @@ export default function AddTemplateModal() {
         content: newTemplateDto.content,
         queueId: String(newTemplateDto.queueId),
         isActive: newTemplateDto.isActive,
-        isDefault: newTemplateDto.isDefault,
-        hasCondition: newTemplateDto.hasCondition,
         variables: [],
         createdBy: '',
         createdAt: new Date(newTemplateDto.createdAt),

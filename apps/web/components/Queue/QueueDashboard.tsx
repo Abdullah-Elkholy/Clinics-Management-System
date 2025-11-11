@@ -14,8 +14,6 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
-import { desc } from 'framer-motion/client';
-import { title } from 'process';
 
 export default function QueueDashboard() {
   const { selectedQueueId, queues, messageTemplates, messageConditions, patients } = useQueue();
@@ -133,7 +131,7 @@ export default function QueueDashboard() {
 
     // Check if queue has a default template from context
     if (selectedQueueId) {
-      const defaultTemplate = messageTemplates.find((t) => t.isDefault);
+      const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
 
       if (!defaultTemplate) {
         // Add warning item if no default template
@@ -636,7 +634,7 @@ export default function QueueDashboard() {
               return;
             }
 
-            const defaultTemplate = messageTemplates.find((t) => t.isDefault);
+            const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
             openModal('messagePreview', {
               selectedPatients: patients.map(p => p.id), // Send to ALL patients
               selectedPatientCount: patients.length,
@@ -724,7 +722,7 @@ export default function QueueDashboard() {
             <div className="px-6 py-4 space-y-6">
               {/* Check if default template exists */}
               {(() => {
-                const defaultTemplate = messageTemplates.find((t) => t.isDefault);
+                const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
                 const hasDefaultTemplate = !!defaultTemplate;
 
                 if (!hasDefaultTemplate) {

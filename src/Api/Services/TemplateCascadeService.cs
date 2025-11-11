@@ -69,8 +69,11 @@ public class TemplateCascadeService : ITemplateCascadeService
                 return (false, "Template not found");
             }
 
-            // If this is a default template, require replacement or ensure there's another default
-            if (template.IsDefault)
+            // If this template has a DEFAULT condition, require replacement or ensure there's another default
+            var templateCondition = await _db.Set<MessageCondition>()
+                .FirstOrDefaultAsync(c => c.TemplateId == template.Id && !c.IsDeleted);
+            
+            if (templateCondition?.Operator == "DEFAULT")
             {
                 var otherActiveTemplates = await _db.MessageTemplates
                     .Where(t => t.QueueId == template.QueueId && t.Id != templateId && !t.IsDeleted && t.IsActive)
@@ -78,7 +81,7 @@ public class TemplateCascadeService : ITemplateCascadeService
 
                 if (otherActiveTemplates.Count == 0 && !replacementTemplateId.HasValue)
                 {
-                    return (false, "Cannot delete the only active template. Specify a replacement template.");
+                    return (false, "default_template_replacement_required");
                 }
 
                 // If replacement provided, make it the new default
@@ -89,13 +92,31 @@ public class TemplateCascadeService : ITemplateCascadeService
                     {
                         return (false, "Replacement template not found or not active");
                     }
-                    replacement.IsDefault = true;
+                    
+                    var replacementCondition = await _db.Set<MessageCondition>()
+                        .FirstOrDefaultAsync(c => c.TemplateId == replacement.Id && !c.IsDeleted);
+                    if (replacementCondition != null)
+                    {
+                        replacementCondition.Operator = "DEFAULT";
+                        replacementCondition.Value = null;
+                        replacementCondition.MinValue = null;
+                        replacementCondition.MaxValue = null;
+                        replacementCondition.UpdatedAt = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        replacementCondition = new MessageCondition
+                        {
+                            TemplateId = replacement.Id,
+                            QueueId = template.QueueId,
+                            Operator = "DEFAULT",
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        _db.Set<MessageCondition>().Add(replacementCondition);
+                    }
                 }
-                else if (otherActiveTemplates.Count > 0)
-                {
-                    // Make the first other active template the default
-                    otherActiveTemplates[0].IsDefault = true;
-                }
+                // NOTE: No auto-fallback to first active template. Frontend enforces explicit replacement.
             }
 
             // Mark template as deleted
@@ -148,36 +169,79 @@ public class TemplateCascadeService : ITemplateCascadeService
                 return (false, "Deletion timestamp missing");
             }
 
-            var daysDeleted = (DateTime.UtcNow - template.DeletedAt.Value).TotalDays;
+            var deletedAtValue = template.DeletedAt.Value;
+            var daysDeleted = (DateTime.UtcNow - deletedAtValue).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
                 return (false, "restore_window_expired");
             }
 
-            // Restore template
-            template.IsDeleted = false;
-            template.DeletedAt = null;
-            template.DeletedBy = null;
+            // Capture operation snapshot timestamp to ensure consistency across all transaction operations
+            var operationTimestamp = DateTime.UtcNow;
 
-            // Restore related conditions
-            var conditions = await _db.Set<MessageCondition>()
-                .Where(c => c.TemplateId == template.Id && c.IsDeleted && c.DeletedAt.HasValue && c.DeletedAt >= template.DeletedAt)
-                .ToListAsync();
-
-            foreach (var condition in conditions)
+            // Wrap restore in explicit transaction for atomicity
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+            try
             {
-                condition.IsDeleted = false;
-                condition.DeletedAt = null;
-                condition.DeletedBy = null;
+                // Restore template
+                template.IsDeleted = false;
+                template.DeletedAt = null;
+                template.DeletedBy = null;
+
+                // Get the template's condition
+                var templateCondition = await _db.Set<MessageCondition>()
+                    .FirstOrDefaultAsync(c => c.TemplateId == template.Id);
+
+                // Guard against duplicate defaults: if this template's condition was DEFAULT,
+                // but another template is now the default for this queue, convert to UNCONDITIONED on restore
+                if (templateCondition?.Operator == "DEFAULT" && template.QueueId > 0)
+                {
+                    var currentDefaultCondition = await _db.Set<MessageCondition>()
+                        .FirstOrDefaultAsync(c => c.QueueId == template.QueueId && c.Operator == "DEFAULT" && 
+                                              c.TemplateId != template.Id && 
+                                              !c.IsDeleted);
+
+                    if (currentDefaultCondition != null)
+                    {
+                        // Another template is already the default; convert this one to UNCONDITIONED on restore
+                        templateCondition.Operator = "UNCONDITIONED";
+                        templateCondition.Value = null;
+                        templateCondition.MinValue = null;
+                        templateCondition.MaxValue = null;
+                        templateCondition.UpdatedAt = DateTime.UtcNow;
+                        _logger.LogInformation(
+                            "Template {TemplateId} restored with UNCONDITIONED operator since template {DefaultId} is already default for queue {QueueId}",
+                            template.Id, currentDefaultCondition.TemplateId, template.QueueId);
+                    }
+                }
+
+                // Restore related conditions
+                // Only restoring conditions deleted during cascade window (DeletedAt >= parent deletion timestamp)
+                var conditions = await _db.Set<MessageCondition>()
+                    .Where(c => c.TemplateId == template.Id && c.IsDeleted && c.DeletedAt.HasValue && c.DeletedAt >= deletedAtValue)
+                    .ToListAsync();
+
+                foreach (var condition in conditions)
+                {
+                    condition.IsDeleted = false;
+                    condition.DeletedAt = null;
+                    condition.DeletedBy = null;
+                }
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation(
+                    "Template {TemplateId} restored at {Timestamp}",
+                    templateId, operationTimestamp);
+
+                return (true, "");
             }
-
-            await _db.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "Template {TemplateId} restored at {Timestamp}",
-                templateId, DateTime.UtcNow);
-
-            return (true, "");
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
         catch (Exception ex)
         {

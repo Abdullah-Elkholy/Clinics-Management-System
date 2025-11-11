@@ -55,21 +55,43 @@ namespace Clinics.Infrastructure.Services
             return await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
                 var templateRepo = _unitOfWork.Repository<MessageTemplate>();
+                var conditionRepo = _unitOfWork.Repository<MessageCondition>();
 
-                // Block deletion if template is default and no replacement provided
-                if (template.IsDefault && !replacementTemplateId.HasValue)
+                // Block deletion if template has DEFAULT condition and no replacement provided
+                var templateCondition = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == template.Id && !c.IsDeleted);
+                if (templateCondition.Any(c => c.Operator == "DEFAULT") && !replacementTemplateId.HasValue)
                 {
                     return (false, "Cannot delete the default template without specifying a replacement template.");
                 }
 
-                // If replacement specified, update replacement to be default
+                // If replacement specified, update replacement's condition to DEFAULT
                 if (replacementTemplateId.HasValue && replacementTemplateId.Value != template.Id)
                 {
                     var replacementTemplate = await templateRepo.GetAsync(replacementTemplateId.Value);
                     if (replacementTemplate != null && replacementTemplate.QueueId == template.QueueId)
                     {
-                        replacementTemplate.IsDefault = true;
-                        await templateRepo.UpdateAsync(replacementTemplate);
+                        var replacementCondition = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == replacementTemplate.Id && !c.IsDeleted);
+                        if (replacementCondition.Any())
+                        {
+                            var cond = replacementCondition.First();
+                            cond.Operator = "DEFAULT";
+                            cond.Value = null;
+                            cond.MinValue = null;
+                            cond.MaxValue = null;
+                            await conditionRepo.UpdateAsync(cond);
+                        }
+                        else
+                        {
+                            var newCond = new MessageCondition
+                            {
+                                TemplateId = replacementTemplate.Id,
+                                QueueId = template.QueueId,
+                                Operator = "DEFAULT",
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+                            await conditionRepo.AddAsync(newCond);
+                        }
 
                         // Audit log for toggle default
                         await _auditService.LogAsync(
@@ -77,13 +99,12 @@ namespace Clinics.Infrastructure.Services
                             nameof(MessageTemplate),
                             replacementTemplate.Id,
                             deletedBy,
-                            new { IsDefault = true },
+                            new { Operator = "DEFAULT" },
                             $"Template promoted to default (replacing {template.Id})");
                     }
                 }
 
                 // Soft-delete all conditions for this template
-                var conditionRepo = _unitOfWork.Repository<MessageCondition>();
                 var conditions = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == template.Id, includeDeleted: false);
                 foreach (var condition in conditions)
                 {
@@ -102,7 +123,7 @@ namespace Clinics.Infrastructure.Services
                     nameof(MessageTemplate),
                     template.Id,
                     deletedBy,
-                    new { template.Id, template.QueueId, IsDefault = template.IsDefault },
+                    new { template.Id, template.QueueId, HasDefaultCondition = templateCondition.Any(c => c.Operator == "DEFAULT") },
                     $"Template soft-deleted with {conditions.Count} conditions",
                     new { ConditionsCascaded = conditions.Count, ReplacementTemplateId = replacementTemplateId });
 

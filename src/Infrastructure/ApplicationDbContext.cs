@@ -62,11 +62,11 @@ namespace Clinics.Infrastructure
             // Quota: enforce one-to-one with Moderator via unique index
             modelBuilder.Entity<Quota>().HasIndex(q => q.ModeratorUserId).IsUnique();
             
-            // MessageTemplate: enforce exactly one default per queue via filtered unique index
-            modelBuilder.Entity<MessageTemplate>()
-                .HasIndex(t => new { t.QueueId, t.IsDefault })
+            // MessageCondition: enforce exactly one DEFAULT condition per queue via filtered unique index
+            modelBuilder.Entity<MessageCondition>()
+                .HasIndex(c => new { c.QueueId, c.Operator })
                 .IsUnique()
-                .HasFilter("[QueueId] IS NOT NULL AND [IsDefault] = 1");
+                .HasFilter("[Operator] = 'DEFAULT'");
             
             modelBuilder.Entity<MessageSession>().HasIndex(s => new { s.Status, s.StartTime });
 
