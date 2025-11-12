@@ -25,91 +25,111 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest? req)
+        // [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+        public async Task<IActionResult> Login([FromBody] LoginRequest? req)
         {
-            // If model binding failed (invalid JSON or wrong content-type), attempt a tolerant fallback:
-            // - enable request buffering so we can read the body even after model binding attempted to consume it
-            // - if the raw body looks like form-encoded (username=...), parse that
-            // - if it's JSON, try deserializing with case-insensitive option
-            if (req == null)
+            try
             {
-                try
+                // If model binding failed (invalid JSON or wrong content-type), attempt a tolerant fallback:
+                // - enable request buffering so we can read the body even after model binding attempted to consume it
+                // - if the raw body looks like form-encoded (username=...), parse that
+                // - if it's JSON, try deserializing with case-insensitive option
+                if (req == null)
                 {
-                    Request.EnableBuffering();
-                }
-                catch { /* No-op if buffering already enabled */ }
-
-                // rewind and read raw body
-                Request.Body.Position = 0;
-                using (var sr = new System.IO.StreamReader(Request.Body, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
-                {
-                    var bodyStr = await sr.ReadToEndAsync();
-                    // rewind so other middleware won't be broken
-                    Request.Body.Position = 0;
-
-                    if (!string.IsNullOrWhiteSpace(bodyStr))
+                    try
                     {
-                        // If looks like JSON, try to deserialize
-                        bodyStr = bodyStr.Trim();
-                        if (bodyStr.StartsWith("{") || bodyStr.StartsWith("["))
-                        {
-                            try
-                            {
-                                req = System.Text.Json.JsonSerializer.Deserialize<LoginRequest>(bodyStr, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                            }
-                            catch { /* ignore and fallback to form parse */ }
-                        }
+                        Request.EnableBuffering();
+                    }
+                    catch { /* No-op if buffering already enabled */ }
 
-                        // If still null and body looks like form data (username=...&password=...)
-                        if (req == null && (bodyStr.Contains('=') || bodyStr.Contains('&')))
+                    // rewind and read raw body
+                    Request.Body.Position = 0;
+                    using (var sr = new System.IO.StreamReader(Request.Body, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
+                    {
+                        var bodyStr = await sr.ReadToEndAsync();
+                        // rewind so other middleware won't be broken
+                        Request.Body.Position = 0;
+
+                        if (!string.IsNullOrWhiteSpace(bodyStr))
                         {
-                            try
+                            // If looks like JSON, try to deserialize
+                            bodyStr = bodyStr.Trim();
+                            if (bodyStr.StartsWith("{") || bodyStr.StartsWith("["))
                             {
-                                var parsed = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(bodyStr);
-                                var username = parsed.TryGetValue("username", out var u) ? u.ToString() : parsed.TryGetValue("Username", out var U) ? U.ToString() : null;
-                                var password = parsed.TryGetValue("password", out var p) ? p.ToString() : parsed.TryGetValue("Password", out var P) ? P.ToString() : null;
-                                if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password)) req = new LoginRequest { Username = username, Password = password };
+                                try
+                                {
+                                    req = System.Text.Json.JsonSerializer.Deserialize<LoginRequest>(bodyStr, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                                }
+                                catch { /* ignore and fallback to form parse */ }
                             }
-                            catch { /* ignore */ }
+
+                            // If still null and body looks like form data (username=...&password=...)
+                            if (req == null && (bodyStr.Contains('=') || bodyStr.Contains('&')))
+                            {
+                                try
+                                {
+                                    var parsed = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(bodyStr);
+                                    var username = parsed.TryGetValue("username", out var u) ? u.ToString() : parsed.TryGetValue("Username", out var U) ? U.ToString() : null;
+                                    var password = parsed.TryGetValue("password", out var p) ? p.ToString() : parsed.TryGetValue("Password", out var P) ? P.ToString() : null;
+                                    if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password)) req = new LoginRequest { Username = username, Password = password };
+                                }
+                                catch { /* ignore */ }
+                            }
                         }
                     }
                 }
-            }
 
-            if (req == null)
+                if (req == null)
+                {
+                    return BadRequest(new { success = false, errors = new[] { new { code = "InvalidRequest", message = "Invalid or missing request body. Expected JSON { \"username\":..., \"password\":... } or form-encoded username=...&password=..." } } });
+                }
+
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
+                if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
+
+                // For scaffold: PasswordHash may be null (seeded). Accept 'admin' without hash for demo
+                var valid = false;
+                var hasher = new PasswordHasher<Domain.User>();
+                if (string.IsNullOrEmpty(user.PasswordHash) && req.Password == "admin") valid = true;
+                else if (!string.IsNullOrEmpty(user.PasswordHash) && req.Password != null)
+                {
+                    var verification = hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password);
+                    valid = verification != PasswordVerificationResult.Failed;
+                }
+
+                if (!valid) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
+
+                // Use Role property directly (now stores the role name string)
+                var token = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FirstName, user.LastName);
+                // create refresh token and set cookie
+                var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
+                Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions { HttpOnly = true, Secure = !_env.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = DateTime.UtcNow.AddDays(7) });
+
+                return Ok(new { success = true, data = new { accessToken = token } });
+            }
+            catch (Exception ex)
             {
-                return BadRequest(new { success = false, errors = new[] { new { code = "InvalidRequest", message = "Invalid or missing request body. Expected JSON { \"username\":..., \"password\":... } or form-encoded username=...&password=..." } } });
+                // Log the exception properly
+                var errorMsg = $"Login error: {ex.Message}";
+                if (ex.InnerException != null)
+                    errorMsg += $" InnerException: {ex.InnerException.Message}";
+                
+                // Could log here with ILogger if needed
+                Console.WriteLine(errorMsg);
+                
+                return StatusCode(500, new { success = false, errors = new[] { new { code = "InternalError", message = "An error occurred during login. Please try again later." } } });
             }
-
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
-            if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
-
-            // For scaffold: PasswordHash may be null (seeded). Accept 'admin' without hash for demo
-            var valid = false;
-            var hasher = new PasswordHasher<Domain.User>();
-            if (string.IsNullOrEmpty(user.PasswordHash) && req.Password == "admin") valid = true;
-            else if (!string.IsNullOrEmpty(user.PasswordHash) && req.Password != null)
-            {
-                var verification = hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password);
-                valid = verification != PasswordVerificationResult.Failed;
-            }
-
-            if (!valid) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
-
-            // Use Role property directly (now stores the role name string)
-            var token = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FullName);
-            // create refresh token and set cookie
-            var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
-            Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions { HttpOnly = true, Secure = !_env.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = DateTime.UtcNow.AddDays(7) });
-
-            return Ok(new { success = true, data = new { accessToken = token } });
         }
 
         [HttpGet("me")]
         [Microsoft.AspNetCore.Authorization.Authorize]
         public async Task<IActionResult> GetCurrentUser()
         {
-            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier);
+            // Try multiple claim types for user ID
+            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier)
+                ?? User.Claims.FirstOrDefault(c => c.Type == "sub")
+                ?? User.Claims.FirstOrDefault(c => c.Type == "userId");
+                
             if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
             {
                 return Unauthorized();
@@ -127,7 +147,8 @@ namespace Clinics.Api.Controllers
                 data = new { 
                     user.Id, 
                     user.Username, 
-                    user.FullName, 
+                    user.FirstName,
+                    user.LastName,
                     Role = user.Role,
                     RoleDisplayName = roleDisplayName
                 } 
@@ -161,7 +182,7 @@ namespace Clinics.Api.Controllers
             };
             Response.Cookies.Append("refreshToken", newRefresh, cookieOptions);
 
-            var newAccess = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FullName);
+            var newAccess = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FirstName, user.LastName);
             return Ok(new { success = true, data = new { accessToken = newAccess, expiresIn = 3600 } });
         }
 

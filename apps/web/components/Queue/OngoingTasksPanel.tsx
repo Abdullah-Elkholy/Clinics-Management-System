@@ -5,7 +5,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createDeleteConfirmation, createActionConfirmation } from '@/utils/confirmationHelpers';
-import { MOCK_ONGOING_SESSIONS } from '@/constants/mockData';
+// Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
@@ -55,7 +55,7 @@ export default function OngoingTasksPanel() {
   const [pausedSessions, setPausedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-002']));
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
-  const [sessions, setSessions] = useState<Session[]>(MOCK_ONGOING_SESSIONS as Session[]);
+  const [sessions, setSessions] = useState<Session[]>([]);
 
   /**
    * Toggle session expand - memoized

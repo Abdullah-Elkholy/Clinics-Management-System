@@ -25,7 +25,6 @@ public class QuotaService
     public async Task<int> GetEffectiveModeratorIdAsync(int userId)
     {
         var user = await _context.Users
-            .Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.Id == userId);
 
         if (user == null)
@@ -224,7 +223,6 @@ public class QuotaService
     public async Task<List<User>> GetManagedUsersAsync(int moderatorId)
     {
         return await _context.Users
-            .Include(u => u.Role)
             .Where(u => u.ModeratorId == moderatorId)
             .ToListAsync();
     }

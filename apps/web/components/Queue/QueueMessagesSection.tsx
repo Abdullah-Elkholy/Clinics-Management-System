@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useModal } from '@/contexts/ModalContext';
-import { MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
+// Mock data imports removed - using API data from QueueContext
 
 interface QueueMessagesSectionProps {
   queueId: string;
@@ -17,8 +17,10 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
 }) => {
   const { openModal } = useModal();
   
-  // Use mock data for now
-  const templates = MOCK_MESSAGE_TEMPLATES;
+  // Get templates and conditions from context or props
+  // Note: Templates should be loaded from QueueContext when selectedQueueId is set
+  const templates: any[] = []; // TODO: Load from QueueContext
+  const messageConditions: any[] = []; // TODO: Load from QueueContext
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
@@ -76,7 +78,7 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
                     templateId: template.id,
                   });
                 }}
-                conditionsCount={MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
+                conditionsCount={messageConditions.filter(
                   (c) => c.template === template.id
                 ).length}
               />
@@ -107,7 +109,7 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
                     templateId: template.id,
                   });
                 }}
-                conditionsCount={MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
+                conditionsCount={messageConditions.filter(
                   (c) => c.template === template.id
                 ).length}
                 disabled
@@ -122,7 +124,7 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
         <TemplatePreviewModal
           template={templates.find((t) => t.id === selectedTemplate)!}
           onClose={() => setShowPreview(false)}
-          conditions={MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.template === selectedTemplate)}
+          conditions={messageConditions.filter((c) => c.template === selectedTemplate)}
         />
       )}
     </div>

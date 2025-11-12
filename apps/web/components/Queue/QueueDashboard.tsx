@@ -7,7 +7,6 @@ import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { validateNumber } from '@/utils/validation';
 import { createDeleteConfirmation, createBulkDeleteConfirmation } from '@/utils/confirmationHelpers';
-import { MOCK_QUEUE_PATIENTS, MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
@@ -19,8 +18,8 @@ import { useQueueMessageConfig } from '@/hooks/useQueueMessageConfig';
 import { desc } from 'framer-motion/client';
 import { title } from 'process';
 
-// Sample patient data
-const SAMPLE_PATIENTS = MOCK_QUEUE_PATIENTS;
+// Sample patient data - Loading from API via QueueContext
+const SAMPLE_PATIENTS: any[] = [];
 
 export default function QueueDashboard() {
   const { selectedQueueId, queues } = useQueue();
@@ -140,14 +139,15 @@ export default function QueueDashboard() {
       },
     ];
 
-    // Check if queue has a default template
+    // Check if queue has a default template from context
+    // TODO: Implement check once templates are fully loaded from API
     if (selectedQueueId) {
-      const defaultTemplate = MOCK_MESSAGE_TEMPLATES.find(
-        (t) => t.queueId === String(selectedQueueId) && 
-               t.conditionId?.startsWith('DEFAULT_')
+      const messageTemplates = messageConfig?.defaultTemplate ? [{ id: 'default' }] : [];
+      const defaultTemplate = messageTemplates.find(
+        (t: any) => t && messageConfig?.defaultTemplate
       );
 
-      if (!defaultTemplate) {
+      if (!defaultTemplate && !messageConfig?.defaultTemplate) {
         // Add warning item if no default template
         baseItems.push({
           title: '⚠️ تنبيه هام',
@@ -157,7 +157,7 @@ export default function QueueDashboard() {
     }
 
     return baseItems;
-  }, [selectedQueueId]);
+  }, [selectedQueueId, messageConfig]);
 
   // Load message config when queue changes
   useEffect(() => {
@@ -277,8 +277,9 @@ export default function QueueDashboard() {
   const detectQueueConflicts = useCallback(() => {
     if (!selectedQueueId) return [];
 
-    const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-      (c) => c.queueId === selectedQueueId && !c.id.startsWith('DEFAULT_')
+    // Get conditions from context
+    const queueConditions = (messageConfig?.conditions || []).filter(
+      (c: any) => c.queueId === selectedQueueId && !c.id?.startsWith('DEFAULT_')
     );
 
     if (queueConditions.length < 2) return [];
@@ -699,10 +700,7 @@ export default function QueueDashboard() {
                   queueName: queue?.doctorName || 'طابور',
                   currentConditions: messageConfig?.conditions || [],
                   allConditions: messageConfig?.conditions || [],
-                  allTemplates: MOCK_MESSAGE_TEMPLATES.map(t => ({ 
-                    id: t.id, 
-                    title: t.title 
-                  })),
+                  allTemplates: [], // Templates will be populated by the context
                   onSave: (_conditions: any) => {
                     // intentionally no-op
                   },
@@ -719,10 +717,7 @@ export default function QueueDashboard() {
                     queueName: queue?.doctorName || 'طابور',
                     currentConditions: messageConfig?.conditions || [],
                     allConditions: messageConfig?.conditions || [],
-                    allTemplates: MOCK_MESSAGE_TEMPLATES.map(t => ({ 
-                      id: t.id, 
-                      title: t.title 
-                    })),
+                    allTemplates: [], // Templates will be populated by the context
                     onSave: (_conditions: any) => {
                       // intentionally no-op
                     },
@@ -746,10 +741,7 @@ export default function QueueDashboard() {
             <div className="px-6 py-4 space-y-6">
               {/* Check if default template exists */}
               {(() => {
-                const hasDefaultTemplate = MOCK_MESSAGE_TEMPLATES.some(
-                  (t) => t.queueId === String(selectedQueueId) && 
-                         t.conditionId?.startsWith('DEFAULT_')
-                );
+                const hasDefaultTemplate = messageConfig?.defaultTemplate ? true : false;
 
                 if (!hasDefaultTemplate) {
                   return (
@@ -772,10 +764,13 @@ export default function QueueDashboard() {
                   );
                 }
 
-                // Show conditions if they exist
-                const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(c => c.queueId === selectedQueueId);
+                // Show conditions if they exist - load from context
+                const queueConditions = (messageConfig?.conditions || []).filter((c: any) => c.queueId === selectedQueueId);
                 const hasConditions = queueConditions && queueConditions.length > 0;
 
+                // Get the actual default template text from config
+                const defaultTemplateText = messageConfig?.defaultTemplate || '';
+                
                 return (
                   <div className="flex flex-col gap-6">
                     <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
@@ -783,16 +778,31 @@ export default function QueueDashboard() {
                         <i className="fas fa-message text-blue-600"></i>
                         الرسالة الافتراضية:
                       </h4>
-                      <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
-                        <p className="text-gray-800 text-sm leading-relaxed font-medium">
-                          مرحباً {'{PN}'}, ترتيبك {'{PQP}'} والموضع الحالي {'{CQP}'},
-                          الوقت المتبقي المقدر {'{ETR}'} دقيقة
-                        </p>
-                        <p className="text-xs text-gray-600 mt-3">
-                          <i className="fas fa-info-circle text-blue-500 ml-1"></i>
-                          {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
-                        </p>
-                      </div>
+                      {defaultTemplateText ? (
+                        <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                          <p className="text-gray-800 text-sm leading-relaxed font-medium whitespace-pre-wrap">
+                            {defaultTemplateText}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-3 border-t border-blue-200 pt-3">
+                            <i className="fas fa-info-circle text-blue-500 ml-1"></i>
+                            المتغيرات المتاحة: {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
+                          <div className="flex items-start gap-3">
+                            <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0"></i>
+                            <div className="flex-1">
+                              <p className="text-sm text-amber-800 font-semibold">
+                                لم يتم تحميل نص الرسالة الافتراضية
+                              </p>
+                              <p className="text-xs text-amber-700 mt-1">
+                                يرجى التحقق من إعدادات الشروط أو إعادة تحميل الصفحة
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     
                     {hasConditions && (
@@ -855,7 +865,7 @@ export default function QueueDashboard() {
           icon="fa-users"
           title="لا يوجد مرضى"
           message="لم يتم إضافة أي مريض بعد. ابدأ بإضافة مريض جديد"
-          actionLabel="إضافة مريض أول"
+          actionLabel="إضافة مريض"
           onAction={() => openModal('addPatient')}
         />
       ) : (

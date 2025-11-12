@@ -37,9 +37,8 @@ namespace Clinics.Api.Controllers
                     {
                         Id = u.Id,
                         Username = u.Username,
-                        FullName = u.FullName,
-                        Email = u.Email,
-                        PhoneNumber = u.PhoneNumber,
+                        FirstName = u.FirstName,
+                        LastName = u.LastName,
                         IsActive = true,
                         CreatedAt = DateTime.Now,
                         UpdatedAt = DateTime.Now
@@ -63,8 +62,13 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 // Moderators can only view their own details, admins can view any
@@ -100,9 +104,8 @@ namespace Clinics.Api.Controllers
                 {
                     Id = moderator.Id,
                     Username = moderator.Username,
-                    FullName = moderator.FullName,
-                    Email = moderator.Email,
-                    PhoneNumber = moderator.PhoneNumber,
+                    FirstName = moderator.FirstName,
+                    LastName = moderator.LastName,
                     IsActive = true,
                     CreatedAt = DateTime.Now,
                     UpdatedAt = DateTime.Now,
@@ -112,14 +115,10 @@ namespace Clinics.Api.Controllers
                     Quota = quota != null ? new QuotaDto
                     {
                         Id = quota.Id,
-                        MessagesQuota = quota.MessagesQuota,
-                        ConsumedMessages = quota.ConsumedMessages,
-                        RemainingMessages = quota.RemainingMessages,
-                        QueuesQuota = quota.QueuesQuota,
-                        ConsumedQueues = quota.ConsumedQueues,
-                        RemainingQueues = quota.RemainingQueues,
-                        IsMessagesQuotaLow = quota.IsMessagesQuotaLow,
-                        IsQueuesQuotaLow = quota.IsQueuesQuotaLow,
+                        Limit = quota.MessagesQuota,
+                        Used = quota.ConsumedMessages,
+                        QueuesLimit = quota.QueuesQuota,
+                        QueuesUsed = quota.ConsumedQueues,
                         UpdatedAt = quota.UpdatedAt
                     } : null
                 };
@@ -142,8 +141,8 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FullName))
-                    return BadRequest(new { success = false, error = "Username and FullName are required" });
+                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FirstName))
+                    return BadRequest(new { success = false, error = "Username and FirstName are required" });
 
                 // Check if username already exists
                 var existingUser = await _db.Users
@@ -156,9 +155,8 @@ namespace Clinics.Api.Controllers
                 var moderator = new User
                 {
                     Username = req.Username,
-                    FullName = req.FullName,
-                    Email = req.Email,
-                    PhoneNumber = req.PhoneNumber,
+                    FirstName = req.FirstName,
+                    LastName = req.LastName,
                     Role = "moderator"
                 };
 
@@ -201,9 +199,8 @@ namespace Clinics.Api.Controllers
                 {
                     Id = moderator.Id,
                     Username = moderator.Username,
-                    FullName = moderator.FullName,
-                    Email = moderator.Email,
-                    PhoneNumber = moderator.PhoneNumber,
+                    FirstName = moderator.FirstName,
+                    LastName = moderator.LastName,
                     WhatsAppPhoneNumber = req.WhatsAppPhoneNumber,
                     IsActive = true,
                     CreatedAt = DateTime.Now,
@@ -235,14 +232,11 @@ namespace Clinics.Api.Controllers
                 if (moderator == null)
                     return NotFound(new { success = false, error = "Moderator not found" });
 
-                if (!string.IsNullOrEmpty(req.FullName))
-                    moderator.FullName = req.FullName;
+                if (!string.IsNullOrEmpty(req.FirstName))
+                    moderator.FirstName = req.FirstName;
 
-                if (!string.IsNullOrEmpty(req.Email))
-                    moderator.Email = req.Email;
-
-                if (!string.IsNullOrEmpty(req.PhoneNumber))
-                    moderator.PhoneNumber = req.PhoneNumber;
+                if (!string.IsNullOrEmpty(req.LastName))
+                    moderator.LastName = req.LastName;
 
                 // Update moderator settings
                 var settings = await _db.ModeratorSettings
@@ -266,9 +260,8 @@ namespace Clinics.Api.Controllers
                 {
                     Id = moderator.Id,
                     Username = moderator.Username,
-                    FullName = moderator.FullName,
-                    Email = moderator.Email,
-                    PhoneNumber = moderator.PhoneNumber,
+                    FirstName = moderator.FirstName,
+                    LastName = moderator.LastName,
                     WhatsAppPhoneNumber = settings?.WhatsAppPhoneNumber,
                     IsActive = settings?.IsActive ?? true,
                     CreatedAt = DateTime.Now,
@@ -350,10 +343,9 @@ namespace Clinics.Api.Controllers
                     {
                         Id = u.Id,
                         Username = u.Username,
-                        FullName = u.FullName,
+                        FirstName = u.FirstName,
+                        LastName = u.LastName,
                         Role = u.Role,
-                        Email = u.Email,
-                        PhoneNumber = u.PhoneNumber,
                         ModeratorId = u.ModeratorId,
                         ModeratorName = moderator.FullName,
                         IsActive = true,
@@ -396,8 +388,8 @@ namespace Clinics.Api.Controllers
                 if (moderator == null)
                     return NotFound(new { success = false, error = "Moderator not found" });
 
-                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FullName))
-                    return BadRequest(new { success = false, error = "Username and FullName are required" });
+                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FirstName))
+                    return BadRequest(new { success = false, error = "Username and FirstName are required" });
 
                 // Check if username already exists
                 var existingUser = await _db.Users
@@ -410,9 +402,8 @@ namespace Clinics.Api.Controllers
                 var user = new User
                 {
                     Username = req.Username,
-                    FullName = req.FullName,
-                    Email = req.Email,
-                    PhoneNumber = req.PhoneNumber,
+                    FirstName = req.FirstName,
+                    LastName = req.LastName,
                     Role = "user",
                     ModeratorId = id
                 };
@@ -430,10 +421,9 @@ namespace Clinics.Api.Controllers
                 {
                     Id = user.Id,
                     Username = user.Username,
-                    FullName = user.FullName,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
                     Role = user.Role,
-                    Email = user.Email,
-                    PhoneNumber = user.PhoneNumber,
                     ModeratorId = user.ModeratorId,
                     ModeratorName = moderator.FullName,
                     IsActive = true,
@@ -457,8 +447,13 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+                
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 // Users can only view their moderator's session, moderators can view their own

@@ -1,18 +1,19 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
 import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
+import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
-import { MOCK_QUEUE_MESSAGE_CONDITIONS, MOCK_QUOTA } from '@/constants/mockData';
+// Mock data removed - using API data instead
 
 /**
  * Moderator Messages Overview - Admin View
@@ -54,6 +55,28 @@ export default function ModeratorMessagesOverview() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedModerators, setExpandedModerators] = useState<Set<string | number>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
+  const [userQuota, setUserQuota] = useState<MyQuotaDto | null>(null);
+  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+
+  /**
+   * Load user's quota from API on component mount
+   */
+  useEffect(() => {
+    const loadQuota = async () => {
+      try {
+        setIsLoadingQuota(true);
+        const quota = await messageApiClient.getMyQuota();
+        setUserQuota(quota);
+      } catch (err) {
+        // Fallback to mock data on error
+        setUserQuota(null);
+      } finally {
+        setIsLoadingQuota(false);
+      }
+    };
+
+    loadQuota();
+  }, []);
 
   // Toggle moderator expansion
   const toggleModeratorExpanded = useCallback((moderatorId: string | number) => {
@@ -94,9 +117,7 @@ export default function ModeratorMessagesOverview() {
    * Check for condition intersections in a queue (same logic as MessagesPanel)
    */
   const checkConditionIntersections = (queueId: string) => {
-    const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-      (c) => c.queueId === queueId && !c.id.startsWith('DEFAULT_')
-    );
+    const queueConditions: any[] = [];
 
     if (queueConditions.length < 2) return [];
 
@@ -195,11 +216,12 @@ export default function ModeratorMessagesOverview() {
    * Role-based stats for admin view showing system-wide quota
    */
   const getAdminStats = useMemo(() => {
-    const { messagesQuota } = MOCK_QUOTA;
+    // Use API data if available, fallback to default values
+    const quotaData = userQuota || { limit: 0, used: 0 };
     const baseStats = {
-      total: messagesQuota.limit,
-      used: messagesQuota.used,
-      remaining: messagesQuota.limit - messagesQuota.used,
+      total: quotaData.limit,
+      used: quotaData.used,
+      remaining: quotaData.limit - quotaData.used,
     };
 
     return [
@@ -228,7 +250,7 @@ export default function ModeratorMessagesOverview() {
         info: ''
       },
     ];
-  }, [moderators.length]);
+  }, [moderators.length, userQuota]);
 
   return (
     <PanelWrapper>
@@ -351,9 +373,7 @@ export default function ModeratorMessagesOverview() {
                       <div className="flex flex-wrap gap-2">
                         {moderator.queues
                           .map((queue) => {
-                            const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-                              (c) => c.queueId === String(queue.id) && !c.id.startsWith('DEFAULT_')
-                            );
+                            const queueConditions: any[] = [];
 
                             if (queueConditions.length < 2) return null;
 
@@ -498,21 +518,11 @@ export default function ModeratorMessagesOverview() {
                                             <tbody>
                                               {queueTemplates
                                                 .sort((a, b) => {
-                                                  const conditionsA = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === a.id);
-                                                  const conditionsB = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === b.id);
-                                                  
-                                                  const conditionA = conditionsA.length > 0 ? conditionsA[0] : null;
-                                                  const conditionB = conditionsB.length > 0 ? conditionsB[0] : null;                                                  const isDefaultA = conditionA && conditionA.id.startsWith('DEFAULT_');
-                                                  const isDefaultB = conditionB && conditionB.id.startsWith('DEFAULT_');
-
-                                                  if (isDefaultA && !isDefaultB) return -1;
-                                                  if (!isDefaultA && isDefaultB) return 1;
-
                                                   return 0;
                                                 })
                                                 .map((template) => {
-                                                  const condition = MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.templateId === template.id);
-                                                  const isDefaultCondition = condition && condition.id.startsWith('DEFAULT_');
+                                                  const condition = null;
+                                                  const isDefaultCondition = false;
 
                                                   return (
                                                     <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">

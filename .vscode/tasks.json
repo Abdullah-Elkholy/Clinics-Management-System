@@ -1,41 +1,56 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "build-api",
-      "command": "dotnet",
-      "type": "process",
-      "args": [
-        "build",
-        "${workspaceFolder}/src/Api/Clinics.Api.csproj",
-        "-c",
-        "Debug"
-      ],
-      "problemMatcher": "$msCompile",
-      "group": "build"
-    },
-    {
-      "label": "build-whatsapp",
-      "command": "dotnet",
-      "type": "process",
-      "args": [
-        "build",
-        "${workspaceFolder}/ClinicsManagementService/WhatsAppMessagingService.csproj",
-        "-c",
-        "Debug"
-      ],
-      "problemMatcher": "$msCompile"
-    },
-    {
-      "label": "start-frontend",
-      "type": "process",
-      "command": "npm",
-      "args": ["run","dev"],
-      "options": {
-        "cwd": "${workspaceFolder}/apps/web"
-      },
-      "isBackground": true,
-      "problemMatcher": []
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build-api",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"build",
+				"${workspaceFolder}/src/Api/Clinics.Api.csproj",
+				"-c",
+				"Debug"
+			],
+			"problemMatcher": "$msCompile",
+			"group": "build"
+		},
+		{
+			"label": "build-whatsapp",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"build",
+				"${workspaceFolder}/ClinicsManagementService/WhatsAppMessagingService.csproj",
+				"-c",
+				"Debug"
+			],
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "start-frontend",
+			"type": "process",
+			"command": "npm",
+			"args": [
+				"run",
+				"dev"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}/apps/web"
+			},
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "build-api (verify DTO fix)",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"src/Api/Clinics.Api.csproj",
+				"-c",
+				"Debug"
+			],
+			"group": "build"
+		}
+	]
 }

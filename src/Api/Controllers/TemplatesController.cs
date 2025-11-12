@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
+using Clinics.Api.DTOs;
+using Clinics.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
@@ -13,110 +15,161 @@ namespace Clinics.Api.Controllers
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<TemplatesController> _logger;
+        private readonly IUserContext _userContext;
 
-        public TemplatesController(ApplicationDbContext db, ILogger<TemplatesController> logger)
+        public TemplatesController(ApplicationDbContext db, ILogger<TemplatesController> logger, IUserContext userContext)
         {
             _db = db;
             _logger = logger;
+            _userContext = userContext;
         }
 
+        /// <summary>
+        /// GET /api/templates?queueId=1
+        /// Get templates for a specific queue.
+        /// If queueId not provided, return templates for moderator's queues (or all if admin).
+        /// </summary>
         [HttpGet]
-        public async Task<IActionResult> Get()
+        public async Task<ActionResult<ListResponse<TemplateDto>>> Get([FromQuery] int? queueId)
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
 
-                // Get moderator ID based on user role
-                int? moderatorId = null;
-                if (currentUser?.Role == "moderator")
-                    moderatorId = currentUser.Id;
-                else if (currentUser?.Role == "user")
-                    moderatorId = currentUser.ModeratorId;
-                else if (currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin")
-                    moderatorId = null; // Admins can see all
+                IQueryable<MessageTemplate> query = _db.MessageTemplates.AsQueryable();
 
-                var query = _db.MessageTemplates.AsQueryable();
-                if (moderatorId.HasValue)
-                    query = query.Where(t => t.ModeratorId == moderatorId.Value);
+                // Filter by queue if specified
+                if (queueId.HasValue)
+                {
+                    // Verify moderator owns this queue
+                    var queue = await _db.Queues.FindAsync(queueId.Value);
+                    if (queue == null)
+                        return NotFound(new { message = "Queue not found" });
 
-                var templates = await query.ToListAsync();
-                return Ok(new { success = true, data = templates });
+                    // Check ownership
+                    if (!isAdmin && queue.ModeratorId != moderatorId)
+                        return Forbid();
+
+                    query = query.Where(t => t.QueueId == queueId.Value);
+                }
+                else
+                {
+                    // Filter by moderator's queues (if not admin)
+                    if (!isAdmin && moderatorId.HasValue)
+                    {
+                        query = query.Where(t => t.ModeratorId == moderatorId.Value);
+                    }
+                    // Admins can see all templates
+                }
+
+                var templates = await query.OrderBy(t => t.CreatedAt).ToListAsync();
+                
+                var dtos = templates.Select(t => new TemplateDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Content = t.Content,
+                    ModeratorId = t.ModeratorId ?? 0,
+                    QueueId = t.QueueId ?? 0,
+                    IsShared = t.IsShared,
+                    IsActive = t.IsActive,
+                    CreatedAt = t.CreatedAt,
+                    UpdatedAt = t.UpdatedAt
+                }).ToList();
+
+                return Ok(new ListResponse<TemplateDto>
+                {
+                    Items = dtos,
+                    TotalCount = dtos.Count,
+                    PageNumber = 1,
+                    PageSize = dtos.Count
+                });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching templates");
-                return StatusCode(500, new { success = false, error = "Error fetching templates" });
+                return StatusCode(500, new { message = "Error fetching templates" });
             }
         }
 
+        /// <summary>
+        /// POST /api/templates
+        /// Create a new template for a specific queue.
+        /// </summary>
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] CreateTemplateRequest req)
+        public async Task<ActionResult<TemplateDto>> Create([FromBody] CreateTemplateRequest req)
         {
             try
             {
                 if (!ModelState.IsValid)
-                    return BadRequest(new { success = false, errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
+                    return BadRequest(ModelState);
 
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                // Verify queue exists and belongs to moderator
+                var queue = await _db.Queues.FindAsync(req.QueueId);
+                if (queue == null)
+                    return NotFound(new { message = "Queue not found" });
 
-                // Get moderator ID
-                int moderatorId;
-                if (currentUser?.Role == "moderator")
-                    moderatorId = currentUser.Id;
-                else if (currentUser?.ModeratorId.HasValue == true)
-                    moderatorId = currentUser.ModeratorId.Value;
-                else if (currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin")
-                    moderatorId = 0; // Will need to specify
-                else
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
+
+                // Check ownership
+                if (!isAdmin && queue.ModeratorId != moderatorId)
                     return Forbid();
 
-                if (moderatorId == 0)
-                    return BadRequest(new { success = false, error = "Could not determine moderator" });
-
+                var userId = _userContext.GetUserId();
                 var template = new MessageTemplate
                 {
                     Title = req.Title,
                     Content = req.Content,
                     IsShared = req.IsShared,
-                    IsActive = true,
-                    CreatedBy = currentUserId,
-                    ModeratorId = moderatorId,
-                    CreatedAt = DateTime.UtcNow
+                    IsActive = req.IsActive,
+                    CreatedBy = userId,
+                    ModeratorId = queue.ModeratorId,
+                    QueueId = req.QueueId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 };
 
                 _db.MessageTemplates.Add(template);
                 await _db.SaveChangesAsync();
-                return Ok(new { success = true, data = template });
+
+                var dto = new TemplateDto
+                {
+                    Id = template.Id,
+                    Title = template.Title,
+                    Content = template.Content,
+                    ModeratorId = template.ModeratorId ?? 0,
+                    QueueId = template.QueueId ?? 0,
+                    IsShared = template.IsShared,
+                    IsActive = template.IsActive,
+                    CreatedAt = template.CreatedAt,
+                    UpdatedAt = template.UpdatedAt
+                };
+
+                return CreatedAtAction(nameof(Get), new { id = template.Id }, dto);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating template");
-                return StatusCode(500, new { success = false, error = "Error creating template" });
+                return StatusCode(500, new { message = "Error creating template" });
             }
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, [FromBody] UpdateTemplateRequest req)
+        public async Task<ActionResult<TemplateDto>> Update(int id, [FromBody] UpdateTemplateRequest req)
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
-                var currentUser = await _db.Users.FindAsync(currentUserId);
-
                 var existing = await _db.MessageTemplates.FindAsync(id);
                 if (existing == null)
-                    return NotFound(new { success = false });
+                    return NotFound(new { message = "Template not found" });
 
-                // Verify ownership
-                if (currentUser?.Role == "moderator" && existing.ModeratorId != currentUser.Id)
-                    return Forbid();
-                if (currentUser?.Role == "user" && existing.ModeratorId != currentUser.ModeratorId)
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
+
+                // Verify ownership (moderator owns the template's queue)
+                if (!isAdmin && existing.ModeratorId != moderatorId)
                     return Forbid();
 
                 if (!string.IsNullOrEmpty(req.Title))
@@ -131,13 +184,28 @@ namespace Clinics.Api.Controllers
                 if (req.IsActive.HasValue)
                     existing.IsActive = req.IsActive.Value;
 
+                existing.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
-                return Ok(new { success = true, data = existing });
+
+                var dto = new TemplateDto
+                {
+                    Id = existing.Id,
+                    Title = existing.Title,
+                    Content = existing.Content,
+                    ModeratorId = existing.ModeratorId ?? 0,
+                    QueueId = existing.QueueId ?? 0,
+                    IsShared = existing.IsShared,
+                    IsActive = existing.IsActive,
+                    CreatedAt = existing.CreatedAt,
+                    UpdatedAt = existing.UpdatedAt
+                };
+
+                return Ok(dto);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating template");
-                return StatusCode(500, new { success = false, error = "Error updating template" });
+                return StatusCode(500, new { message = "Error updating template" });
             }
         }
 
@@ -146,28 +214,25 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var user = User.FindFirst(ClaimTypes.NameIdentifier);
-                var currentUserId = int.Parse(user?.Value ?? "0");
-                var currentUser = await _db.Users.FindAsync(currentUserId);
-
                 var existing = await _db.MessageTemplates.FindAsync(id);
                 if (existing == null)
-                    return NotFound(new { success = false });
+                    return NotFound(new { message = "Template not found" });
+
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
 
                 // Verify ownership
-                if (currentUser?.Role == "moderator" && existing.ModeratorId != currentUser.Id)
-                    return Forbid();
-                if (currentUser?.Role == "user" && existing.ModeratorId != currentUser.ModeratorId)
+                if (!isAdmin && existing.ModeratorId != moderatorId)
                     return Forbid();
 
                 _db.MessageTemplates.Remove(existing);
                 await _db.SaveChangesAsync();
-                return Ok(new { success = true });
+                return NoContent();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting template");
-                return StatusCode(500, new { success = false, error = "Error deleting template" });
+                return StatusCode(500, new { message = "Error deleting template" });
             }
         }
     }
@@ -176,7 +241,9 @@ namespace Clinics.Api.Controllers
     {
         public string Title { get; set; } = null!;
         public string Content { get; set; } = null!;
+        public int QueueId { get; set; }
         public bool IsShared { get; set; } = true;
+        public bool IsActive { get; set; } = true;
     }
 
     public class UpdateTemplateRequest

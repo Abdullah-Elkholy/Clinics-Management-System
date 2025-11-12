@@ -1,35 +1,54 @@
 /**
- * Moderators Service
- * Handles all moderator-related API operations
- * Using mock data for frontend development
+ * DEPRECATED: Moderators Service
  * 
- * QUOTA HIERARCHY:
- * - Quotas are tied to moderators via moderatorId
- * - All users under a moderator share their moderator's quota
- * - This service manages moderator quotas at the moderator level
+ * This service is no longer maintained and should not be used.
+ * All moderator operations are now handled through:
+ * - QueueContext: For template/condition management and moderator aggregation
+ * - usersApiClient: For user/moderator data fetching
+ * - messageApiClient: For message and quota operations
+ * 
+ * To migrate from this service:
+ * 1. Replace moderator fetching with usersApiClient.getUsers({ role: 'moderator' })
+ * 2. Use QueueContext for template/condition mutations with optimistic updates
+ * 3. Use messageApiClient for quota and message operations
+ * 
+ * This file is kept only for reference and will be removed in a future version.
  */
 
 'use client';
 
 import { ModeratorQuota } from '@/types/user';
-import {
-  MOCK_USERS,
-  MOCK_MODERATOR_SETTINGS,
-  MOCK_QUOTAS,
-  getModerator,
-  getAllModerators,
-  getUsersUnderModerator,
-  getModeratorQuota,
-  getModeratorSettings,
-  getModeratorWhatsAppSession,
-  getModeratorMessages,
-  getModeratorQueues,
-  getModeratorTemplates,
-  User,
-  Moderator,
-  ModeratorSettings,
-  WhatsAppSession,
-} from './mockDataService';
+
+// Type definitions moved from mockDataService
+export interface User {
+  id: number;
+  username: string;
+  firstName: string;
+  lastName?: string;
+  email?: string;
+}
+
+export interface Moderator extends User {
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ModeratorSettings {
+  id: string;
+  moderatorId: string;
+  defaultQueueId?: string;
+  notificationsEnabled: boolean;
+  messageTemplate?: string;
+}
+
+export interface WhatsAppSession {
+  id: string;
+  moderatorId: string;
+  sessionName: string;
+  isActive: boolean;
+  createdAt: Date;
+}
 
 export interface ModeratorResponse {
   id: number;
@@ -45,7 +64,7 @@ export interface ModeratorDetailsResponse extends ModeratorResponse {
   managedUsersCount: number;
   queuesCount: number;
   templatesCount: number;
-  quota: ModeratorQuota;  // Use unified ModeratorQuota from types/user.ts
+  quota: ModeratorQuota;
   settings: ModeratorSettings;
   whatsappSession: WhatsAppSession | null;
 }
@@ -79,339 +98,108 @@ export interface ServiceResponse<T> {
 
 class ModeratorsService {
   /**
-   * Get all moderators
+   * Get all moderators - stub implementation
+   * Components should use API clients directly
    */
   async getAllModerators(): Promise<ServiceResponse<ModeratorDetailsResponse[]>> {
-    try {
-      const moderators = getAllModerators();
-      const details: ModeratorDetailsResponse[] = moderators.map((mod) => ({
-        id: mod.id,
-        username: mod.username,
-        firstName: mod.firstName,
-        lastName: mod.lastName,
-        isActive: mod.isActive,
-        createdAt: mod.createdAt,
-        updatedAt: mod.updatedAt,
-        managedUsersCount: getUsersUnderModerator(mod.id).length,
-        queuesCount: getModeratorQueues(mod.id).length,
-        templatesCount: getModeratorTemplates(mod.id).length,
-        quota: getModeratorQuota(mod.id)!,
-        settings: getModeratorSettings(mod.id)!,
-        whatsappSession: getModeratorWhatsAppSession(mod.id) || null,
-      }));
-
-      return { success: true, data: details };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch moderators';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'Moderators data must be fetched from backend API',
+      data: [],
+    };
   }
 
   /**
-   * Get moderator by ID
+   * Get moderator by ID - stub implementation
    */
   async getModeratorById(moderatorId: number): Promise<ServiceResponse<ModeratorDetailsResponse>> {
-    try {
-      const moderator = getModerator(moderatorId);
-      if (!moderator) {
-        return { success: false, error: 'Moderator not found' };
-      }
-
-      const response: ModeratorDetailsResponse = {
-        id: moderator.id,
-        username: moderator.username,
-        firstName: moderator.firstName,
-        lastName: moderator.lastName,
-        isActive: moderator.isActive,
-        createdAt: moderator.createdAt,
-        updatedAt: moderator.updatedAt,
-        managedUsersCount: getUsersUnderModerator(moderator.id).length,
-        queuesCount: getModeratorQueues(moderator.id).length,
-        templatesCount: getModeratorTemplates(moderator.id).length,
-        quota: getModeratorQuota(moderator.id)!,
-        settings: getModeratorSettings(moderator.id)!,
-        whatsappSession: getModeratorWhatsAppSession(moderator.id) || null,
-      };
-
-      return { success: true, data: response };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch moderator';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'Moderator data must be fetched from backend API',
+    };
   }
 
   /**
-   * Create new moderator
+   * Create new moderator - stub implementation
    */
   async createModerator(
     request: CreateModeratorRequest
   ): Promise<ServiceResponse<ModeratorDetailsResponse>> {
-    try {
-      // In mock mode, create a new moderator object
-      const maxId = Math.max(...MOCK_USERS.map((u) => u.id));
-      const newModeratorId = maxId + 1;
-      const now = new Date();
-
-      const newModerator: Moderator = {
-        id: newModeratorId,
-        username: request.username,
-        firstName: request.firstName,
-        lastName: request.lastName,
-        role: 'moderator',
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-        moderatorId: undefined,
-      };
-
-      // Add to mock data
-      MOCK_USERS.push(newModerator);
-
-      // Create settings
-      const newSettings: ModeratorSettings = {
-        id: Math.max(...MOCK_MODERATOR_SETTINGS.map((s) => s.id)) + 1,
-        moderatorUserId: newModeratorId,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      };
-      MOCK_MODERATOR_SETTINGS.push(newSettings);
-
-      // Create quota - Using unified ModeratorQuota structure
-      const newQuota: ModeratorQuota = {
-        id: `quota-${newModeratorId}`,
-        moderatorId: String(newModeratorId),
-        messagesQuota: {
-          limit: request.messagesQuota,
-          used: 0,
-          percentage: 0,
-          isLow: false,
-          warningThreshold: 80,
-        },
-        queuesQuota: {
-          limit: request.queuesQuota,
-          used: 0,
-          percentage: 0,
-          isLow: false,
-          warningThreshold: 80,
-        },
-        createdAt: now,
-        updatedAt: now,
-      };
-      MOCK_QUOTAS.push(newQuota);
-
-      const response: ModeratorDetailsResponse = {
-        id: newModerator.id,
-        username: newModerator.username,
-        firstName: newModerator.firstName,
-        lastName: newModerator.lastName,
-        isActive: newModerator.isActive,
-        createdAt: newModerator.createdAt,
-        updatedAt: newModerator.updatedAt,
-        managedUsersCount: 0,
-        queuesCount: 0,
-        templatesCount: 0,
-        quota: newQuota,
-        settings: newSettings,
-        whatsappSession: null,
-      };
-
-      return {
-        success: true,
-        data: response,
-        message: 'Moderator created successfully',
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create moderator';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'Moderator creation must be performed via backend API',
+    };
   }
 
   /**
-   * Update moderator
+   * Update moderator - stub implementation
    */
   async updateModerator(
     moderatorId: number,
     request: UpdateModeratorRequest
   ): Promise<ServiceResponse<ModeratorDetailsResponse>> {
-    try {
-      const moderator = getModerator(moderatorId);
-      if (!moderator) {
-        return { success: false, error: 'Moderator not found' };
-      }
-
-      // Update user
-      const userIndex = MOCK_USERS.findIndex((u) => u.id === moderatorId);
-      if (userIndex >= 0) {
-        if (request.firstName) MOCK_USERS[userIndex].firstName = request.firstName;
-        if (request.lastName) MOCK_USERS[userIndex].lastName = request.lastName;
-        if (request.isActive !== undefined) MOCK_USERS[userIndex].isActive = request.isActive;
-        MOCK_USERS[userIndex].updatedAt = new Date();
-      }
-
-      // Update settings
-      const settingsIndex = MOCK_MODERATOR_SETTINGS.findIndex(
-        (s) => s.moderatorUserId === moderatorId
-      );
-      if (settingsIndex >= 0) {
-        MOCK_MODERATOR_SETTINGS[settingsIndex].updatedAt = new Date();
-      }
-
-      return this.getModeratorById(moderatorId);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update moderator';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'Moderator updates must be performed via backend API',
+    };
   }
 
   /**
-   * Delete moderator
+   * Delete moderator - stub implementation
    */
   async deleteModerator(moderatorId: number): Promise<ServiceResponse<void>> {
-    try {
-      const moderator = getModerator(moderatorId);
-      if (!moderator) {
-        return { success: false, error: 'Moderator not found' };
-      }
-
-      // Check if moderator has managed users
-      const managedUsers = getUsersUnderModerator(moderatorId);
-      if (managedUsers.length > 0) {
-        return { success: false, error: 'Cannot delete moderator with managed users' };
-      }
-
-      // Remove moderator
-      const userIndex = MOCK_USERS.findIndex((u) => u.id === moderatorId);
-      if (userIndex >= 0) {
-        MOCK_USERS.splice(userIndex, 1);
-      }
-
-      // Remove settings
-      const settingsIndex = MOCK_MODERATOR_SETTINGS.findIndex(
-        (s) => s.moderatorUserId === moderatorId
-      );
-      if (settingsIndex >= 0) {
-        MOCK_MODERATOR_SETTINGS.splice(settingsIndex, 1);
-      }
-
-      // Remove quota
-      const quotaIndex = MOCK_QUOTAS.findIndex((q) => q.moderatorId === String(moderatorId));
-      if (quotaIndex >= 0) {
-        MOCK_QUOTAS.splice(quotaIndex, 1);
-      }
-
-      return {
-        success: true,
-        message: 'Moderator deleted successfully',
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to delete moderator';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'Moderator deletion must be performed via backend API',
+    };
   }
 
   /**
-   * Get managed users for a moderator
+   * Get managed users for a moderator - stub implementation
    */
   async getManagedUsers(moderatorId: number): Promise<ServiceResponse<User[]>> {
-    try {
-      const moderator = getModerator(moderatorId);
-      if (!moderator) {
-        return { success: false, error: 'Moderator not found' };
-      }
-
-      const users = getUsersUnderModerator(moderatorId);
-      return { success: true, data: users };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch managed users';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'Managed users data must be fetched from backend API',
+      data: [],
+    };
   }
 
   /**
-   * Add user to moderator
+   * Add user to moderator - stub implementation
    */
   async addUserToModerator(
     moderatorId: number,
     request: AddUserToModeratorRequest
   ): Promise<ServiceResponse<User>> {
-    try {
-      const moderator = getModerator(moderatorId);
-      if (!moderator) {
-        return { success: false, error: 'Moderator not found' };
-      }
-
-      // Create new user
-      const maxId = Math.max(...MOCK_USERS.map((u) => u.id));
-      const newUserId = maxId + 1;
-      const now = new Date();
-
-      const newUser: User = {
-        id: newUserId,
-        username: request.username,
-        firstName: request.firstName,
-        lastName: request.lastName,
-        role: 'user',
-        moderatorId: moderatorId,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      MOCK_USERS.push(newUser);
-
-      return {
-        success: true,
-        data: newUser,
-        message: 'User added to moderator successfully',
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to add user to moderator';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'User addition must be performed via backend API',
+    };
   }
 
   /**
-   * Remove user from moderator
+   * Remove user from moderator - stub implementation
    */
   async removeUserFromModerator(
     moderatorId: number,
     userId: number
   ): Promise<ServiceResponse<void>> {
-    try {
-      const moderator = getModerator(moderatorId);
-      if (!moderator) {
-        return { success: false, error: 'Moderator not found' };
-      }
-
-      const userIndex = MOCK_USERS.findIndex((u) => u.id === userId && u.moderatorId === moderatorId);
-      if (userIndex < 0) {
-        return { success: false, error: 'User not found under this moderator' };
-      }
-
-      MOCK_USERS.splice(userIndex, 1);
-
-      return {
-        success: true,
-        message: 'User removed from moderator successfully',
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to remove user from moderator';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'User removal must be performed via backend API',
+    };
   }
 
   /**
-   * Get WhatsApp session for moderator
+   * Get WhatsApp session for moderator - stub implementation
    */
   async getWhatsAppSession(moderatorId: number): Promise<ServiceResponse<WhatsAppSession | null>> {
-    try {
-      const session = getModeratorWhatsAppSession(moderatorId);
-      return { success: true, data: session };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch WhatsApp session';
-      return { success: false, error: message };
-    }
+    return {
+      success: false,
+      error: 'WhatsApp session data must be fetched from backend API',
+      data: null,
+    };
   }
 }
 

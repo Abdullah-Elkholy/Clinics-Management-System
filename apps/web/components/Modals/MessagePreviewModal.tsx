@@ -6,7 +6,7 @@ import { formatPositionDisplay } from '@/utils/queuePositionUtils';
 import { resolvePatientMessages } from '@/services/queueMessageService';
 import { QueueMessageConfig, MessageResolution } from '@/types/messageCondition';
 import { Patient } from '@/types';
-import { MOCK_QUEUE_PATIENTS } from '@/constants/mockData';
+// Mock data removed - using API data instead
 import { useState } from 'react';
 import Modal from './Modal';
 
@@ -23,14 +23,8 @@ export default function MessagePreviewModal() {
   // State for removed patients
   const [removedPatients, setRemovedPatients] = useState<string[]>([]);
 
-  // Preview data with queue positions - use data from modal or sample from unified mock data
-  const previewPatients: Patient[] = data?.patients || MOCK_QUEUE_PATIENTS.map(p => ({
-    ...p,
-    queueName: 'د. أحمد محمد',
-    status: 'قيد الانتظار',
-    failedAttempts: 0,
-    isPaused: false,
-  }));
+  // Preview data with queue positions - use data from modal or empty array
+  const previewPatients: Patient[] = data?.patients || [];
 
   // Sort patients by queue position (الترتيب) - ascending order
   const sortedPatients = [...previewPatients].sort((a, b) => {

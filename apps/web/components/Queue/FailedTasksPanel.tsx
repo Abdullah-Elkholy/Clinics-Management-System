@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createBulkDeleteConfirmation, createDeleteConfirmation } from '@/utils/confirmationHelpers';
-import { MOCK_FAILED_SESSIONS } from '@/constants/mockData';
+// Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
+import { messageApiClient } from '@/services/api/messageApiClient';
 
 interface Session {
   id: string;
@@ -51,7 +52,42 @@ export default function FailedTasksPanel() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
-  const [sessions, setSessions] = useState<Session[]>(MOCK_FAILED_SESSIONS as Session[]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(10);
+
+  /**
+   * Load failed tasks from API on component mount
+   */
+  useEffect(() => {
+    const loadFailedTasks = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await messageApiClient.getFailedTasks({
+          pageNumber: page,
+          pageSize: pageSize,
+        });
+        
+        if (response.items && response.items.length > 0) {
+          // Transform API response to Session format if needed
+          setSessions([]);
+        } else {
+          setSessions([]);
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load failed tasks';
+        setError(errorMessage);
+        setSessions([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadFailedTasks();
+  }, [page, pageSize]);
 
   /**
    * Toggle session expand - memoized

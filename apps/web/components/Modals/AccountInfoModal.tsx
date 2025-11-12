@@ -28,8 +28,11 @@ export default function AccountInfoModal() {
     const firstNameError = validateName(firstName, 'الاسم الأول');
     if (firstNameError) newErrors.firstName = firstNameError;
     
-    const lastNameError = validateName(lastName, 'الاسم الأخير');
-    if (lastNameError) newErrors.lastName = lastNameError;
+    // lastName is optional - only validate if provided
+    if (lastName && lastName.trim()) {
+      const lastNameError = validateName(lastName, 'الاسم الأخير');
+      if (lastNameError) newErrors.lastName = lastNameError;
+    }
     
     const usernameError = validateName(username, 'اسم المستخدم');
     if (usernameError) newErrors.username = usernameError;
@@ -136,7 +139,7 @@ export default function AccountInfoModal() {
             <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
             <input
               type="text"
-              value={firstName}
+              value={firstName ?? ''}
               onChange={(e) => handleFieldChange('firstName', e.target.value)}
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأول"
@@ -155,10 +158,10 @@ export default function AccountInfoModal() {
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
             <input
               type="text"
-              value={lastName}
+              value={lastName ?? ''}
               onChange={(e) => handleFieldChange('lastName', e.target.value)}
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأخير"
@@ -182,7 +185,7 @@ export default function AccountInfoModal() {
           <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
           <input
             type="text"
-            value={username}
+            value={username ?? ''}
             onChange={(e) => handleFieldChange('username', e.target.value)}
             onBlur={handleFieldBlur}
             placeholder="أدخل اسم المستخدم"
@@ -218,7 +221,7 @@ export default function AccountInfoModal() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الحالية</label>
                 <input
                   type="password"
-                  value={currentPassword}
+                  value={currentPassword ?? ''}
                   onChange={(e) => handleFieldChange('currentPassword', e.target.value)}
                   onBlur={handleFieldBlur}
                   placeholder="أدخل كلمة المرور الحالية"
@@ -240,7 +243,7 @@ export default function AccountInfoModal() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الجديدة</label>
                 <input
                   type="password"
-                  value={newPassword}
+                  value={newPassword ?? ''}
                   onChange={(e) => handleFieldChange('newPassword', e.target.value)}
                   onBlur={handleFieldBlur}
                   placeholder="أدخل كلمة المرور الجديدة"
@@ -262,7 +265,7 @@ export default function AccountInfoModal() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">إعادة كتابة كلمة المرور الجديدة</label>
                 <input
                   type="password"
-                  value={confirmPassword}
+                  value={confirmPassword ?? ''}
                   onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
                   onBlur={handleFieldBlur}
                   placeholder="أعد كتابة كلمة المرور الجديدة"

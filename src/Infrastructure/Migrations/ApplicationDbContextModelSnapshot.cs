@@ -97,11 +97,23 @@ namespace Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime?>("LastAttemptAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("ModeratorId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("PatientId")
                         .HasColumnType("int");
+
+                    b.Property<string>("PatientPhone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(100)
@@ -129,11 +141,65 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("TemplateId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ModeratorId");
+
+                    b.HasIndex("QueueId");
+
+                    b.HasIndex("TemplateId");
 
                     b.HasIndex("Status", "CreatedAt");
 
                     b.ToTable("Messages");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.MessageCondition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("MaxValue")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MinValue")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Operator")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("QueueId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TemplateId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("Value")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QueueId");
+
+                    b.HasIndex("TemplateId")
+                        .IsUnique()
+                        .HasFilter("[TemplateId] IS NOT NULL");
+
+                    b.ToTable("MessageConditions");
                 });
 
             modelBuilder.Entity("Clinics.Domain.MessageSession", b =>
@@ -200,23 +266,71 @@ namespace Infrastructure.Migrations
                     b.Property<int>("CreatedBy")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsShared")
                         .HasColumnType("bit");
 
-                    b.Property<string>("Moderator")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                    b.Property<int?>("ModeratorId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("QueueId")
+                        .HasColumnType("int");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedBy");
 
+                    b.HasIndex("ModeratorId");
+
+                    b.HasIndex("QueueId");
+
                     b.ToTable("MessageTemplates");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.ModeratorSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("ModeratorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("WhatsAppPhoneNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModeratorUserId")
+                        .IsUnique();
+
+                    b.ToTable("ModeratorSettings");
                 });
 
             modelBuilder.Entity("Clinics.Domain.Patient", b =>
@@ -281,9 +395,14 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("EstimatedWaitMinutes")
                         .HasColumnType("int");
 
+                    b.Property<int>("ModeratorId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
                     b.HasIndex("DoctorName");
+
+                    b.HasIndex("ModeratorId");
 
                     b.ToTable("Queues");
                 });
@@ -366,12 +485,12 @@ namespace Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Email")
+                    b.Property<string>("FirstName")
+                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("FullName")
-                        .IsRequired()
+                    b.Property<string>("LastName")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
@@ -381,10 +500,6 @@ namespace Infrastructure.Migrations
                     b.Property<string>("PasswordHash")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("PhoneNumber")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -463,6 +578,45 @@ namespace Infrastructure.Migrations
                     b.Navigation("Queue");
                 });
 
+            modelBuilder.Entity("Clinics.Domain.Message", b =>
+                {
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Clinics.Domain.Queue", "Queue")
+                        .WithMany()
+                        .HasForeignKey("QueueId");
+
+                    b.HasOne("Clinics.Domain.MessageTemplate", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId");
+
+                    b.Navigation("Moderator");
+
+                    b.Navigation("Queue");
+
+                    b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.MessageCondition", b =>
+                {
+                    b.HasOne("Clinics.Domain.Queue", "Queue")
+                        .WithMany()
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Clinics.Domain.MessageTemplate", "Template")
+                        .WithOne("Condition")
+                        .HasForeignKey("Clinics.Domain.MessageCondition", "TemplateId");
+
+                    b.Navigation("Queue");
+
+                    b.Navigation("Template");
+                });
+
             modelBuilder.Entity("Clinics.Domain.MessageSession", b =>
                 {
                     b.HasOne("Clinics.Domain.Queue", "Queue")
@@ -474,6 +628,33 @@ namespace Infrastructure.Migrations
                     b.Navigation("Queue");
                 });
 
+            modelBuilder.Entity("Clinics.Domain.MessageTemplate", b =>
+                {
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Clinics.Domain.Queue", "Queue")
+                        .WithMany()
+                        .HasForeignKey("QueueId");
+
+                    b.Navigation("Moderator");
+
+                    b.Navigation("Queue");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.ModeratorSettings", b =>
+                {
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Moderator");
+                });
+
             modelBuilder.Entity("Clinics.Domain.Patient", b =>
                 {
                     b.HasOne("Clinics.Domain.Queue", "Queue")
@@ -483,6 +664,17 @@ namespace Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Queue");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.Queue", b =>
+                {
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Moderator");
                 });
 
             modelBuilder.Entity("Clinics.Domain.Quota", b =>
@@ -499,10 +691,21 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Clinics.Domain.User", b =>
                 {
                     b.HasOne("Clinics.Domain.User", "Moderator")
-                        .WithMany()
-                        .HasForeignKey("ModeratorId");
+                        .WithMany("ManagedUsers")
+                        .HasForeignKey("ModeratorId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Moderator");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.MessageTemplate", b =>
+                {
+                    b.Navigation("Condition");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.User", b =>
+                {
+                    b.Navigation("ManagedUsers");
                 });
 #pragma warning restore 612, 618
         }

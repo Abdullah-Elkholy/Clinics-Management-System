@@ -23,21 +23,25 @@ public class DeleteTasksResponse
 
 public class FailedTaskDto
 {
-    public long TaskId { get; set; }
+    public int Id { get; set; }
+    public int QueueId { get; set; }
     public string QueueName { get; set; } = string.Empty;
-    public string PatientName { get; set; } = string.Empty;
-    public string Phone { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-    public string Error { get; set; } = string.Empty;
-    public string ErrorDetails { get; set; } = string.Empty;
-    public int RetryCount { get; set; }
-    public DateTime FailedAt { get; set; }
-    public List<RetryHistoryItem> RetryHistory { get; set; } = new();
+    public string PatientPhone { get; set; } = string.Empty;
+    public string MessageContent { get; set; } = string.Empty;
+    public int Attempts { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? LastAttemptAt { get; set; }
 }
 
-public class RetryHistoryItem
+public class PaginatedFailedTasksResponse
 {
-    public DateTime Timestamp { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public string Error { get; set; } = string.Empty;
+    public List<FailedTaskDto> Items { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int PageNumber { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages => (TotalCount + PageSize - 1) / PageSize;
+    public bool HasNextPage => PageNumber < TotalPages;
+    public bool HasPreviousPage => PageNumber > 1;
 }

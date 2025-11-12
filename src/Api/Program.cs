@@ -42,9 +42,12 @@ builder.Services.AddSwaggerGen();
 // (DbContext registration will be configured after we resolve the connection string below)
 
 // Services
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<QuotaService>();
+builder.Services.AddScoped<IUserContext, UserContext>();
+builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
 
 // JWT Auth
 builder.Services.AddAuthentication(options =>
@@ -83,10 +86,9 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
     {
         // When AllowCredentials() is used you must explicitly list allowed origins.
-        policy.WithOrigins("http://localhost:3000")
+        policy.AllowAnyOrigin()
               .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
+              .AllowAnyHeader();
     });
 });
 
@@ -148,39 +150,19 @@ app.UseAuthorization();
 app.UseCookiePolicy();
 app.MapControllers();
 
-// Seed sample data only when SEED_ADMIN=true (to avoid accidental production seeding)
+
+// Seed sample data and apply migrations automatically on startup
 try
 {
-    var seedFlag = app.Configuration["SEED_ADMIN"] ?? Environment.GetEnvironmentVariable("SEED_ADMIN");
-    if (!string.IsNullOrEmpty(seedFlag) && seedFlag.ToLower() == "true")
+    using (var scope = app.Services.CreateScope())
     {
-        using (var scope = app.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                if (!db.Users.Any(u => u.Username == "admin"))
-                {
-                    // Seed admin user with hashed password (development convenience).
-                    var adminUser = new Clinics.Domain.User 
-                    { 
-                        Username = "admin", 
-                        FullName = "المدير الأساسي", 
-                        Role = Clinics.Domain.UserRole.PrimaryAdmin.ToRoleName() 
-                    };
-                    var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<Clinics.Domain.User>();
-                    var seedPw = app.Configuration["SEED_ADMIN_PASSWORD"] ?? Environment.GetEnvironmentVariable("SEED_ADMIN_PASSWORD") ?? "Admin123!";
-                    adminUser.PasswordHash = hasher.HashPassword(adminUser, seedPw);
-                    db.Users.Add(adminUser);
-
-                    db.Queues.Add(new Clinics.Domain.Queue { DoctorName = "د. أحمد محمد", Description = "عيادة الصباح", CreatedBy = adminUser.Id, CurrentPosition = 1, EstimatedWaitMinutes = 15 });
-                    db.Queues.Add(new Clinics.Domain.Queue { DoctorName = "د. فاطمة علي", Description = "عيادة الأطفال", CreatedBy = adminUser.Id, CurrentPosition = 2, EstimatedWaitMinutes = 20 });
-                    db.Patients.Add(new Clinics.Domain.Patient { QueueId = 1, FullName = "أحمد محمد", PhoneNumber = "+966500000001", Position = 1 });
-                    db.Patients.Add(new Clinics.Domain.Patient { QueueId = 1, FullName = "فاطمة علي", PhoneNumber = "+966500000002", Position = 2 });
-                    db.SaveChanges();
-                }
-        }
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // Apply any pending migrations (seeding is handled by migrations)
+        db.Database.Migrate();
     }
 }
 catch { }
+
 
 // schedule hangfire recurring job every 15 seconds (demo)
 try

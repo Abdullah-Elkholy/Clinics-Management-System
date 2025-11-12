@@ -32,8 +32,6 @@ import {
   User,
   CreateUserPayload,
   UpdateUserPayload,
-  AssignModeratorPayload,
-  ModeratorQuota,
   UserServiceResponse,
 } from '@/services/userManagementService';
 
@@ -44,7 +42,6 @@ export interface UseUserManagementState {
   users: User[];
   moderators: User[];
   selectedUser?: User;
-  quota?: ModeratorQuota;
   loading: boolean;
   error: string | null;
 }
@@ -59,10 +56,6 @@ export interface UseUserManagementActions {
   createUser: (payload: CreateUserPayload) => Promise<boolean>;
   updateUser: (id: string, payload: UpdateUserPayload) => Promise<boolean>;
   deleteUser: (id: string) => Promise<boolean>;
-  getQuota: (moderatorId: string) => Promise<void>;
-  updateQuotaLimits: (moderatorId: string, limits: { messagesLimit?: number; queuesLimit?: number }) => Promise<boolean>;
-  assignModerator: (payload: AssignModeratorPayload) => Promise<boolean>;
-  getUsersByModerator: (moderatorId: string) => Promise<User[] | null>;
   selectUser: (user?: User) => void;
   clearError: () => void;
 }
@@ -77,7 +70,6 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
   const [users, setUsers] = useState<User[]>([]);
   const [moderators, setModerators] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | undefined>();
-  const [quota, setQuota] = useState<ModeratorQuota | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,6 +78,13 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const fetchUsers = useCallback(
     async (filters?: { role?: UserRole; isActive?: boolean; search?: string }) => {
+      // Only admins and moderators can fetch the user list
+      // Regular users don't have permission, so skip the fetch silently
+      if (currentUser && currentUser.role === UserRole.User) {
+        setUsers([]);
+        return;
+      }
+
       setLoading(true);
       setError(null);
 
@@ -94,22 +93,37 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         if (result.success && result.data) {
           setUsers(result.data);
         } else {
-          setError(result.error || 'Failed to fetch users');
+          // Silently ignore 403 Forbidden errors (unauthorized)
+          if (result.error && result.error.includes('403')) {
+            setUsers([]);
+          } else {
+            setError(result.error || 'Failed to fetch users');
+          }
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-        setError(errorMsg);
+        // Silently ignore authorization errors
+        if (!errorMsg.includes('403') && !errorMsg.includes('Forbidden')) {
+          setError(errorMsg);
+        }
       } finally {
         setLoading(false);
       }
     },
-    []
+    [currentUser]
   );
 
   /**
    * Fetch all moderators
    */
   const fetchModerators = useCallback(async () => {
+    // Only admins and moderators can see the full moderator list
+    // Regular users don't have permission, so skip the fetch silently
+    if (currentUser && currentUser.role === UserRole.User) {
+      setModerators([]);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -118,15 +132,23 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       if (result.success && result.data) {
         setModerators(result.data);
       } else {
-        setError(result.error || 'Failed to fetch moderators');
+        // Silently ignore 403 Forbidden errors (unauthorized)
+        if (result.error && result.error.includes('403')) {
+          setModerators([]);
+        } else {
+          setError(result.error || 'Failed to fetch moderators');
+        }
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      setError(errorMsg);
+      // Silently ignore authorization errors
+      if (!errorMsg.includes('403') && !errorMsg.includes('Forbidden')) {
+        setError(errorMsg);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   /**
    * Get single user
@@ -252,113 +274,10 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
   );
 
   /**
-   * Get user quota
-   */
-  const getQuota = useCallback(async (userId: string) => {
-    try {
-      const result = await userManagementService.getQuota(userId);
-      if (result.success && result.data) {
-        setQuota(result.data);
-      } else {
-        setError(result.error || 'Failed to fetch quota');
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      setError(errorMsg);
-    }
-  }, []);
-
-  /**
-   * Update quota limits
-   */
-  const updateQuotaLimits = useCallback(
-    async (moderatorId: string, limits: { messagesLimit?: number; queuesLimit?: number }): Promise<boolean> => {
-      try {
-        const result = await userManagementService.updateQuotaLimits(moderatorId, limits);
-        if (result.success && result.data) {
-          setQuota(result.data);
-          addToast('تم تحديث الحصة بنجاح', 'success');
-          return true;
-        } else {
-          const errorMsg = result.error || 'Failed to update quota';
-          setError(errorMsg);
-          addToast(errorMsg, 'error');
-          return false;
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-        setError(errorMsg);
-        addToast(errorMsg, 'error');
-        return false;
-      }
-    },
-    [addToast]
-  );
-
-  /**
-   * Assign moderator
-   */
-  const assignModerator = useCallback(
-    async (payload: AssignModeratorPayload): Promise<boolean> => {
-      try {
-        const result = await userManagementService.assignModerator(payload);
-        if (result.success && result.data) {
-          setUsers((prev) => prev.map((u) => (u.id === payload.userId ? result.data : u)));
-          if (selectedUser?.id === payload.userId) {
-            setSelectedUser(result.data);
-          }
-          addToast('تم تعيين المشرف بنجاح', 'success');
-          return true;
-        } else {
-          const errorMsg = result.error || 'Failed to assign moderator';
-          setError(errorMsg);
-          addToast(errorMsg, 'error');
-          return false;
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-        setError(errorMsg);
-        addToast(errorMsg, 'error');
-        return false;
-      }
-    },
-    [selectedUser, addToast]
-  );
-
-  /**
-   * Get users by moderator
-   */
-  const getUsersByModerator = useCallback(
-    async (moderatorId: string): Promise<User[] | null> => {
-      try {
-        const result = await userManagementService.getUsersByModerator(moderatorId);
-        if (result.success && result.data) {
-          return result.data;
-        }
-        setError(result.error || 'Failed to fetch users');
-        return null;
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-        setError(errorMsg);
-        return null;
-      }
-    },
-    []
-  );
-
-  /**
    * Select user for detailed view
    */
   const selectUser = useCallback((user?: User) => {
     setSelectedUser(user);
-    if (user) {
-      // Fetch quota when selecting user
-      userManagementService.getQuota(user.id).then((result) => {
-        if (result.success && result.data) {
-          setQuota(result.data);
-        }
-      });
-    }
   }, []);
 
   /**
@@ -386,11 +305,10 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       users,
       moderators,
       selectedUser,
-      quota,
       loading,
       error,
     }),
-    [users, moderators, selectedUser, quota, loading, error]
+    [users, moderators, selectedUser, loading, error]
   );
 
   /**
@@ -404,14 +322,10 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       createUser,
       updateUser,
       deleteUser,
-      getQuota,
-      updateQuotaLimits,
-      assignModerator,
-      getUsersByModerator,
       selectUser,
       clearError,
     }),
-    [fetchUsers, fetchModerators, getUser, createUser, updateUser, deleteUser, getQuota, updateQuotaLimits, assignModerator, getUsersByModerator, selectUser, clearError]
+    [fetchUsers, fetchModerators, getUser, createUser, updateUser, deleteUser, selectUser, clearError]
   );
 
   return [state, actions] as const;

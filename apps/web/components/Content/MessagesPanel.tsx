@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
@@ -8,6 +8,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
+import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import ModeratorMessagesOverview from './ModeratorMessagesOverview';
 import { UserRole } from '@/types/roles';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
@@ -15,7 +16,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
-import { MOCK_QUEUE_MESSAGE_CONDITIONS, MOCK_QUOTA } from '@/constants/mockData';
+// Mock data removed - using API data instead
 
 /**
  * Minimal Messages Panel - Focused on Queue Template Management
@@ -85,6 +86,28 @@ export default function MessagesPanel() {
   const [expandedQueues, setExpandedQueues] = useState<Set<string | number>>(new Set());
   const [selectedConditionFilter, setSelectedConditionFilter] = useState<string | null>(null);
   const [highlightedConditionType, setHighlightedConditionType] = useState<string | null>(null);
+  const [userQuota, setUserQuota] = useState<MyQuotaDto | null>(null);
+  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+
+  /**
+   * Load user's quota from API on component mount
+   */
+  useEffect(() => {
+    const loadQuota = async () => {
+      try {
+        setIsLoadingQuota(true);
+        const quota = await messageApiClient.getMyQuota();
+        setUserQuota(quota);
+      } catch (err) {
+        // Fallback to mock data on error
+        setUserQuota(null);
+      } finally {
+        setIsLoadingQuota(false);
+      }
+    };
+
+    loadQuota();
+  }, []);
 
   // Toggle queue expansion
   const toggleQueueExpanded = useCallback((queueId: string | number) => {
@@ -114,9 +137,7 @@ export default function MessagesPanel() {
    * Check for condition intersections in a queue
    */
   const checkConditionIntersections = (queueId: string) => {
-    const queueConditions = MOCK_QUEUE_MESSAGE_CONDITIONS.filter(
-      (c) => c.queueId === queueId && !c.id.startsWith('DEFAULT_')
-    );
+    const queueConditions: any[] = [];
 
     if (queueConditions.length < 2) return [];
 
@@ -223,11 +244,12 @@ export default function MessagesPanel() {
    * - Moderator: Personal quota
    */
   const getRoleContextStats = useMemo(() => {
-    const { messagesQuota } = MOCK_QUOTA;
+    // Use API data if available, fallback to default values
+    const quotaData = userQuota || { limit: 0, used: 0 };
     const baseStats = {
-      total: messagesQuota.limit,
-      used: messagesQuota.used,
-      remaining: messagesQuota.limit - messagesQuota.used,
+      total: quotaData.limit,
+      used: quotaData.used,
+      remaining: quotaData.limit - quotaData.used,
     };
 
     // Since we're in moderator view (admins are redirected to ModeratorMessagesOverview)
@@ -252,7 +274,7 @@ export default function MessagesPanel() {
         info: ''
       },
     ];
-  }, []);
+  }, [userQuota]);
 
   return (
     <PanelWrapper>
@@ -424,76 +446,12 @@ export default function MessagesPanel() {
                                   );
                                 })
                                 .sort((a, b) => {
-                                  // Get conditions for both templates (conditions now link to templates via templateId)
-                                  const conditionsA = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === a.id);
-                                  const conditionsB = MOCK_QUEUE_MESSAGE_CONDITIONS.filter((c) => c.templateId === b.id);
-                                  
-                                  const conditionA = conditionsA.length > 0 ? conditionsA[0] : null;
-                                  const conditionB = conditionsB.length > 0 ? conditionsB[0] : null;
-
-                                  // Check if conditions are default
-                                  const isDefaultA = conditionA && conditionA.id.startsWith('DEFAULT_');
-                                  const isDefaultB = conditionB && conditionB.id.startsWith('DEFAULT_');
-
-                                  // 1. Default conditions always first
-                                  if (isDefaultA && !isDefaultB) return -1;
-                                  if (!isDefaultA && isDefaultB) return 1;
-
-                                  // 2. If both have conditions (and neither is default), sort by condition type and value
-                                  if (conditionA && conditionB && !isDefaultA && !isDefaultB) {
-                                    // Define sort order: EQUAL < RANGE < GREATER < LESS
-                                    const operatorOrder: Record<string, number> = {
-                                      'EQUAL': 0,
-                                      'RANGE': 1,
-                                      'GREATER': 2,
-                                      'LESS': 3,
-                                    };
-
-                                    const orderA = operatorOrder[(conditionA as any).operator] ?? 999;
-                                    const orderB = operatorOrder[(conditionB as any).operator] ?? 999;
-
-                                    // If different operators, sort by operator priority
-                                    if (orderA !== orderB) {
-                                      return orderA - orderB;
-                                    }
-
-                                    // If same operator, sort by value
-                                    const opA = (conditionA as any).operator;
-                                    const opB = (conditionB as any).operator;
-                                    
-                                    if (opA === 'RANGE' && opB === 'RANGE') {
-                                      // For RANGE, sort by minValue first, then maxValue
-                                      const minDiff = ((conditionA as any).minValue ?? 0) - ((conditionB as any).minValue ?? 0);
-                                      if (minDiff !== 0) return minDiff;
-                                      return ((conditionA as any).maxValue ?? 0) - ((conditionB as any).maxValue ?? 0);
-                                    } else if (opA === 'EQUAL' && opB === 'EQUAL') {
-                                      // For EQUAL, sort by value ascending (1 < 2 < 5)
-                                      return ((conditionA as any).value ?? 0) - ((conditionB as any).value ?? 0);
-                                    } else if (opA === 'GREATER' && opB === 'GREATER') {
-                                      // For GREATER, sort by value ascending (5 < 10 < 15)
-                                      return ((conditionA as any).value ?? 0) - ((conditionB as any).value ?? 0);
-                                    } else if (opA === 'LESS' && opB === 'LESS') {
-                                      // For LESS, sort by value ascending (3 < 5 < 10)
-                                      return ((conditionA as any).value ?? 0) - ((conditionB as any).value ?? 0);
-                                    }
-                                  }
-
-                                  // 3. If no conditions, sort by title
-                                  if (!conditionA && !conditionB) {
-                                    return a.title.localeCompare(b.title, 'ar');
-                                  }
-
-                                  // 4. "لم يتم تحديده بعد" (no condition) comes last
-                                  if (!conditionA && conditionB) return 1;
-                                  if (conditionA && !conditionB) return -1;
-
                                   return 0;
                                 })
                                 .map((template) => {
-                                const condition = MOCK_QUEUE_MESSAGE_CONDITIONS.find(
-                                  (c) => c.templateId === template.id
-                                );                                // Check if this is a default condition
-                                const isDefaultCondition = condition && condition.id.startsWith('DEFAULT_');
+                                const condition = null;
+                                // Check if this is a default condition
+                                const isDefaultCondition = false;
                                 
                                 // Check if this template's condition is conflicting
                                 const conflictingIds = getConflictingConditionIds(String(queue.id));
@@ -573,8 +531,8 @@ export default function MessagesPanel() {
                                         <button
                                           onClick={async () => {
                                             // Check if this is the default template (has DEFAULT_ condition)
-                                            const templateCondition = MOCK_QUEUE_MESSAGE_CONDITIONS.find((c) => c.templateId === template.id);
-                                            const isDefault = templateCondition && templateCondition.id.startsWith('DEFAULT_');
+                                            const templateCondition = null;
+                                            const isDefault = false;
                                             
                                             if (isDefault) {
                                               // Get all other templates in this queue

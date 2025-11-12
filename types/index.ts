@@ -1,11 +1,13 @@
 // User Types
-export type UserRole = 'admin' | 'admin2' | 'moderator' | 'user';
+// NOTE: Use the UserRole enum from @/types/roles (apps/web/types/roles.ts) as the source of truth
+// This type is kept for backward compatibility but should not be used in new code
+export type UserRole = 'primary_admin' | 'secondary_admin' | 'moderator' | 'user';
 
 export interface User {
   id: string;
   username: string;
   firstName: string;
-  lastName: string;
+  lastName?: string;
   role: UserRole;
   moderatorId?: string;
 }

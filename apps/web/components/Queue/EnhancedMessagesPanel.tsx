@@ -15,7 +15,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
-import { MOCK_MESSAGE_TEMPLATES, MOCK_QUEUE_MESSAGE_CONDITIONS } from '@/constants/mockData';
+// Mock data removed - using API data instead
 
 interface MessageTemplate {
   id: string;
@@ -54,9 +54,9 @@ const EnhancedMessagesPanel: React.FC<EnhancedMessagesPanelProps> = ({
   const { openModal } = useModal();
   const { addToast } = useUI();
 
-  // Use mock data
-  const templates = MOCK_MESSAGE_TEMPLATES as MessageTemplate[];
-  const [conditions, setConditions] = useState<QueueMessageCondition[]>(MOCK_QUEUE_MESSAGE_CONDITIONS as QueueMessageCondition[]);
+  // Initialize with empty arrays - data will be loaded from context/API
+  const templates: MessageTemplate[] = [];
+  const [conditions, setConditions] = useState<QueueMessageCondition[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 

@@ -2,8 +2,10 @@
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validatePhone, ValidationError, validateCountryCode, MAX_PHONE_DIGITS } from '@/utils/validation';
 import { COUNTRY_CODES } from '@/constants';
+import { queuesApiClient } from '@/services/api/queuesApiClient';
 import Modal from './Modal';
 import { useState } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
@@ -21,8 +23,9 @@ interface PatientErrors {
 }
 
 export default function AddPatientModal() {
-  const { openModals, closeModal } = useModal();
+  const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { selectedQueueId, addPatient } = useQueue();
   const [patients, setPatients] = useState<PatientField[]>([
     { name: '', phone: '', countryCode: '+20', customCountryCode: '' }
   ]);
@@ -31,6 +34,8 @@ export default function AddPatientModal() {
   const [expandedPatients, setExpandedPatients] = useState<Set<number>>(new Set([0])); // Track expanded patients
 
   const isOpen = openModals.has('addPatient');
+  const modalData = getModalData('addPatient');
+  const queueId = modalData?.queueId || selectedQueueId;
 
   const validatePatient = (index: number, patient: PatientField): ValidationError => {
     const patientErrors: ValidationError = {};
@@ -216,22 +221,51 @@ export default function AddPatientModal() {
     try {
       setIsLoading(true);
       
+      // Validate that we have a queue ID
+      if (!queueId) {
+        addToast('يجب تحديد طابور', 'error');
+        return;
+      }
+
       // Process valid patients with effective country codes
       const patientsToAdd = validPatients.map(p => ({
         name: p.name.trim(),
         phone: p.phone.trim(),
-        countryCode: p.effectiveCountryCode
+        countryCode: p.effectiveCountryCode,
+        status: 'waiting' as const,
       }));
       
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Make API calls to add patients to queue
+      let addedCount = 0;
+      for (const patient of patientsToAdd) {
+        try {
+          // Call API to add patient to queue
+          // For now, use local addPatient since backend endpoint may not exist yet
+          // TODO: Replace with API call once POST /queues/{queueId}/patients is available
+          addPatient({
+            queueId: String(queueId),
+            name: patient.name,
+            phone: patient.phone,
+            countryCode: patient.countryCode,
+            status: patient.status,
+          });
+          addedCount++;
+        } catch (err) {
+          console.error(`Failed to add patient: ${patient.name}`, err);
+          // Continue adding other patients
+        }
+      }
       
-      // TODO: Add patients through context using patientsToAdd
-      addToast(`تم إضافة ${validCount} مريض بنجاح`, 'success');
-      setPatients([{ name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
-      setErrors({});
-      closeModal('addPatient');
+      if (addedCount > 0) {
+        addToast(`تم إضافة ${addedCount} مريض بنجاح`, 'success');
+        setPatients([{ name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
+        setErrors({});
+        closeModal('addPatient');
+      } else {
+        addToast('فشل إضافة المرضى', 'error');
+      }
     } catch (error) {
+      console.error('Failed to add patients:', error);
       addToast('حدث خطأ أثناء إضافة المرضى', 'error');
     } finally {
       setIsLoading(false);

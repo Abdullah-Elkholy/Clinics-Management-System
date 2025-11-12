@@ -196,7 +196,7 @@ export default function EditPatientModal() {
           <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
           <input
             type="text"
-            value={name}
+            value={name ?? ''}
             onChange={(e) => handleFieldChange('name', e.target.value)}
             onBlur={handleFieldBlur}
             placeholder="أدخل الاسم الكامل"
@@ -232,7 +232,7 @@ export default function EditPatientModal() {
             {countryCode === 'OTHER' && (
               <input
                 type="text"
-                value={customCountryCode}
+                value={customCountryCode ?? ''}
                 onChange={(e) => {
                   // Limit to 4 characters for country code format (+XXX)
                   const value = e.target.value;
@@ -256,7 +256,7 @@ export default function EditPatientModal() {
             {/* Phone Input */}
             <input
               type="tel"
-              value={phone}
+              value={phone ?? ''}
               onChange={(e) => handleFieldChange('phone', e.target.value)}
               onBlur={handleFieldBlur}
               placeholder="أدخل رقم الهاتف"

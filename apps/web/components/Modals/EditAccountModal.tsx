@@ -277,7 +277,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
               </label>
               <input
                 type="text"
-                value={firstName}
+                value={firstName ?? ''}
                 onChange={(e) => handleFieldChange('firstName', e.target.value)}
                 onBlur={handleFieldBlur}
                 placeholder="أدخل الاسم الأول"
@@ -296,7 +296,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
               </label>
               <input
                 type="text"
-                value={lastName}
+                value={lastName ?? ''}
                 onChange={(e) => handleFieldChange('lastName', e.target.value)}
                 onBlur={handleFieldBlur}
                 placeholder="أدخل الاسم الأخير (اختياري)"
@@ -317,7 +317,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
             </label>
             <input
               type="text"
-              value={username}
+              value={username ?? ''}
               onChange={(e) => handleFieldChange('username', e.target.value)}
               onBlur={handleFieldBlur}
               placeholder="أدخل اسم المستخدم"
@@ -379,7 +379,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
                   <div className="relative">
                     <input
                       type={showCurrentPassword ? 'text' : 'password'}
-                      value={currentPassword}
+                      value={currentPassword ?? ''}
                       onChange={(e) => handleFieldChange('currentPassword', e.target.value)}
                       onBlur={handleFieldBlur}
                       placeholder="أدخل كلمة المرور الحالية"
@@ -442,7 +442,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
                     <div className="relative">
                       <input
                         type={showNewPassword ? 'text' : 'password'}
-                        value={newPassword}
+                        value={newPassword ?? ''}
                         onChange={(e) => handleFieldChange('newPassword', e.target.value)}
                         onBlur={handleFieldBlur}
                         placeholder="أدخل كلمة المرور الجديدة"
@@ -470,7 +470,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
                     <div className="relative">
                       <input
                         type={showConfirmPassword ? 'text' : 'password'}
-                        value={confirmPassword}
+                        value={confirmPassword ?? ''}
                         onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
                         onBlur={handleFieldBlur}
                         placeholder="أعد إدخال كلمة المرور الجديدة"

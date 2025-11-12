@@ -1,8 +1,8 @@
 {
-    "configurations": 
-    [
+  "configurations": 
+  [
     {
-      "name": "Run WhatsApp Service (dotnet)",
+      "name": "WA ........ WhatsApp Service (dotnet)",
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build-whatsapp",
@@ -19,8 +19,8 @@
         "enabled": true
       }
     },
-        {
-      "name": "Run Backend API (dotnet)",
+    {
+      "name": "BE only . Backend API (dotnet)",
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build-api",
@@ -41,7 +41,7 @@
       }
     },
     {
-      "name": "Run Frontend (Next.js)",
+      "name": "FE only . Frontend (Next.js)",
       "type": "node",
       "request": "launch",
       // "preLaunchTask": "start-frontend",
@@ -52,15 +52,16 @@
       "env": {}
     }
   ],
+  
   "compounds": 
   [
     {
-      "name": "Run Backend API + Frontend",
-      "configurations": [ "Run Frontend (Next.js)", "Run Backend API (dotnet)" ]
+      "name": "BE + FE (Backend & Frontend)",
+      "configurations": [ "FE only . Frontend (Next.js)", "BE only . Backend API (dotnet)" ]
     },
     {
       "name": "Run All",
-      "configurations": [ "Run Frontend (Next.js)", "Run Backend API (dotnet)", "Run WhatsApp Service (dotnet)" ]
+      "configurations": [ "FE only . Frontend (Next.js)", "BE only . Backend API (dotnet)", "WA only . WhatsApp Service (dotnet)" ]
     }
   ]
 }

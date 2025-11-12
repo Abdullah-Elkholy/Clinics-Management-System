@@ -254,7 +254,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
             <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
             <input
               type="text"
-              value={firstName}
+              value={firstName ?? ''}
               onChange={(e) => handleFieldChange('firstName', e.target.value)}
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأول"
@@ -276,7 +276,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
             <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
             <input
               type="text"
-              value={lastName}
+              value={lastName ?? ''}
               onChange={(e) => handleFieldChange('lastName', e.target.value)}
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأخير (اختياري)"
@@ -300,7 +300,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
           <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
           <input
             type="text"
-            value={username}
+            value={username ?? ''}
             onChange={(e) => handleFieldChange('username', e.target.value)}
             onBlur={handleFieldBlur}
             placeholder="أدخل اسم المستخدم"
@@ -323,7 +323,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="block text-sm font-medium text-gray-700">كلمة المرور *</label>
+              <label className="block text-sm font-medium text-gray-700">كلمة المرور الجديدة *</label>
               <button
                 type="button"
                 onClick={generateRandomPassword}
@@ -337,7 +337,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
-                value={password}
+                value={password ?? ''}
                 onChange={(e) => handleFieldChange('password', e.target.value)}
                 onBlur={handleFieldBlur}
                 placeholder="اتركها فارغة للاحتفاظ بكلمة المرور الحالية"
@@ -365,11 +365,11 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">تأكيد كلمة المرور</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">تأكيد كلمة المرور الجديدة *</label>
             <div className="relative">
               <input
                 type={showConfirmPassword ? 'text' : 'password'}
-                value={confirmPassword}
+                value={confirmPassword ?? ''}
                 onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
                 onBlur={handleFieldBlur}
                 placeholder="تأكيد كلمة المرور الجديدة"

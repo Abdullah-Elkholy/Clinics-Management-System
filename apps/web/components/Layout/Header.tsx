@@ -11,11 +11,11 @@ export default function Header() {
   if (!user) return null;
 
   const roleDisplay = getRoleDisplayName(user.role);
-  const fullName = `${user.firstName} ${user.lastName}`;
+  const fullName = user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName;
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-40">
-      <div className="flex items-center justify-between px-6 py-4">
+      <div className="flex items-center justify-between px-6 py-2 h-20 md:h-24">
         {/* Left side - Logo and Title */}
         <div className="flex items-center space-x-4 space-x-reverse">
           <div className="bg-blue-100 w-10 h-10 rounded-full flex items-center justify-center">

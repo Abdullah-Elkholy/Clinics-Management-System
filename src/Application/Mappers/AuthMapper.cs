@@ -25,10 +25,9 @@ namespace Clinics.Application.Mappers
             {
                 Id = user.Id,
                 Username = user.Username,
-                FullName = user.FullName,
-                Role = user.Role,
-                Email = user.Email,
-                PhoneNumber = user.PhoneNumber
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Role = user.Role
             };
         }
 
