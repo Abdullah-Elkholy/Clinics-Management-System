@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Xunit;
 using Clinics.Api;
@@ -18,10 +19,11 @@ namespace Clinics.IntegrationTests
     /// - Required fields enforced
     /// - Invalid data returns 400 Bad Request with field details
     /// </summary>
+    [Collection("Database collection")]
     public class PatientValidationTests : BusinessLogicTestBase
     {
-        public PatientValidationTests(CustomWebApplicationFactory<Program> factory)
-            : base(factory) { }
+        public PatientValidationTests(DatabaseFixture databaseFixture)
+            : base(databaseFixture) { }
 
         #region Gating Tests (must pass)
 
@@ -105,9 +107,12 @@ namespace Clinics.IntegrationTests
             {
                 var doc = await ParseResponse(response);
                 var data = GetDataFromResponse(doc.RootElement);
-                if (data.HasValue && data.Value.TryGetProperty("clinicId", out var clinicIdProp))
+                if (data.HasValue)
                 {
-                    Assert.Equal(1, clinicIdProp.GetInt32());
+                    if (data.Value.TryGetProperty("clinicId", out JsonElement clinicIdProp))
+                    {
+                        Assert.Equal(1, clinicIdProp.GetInt32());
+                    }
                 }
             }
         }
@@ -136,12 +141,15 @@ namespace Clinics.IntegrationTests
             {
                 var doc = await ParseResponse(response);
                 var data = GetDataFromResponse(doc.RootElement);
-                if (data.HasValue && data.Value.TryGetProperty("phoneNumber", out var phoneProp))
+                if (data.HasValue)
                 {
-                    var storedPhone = phoneProp.GetString();
-                    // Verify normalization (e.g., +20 prefix, no spaces, etc.)
-                    Assert.NotNull(storedPhone);
-                    Assert.StartsWith("+", storedPhone);
+                    if (data.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp))
+                    {
+                        var storedPhone = phoneProp.GetString();
+                        // Verify normalization (e.g., +20 prefix, no spaces, etc.)
+                        Assert.NotNull(storedPhone);
+                        Assert.StartsWith("+", storedPhone);
+                    }
                 }
             }
         }

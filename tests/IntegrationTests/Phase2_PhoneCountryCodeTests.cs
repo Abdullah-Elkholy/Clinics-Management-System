@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Xunit;
 using Clinics.Api;
@@ -19,10 +20,11 @@ namespace Clinics.IntegrationTests
     /// - Plus sign added if missing
     /// - Extension support (future)
     /// </summary>
+    [Collection("Database collection")]
     public class PhoneCountryCodeTests : BusinessLogicTestBase
     {
-        public PhoneCountryCodeTests(CustomWebApplicationFactory<Program> factory)
-            : base(factory) { }
+        public PhoneCountryCodeTests(DatabaseFixture databaseFixture)
+            : base(databaseFixture) { }
 
         #region Gating Tests (must pass)
 
@@ -48,11 +50,14 @@ namespace Clinics.IntegrationTests
             // Verify stored phone is normalized
             var doc = await ParseResponse(response);
             var data = GetDataFromResponse(doc.RootElement);
-            if (data.HasValue && data.Value.TryGetProperty("phoneNumber", out var phoneProp))
+            if (data.HasValue)
             {
-                var storedPhone = phoneProp.GetString();
-                Assert.StartsWith("+20", storedPhone);
-                Assert.DoesNotContain("0", storedPhone.Substring(3)); // No leading zeros after country code
+                if (data.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp))
+                {
+                    var storedPhone = phoneProp.GetString();
+                    Assert.StartsWith("+20", storedPhone);
+                    Assert.DoesNotContain("0", storedPhone.Substring(3)); // No leading zeros after country code
+                }
             }
         }
 
@@ -80,10 +85,13 @@ namespace Clinics.IntegrationTests
             {
                 var doc = await ParseResponse(response);
                 var data = GetDataFromResponse(doc.RootElement);
-                if (data.HasValue && data.Value.TryGetProperty("phoneNumber", out var phoneProp))
+                if (data.HasValue)
                 {
-                    var storedPhone = phoneProp.GetString();
-                    Assert.StartsWith("+", storedPhone);
+                    if (data.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp))
+                    {
+                        var storedPhone = phoneProp.GetString();
+                        Assert.StartsWith("+", storedPhone);
+                    }
                 }
             }
         }
@@ -107,9 +115,12 @@ namespace Clinics.IntegrationTests
                 var data1 = GetDataFromResponse(doc1.RootElement);
                 string? storedPhone = null;
 
-                if (data1.HasValue && data1.Value.TryGetProperty("phoneNumber", out var phoneProp))
+                if (data1.HasValue)
                 {
-                    storedPhone = phoneProp.GetString();
+                    if (data1.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp))
+                    {
+                        storedPhone = phoneProp.GetString();
+                    }
                 }
 
                 // Create another patient with same phone to verify normalization is consistent
@@ -126,10 +137,13 @@ namespace Clinics.IntegrationTests
                     var doc2 = await ParseResponse(response2);
                     var data2 = GetDataFromResponse(doc2.RootElement);
 
-                    if (data2.HasValue && data2.Value.TryGetProperty("phoneNumber", out var phoneProp2))
+                    if (data2.HasValue)
                     {
-                        var storedPhone2 = phoneProp2.GetString();
-                        Assert.Equal(storedPhone, storedPhone2);
+                        if (data2.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp2))
+                        {
+                            var storedPhone2 = phoneProp2.GetString();
+                            Assert.Equal(storedPhone, storedPhone2);
+                        }
                     }
                 }
             }
@@ -222,10 +236,13 @@ namespace Clinics.IntegrationTests
 
             var doc = await ParseResponse(response);
             var data = GetDataFromResponse(doc.RootElement);
-            if (data.HasValue && data.Value.TryGetProperty("phoneNumber", out var phoneProp))
+            if (data.HasValue)
             {
-                var storedPhone = phoneProp.GetString();
-                Assert.Contains("ext", storedPhone.ToLower());
+                if (data.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp))
+                {
+                    var storedPhone = phoneProp.GetString();
+                    Assert.Contains("ext", storedPhone.ToLower());
+                }
             }
         }
 
@@ -258,11 +275,14 @@ namespace Clinics.IntegrationTests
 
             var doc = await ParseResponse(response);
             var data = GetDataFromResponse(doc.RootElement);
-            if (data.HasValue && data.Value.TryGetProperty("phoneNumber", out var phoneProp))
+            if (data.HasValue)
             {
-                var storedPhone = phoneProp.GetString();
-                // Should be normalized to standard format
-                Assert.Matches(@"^\+\d{10,}$", storedPhone); // Basic pattern, adjust as needed
+                if (data.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp))
+                {
+                    var storedPhone = phoneProp.GetString();
+                    // Should be normalized to standard format
+                    Assert.Matches(@"^\+\d{10,}$", storedPhone); // Basic pattern, adjust as needed
+                }
             }
         }
 

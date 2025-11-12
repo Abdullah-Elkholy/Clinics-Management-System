@@ -19,10 +19,11 @@ namespace Clinics.IntegrationTests
     /// - Cascade behavior defined and consistent
     /// - Restore not allowed (soft delete is permanent in listing)
     /// </summary>
+    [Collection("Database collection")]
     public class SoftDeleteTests : BusinessLogicTestBase
     {
-        public SoftDeleteTests(CustomWebApplicationFactory<Program> factory)
-            : base(factory) { }
+        public SoftDeleteTests(DatabaseFixture databaseFixture)
+            : base(databaseFixture) { }
 
         #region Gating Tests (must pass)
 
@@ -262,26 +263,6 @@ namespace Clinics.IntegrationTests
 
             // Assert
             Assert.Equal(HttpStatusCode.NotFound, restoreResponse.StatusCode);
-        }
-
-        #endregion
-
-        #region Helpers
-
-        /// <summary>
-        /// Helper for DELETE with request body.
-        /// </summary>
-        private async Task<HttpResponseMessage> DeleteAsync(string path, object body)
-        {
-            var request = new HttpRequestMessage(HttpMethod.Delete, path)
-            {
-                Content = new StringContent(
-                    System.Text.Json.JsonSerializer.Serialize(body),
-                    System.Text.Encoding.UTF8,
-                    "application/json"
-                )
-            };
-            return await Client.SendAsync(request);
         }
 
         #endregion

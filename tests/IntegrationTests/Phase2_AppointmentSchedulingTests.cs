@@ -18,10 +18,11 @@ namespace Clinics.IntegrationTests
     /// - Cross-patient/resource overlap detection (future P1)
     /// - Appointment time validation
     /// </summary>
+    [Collection("Database collection")]
     public class AppointmentSchedulingTests : BusinessLogicTestBase
     {
-        public AppointmentSchedulingTests(CustomWebApplicationFactory<Program> factory)
-            : base(factory) { }
+        public AppointmentSchedulingTests(DatabaseFixture databaseFixture)
+            : base(databaseFixture) { }
 
         #region Gating Tests (must pass)
 

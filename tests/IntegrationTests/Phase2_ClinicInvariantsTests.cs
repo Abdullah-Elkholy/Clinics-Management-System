@@ -18,10 +18,11 @@ namespace Clinics.IntegrationTests
     /// - Soft delete excludes from active lists (gating)
     /// - Activation/deactivation works (gating)
     /// </summary>
+    [Collection("Database collection")]
     public class ClinicInvariantsTests : BusinessLogicTestBase
     {
-        public ClinicInvariantsTests(CustomWebApplicationFactory<Program> factory)
-            : base(factory) { }
+        public ClinicInvariantsTests(DatabaseFixture databaseFixture)
+            : base(databaseFixture) { }
 
         #region Gating Tests (must pass)
 

@@ -19,10 +19,11 @@ namespace Clinics.IntegrationTests
     /// - Complex intersection rules enforced
     /// - Conflict matrix correctly evaluated
     /// </summary>
+    [Collection("Database collection")]
     public class ConditionRuleEngineTests : BusinessLogicTestBase
     {
-        public ConditionRuleEngineTests(CustomWebApplicationFactory<Program> factory)
-            : base(factory) { }
+        public ConditionRuleEngineTests(DatabaseFixture databaseFixture)
+            : base(databaseFixture) { }
 
         #region Gating Tests (must pass)
 
@@ -251,26 +252,6 @@ namespace Clinics.IntegrationTests
                 // Assert
                 Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
             }
-        }
-
-        #endregion
-
-        #region Helpers
-
-        /// <summary>
-        /// Helper for DELETE with request body (workaround for frameworks that don't support it natively).
-        /// </summary>
-        private async Task<HttpResponseMessage> DeleteAsync(string path, object body)
-        {
-            var request = new HttpRequestMessage(HttpMethod.Delete, path)
-            {
-                Content = new StringContent(
-                    System.Text.Json.JsonSerializer.Serialize(body),
-                    System.Text.Encoding.UTF8,
-                    "application/json"
-                )
-            };
-            return await Client.SendAsync(request);
         }
 
         #endregion

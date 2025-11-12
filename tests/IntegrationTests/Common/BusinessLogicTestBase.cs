@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -14,10 +15,68 @@ using IntegrationTests.Common;
 namespace Clinics.IntegrationTests.Common
 {
     /// <summary>
-    /// Base class for business logic integration tests.
-    /// Provides common test infrastructure: Clock, Builders, Logging, Database seeding.
+    /// Shared database fixture for integration tests.
+    /// Ensures database is seeded ONCE per test collection, not per test class.
+    /// Prevents infinite seeding loops and database bloat.
     /// </summary>
-    public abstract class BusinessLogicTestBase : IClassFixture<CustomWebApplicationFactory<Program>>, IAsyncLifetime
+    public class DatabaseFixture : IAsyncLifetime
+    {
+        private readonly CustomWebApplicationFactory<Program> _factory;
+        private bool _isInitialized = false;
+
+        public DatabaseFixture()
+        {
+            _factory = new CustomWebApplicationFactory<Program>();
+        }
+
+        public CustomWebApplicationFactory<Program> Factory => _factory;
+
+        public async Task InitializeAsync()
+        {
+            if (_isInitialized)
+                return;
+
+            // Seed database ONCE
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>();
+
+            // Clear any existing data to ensure clean state
+            await db.Database.EnsureDeletedAsync();
+            await db.Database.EnsureCreatedAsync();
+
+            var seeder = new DbSeeder(db, logger);
+            await seeder.SeedAsync();
+
+            _isInitialized = true;
+        }
+
+        public async Task DisposeAsync()
+        {
+            // Clean up
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureDeletedAsync();
+        }
+    }
+
+    /// <summary>
+    /// Collection definition for tests sharing database state.
+    /// </summary>
+    [CollectionDefinition("Database collection")]
+    public class DatabaseCollection : ICollectionFixture<DatabaseFixture>
+    {
+        // This class has no code, and never creates an instance of itself.
+        // It's used by xUnit to define and group fixtures.
+    }
+
+    /// <summary>
+    /// Base class for business logic integration tests.
+    /// Provides common test infrastructure: Clock, Builders, Logging, HTTP helpers.
+    /// Uses shared DatabaseFixture to avoid repeated seeding.
+    /// </summary>
+    [Collection("Database collection")]
+    public abstract class BusinessLogicTestBase
     {
         protected readonly CustomWebApplicationFactory<Program> Factory;
         protected readonly HttpClient Client;
@@ -30,35 +89,11 @@ namespace Clinics.IntegrationTests.Common
         protected ConditionDtoBuilder ConditionBuilder => new();
         protected LoginRequestBuilder LoginBuilder => new();
 
-        protected BusinessLogicTestBase(CustomWebApplicationFactory<Program> factory)
+        protected BusinessLogicTestBase(DatabaseFixture databaseFixture)
         {
-            Factory = factory;
+            Factory = databaseFixture.Factory;
             Client = Factory.CreateClient();
             TestClock = new TestClock();
-        }
-
-        public virtual async Task InitializeAsync()
-        {
-            // Seed test data
-            await SeedTestData();
-        }
-
-        public virtual Task DisposeAsync()
-        {
-            Client?.Dispose();
-            return Task.CompletedTask;
-        }
-
-        /// <summary>
-        /// Override in subclass to seed test-specific data.
-        /// </summary>
-        protected virtual async Task SeedTestData()
-        {
-            using var scope = Factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>();
-            var seeder = new DbSeeder(db, logger);
-            await seeder.SeedAsync();
         }
 
         /// <summary>
@@ -113,6 +148,22 @@ namespace Clinics.IntegrationTests.Common
         }
 
         /// <summary>
+        /// Helper: Make DELETE request with body (for APIs that support it).
+        /// </summary>
+        protected async Task<HttpResponseMessage> DeleteAsync(string path, object body)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Delete, path)
+            {
+                Content = new StringContent(
+                    System.Text.Json.JsonSerializer.Serialize(body),
+                    System.Text.Encoding.UTF8,
+                    "application/json"
+                )
+            };
+            return await Client.SendAsync(request);
+        }
+
+        /// <summary>
         /// Helper: Parse JSON response body.
         /// </summary>
         protected async Task<System.Text.Json.JsonDocument> ParseResponse(HttpResponseMessage response)
@@ -126,7 +177,9 @@ namespace Clinics.IntegrationTests.Common
         /// </summary>
         protected bool IsSuccessResponse(System.Text.Json.JsonElement root)
         {
-            return root.TryGetProperty("success", out var successProp) && successProp.GetBoolean();
+            if (root.TryGetProperty("success", out var successProp))
+                return successProp.GetBoolean();
+            return false;
         }
 
         /// <summary>
@@ -134,7 +187,41 @@ namespace Clinics.IntegrationTests.Common
         /// </summary>
         protected System.Text.Json.JsonElement? GetDataFromResponse(System.Text.Json.JsonElement root)
         {
-            return root.TryGetProperty("data", out var data) ? data : null;
+            if (root.TryGetProperty("data", out var data))
+                return data;
+            return null;
+        }
+
+        /// <summary>
+        /// Helper: Safely get int from JsonElement property.
+        /// </summary>
+        protected int GetInt(System.Text.Json.JsonElement element, string propertyName, int defaultValue = 0)
+        {
+            if (element.TryGetProperty(propertyName, out var prop) && prop.TryGetInt32(out var value))
+                return value;
+            return defaultValue;
+        }
+
+        /// <summary>
+        /// Helper: Safely get string from JsonElement property.
+        /// </summary>
+        protected string? GetString(System.Text.Json.JsonElement element, string propertyName)
+        {
+            if (element.TryGetProperty(propertyName, out var prop))
+                return prop.GetString();
+            return null;
+        }
+
+        /// <summary>
+        /// Helper: Safely get bool from JsonElement property.
+        /// </summary>
+        protected bool GetBool(System.Text.Json.JsonElement element, string propertyName, bool defaultValue = false)
+        {
+            if (element.TryGetProperty(propertyName, out var prop) && prop.ValueKind == System.Text.Json.JsonValueKind.True)
+                return true;
+            if (element.TryGetProperty(propertyName, out var prop2) && prop2.ValueKind == System.Text.Json.JsonValueKind.False)
+                return false;
+            return defaultValue;
         }
     }
 }
