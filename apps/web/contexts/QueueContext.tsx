@@ -6,10 +6,9 @@ import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
 import { groupQueuesByModerator } from '@/utils/moderatorAggregation';
 import { messageApiClient, type TemplateDto, type ConditionDto } from '@/services/api/messageApiClient';
 import { queuesApiClient, type QueueDto } from '@/services/api/queuesApiClient';
+import { patientsApiClient, type PatientDto } from '@/services/api/patientsApiClient';
 import { queueDtoToModel, templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
 import { useAuth } from '@/contexts/AuthContext';
-import { featureFlags, getCachedUseMockData } from '@/config/featureFlags';
-import { getMockTemplates, getMockConditions } from '@/services/mock/mockData';
 import { useToast } from '@/hooks/useToast';
 
 interface QueueContextType {
@@ -43,6 +42,7 @@ interface QueueContextType {
   addMessageCondition: (condition: Omit<MessageCondition, 'id'>) => void;
   removeMessageCondition: (id: string) => void;
   updateMessageCondition: (id: string, condition: Partial<MessageCondition>) => void;
+  refreshQueueData: (queueId: string) => Promise<void>;  // NEW: Reload templates and conditions from backend
   moderators: ModeratorWithStats[];
   isLoadingTemplates: boolean;
   templateError: string | null;
@@ -113,7 +113,44 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [queues, messageTemplates, messageConditions]
   );
 
-  // Load templates from API when selected queue changes
+  // Load patients from API when selected queue changes
+  useEffect(() => {
+    if (!selectedQueueId) {
+      setPatients([]);
+      return;
+    }
+
+    const queueIdNum = Number(selectedQueueId);
+    if (isNaN(queueIdNum)) {
+      console.warn('Invalid queueId:', selectedQueueId);
+      setPatients([]);
+      return;
+    }
+
+    const loadPatients = async () => {
+      try {
+        const response = await patientsApiClient.getPatients(queueIdNum);
+        const patientDtos = response.items || [];
+        const patientsData: Patient[] = patientDtos.map((dto: PatientDto) => ({
+          id: dto.id.toString(),
+          queueId: queueIdNum.toString(),
+          name: dto.fullName,
+          phone: dto.phoneNumber,
+          position: dto.position,
+          status: dto.status,
+          selected: false,
+        }));
+        setPatients(patientsData);
+      } catch (error) {
+        console.warn('Failed to load patients:', error);
+        setPatients([]);
+      }
+    };
+
+    loadPatients();
+  }, [selectedQueueId]);
+
+  // Load templates and conditions from API when selected queue changes
   useEffect(() => {
     if (!selectedQueueId) return;
 
@@ -135,39 +172,22 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         let templateDtos: TemplateDto[] = [];
         let conditionDtos: ConditionDto[] = [];
 
-        // Decide: use backend or mock
-        const useMock = getCachedUseMockData();
+        // Fetch templates from API for the selected queue
+        try {
+          const templateResponse = await messageApiClient.getTemplates(queueIdNum);
+          templateDtos = templateResponse.items || [];
+        } catch (error) {
+          console.warn('Failed to load templates from API:', error);
+          setTemplateError('Unable to load templates');
+        }
 
-        if (useMock) {
-          // Use mock data directly
-          templateDtos = getMockTemplates(queueIdNum);
-          conditionDtos = getMockConditions(queueIdNum);
-        } else {
-          // Fetch templates from API for the selected queue
-          try {
-            const templateResponse = await messageApiClient.getTemplates(queueIdNum);
-            templateDtos = templateResponse.items || [];
-          } catch (error) {
-            console.warn('Failed to load templates from API:', error);
-            // Fall back to mock on error
-            templateDtos = getMockTemplates(queueIdNum);
-            if (!featureFlags.USE_MOCK_DATA) {
-              setTemplateError('Unable to load templates. Using local data.');
-            }
-          }
-
-          // Fetch conditions for this queue
-          try {
-            const conditionResponse = await messageApiClient.getConditions(queueIdNum);
-            conditionDtos = conditionResponse.items || [];
-          } catch (error) {
-            console.warn('Failed to load conditions:', error);
-            // Fall back to mock on error
-            conditionDtos = getMockConditions(queueIdNum);
-            if (!featureFlags.USE_MOCK_DATA) {
-              setConditionsError('Unable to load conditions. Using local data.');
-            }
-          }
+        // Fetch conditions for this queue
+        try {
+          const conditionResponse = await messageApiClient.getConditions(queueIdNum);
+          conditionDtos = conditionResponse.items || [];
+        } catch (error) {
+          console.warn('Failed to load conditions:', error);
+          setConditionsError('Unable to load conditions');
         }
 
         // Convert DTOs to models
@@ -419,24 +439,26 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsMutatingCondition(true);
 
       try {
-        // Find the template this condition should be associated with
-        const firstTemplate = messageTemplates[0];
-        if (!firstTemplate) {
+        // Prefer provided templateId, fallback to first available template
+        const targetTemplateId = condition.templateId ?? messageTemplates[0]?.id;
+        if (!targetTemplateId) {
           throw new Error('لا يوجد قالب لربط الشرط به');
         }
 
-        const templateBackendId = Number(firstTemplate.id);
+        const templateBackendId = Number(targetTemplateId);
         if (isNaN(templateBackendId)) {
           throw new Error('معرف القالب غير صحيح');
         }
 
+        const queueIdNum = Number(selectedQueueId);
         // Call backend
         const dto = await messageApiClient.createCondition({
           templateId: templateBackendId,
+          queueId: queueIdNum,
           operator: condition.operator,
-          value: condition.value !== undefined ? String(condition.value) : undefined,
-          minValue: condition.minValue !== undefined ? String(condition.minValue) : undefined,
-          maxValue: condition.maxValue !== undefined ? String(condition.maxValue) : undefined,
+          value: condition.value,
+          minValue: condition.minValue,
+          maxValue: condition.maxValue,
         });
 
         // Replace optimistic with real condition
@@ -515,9 +537,9 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Call backend
         await messageApiClient.updateCondition(backendId, {
           operator: conditionUpdates.operator,
-          value: conditionUpdates.value !== undefined ? String(conditionUpdates.value) : undefined,
-          minValue: conditionUpdates.minValue !== undefined ? String(conditionUpdates.minValue) : undefined,
-          maxValue: conditionUpdates.maxValue !== undefined ? String(conditionUpdates.maxValue) : undefined,
+          value: conditionUpdates.value,
+          minValue: conditionUpdates.minValue,
+          maxValue: conditionUpdates.maxValue,
         });
 
         toast?.('تم تحديث الشرط بنجاح', 'success');
@@ -532,6 +554,72 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     },
     [messageConditions, toast]
+  );
+
+  // NEW: Refresh templates and conditions from backend
+  const refreshQueueData = useCallback(
+    async (queueId: string) => {
+      const queueIdNum = Number(queueId);
+      if (isNaN(queueIdNum)) {
+        console.warn('Invalid queueId for refresh:', queueId);
+        return;
+      }
+
+      try {
+        setIsLoadingTemplates(true);
+        setTemplateError(null);
+        setConditionsError(null);
+
+        let templateDtos: TemplateDto[] = [];
+        let conditionDtos: ConditionDto[] = [];
+
+        // Fetch templates from API for the queue
+        try {
+          const templateResponse = await messageApiClient.getTemplates(queueIdNum);
+          templateDtos = templateResponse.items || [];
+        } catch (error) {
+          console.warn('Failed to refresh templates from API:', error);
+          setTemplateError('Unable to refresh templates');
+        }
+
+        // Fetch conditions for this queue
+        try {
+          const conditionResponse = await messageApiClient.getConditions(queueIdNum);
+          conditionDtos = conditionResponse.items || [];
+        } catch (error) {
+          console.warn('Failed to refresh conditions:', error);
+          setConditionsError('Unable to refresh conditions');
+        }
+
+        // Convert DTOs to models
+        if (templateDtos.length > 0) {
+          const templates: MessageTemplate[] = templateDtos.map((dto: TemplateDto) =>
+            templateDtoToModel(dto, queueId)
+          );
+          setMessageTemplates(templates);
+          if (templates.length > 0) {
+            setSelectedMessageTemplateId(templates[0].id);
+          }
+        } else {
+          setMessageTemplates([]);
+        }
+
+        if (conditionDtos.length > 0) {
+          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) =>
+            conditionDtoToModel(dto, idx)
+          );
+          setMessageConditions(conditions);
+        } else {
+          setMessageConditions([]);
+        }
+      } catch (error) {
+        console.error('Unexpected error refreshing queue data:', error);
+        setTemplateError('An unexpected error occurred while refreshing');
+      } finally {
+        setIsLoadingTemplates(false);
+      }
+    },
+    []
   );
 
   return (
@@ -567,6 +655,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addMessageCondition,
         removeMessageCondition,
         updateMessageCondition,
+        refreshQueueData,  // NEW
         moderators,
         isLoadingTemplates,
         templateError,

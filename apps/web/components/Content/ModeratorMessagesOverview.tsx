@@ -521,8 +521,8 @@ export default function ModeratorMessagesOverview() {
                                                   return 0;
                                                 })
                                                 .map((template) => {
+                                                  // TODO: Replace with operator-driven condition from template.condition
                                                   const condition = null;
-                                                  const isDefaultCondition = false;
 
                                                   return (
                                                     <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">
@@ -531,7 +531,7 @@ export default function ModeratorMessagesOverview() {
                                                       </td>
                                                       <td className="px-3 py-1">
                                                         {condition ? (
-                                                          isDefaultCondition ? (
+                                                          condition.operator === 'DEFAULT' ? (
                                                             <span className="text-green-600 text-xs font-medium">✓ افتراضي</span>
                                                           ) : (
                                                             <span className="text-sm font-semibold text-blue-600">

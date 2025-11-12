@@ -12,7 +12,6 @@ export { default as AddUserModal } from './AddUserModal';
 export { default as EditPatientModal } from './EditPatientModal';
 export { default as MessageSelectionModal } from './MessageSelectionModal';
 export { default as MessagePreviewModal } from './MessagePreviewModal';
-export { default as MessageConditionsModal } from './MessageConditionsModal';
 export { default as ManageConditionsModal } from './ManageConditionsModal';
 export { default as MessageTemplateEditorModalEnhanced } from './MessageTemplateEditorModalEnhanced';
 export { default as RetryPreviewModal } from './RetryPreviewModal';

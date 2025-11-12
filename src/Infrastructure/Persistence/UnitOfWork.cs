@@ -3,6 +3,8 @@ using System.Threading.Tasks;
 using Clinics.Application.Interfaces;
 using Clinics.Domain;
 using Clinics.Infrastructure.Repositories;
+using ApplicationInterfaces = Clinics.Application.Interfaces;
+using RepositoryImplementation = Clinics.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -13,21 +15,21 @@ namespace Clinics.Infrastructure.Persistence
     /// Provides transaction management and ensures data consistency
     /// Implements Facade Pattern to simplify complex repository interactions
     /// </summary>
-    public class UnitOfWork : IUnitOfWork
+    public class UnitOfWork : ApplicationInterfaces.IUnitOfWork
     {
         private readonly ApplicationDbContext _context;
         private IDbContextTransaction? _transaction;
 
-        private IRepository<User>? _users;
-        private IRepository<Queue>? _queues;
-        private IRepository<Patient>? _patients;
-        private IRepository<Message>? _messages;
-        private IRepository<MessageTemplate>? _messageTemplates;
-        private IRepository<FailedTask>? _failedTasks;
-        private IRepository<Session>? _sessions;
-        private IRepository<Quota>? _quotas;
-        private IRepository<WhatsAppSession>? _whatsAppSessions;
-        private IRepository<MessageSession>? _messageSessions;
+        private ApplicationInterfaces.IRepository<User>? _users;
+        private ApplicationInterfaces.IRepository<Queue>? _queues;
+        private ApplicationInterfaces.IRepository<Patient>? _patients;
+        private ApplicationInterfaces.IRepository<Message>? _messages;
+        private ApplicationInterfaces.IRepository<MessageTemplate>? _messageTemplates;
+        private ApplicationInterfaces.IRepository<FailedTask>? _failedTasks;
+        private ApplicationInterfaces.IRepository<Session>? _sessions;
+        private ApplicationInterfaces.IRepository<Quota>? _quotas;
+        private ApplicationInterfaces.IRepository<WhatsAppSession>? _whatsAppSessions;
+        private ApplicationInterfaces.IRepository<MessageSession>? _messageSessions;
 
         public UnitOfWork(ApplicationDbContext context)
         {
@@ -35,34 +37,34 @@ namespace Clinics.Infrastructure.Persistence
         }
 
         // Lazy-loaded repositories
-        public IRepository<User> Users =>
+        public ApplicationInterfaces.IRepository<User> Users =>
             _users ??= new Repository<User>(_context);
 
-        public IRepository<Queue> Queues =>
+        public ApplicationInterfaces.IRepository<Queue> Queues =>
             _queues ??= new Repository<Queue>(_context);
 
-        public IRepository<Patient> Patients =>
+        public ApplicationInterfaces.IRepository<Patient> Patients =>
             _patients ??= new Repository<Patient>(_context);
 
-        public IRepository<Message> Messages =>
+        public ApplicationInterfaces.IRepository<Message> Messages =>
             _messages ??= new Repository<Message>(_context);
 
-        public IRepository<MessageTemplate> MessageTemplates =>
+        public ApplicationInterfaces.IRepository<MessageTemplate> MessageTemplates =>
             _messageTemplates ??= new Repository<MessageTemplate>(_context);
 
-        public IRepository<FailedTask> FailedTasks =>
+        public ApplicationInterfaces.IRepository<FailedTask> FailedTasks =>
             _failedTasks ??= new Repository<FailedTask>(_context);
 
-        public IRepository<Session> Sessions =>
+        public ApplicationInterfaces.IRepository<Session> Sessions =>
             _sessions ??= new Repository<Session>(_context);
 
-        public IRepository<Quota> Quotas =>
+        public ApplicationInterfaces.IRepository<Quota> Quotas =>
             _quotas ??= new Repository<Quota>(_context);
 
-        public IRepository<WhatsAppSession> WhatsAppSessions =>
+        public ApplicationInterfaces.IRepository<WhatsAppSession> WhatsAppSessions =>
             _whatsAppSessions ??= new Repository<WhatsAppSession>(_context);
 
-        public IRepository<MessageSession> MessageSessions =>
+        public ApplicationInterfaces.IRepository<MessageSession> MessageSessions =>
             _messageSessions ??= new Repository<MessageSession>(_context);
 
         public async Task<int> SaveChangesAsync()

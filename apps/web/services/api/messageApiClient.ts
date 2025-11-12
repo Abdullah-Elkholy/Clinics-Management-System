@@ -13,18 +13,21 @@ export interface TemplateDto {
   content: string;
   queueId: number;
   isActive: boolean;
+  condition?: ConditionDto;  // operator-driven state: DEFAULT, UNCONDITIONED, or active rule
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ConditionDto {
   id: number;
-  templateId: number;
+  templateId?: number;
+  queueId: number;
   operator: string;
-  value?: string;
-  minValue?: string;
-  maxValue?: string;
+  value?: number;
+  minValue?: number;
+  maxValue?: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreateTemplateRequest {
@@ -42,17 +45,18 @@ export interface UpdateTemplateRequest {
 
 export interface CreateConditionRequest {
   templateId: number;
+  queueId: number;
   operator: string;
-  value?: string;
-  minValue?: string;
-  maxValue?: string;
+  value?: number;
+  minValue?: number;
+  maxValue?: number;
 }
 
 export interface UpdateConditionRequest {
   operator?: string;
-  value?: string;
-  minValue?: string;
-  maxValue?: string;
+  value?: number;
+  minValue?: number;
+  maxValue?: number;
 }
 
 export interface MyQuotaDto {
@@ -135,7 +139,7 @@ function getAuthToken(): string | null {
 /**
  * Make authenticated fetch request
  */
-async function fetchAPI<T>(
+export async function fetchAPI<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
@@ -311,6 +315,73 @@ export async function deleteTemplate(id: number): Promise<void> {
   return withRetry(() =>
     fetchAPI(`/templates/${id}`, {
       method: 'DELETE',
+    })
+  );
+}
+
+/**
+ * List deleted templates in trash (soft-deleted within 30 days)
+ */
+export async function getTrashTemplates(queueId: number, options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<TemplateDto>> {
+  const params = new URLSearchParams();
+  params.append('queueId', queueId.toString());
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return withRetry(() =>
+    fetchAPI(`/templates/trash/list?${queryString}`)
+  );
+}
+
+/**
+ * List permanently deleted templates (archived, soft-deleted over 30 days)
+ * Admin only
+ */
+export async function getArchivedTemplates(queueId: number, options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<TemplateDto>> {
+  const params = new URLSearchParams();
+  params.append('queueId', queueId.toString());
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return withRetry(() =>
+    fetchAPI(`/templates/archived/list?${queryString}`)
+  );
+}
+
+/**
+ * Restore a deleted template from trash (within 30-day window)
+ */
+export async function restoreTemplate(id: number): Promise<TemplateDto> {
+  return withRetry(() =>
+    fetchAPI(`/templates/${id}/restore`, {
+      method: 'POST',
+    })
+  );
+}
+
+/**
+ * Set a template as default for its queue (sets condition.operator to DEFAULT)
+ */
+export async function setTemplateAsDefault(id: number): Promise<TemplateDto> {
+  return withRetry(() =>
+    fetchAPI(`/templates/${id}/default`, {
+      method: 'PUT',
     })
   );
 }
@@ -532,6 +603,10 @@ export const messageApiClient = {
   createTemplate,
   updateTemplate,
   deleteTemplate,
+  setTemplateAsDefault,
+  getTrashTemplates,
+  getArchivedTemplates,
+  restoreTemplate,
   
   // Conditions
   getConditions,
@@ -559,6 +634,7 @@ export const messageApiClient = {
   
   // Utilities
   formatApiError,
+  fetchAPI,
 };
 
 export default messageApiClient;

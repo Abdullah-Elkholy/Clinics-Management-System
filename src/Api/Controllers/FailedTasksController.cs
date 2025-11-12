@@ -75,7 +75,7 @@ namespace Clinics.Api.Controllers
                     // Moderators see their own queues' failed tasks
                     if (role == "moderator" && moderatorId.HasValue)
                     {
-                        query = query.Where(m => m.Queue.ModeratorId == moderatorId.Value);
+                        query = query.Where(m => m.Queue != null && m.Queue.ModeratorId == moderatorId.Value);
                     }
                 }
 

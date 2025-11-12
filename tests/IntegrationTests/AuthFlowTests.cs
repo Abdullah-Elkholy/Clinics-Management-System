@@ -64,11 +64,7 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             db.Database.EnsureCreated();
             
-            var r = new Clinics.Domain.Role { Name = "primary_admin", DisplayName = "admin" };
-            db.Roles.Add(r);
-            db.SaveChanges();
-            
-            var admin = new Clinics.Domain.User { Username = "testadmin", FullName = "Test Admin", RoleId = r.Id };
+            var admin = new Clinics.Domain.User { Username = "testadmin", FirstName = "Test", LastName = "Admin", Role = "primary_admin" };
             var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<Clinics.Domain.User>();
             admin.PasswordHash = hasher.HashPassword(admin, "Admin123!");
             db.Users.Add(admin);
@@ -77,7 +73,7 @@ public class AuthFlowTests : IClassFixture<WebApplicationFactory<Program>>
 
         // Login
         var loginBody = JsonSerializer.Serialize(new { username = "testadmin", password = "Admin123!" });
-        var resp = await client.PostAsync("/api/auth/login", new StringContent(loginBody, Encoding.UTF8, "application/json"));
+        var resp = await client.PostAsync("/api/auth/login", new System.Net.Http.StringContent(loginBody, System.Text.Encoding.UTF8, "application/json"));
         
         resp.EnsureSuccessStatusCode();
         

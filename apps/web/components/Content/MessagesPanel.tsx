@@ -449,9 +449,7 @@ export default function MessagesPanel() {
                                   return 0;
                                 })
                                 .map((template) => {
-                                const condition = null;
-                                // Check if this is a default condition
-                                const isDefaultCondition = false;
+                                const condition = template.condition || null;
                                 
                                 // Check if this template's condition is conflicting
                                 const conflictingIds = getConflictingConditionIds(String(queue.id));
@@ -473,7 +471,7 @@ export default function MessagesPanel() {
                                     </td>
                                     <td className="px-4 py-2">
                                       {condition ? (
-                                        isDefaultCondition ? (
+                                        condition.operator === 'DEFAULT' ? (
                                           <span className="text-green-600 font-medium bg-green-50 px-3 py-1 rounded-full text-sm">
                                             ✓ افتراضي
                                           </span>
@@ -530,48 +528,11 @@ export default function MessagesPanel() {
                                         </button>
                                         <button
                                           onClick={async () => {
-                                            // Check if this is the default template (has DEFAULT_ condition)
-                                            const templateCondition = null;
-                                            const isDefault = false;
-                                            
-                                            if (isDefault) {
-                                              // Get all other templates in this queue
-                                              const otherTemplates = messageTemplates.filter(
-                                                (t) => t.queueId === String(queue.id) && t.id !== template.id
-                                              );
-                                              
-                                              if (otherTemplates.length === 0) {
-                                                addToast('يجب أن يكون هناك قالب افتراضي واحد على الأقل في كل طابور', 'error');
-                                                return;
-                                              }
-                                              
-                                              // Show dialog to select new default
-                                              const newDefaultId = await select({
-                                                title: 'تحديد القالب الافتراضي الجديد',
-                                                message: 'هذا هو القالب الافتراضي. يرجى اختيار قالب افتراضي جديد قبل الحذف:',
-                                                options: [
-                                                  { id: '', label: 'اختر قالبا' },
-                                                  ...otherTemplates.map((t) => ({
-                                                    id: t.id,
-                                                    label: t.title,
-                                                  }))
-                                                ],
-                                                defaultValue: '',
-                                                confirmText: 'حذف',
-                                                cancelText: 'إلغاء',
-                                                isDangerous: true,
-                                              });
-                                              
-                                              if (!newDefaultId) {
-                                                return; // User cancelled
-                                              }
-                                              
+                                            // TODO: Implement operator-driven delete logic
+                                            // Check if template has DEFAULT condition and handle appropriately
+                                            const confirmed = await confirm(createDeleteConfirmation('القالب: ' + template.title));
+                                            if (confirmed) {
                                               addToast('تم حذف القالب: ' + template.title, 'success');
-                                            } else {
-                                              const confirmed = await confirm(createDeleteConfirmation('القالب: ' + template.title));
-                                              if (confirmed) {
-                                                addToast('تم حذف القالب: ' + template.title, 'success');
-                                              }
                                             }
                                           }}
                                           className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors"

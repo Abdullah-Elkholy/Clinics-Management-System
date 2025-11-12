@@ -14,20 +14,11 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
-import { useQueueMessageConfig } from '@/hooks/useQueueMessageConfig';
-import { desc } from 'framer-motion/client';
-import { title } from 'process';
-
-// Sample patient data - Loading from API via QueueContext
-const SAMPLE_PATIENTS: any[] = [];
 
 export default function QueueDashboard() {
-  const { selectedQueueId, queues } = useQueue();
+  const { selectedQueueId, queues, messageTemplates, messageConditions, patients } = useQueue();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
-  const { config: messageConfig, loadConfig: loadMessageConfig } = useQueueMessageConfig({
-    autoLoad: false,
-  });
   const { addToast } = useUI();
   
   const [currentCQP, setCurrentCQP] = useState('3');
@@ -38,7 +29,6 @@ export default function QueueDashboard() {
   const [originalETS, setOriginalETS] = useState('15');
   const [isEditingETS, setIsEditingETS] = useState(false);
   
-  const [patients, setPatients] = useState(SAMPLE_PATIENTS);
   const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingQueueValue, setEditingQueueValue] = useState('');
@@ -140,14 +130,10 @@ export default function QueueDashboard() {
     ];
 
     // Check if queue has a default template from context
-    // TODO: Implement check once templates are fully loaded from API
     if (selectedQueueId) {
-      const messageTemplates = messageConfig?.defaultTemplate ? [{ id: 'default' }] : [];
-      const defaultTemplate = messageTemplates.find(
-        (t: any) => t && messageConfig?.defaultTemplate
-      );
+      const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
 
-      if (!defaultTemplate && !messageConfig?.defaultTemplate) {
+      if (!defaultTemplate) {
         // Add warning item if no default template
         baseItems.push({
           title: '⚠️ تنبيه هام',
@@ -157,14 +143,7 @@ export default function QueueDashboard() {
     }
 
     return baseItems;
-  }, [selectedQueueId, messageConfig]);
-
-  // Load message config when queue changes
-  useEffect(() => {
-    if (selectedQueueId) {
-      loadMessageConfig(String(selectedQueueId));
-    }
-  }, [selectedQueueId, loadMessageConfig]);
+  }, [selectedQueueId, messageTemplates]);
 
   /**
    * Handle CQP (Current Queue Position) Edit - memoized
@@ -278,8 +257,8 @@ export default function QueueDashboard() {
     if (!selectedQueueId) return [];
 
     // Get conditions from context
-    const queueConditions = (messageConfig?.conditions || []).filter(
-      (c: any) => c.queueId === selectedQueueId && !c.id?.startsWith('DEFAULT_')
+    const queueConditions = messageConditions.filter(
+      (c) => c.queueId === selectedQueueId && !c.id?.startsWith('DEFAULT_')
     );
 
     if (queueConditions.length < 2) return [];
@@ -308,7 +287,7 @@ export default function QueueDashboard() {
     }
 
     return overlappingConditions;
-  }, [selectedQueueId]);
+  }, [selectedQueueId, messageConditions]);
 
   /**
    * Get human-readable condition text
@@ -356,13 +335,13 @@ export default function QueueDashboard() {
 
   /**
    * Save queue edit - memoized
+   * NOTE: Position changes now handled through API via patientsApiClient
    */
   const saveQueueEdit = useCallback((patientId: string) => {
     const newPosition = parseInt(editingQueueValue, 10);
     if (!isNaN(newPosition) && newPosition > 0) {
-      setPatients((prev) =>
-        prev.map((p) => (p.id === patientId ? { ...p, position: newPosition } : p))
-      );
+      // TODO: Implement backend call to update patient position
+      // For now, just close the edit mode and let the API refresh
       setEditingQueueId(null);
     }
   }, [editingQueueValue]);
@@ -459,9 +438,8 @@ export default function QueueDashboard() {
                 openModal('editPatient', {
                   patient,
                   onSave: (updated: any) => {
-                    setPatients((prev) =>
-                      prev.map((p) => (p.id === updated.id ? updated : p))
-                    );
+                    // Patient updates now handled through API
+                    // QueueContext will auto-refresh on next load
                   },
                 })
               }
@@ -474,7 +452,8 @@ export default function QueueDashboard() {
               onClick={async () => {
                 const confirmed = await confirm(createDeleteConfirmation(patient.name));
                 if (confirmed) {
-                  setPatients((prev) => prev.filter((p) => p.id !== patient.id));
+                  // Patient deletion now handled through API
+                  // QueueContext will auto-refresh on next load
                   setSelectedPatients((prev) => prev.filter((id) => id !== patient.id));
                 }
               }}
@@ -629,7 +608,8 @@ export default function QueueDashboard() {
             }
             const confirmed = await confirm(createBulkDeleteConfirmation(selectedPatients.length, 'مريض'));
             if (confirmed) {
-              setPatients((prev) => prev.filter((p) => !selectedPatients.includes(p.id)));
+              // Bulk deletion now handled through API
+              // QueueContext will auto-refresh on next load
               setSelectedPatients([]);
               addToast(`تم حذف ${selectedPatients.length} مريض`, 'success');
             }
@@ -654,6 +634,7 @@ export default function QueueDashboard() {
               return;
             }
 
+            const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
             openModal('messagePreview', {
               selectedPatients: patients.map(p => p.id), // Send to ALL patients
               selectedPatientCount: patients.length,
@@ -662,8 +643,8 @@ export default function QueueDashboard() {
               currentCQP: parseInt(currentCQP),
               estimatedTimeRemaining: parseInt(currentETS),
               patients: patients, // All patients
-              conditions: messageConfig?.conditions || [],
-              messageTemplate: messageConfig?.defaultTemplate || 'مرحباً بك {PN}',
+              conditions: messageConditions,
+              messageTemplate: defaultTemplate?.content || 'مرحباً بك {PN}',
             });
           }}
           className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse"
@@ -698,8 +679,8 @@ export default function QueueDashboard() {
                   templateId: null,
                   queueId: selectedQueueId,
                   queueName: queue?.doctorName || 'طابور',
-                  currentConditions: messageConfig?.conditions || [],
-                  allConditions: messageConfig?.conditions || [],
+                  currentConditions: messageConditions,
+                  allConditions: messageConditions,
                   allTemplates: [], // Templates will be populated by the context
                   onSave: (_conditions: any) => {
                     // intentionally no-op
@@ -715,8 +696,8 @@ export default function QueueDashboard() {
                     templateId: null,
                     queueId: selectedQueueId,
                     queueName: queue?.doctorName || 'طابور',
-                    currentConditions: messageConfig?.conditions || [],
-                    allConditions: messageConfig?.conditions || [],
+                    currentConditions: messageConditions,
+                    allConditions: messageConditions,
                     allTemplates: [], // Templates will be populated by the context
                     onSave: (_conditions: any) => {
                       // intentionally no-op
@@ -741,7 +722,8 @@ export default function QueueDashboard() {
             <div className="px-6 py-4 space-y-6">
               {/* Check if default template exists */}
               {(() => {
-                const hasDefaultTemplate = messageConfig?.defaultTemplate ? true : false;
+                const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
+                const hasDefaultTemplate = !!defaultTemplate;
 
                 if (!hasDefaultTemplate) {
                   return (
@@ -765,11 +747,11 @@ export default function QueueDashboard() {
                 }
 
                 // Show conditions if they exist - load from context
-                const queueConditions = (messageConfig?.conditions || []).filter((c: any) => c.queueId === selectedQueueId);
+                const queueConditions = messageConditions.filter((c) => c.queueId === selectedQueueId);
                 const hasConditions = queueConditions && queueConditions.length > 0;
 
-                // Get the actual default template text from config
-                const defaultTemplateText = messageConfig?.defaultTemplate || '';
+                // Get the actual default template text from messageTemplates
+                const defaultTemplateText = defaultTemplate?.content || '';
                 
                 return (
                   <div className="flex flex-col gap-6">

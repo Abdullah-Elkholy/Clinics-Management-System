@@ -42,6 +42,10 @@ namespace Clinics.Api.DTOs
 
     /// <summary>
     /// DTO for returning a message template to the client.
+    /// Template state is encoded via its associated Condition.Operator:
+    ///   - DEFAULT: This template is the queue default.
+    ///   - UNCONDITIONED: Template has no custom criteria ("بدون شرط").
+    ///   - EQUAL/GREATER/LESS/RANGE: Active condition rules.
     /// </summary>
     public class TemplateDto
     {
@@ -64,8 +68,8 @@ namespace Clinics.Api.DTOs
         public DateTime? UpdatedAt { get; set; }
 
         /// <summary>
-        /// Null = template uses default condition (no custom criteria).
-        /// Non-null = template has custom condition with these criteria.
+        /// Associated condition for this template. 
+        /// Operator encodes state: DEFAULT=queue default, UNCONDITIONED=no criteria, or an active operator.
         /// </summary>
         public ConditionDto? Condition { get; set; }
     }
@@ -73,9 +77,10 @@ namespace Clinics.Api.DTOs
     /// <summary>
     /// DTO for creating a message condition (defines when a template is selected).
     /// 
-    /// Semantics:
-    /// - Null TemplateId = Condition represents "no custom condition" (default template)
-    /// - Non-null TemplateId = Condition belongs to this template
+    /// Operators:
+    /// - UNCONDITIONED: No selection criteria (values must be null).
+    /// - DEFAULT: Queue default template (unique per queue, values must be null).
+    /// - EQUAL/GREATER/LESS/RANGE: Active conditions with numeric comparison.
     /// </summary>
     public class CreateConditionRequest
     {
@@ -86,8 +91,8 @@ namespace Clinics.Api.DTOs
         public int QueueId { get; set; }
 
         [Required(ErrorMessage = "Operator is required")]
-        [RegularExpression("^(EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be EQUAL, GREATER, LESS, or RANGE")]
-        public string Operator { get; set; } = "EQUAL";
+        [RegularExpression("^(UNCONDITIONED|DEFAULT|EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS, or RANGE")]
+        public string Operator { get; set; } = "UNCONDITIONED";
 
         /// <summary>
         /// For EQUAL, GREATER, LESS operators.
@@ -107,10 +112,11 @@ namespace Clinics.Api.DTOs
 
     /// <summary>
     /// DTO for updating a message condition.
+    /// Supports transitioning between UNCONDITIONED, DEFAULT, and active operators.
     /// </summary>
     public class UpdateConditionRequest
     {
-        [RegularExpression("^(EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be EQUAL, GREATER, LESS, or RANGE")]
+        [RegularExpression("^(UNCONDITIONED|DEFAULT|EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS, or RANGE")]
         public string? Operator { get; set; }
 
         public int? Value { get; set; }

@@ -1,4 +1,4 @@
-export type ConditionOperator = 'EQUAL' | 'GREATER' | 'LESS' | 'RANGE';
+export type ConditionOperator = 'UNCONDITIONED' | 'DEFAULT' | 'EQUAL' | 'GREATER' | 'LESS' | 'RANGE';
 
 export interface MessageCondition {
   id: string;                          // GUID (UUID format)
@@ -9,7 +9,10 @@ export interface MessageCondition {
   enabled?: boolean;
 
   // matching operator (standardized UPPERCASE)
-  operator: ConditionOperator;         // EQUAL | GREATER | LESS | RANGE
+  // UNCONDITIONED: no criteria (no numeric fields)
+  // DEFAULT: queue fallback (unique per queue, enforced at DB level)
+  // EQUAL/GREATER/LESS/RANGE: active matching rules
+  operator: ConditionOperator;
   // value used for EQUAL / GREATER / LESS
   value?: number;
   // for RANGE
@@ -22,6 +25,11 @@ export interface MessageCondition {
   // Metadata
   createdAt?: Date;
   updatedAt?: Date;
+  
+  // Soft-delete fields (30-day trash window)
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: number;
 }
 
 export interface QueueMessageConfig {

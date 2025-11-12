@@ -41,8 +41,9 @@ export default function ToastContainer() {
   const handleDebugClick = (toast: any) => {
     const isExpanded = expandedToastId === toast.id;
     setExpandedToastId(isExpanded ? null : toast.id);
-    if (isDebugEnabled && toast.debugData) {
-      console.log('🐛 Debug Info for Toast:', toast.debugData);
+    if (isDebugEnabled && toast.debugData && process.env.NODE_ENV === 'development') {
+      // Debug log only in development to keep production console clean
+      // console.log('🐛 Debug Info for Toast:', toast.debugData);
     }
   };
 

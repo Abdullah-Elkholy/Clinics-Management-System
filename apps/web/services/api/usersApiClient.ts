@@ -201,6 +201,56 @@ export async function deleteUser(userId: number): Promise<void> {
 }
 
 /**
+ * List deleted users in trash (soft-deleted within 30 days)
+ * Admin only
+ */
+export async function getTrashUsers(options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<UserDto>> {
+  const params = new URLSearchParams();
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return fetchAPI(`/users/trash/list${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * List permanently deleted users (archived, soft-deleted over 30 days)
+ * Admin only
+ */
+export async function getArchivedUsers(options?: {
+  pageNumber?: number;
+  pageSize?: number;
+}): Promise<ListResponse<UserDto>> {
+  const params = new URLSearchParams();
+  if (options?.pageNumber !== undefined) {
+    params.append('pageNumber', options.pageNumber.toString());
+  }
+  if (options?.pageSize !== undefined) {
+    params.append('pageSize', options.pageSize.toString());
+  }
+
+  const queryString = params.toString();
+  return fetchAPI(`/users/archived/list${queryString ? `?${queryString}` : ''}`);
+}
+
+/**
+ * Restore a deleted user from trash (within 30-day window)
+ * Admin only
+ */
+export async function restoreUser(userId: number): Promise<UserDto> {
+  return fetchAPI(`/users/${userId}/restore`, {
+    method: 'POST',
+  });
+}
+
+/**
  * Convert UserDto to frontend User model
  * Maps backend numerator moderatorId to frontend semantic field assignedModerator
  */
@@ -251,6 +301,9 @@ export const usersApiClient = {
   createUser,
   updateUser,
   deleteUser,
+  getTrashUsers,
+  getArchivedUsers,
+  restoreUser,
   formatApiError,
 };
 

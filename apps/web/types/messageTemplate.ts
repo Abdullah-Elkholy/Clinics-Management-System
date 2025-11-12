@@ -13,8 +13,8 @@ export interface MessageTemplate {
   content: string;             // template text with placeholders
   variables: string[];         // list of variables in template
   isActive: boolean;           // whether template is in use
+  condition?: MessageCondition; // associated condition (determines template role: DEFAULT/UNCONDITIONED/active)
   priority?: number;           // order when multiple templates available
-  conditionId?: string;        // GUID (one-to-one): optional associated condition
   
   // Metadata
   createdAt: Date;
@@ -24,7 +24,14 @@ export interface MessageTemplate {
   // Usage stats
   usageCount?: number;         // how many times sent
   successRate?: number;        // % of successfully sent messages
+  
+  // Soft-delete fields (30-day trash window)
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: number;
 }
+
+import { MessageCondition } from './messageCondition';
 
 export interface QueueTemplateConfig {
   queueId: string;
@@ -36,7 +43,6 @@ export interface QueueTemplateConfig {
 
 export interface TemplateWithConditions extends MessageTemplate {
   conditionCount?: number;       // how many conditions use this template
-  conditions?: any[];            // actual conditions (from messageCondition.ts)
 }
 
 // Available placeholders

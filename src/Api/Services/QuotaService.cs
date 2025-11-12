@@ -1,5 +1,6 @@
 using Clinics.Domain;
 using Clinics.Infrastructure;
+using Clinics.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Clinics.Api.Services;
@@ -11,10 +12,12 @@ namespace Clinics.Api.Services;
 public class QuotaService
 {
     private readonly ApplicationDbContext _context;
+    private readonly Clinics.Infrastructure.Services.IQueueCascadeService _queueCascadeService;
 
-    public QuotaService(ApplicationDbContext context)
+    public QuotaService(ApplicationDbContext context, Clinics.Infrastructure.Services.IQueueCascadeService queueCascadeService)
     {
         _context = context;
+        _queueCascadeService = queueCascadeService;
     }
 
     /// <summary>
@@ -243,5 +246,14 @@ public class QuotaService
 
         user.ModeratorId = moderatorId;
         await _context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Restore a soft-deleted queue via the cascade service.
+    /// Delegates to QueueCascadeService for TTL and business rule enforcement.
+    /// </summary>
+    public async Task<RestoreResult> RestoreQueueAsync(Queue queue, int? restoredBy = null)
+    {
+        return await _queueCascadeService.RestoreQueueAsync(queue, restoredBy, ttlDays: 30);
     }
 }

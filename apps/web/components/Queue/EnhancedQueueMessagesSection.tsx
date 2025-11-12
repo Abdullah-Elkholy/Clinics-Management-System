@@ -12,7 +12,7 @@
 'use client';
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { useQueueMessageTemplates } from '@/hooks/useQueueMessageTemplates';
+import { useQueue } from '@/contexts/QueueContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { MessageTemplate } from '@/types/messageTemplate';
@@ -39,12 +39,14 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
   onTemplateUpdated,
   onTemplateDeleted,
 }) => {
-  const { templates, loading, error, toggleStatus, duplicate, delete: deleteTemplate, createNew, update } =
-    useQueueMessageTemplates({
-      queueId,
-      queueName,
-      autoLoad: true,
-    });
+  const {
+    messageTemplates: templates,
+    addMessageTemplate,
+    updateMessageTemplate,
+    deleteMessageTemplate,
+    isLoadingTemplates: loading,
+    templateError: error,
+  } = useQueue();
   const { confirm } = useConfirmDialog();
 
   // Modal states
@@ -110,29 +112,39 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
     async (templateId: string) => {
       const confirmed = await confirm(createDeleteConfirmation('القالب'));
       if (confirmed) {
-        await deleteTemplate(templateId);
+        await deleteMessageTemplate(templateId);
         onTemplateDeleted?.();
       }
     },
-    [deleteTemplate, onTemplateDeleted, confirm]
+    [deleteMessageTemplate, onTemplateDeleted, confirm]
   );
 
   const handleDuplicateTemplate = useCallback(
     async (templateId: string) => {
       const template = templates.find((t) => t.id === templateId);
       if (template) {
-        await duplicate(templateId, `${template.title} (نسخة)`);
+        await addMessageTemplate({
+          title: `${template.title} (نسخة)`,
+          content: template.content,
+          queueId: template.queueId,
+          isActive: template.isActive,
+          variables: template.variables || [],
+          createdBy: template.createdBy || '',
+          createdAt: new Date(),
+        });
         onTemplateAdded?.();
       }
     },
-    [templates, duplicate, onTemplateAdded]
+    [templates, addMessageTemplate, onTemplateAdded]
   );
 
   const handleToggleStatus = useCallback(
     async (templateId: string) => {
-      await toggleStatus(templateId);
+      const template = templates.find((t) => t.id === templateId);
+      if (!template) return;
+      await updateMessageTemplate(templateId, { isActive: !template.isActive });
     },
-    [toggleStatus]
+    [templates, updateMessageTemplate]
   );
 
   const handleBulkAction = useCallback(async () => {
@@ -140,14 +152,14 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
 
     if (bulkAction === 'delete') {
       for (const id of selectedIds) {
-        await deleteTemplate(id);
+        await deleteMessageTemplate(id);
       }
       onTemplateDeleted?.();
     } else if (bulkAction === 'activate' || bulkAction === 'deactivate') {
       for (const id of selectedIds) {
         const template = templates.find((t) => t.id === id);
         if (template && template.isActive !== (bulkAction === 'activate')) {
-          await toggleStatus(id);
+          await updateMessageTemplate(id, { isActive: bulkAction === 'activate' });
         }
       }
       onTemplateUpdated?.();
@@ -156,21 +168,29 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
     setSelectedTemplates(new Set());
     setShowBulkDeleteModal(false);
     setBulkAction(null);
-  }, [selectedTemplates, bulkAction, templates, deleteTemplate, toggleStatus, onTemplateDeleted, onTemplateUpdated]);
+  }, [selectedTemplates, bulkAction, templates, deleteMessageTemplate, updateMessageTemplate, onTemplateDeleted, onTemplateUpdated]);
 
   const handleSaveTemplate = useCallback(
     async (formData: any) => {
       if (editingTemplate) {
-        await update(editingTemplate.id, formData);
+        await updateMessageTemplate(editingTemplate.id, formData);
         onTemplateUpdated?.();
       } else {
-        await createNew(formData);
+        await addMessageTemplate({
+          title: formData.title,
+          content: formData.content,
+          queueId: queueId,
+          isActive: true,
+          variables: [],
+          createdBy: '',
+          createdAt: new Date(),
+        });
         onTemplateAdded?.();
       }
       setShowEditorModal(false);
       setEditingTemplate(null);
     },
-    [editingTemplate, update, createNew, onTemplateUpdated, onTemplateAdded]
+    [editingTemplate, updateMessageTemplate, addMessageTemplate, onTemplateUpdated, onTemplateAdded, queueId]
   );
 
   if (loading) {

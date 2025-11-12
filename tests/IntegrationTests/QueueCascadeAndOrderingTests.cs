@@ -28,7 +28,7 @@ public class QueueCascadeAndOrderingTests : IClassFixture<WebApplicationFactory<
     }
 
     [Fact]
-    public async Task DeletingQueue_AlsoRemovesPatients_DBLevelCascade()
+    public void DeletingQueue_AlsoRemovesPatients_DBLevelCascade()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<Clinics.Infrastructure.ApplicationDbContext>();
@@ -51,7 +51,7 @@ public class QueueCascadeAndOrderingTests : IClassFixture<WebApplicationFactory<
     }
 
     [Fact]
-    public async Task InsertingPatient_WithDesiredPosition_ShiftsExistingPatients()
+    public void InsertingPatient_WithDesiredPosition_ShiftsExistingPatients()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<Clinics.Infrastructure.ApplicationDbContext>();

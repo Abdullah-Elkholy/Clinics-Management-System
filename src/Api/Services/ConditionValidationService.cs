@@ -10,21 +10,28 @@ namespace Clinics.Api.Services
 {
     /// <summary>
     /// Service for validating message conditions.
+    /// Supports operator-driven state machine:
+    /// - UNCONDITIONED: No criteria (no numeric fields)
+    /// - DEFAULT: Queue default (unique per queue, enforced via index)
+    /// - EQUAL/GREATER/LESS/RANGE: Active rules with value constraints
+    /// 
     /// Handles:
-    /// - Operator and value validation
+    /// - Operator and value validation matrix
     /// - One-to-one template-condition enforcement
-    /// - Overlap detection between conditions
+    /// - Overlap detection between active conditions (ignores DEFAULT/UNCONDITIONED)
+    /// - DEFAULT uniqueness enforcement per queue
     /// </summary>
     public interface IConditionValidationService
     {
         /// <summary>
         /// Validate a single condition's operator and value combination.
+        /// Enforces operator-specific field constraints.
         /// </summary>
         Task<ValidationResult> ValidateSingleConditionAsync(string operatorName, int? value, int? minValue, int? maxValue);
 
         /// <summary>
-        /// Check if a condition overlaps with existing conditions in the queue.
-        /// Overlaps are conditions that match the same criteria.
+        /// Check if a condition overlaps with existing active conditions in the queue.
+        /// Ignores DEFAULT and UNCONDITIONED operators (they don't participate in conflicts).
         /// </summary>
         Task<bool> HasOverlapAsync(int queueId, string operatorName, int? value, int? minValue, int? maxValue, int? excludeConditionId = null);
 
@@ -32,6 +39,12 @@ namespace Clinics.Api.Services
         /// Check if a template already has a condition (one-to-one enforcement).
         /// </summary>
         Task<bool> TemplateHasConditionAsync(int templateId);
+
+        /// <summary>
+        /// Check if DEFAULT operator is already assigned to another condition in the queue.
+        /// Returns true if conflict exists (unless excludeConditionId matches).
+        /// </summary>
+        Task<bool> IsDefaultAlreadyUsedAsync(int queueId, int? excludeConditionId = null);
     }
 
     public class ConditionValidationService : IConditionValidationService
@@ -43,19 +56,31 @@ namespace Clinics.Api.Services
             _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
+        /// <summary>
+        /// Validate operator and field combination according to matrix:
+        /// UNCONDITIONED: Value, MinValue, MaxValue all null
+        /// DEFAULT: Value, MinValue, MaxValue all null
+        /// EQUAL: Value required; MinValue, MaxValue null
+        /// GREATER: Value required; MinValue, MaxValue null
+        /// LESS: Value required; MinValue, MaxValue null
+        /// RANGE: MinValue and MaxValue required; Value null
+        /// </summary>
         public Task<ValidationResult> ValidateSingleConditionAsync(string operatorName, int? value, int? minValue, int? maxValue)
         {
             // Validate operator
             if (!IsValidOperator(operatorName))
-                return Task.FromResult(ValidationResult.Failure($"Invalid operator: {operatorName}. Must be EQUAL, GREATER, LESS, or RANGE."));
+                return Task.FromResult(ValidationResult.Failure(
+                    $"Invalid operator: {operatorName}. Must be UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS, or RANGE."));
 
-            // Operator-specific validation
+            // Operator-specific validation matrix
             var result = operatorName.ToUpper() switch
             {
-                "EQUAL" => ValidateEqualCondition(value),
-                "GREATER" => ValidateGreaterCondition(value),
-                "LESS" => ValidateLessCondition(value),
-                "RANGE" => ValidateRangeCondition(minValue, maxValue),
+                "UNCONDITIONED" => ValidateUnconditionedCondition(value, minValue, maxValue),
+                "DEFAULT" => ValidateDefaultCondition(value, minValue, maxValue),
+                "EQUAL" => ValidateEqualCondition(value, minValue, maxValue),
+                "GREATER" => ValidateGreaterCondition(value, minValue, maxValue),
+                "LESS" => ValidateLessCondition(value, minValue, maxValue),
+                "RANGE" => ValidateRangeCondition(value, minValue, maxValue),
                 _ => ValidationResult.Failure($"Unknown operator: {operatorName}")
             };
             return Task.FromResult(result);
@@ -63,14 +88,21 @@ namespace Clinics.Api.Services
 
         public async Task<bool> HasOverlapAsync(int queueId, string operatorName, int? value, int? minValue, int? maxValue, int? excludeConditionId = null)
         {
-            // Fetch all conditions for this queue
+            // DEFAULT and UNCONDITIONED don't participate in overlap detection
+            if (operatorName?.ToUpper() is "DEFAULT" or "UNCONDITIONED")
+                return false;
+
+            // Fetch all active (non-sentinel) conditions for this queue
             var conditions = await _context.Set<MessageCondition>()
-                .Where(c => c.QueueId == queueId && c.Id != (excludeConditionId ?? -1))
+                .Where(c => c.QueueId == queueId 
+                    && c.Id != (excludeConditionId ?? -1)
+                    && c.Operator != "DEFAULT" 
+                    && c.Operator != "UNCONDITIONED")
                 .ToListAsync();
 
             foreach (var existingCondition in conditions)
             {
-                if (ConditionsOverlap(operatorName, value, minValue, maxValue, 
+                if (ConditionsOverlap(operatorName ?? "", value, minValue, maxValue, 
                     existingCondition.Operator, existingCondition.Value, existingCondition.MinValue, existingCondition.MaxValue))
                 {
                     return true;
@@ -86,42 +118,93 @@ namespace Clinics.Api.Services
                 .AnyAsync(c => c.TemplateId == templateId);
         }
 
+        public async Task<bool> IsDefaultAlreadyUsedAsync(int queueId, int? excludeConditionId = null)
+        {
+            return await _context.Set<MessageCondition>()
+                .AnyAsync(c => c.QueueId == queueId 
+                    && c.Operator == "DEFAULT" 
+                    && c.Id != (excludeConditionId ?? -1));
+        }
+
         #region Helper Methods
 
         private bool IsValidOperator(string operatorName)
         {
             return operatorName?.ToUpper() switch
             {
-                "EQUAL" or "GREATER" or "LESS" or "RANGE" => true,
+                "UNCONDITIONED" or "DEFAULT" or "EQUAL" or "GREATER" or "LESS" or "RANGE" => true,
                 _ => false
             };
         }
 
-        private ValidationResult ValidateEqualCondition(int? value)
+        /// <summary>
+        /// UNCONDITIONED: All numeric fields must be null
+        /// </summary>
+        private ValidationResult ValidateUnconditionedCondition(int? value, int? minValue, int? maxValue)
+        {
+            if (value.HasValue || minValue.HasValue || maxValue.HasValue)
+                return ValidationResult.Failure(
+                    "UNCONDITIONED operator requires all numeric fields (Value, MinValue, MaxValue) to be null");
+            return ValidationResult.Success();
+        }
+
+        /// <summary>
+        /// DEFAULT: All numeric fields must be null
+        /// </summary>
+        private ValidationResult ValidateDefaultCondition(int? value, int? minValue, int? maxValue)
+        {
+            if (value.HasValue || minValue.HasValue || maxValue.HasValue)
+                return ValidationResult.Failure(
+                    "DEFAULT operator requires all numeric fields (Value, MinValue, MaxValue) to be null");
+            return ValidationResult.Success();
+        }
+
+        /// <summary>
+        /// EQUAL: Value required; MinValue and MaxValue must be null
+        /// </summary>
+        private ValidationResult ValidateEqualCondition(int? value, int? minValue, int? maxValue)
         {
             if (!value.HasValue)
                 return ValidationResult.Failure("EQUAL operator requires a Value");
+            if (minValue.HasValue || maxValue.HasValue)
+                return ValidationResult.Failure("EQUAL operator requires MinValue and MaxValue to be null");
             return ValidationResult.Success();
         }
 
-        private ValidationResult ValidateGreaterCondition(int? value)
+        /// <summary>
+        /// GREATER: Value required; MinValue and MaxValue must be null
+        /// </summary>
+        private ValidationResult ValidateGreaterCondition(int? value, int? minValue, int? maxValue)
         {
             if (!value.HasValue)
                 return ValidationResult.Failure("GREATER operator requires a Value");
+            if (minValue.HasValue || maxValue.HasValue)
+                return ValidationResult.Failure("GREATER operator requires MinValue and MaxValue to be null");
             return ValidationResult.Success();
         }
 
-        private ValidationResult ValidateLessCondition(int? value)
+        /// <summary>
+        /// LESS: Value required; MinValue and MaxValue must be null
+        /// </summary>
+        private ValidationResult ValidateLessCondition(int? value, int? minValue, int? maxValue)
         {
             if (!value.HasValue)
                 return ValidationResult.Failure("LESS operator requires a Value");
+            if (minValue.HasValue || maxValue.HasValue)
+                return ValidationResult.Failure("LESS operator requires MinValue and MaxValue to be null");
             return ValidationResult.Success();
         }
 
-        private ValidationResult ValidateRangeCondition(int? minValue, int? maxValue)
+        /// <summary>
+        /// RANGE: MinValue and MaxValue required; Value must be null; MinValue <= MaxValue
+        /// </summary>
+        private ValidationResult ValidateRangeCondition(int? value, int? minValue, int? maxValue)
         {
             if (!minValue.HasValue || !maxValue.HasValue)
                 return ValidationResult.Failure("RANGE operator requires both MinValue and MaxValue");
+
+            if (value.HasValue)
+                return ValidationResult.Failure("RANGE operator requires Value to be null");
 
             if (minValue > maxValue)
                 return ValidationResult.Failure($"MinValue ({minValue}) must be less than or equal to MaxValue ({maxValue})");

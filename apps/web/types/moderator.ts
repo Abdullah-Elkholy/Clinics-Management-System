@@ -93,14 +93,19 @@ export interface QueueWithModerator extends Queue {
 }
 
 // Message Template Types
+// DEPRECATED: Use types/messageTemplate.ts for the source-of-truth MessageTemplate interface.
+// This interface is retained for moderator-related responses but should not be used in new code.
+// Instead import MessageTemplate from @/types/messageTemplate
 export interface MessageTemplate {
-  id: number;
+  id: string;
+  queueId?: string;
   title: string;
   content: string;
-  createdBy: number;
-  moderatorId: number;
-  isShared: boolean;
+  createdBy?: string;
+  moderatorId?: number;
+  isShared?: boolean;
   isActive: boolean;
+  condition?: { operator?: string }; // Operator determines template role (DEFAULT/UNCONDITIONED/active)
   category?: string;
   tags?: string[];
   variables?: string[];
