@@ -178,6 +178,11 @@ app.UseAuthorization();
 app.UseCookiePolicy();
 app.MapControllers();
 
+// Lightweight health endpoint for CI/CD readiness and Playwright waits
+// Returns 200 OK when the application has started routing/middleware.
+// Does not require authentication.
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+
 
 // Seed sample data and apply migrations automatically on startup
 try
