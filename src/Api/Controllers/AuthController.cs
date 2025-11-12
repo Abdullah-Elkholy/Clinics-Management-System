@@ -84,6 +84,12 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, errors = new[] { new { code = "InvalidRequest", message = "Invalid or missing request body. Expected JSON { \"username\":..., \"password\":... } or form-encoded username=...&password=..." } } });
                 }
 
+                // Validate empty/whitespace username or password
+                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
+                {
+                    return BadRequest(new { success = false, errors = new[] { new { code = "MissingCredentials", message = "Username and password are required" } } });
+                }
+
                 var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
                 if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
@@ -173,12 +179,15 @@ namespace Clinics.Api.Controllers
             // rotate refresh token: revoke old session and create a new one
             _sessionService.RevokeSession(session.Id);
             var newRefresh = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(30));
+            
+            // Environment-aware cookie settings: Test env uses Secure=false, others use Secure=true with SameSite=None
+            var isTestEnv = _env.IsEnvironment("Test");
             var cookieOptions = new Microsoft.AspNetCore.Http.CookieOptions
             {
                 HttpOnly = true,
-                SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None,
+                SameSite = isTestEnv ? Microsoft.AspNetCore.Http.SameSiteMode.Strict : Microsoft.AspNetCore.Http.SameSiteMode.None,
                 Expires = DateTime.UtcNow.AddDays(30),
-                Secure = true
+                Secure = !isTestEnv
             };
             Response.Cookies.Append("refreshToken", newRefresh, cookieOptions);
 

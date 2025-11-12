@@ -135,22 +135,19 @@ namespace Clinics.Infrastructure.Services
 
             return await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
-                // Check moderator quota: count active queues and compare to limit
+                // Get queue and quota repositories
                 var quotaRepo = _unitOfWork.Repository<Quota>();
-                var quotas = await quotaRepo.GetByPredicateAsync(q => q.ModeratorUserId == queue.ModeratorId);
+                var queueRepo = _unitOfWork.Repository<Queue>();
                 
-                if (quotas.Count == 0)
-                {
-                    return RestoreResult.Error("Moderator quota not found.");
-                }
-
-                var quota = quotas.First();
+                // Query for moderator quota (should exist; created via moderator lifecycle or GetOrCreateQuotaForModeratorAsync)
+                var quotas = await quotaRepo.GetByPredicateAsync(q => q.ModeratorUserId == queue.ModeratorId);
+                var quota = quotas.FirstOrDefault();
                 
                 // Count active (non-deleted) queues for this moderator
-                var queueRepo = _unitOfWork.Repository<Queue>();
                 var activeQueueCount = await queueRepo.GetByPredicateAsync(q => q.ModeratorId == queue.ModeratorId && !q.IsDeleted);
                 
-                if (activeQueueCount.Count >= quota.QueuesQuota)
+                // If quota exists, check if we have room to restore
+                if (quota != null && activeQueueCount.Count >= quota.QueuesQuota)
                 {
                     return RestoreResult.QuotaInsufficient("Queues", 
                         quota.QueuesQuota - activeQueueCount.Count, 1);
@@ -175,9 +172,12 @@ namespace Clinics.Infrastructure.Services
                     }
                 }
 
-                // Update quota consumed count (track current active count)
-                quota.ConsumedQueues = activeQueueCount.Count + 1;
-                await quotaRepo.UpdateAsync(quota);
+                // Update quota consumed count (track current active count) - only if quota exists
+                if (quota != null)
+                {
+                    quota.ConsumedQueues = activeQueueCount.Count + 1;
+                    await quotaRepo.UpdateAsync(quota);
+                }
 
                 // Save changes
                 await _unitOfWork.SaveChangesAsync();

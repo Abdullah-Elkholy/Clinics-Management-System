@@ -17,7 +17,6 @@ export default function EditTemplateModal() {
   const { addToast } = useUI();
   const { selectedQueueId, updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions } = useQueue();
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +37,6 @@ export default function EditTemplateModal() {
   const templateId = modalData?.templateId as string | undefined;
 
   const MAX_CONTENT_LENGTH = 1000;
-  const MAX_DESCRIPTION_LENGTH = 200;
 
   // Load template data when modal opens
   useEffect(() => {
@@ -47,7 +45,6 @@ export default function EditTemplateModal() {
       if (template) {
         setCurrentTemplate(template);
         setTitle(template.title);
-        setDescription(template.description || '');
         setContent(template.content);
         // Find the condition for this template to get its condition ID
         const templateCondition = messageConditions.find((c) => c.templateId === template.id);
@@ -232,14 +229,12 @@ export default function EditTemplateModal() {
       if (currentTemplate) {
         updateMessageTemplate(currentTemplate.id, {
           title,
-          description,
           content,
           updatedAt: new Date(),
         });
         
         addToast('تم تحديث قالب الرسالة بنجاح', 'success');
         setTitle('');
-        setDescription('');
         setContent('');
         setErrors({});
         setSelectedConditionId(null);
@@ -454,7 +449,6 @@ export default function EditTemplateModal() {
             onClick={() => {
               closeModal('editTemplate');
               setTitle('');
-              setDescription('');
               setContent('');
               setErrors({});
             }}

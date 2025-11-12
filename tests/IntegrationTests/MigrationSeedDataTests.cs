@@ -3,7 +3,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Clinics.Infrastructure;
+using Clinics.Api.Services;
 using Clinics.Domain;
 
 namespace Clinics.IntegrationTests
@@ -32,6 +34,12 @@ namespace Clinics.IntegrationTests
             // Apply migrations
             await _context.Database.EnsureDeletedAsync();
             await _context.Database.EnsureCreatedAsync();
+
+            // Seed test data using a simple mock logger
+            var mockLogger = LoggerFactory.Create(builder => builder.AddConsole())
+                .CreateLogger<DbSeeder>();
+            var seeder = new DbSeeder(_context, mockLogger);
+            await seeder.SeedAsync();
         }
 
         public async Task DisposeAsync()

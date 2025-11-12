@@ -18,7 +18,6 @@ export default function AddTemplateModal() {
   const { addToast } = useUI();
   const { selectedQueueId, addMessageTemplate, messageTemplates, addMessageCondition, messageConditions } = useQueue();
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +37,6 @@ export default function AddTemplateModal() {
   const queueId = modalData?.queueId || selectedQueueId;
 
   const MAX_CONTENT_LENGTH = 1000;
-  const MAX_DESCRIPTION_LENGTH = 200;
 
   // Handle condition selection
   const handleConditionChange = (conditionId: string | null) => {
@@ -215,7 +213,6 @@ export default function AddTemplateModal() {
       
       // Reset form
       setTitle('');
-      setDescription('');
       setContent('');
       setErrors({});
       setSelectedConditionId(null);
@@ -429,7 +426,6 @@ export default function AddTemplateModal() {
             onClick={() => {
               closeModal('addTemplate');
               setTitle('');
-              setDescription('');
               setContent('');
               setErrors({});
             }}

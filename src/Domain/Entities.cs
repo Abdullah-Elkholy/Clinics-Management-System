@@ -148,6 +148,13 @@ namespace Clinics.Domain
         [Phone]
         public string PhoneNumber { get; set; } = null!;
 
+        /// <summary>
+        /// Optional phone extension (e.g., "123" from "+201234567890 ext. 123").
+        /// Extracted during patient creation from PhoneNumber field.
+        /// </summary>
+        [StringLength(10)]
+        public string? PhoneExtension { get; set; }
+
         [Required]
         public int Position { get; set; }
 

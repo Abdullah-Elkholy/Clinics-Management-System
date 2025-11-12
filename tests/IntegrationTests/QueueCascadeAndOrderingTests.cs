@@ -8,23 +8,17 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using IntegrationTests.Common;
 
 namespace IntegrationTests;
 
-public class QueueCascadeAndOrderingTests : IClassFixture<WebApplicationFactory<Program>>
+public class QueueCascadeAndOrderingTests : IClassFixture<CustomWebApplicationFactory<Program>>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly CustomWebApplicationFactory<Program> _factory;
 
-    public QueueCascadeAndOrderingTests(WebApplicationFactory<Program> factory)
+    public QueueCascadeAndOrderingTests(CustomWebApplicationFactory<Program> factory)
     {
-        _factory = factory.WithWebHostBuilder(builder => {
-            builder.ConfigureAppConfiguration((context, conf) => {
-                    conf.AddInMemoryCollection(new System.Collections.Generic.Dictionary<string, string?>() {
-                    ["USE_LOCAL_SQL"] = "false",
-                    ["Jwt:Key"] = "TestKey_CascadeOrdering_123456"
-                });
-            });
-        });
+        _factory = factory;
     }
 
     [Fact]

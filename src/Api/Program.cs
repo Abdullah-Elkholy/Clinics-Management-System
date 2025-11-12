@@ -59,6 +59,8 @@ builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<QuotaService>();
 builder.Services.AddScoped<IUserContext, UserContext>();
 builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
+builder.Services.AddScoped<IPatientPositionService, PatientPositionService>();  // Add missing service
+builder.Services.AddScoped<IPhoneNormalizationService, PhoneNormalizationService>();  // Add phone normalization
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
 builder.Services.AddScoped<IAuditService, AuditService>();
@@ -133,7 +135,14 @@ else
     builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase("ClinicsDemoDb"));
     builder.Services.AddHangfire(config => config.UseMemoryStorage());
 }
-builder.Services.AddHangfireServer();
+
+// Only add Hangfire server in non-test environments
+// In tests, server startup causes timeout issues during cleanup
+if (!builder.Environment.IsEnvironment("Test"))
+{
+    builder.Services.AddHangfireServer();
+}
+
 // message sender and processor
 builder.Services.AddScoped<IMessageSender, SimulatedMessageSender>();
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
@@ -170,6 +179,11 @@ app.UseAuthorization();
 // Cookie policy for refresh token (HttpOnly cookie usage planned)
 app.UseCookiePolicy();
 app.MapControllers();
+
+// Lightweight health endpoint for CI/CD readiness and Playwright waits
+// Returns 200 OK when the application has started routing/middleware.
+// Does not require authentication.
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 
 // Seed sample data and apply migrations automatically on startup

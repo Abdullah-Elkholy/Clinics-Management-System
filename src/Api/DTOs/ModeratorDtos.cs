@@ -160,8 +160,18 @@ namespace Clinics.Api.DTOs
     public class CreateQueueRequest
     {
         public string DoctorName { get; set; } = null!;
-        public string? Description { get; set; }
         public int? EstimatedWaitMinutes { get; set; }
+        public int? CurrentPosition { get; set; }
+        public int ModeratorId { get; set; }
+    }
+    /// <summary>
+    /// Request to update a Queue
+    /// </summary>
+    public class UpdateQueueRequest
+    {
+        public string? DoctorName { get; set; }
+        public int? EstimatedWaitMinutes { get; set; }
+        public int? CurrentPosition { get; set; }
     }
 
     /// <summary>

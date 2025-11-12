@@ -161,9 +161,6 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1">
           <h5 className="font-semibold text-gray-800">{template.title}</h5>
-          {template.description && (
-            <p className="text-xs text-gray-500 mt-1">{template.description}</p>
-          )}
         </div>
         {template.isActive && (
           <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
@@ -231,13 +228,6 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
         </div>
 
         <div className="space-y-4">
-          {template.description && (
-            <div>
-              <p className="text-xs text-gray-600 mb-1">الوصف</p>
-              <p className="text-sm text-gray-700">{template.description}</p>
-            </div>
-          )}
-
           <div>
             <p className="text-xs text-gray-600 mb-1">محتوى الرسالة</p>
             <p className="text-sm bg-blue-50 p-3 rounded text-gray-800 leading-relaxed">

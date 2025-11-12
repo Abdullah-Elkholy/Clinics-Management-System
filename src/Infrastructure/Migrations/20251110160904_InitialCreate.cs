@@ -127,7 +127,6 @@ namespace Infrastructure.Migrations
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     DoctorName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     CreatedBy = table.Column<int>(type: "int", nullable: false),
                     ModeratorId = table.Column<int>(type: "int", nullable: false),
                     CurrentPosition = table.Column<int>(type: "int", nullable: false),
@@ -564,16 +563,16 @@ namespace Infrastructure.Migrations
             migrationBuilder.Sql(@"
                 IF NOT EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد')
                 BEGIN
-                    INSERT INTO [Queues] ([DoctorName], [Description], [CreatedBy], [ModeratorId], [CurrentPosition], [EstimatedWaitMinutes], [IsDeleted], [CreatedAt])
-                    VALUES (N'د. أحمد محمد', N'عيادة الصباح', 3, 3, 1, 15, 0, SYSUTCDATETIME())
+                    INSERT INTO [Queues] ([DoctorName], [CreatedBy], [ModeratorId], [CurrentPosition], [EstimatedWaitMinutes], [IsDeleted], [CreatedAt])
+                    VALUES (N'د. أحمد محمد', N'عيادة الصباح', 3, 3, 1, 15, SYSUTCDATETIME())
                 END
             ");
 
             migrationBuilder.Sql(@"
                 IF NOT EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'د. فاطمة علي')
                 BEGIN
-                    INSERT INTO [Queues] ([DoctorName], [Description], [CreatedBy], [ModeratorId], [CurrentPosition], [EstimatedWaitMinutes], [IsDeleted], [CreatedAt])
-                    VALUES (N'د. فاطمة علي', N'عيادة الأطفال', 3, 3, 2, 20, 0, SYSUTCDATETIME())
+                    INSERT INTO [Queues] ([DoctorName], [CreatedBy], [ModeratorId], [CurrentPosition], [EstimatedWaitMinutes], [IsDeleted], [CreatedAt])
+                    VALUES (N'د. فاطمة علي', N'عيادة الأطفال', 3, 3, 2, 20, SYSUTCDATETIME())
                 END
             ");
 
