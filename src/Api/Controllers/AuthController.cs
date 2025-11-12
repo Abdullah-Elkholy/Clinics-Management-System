@@ -173,12 +173,15 @@ namespace Clinics.Api.Controllers
             // rotate refresh token: revoke old session and create a new one
             _sessionService.RevokeSession(session.Id);
             var newRefresh = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(30));
+            
+            // Environment-aware cookie settings: Test env uses Secure=false, others use Secure=true with SameSite=None
+            var isTestEnv = _env.IsEnvironment("Test");
             var cookieOptions = new Microsoft.AspNetCore.Http.CookieOptions
             {
                 HttpOnly = true,
-                SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None,
+                SameSite = isTestEnv ? Microsoft.AspNetCore.Http.SameSiteMode.Strict : Microsoft.AspNetCore.Http.SameSiteMode.None,
                 Expires = DateTime.UtcNow.AddDays(30),
-                Secure = true
+                Secure = !isTestEnv
             };
             Response.Cookies.Append("refreshToken", newRefresh, cookieOptions);
 

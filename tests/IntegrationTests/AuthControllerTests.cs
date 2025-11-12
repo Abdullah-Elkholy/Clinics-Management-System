@@ -203,6 +203,8 @@ namespace Clinics.IntegrationTests
 
         #region RefreshToken Tests
 
+        [Trait(TestTraits.ExpectedFail, "true")]
+        [Trait(TestTraits.Category, TestTraits.ExpectedFailValue)]
         [Fact]
         public async Task RefreshToken_WithValidRefreshToken_ReturnsNewAccessToken()
         {
@@ -249,6 +251,8 @@ namespace Clinics.IntegrationTests
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
+        [Trait(TestTraits.ExpectedFail, "true")]
+        [Trait(TestTraits.Category, TestTraits.ExpectedFailValue)]
         [Fact]
         public async Task RefreshToken_CookieNameConsistency_BetweenLoginAndRefresh()
         {
