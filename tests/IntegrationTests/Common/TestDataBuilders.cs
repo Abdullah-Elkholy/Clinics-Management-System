@@ -61,7 +61,7 @@ namespace Clinics.Tests.Common
     {
         private string _fullName = "Test Patient";
         private string _phoneNumber = "+201234567890";
-        private int _clinicId = 1;
+        private int _queueId = 1;  // Updated: was clinicId, now queueId
         private int? _position = null;
         private string _status = "waiting";
 
@@ -77,9 +77,12 @@ namespace Clinics.Tests.Common
             return this;
         }
 
-        public PatientDtoBuilder WithClinicId(int clinicId)
+        /// <summary>
+        /// Alternative method name: WithQueueId for clarity
+        /// </summary>
+        public PatientDtoBuilder WithQueueId(int queueId)
         {
-            _clinicId = clinicId;
+            _queueId = queueId;
             return this;
         }
 
@@ -99,15 +102,15 @@ namespace Clinics.Tests.Common
         {
             var obj = new Dictionary<string, object>
             {
-                { "fullName", _fullName },
-                { "phoneNumber", _phoneNumber },
-                { "clinicId", _clinicId },
-                { "status", _status }
+                { "FullName", _fullName },
+                { "PhoneNumber", _phoneNumber },
+                { "QueueId", _queueId },  // PascalCase to match C# property names
+                { "Status", _status}
             };
 
             if (_position.HasValue)
             {
-                obj["position"] = _position.Value;
+                obj["Position"] = _position.Value;
             }
 
             return obj;
@@ -276,10 +279,10 @@ namespace Clinics.Tests.Common
         /// <summary>
         /// Creates a valid patient DTO with normalized phone.
         /// </summary>
-        public static dynamic CreateValidPatient(int clinicId = 1, string? phone = null)
+        public static dynamic CreateValidPatient(int queueId = 1, string? phone = null)
         {
             return new PatientDtoBuilder()
-                .WithClinicId(clinicId)
+                .WithQueueId(queueId)
                 .WithPhone(phone ?? "+201234567890")
                 .WithName($"Patient {Guid.NewGuid().ToString().Substring(0, 8)}")
                 .Build();

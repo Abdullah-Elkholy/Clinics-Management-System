@@ -9,7 +9,6 @@ export interface MessageTemplate {
   id: string;                  // GUID (UUID format)
   queueId: string;             // GUID: which queue this template belongs to
   title: string;               // template name (e.g., "Welcome Message")
-  description?: string;        // optional description
   content: string;             // template text with placeholders
   variables: string[];         // list of variables in template
   isActive: boolean;           // whether template is in use

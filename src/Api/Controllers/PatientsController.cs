@@ -21,6 +21,7 @@ namespace Clinics.Api.Controllers
         private readonly IUserContext _userContext;
         private readonly Clinics.Api.Services.IPatientCascadeService _patientCascadeService;
         private readonly IPatientPositionService _patientPositionService;
+        private readonly IPhoneNormalizationService _phoneNormalizationService;
 
         public PatientsController(
             ApplicationDbContext db,
@@ -28,7 +29,8 @@ namespace Clinics.Api.Controllers
             IGenericUnitOfWork unitOfWork,
             IUserContext userContext,
             Clinics.Api.Services.IPatientCascadeService patientCascadeService,
-            IPatientPositionService patientPositionService)
+            IPatientPositionService patientPositionService,
+            IPhoneNormalizationService phoneNormalizationService)
         {
             _db = db;
             _logger = logger;
@@ -36,6 +38,7 @@ namespace Clinics.Api.Controllers
             _userContext = userContext;
             _patientCascadeService = patientCascadeService;
             _patientPositionService = patientPositionService;
+            _phoneNormalizationService = phoneNormalizationService;
         }
 
         /// <summary>
@@ -55,6 +58,7 @@ namespace Clinics.Api.Controllers
                         Id = p.Id,
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
+                        PhoneExtension = p.PhoneExtension,
                         Position = p.Position,
                         Status = p.Status
                     })
@@ -94,6 +98,7 @@ namespace Clinics.Api.Controllers
                         Id = p.Id,
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
+                        PhoneExtension = p.PhoneExtension,
                         Position = p.Position,
                         Status = p.Status
                     })
@@ -153,41 +158,50 @@ namespace Clinics.Api.Controllers
 
                 var insertPos = maxPos + 1;
 
-                using (var transaction = await _db.Database.BeginTransactionAsync())
+                try
                 {
-                    try
+                    // Normalize phone number and extract extension
+                    if (!_phoneNormalizationService.TryNormalizeWithExtension(req.PhoneNumber, out var normalizedPhone, out var extension))
                     {
-                        // No shift needed: new patients always inserted at end (maxPos + 1)
-                        var patient = new Patient
-                        {
-                            QueueId = req.QueueId,
-                            FullName = req.FullName,
-                            PhoneNumber = req.PhoneNumber,
-                            Position = insertPos,
-                            Status = "waiting"
-                        };
-
-                        _db.Patients.Add(patient);
-                        await _db.SaveChangesAsync();
-                        await transaction.CommitAsync();
-
-                        var dto = new PatientDto
-                        {
-                            Id = patient.Id,
-                            FullName = patient.FullName,
-                            PhoneNumber = patient.PhoneNumber,
-                            Position = patient.Position,
-                            Status = patient.Status
-                        };
-
-                        return CreatedAtAction(nameof(GetByQueue), new { queueId = req.QueueId }, dto);
+                        return BadRequest(new { success = false, error = "Invalid phone number format" });
                     }
-                    catch
+
+                    // No shift needed: new patients always inserted at end (maxPos + 1)
+                    var patient = new Patient
                     {
-                        await transaction.RollbackAsync();
-                        throw;
-                    }
+                        QueueId = req.QueueId,
+                        FullName = req.FullName,
+                        PhoneNumber = normalizedPhone ?? req.PhoneNumber,
+                        PhoneExtension = extension ?? req.PhoneExtension,
+                        Position = insertPos,
+                        Status = "waiting"
+                    };
+
+                    _db.Patients.Add(patient);
+                    await _db.SaveChangesAsync();
+
+                    var dto = new PatientDto
+                    {
+                        Id = patient.Id,
+                        FullName = patient.FullName,
+                        PhoneNumber = patient.PhoneNumber,
+                        PhoneExtension = patient.PhoneExtension,
+                        Position = patient.Position,
+                        Status = patient.Status
+                    };
+
+                    return CreatedAtAction(nameof(GetByQueue), new { queueId = req.QueueId }, new { success = true, data = dto });
                 }
+                catch (DbUpdateException dbEx)
+                {
+                    _logger.LogError(dbEx, "Database error creating patient");
+                    return StatusCode(400, new { success = false, error = "Invalid data or constraint violation", details = dbEx.InnerException?.Message });
+                }
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Database constraint error creating patient");
+                return StatusCode(400, new { success = false, error = "Invalid data or constraint violation", details = ex.InnerException?.Message });
             }
             catch (Exception ex)
             {
@@ -250,6 +264,9 @@ namespace Clinics.Api.Controllers
                 if (!string.IsNullOrEmpty(req.PhoneNumber))
                     patient.PhoneNumber = req.PhoneNumber;
 
+                if (!string.IsNullOrEmpty(req.PhoneExtension))
+                    patient.PhoneExtension = req.PhoneExtension;
+
                 if (!string.IsNullOrEmpty(req.Status))
                     patient.Status = req.Status;
 
@@ -260,6 +277,7 @@ namespace Clinics.Api.Controllers
                     Id = patient.Id,
                     FullName = patient.FullName,
                     PhoneNumber = patient.PhoneNumber,
+                    PhoneExtension = patient.PhoneExtension,
                     Position = patient.Position,
                     Status = patient.Status
                 };
@@ -324,6 +342,8 @@ namespace Clinics.Api.Controllers
                 if (req.Items == null || req.Items.Count == 0)
                     return BadRequest(new { message = "Items list cannot be empty" });
 
+                // Reorder is a multi-step operation that modifies multiple patients atomically.
+                // Must use transaction to prevent race conditions and ensure data consistency.
                 using (var transaction = await _db.Database.BeginTransactionAsync())
                 {
                     try
@@ -362,9 +382,10 @@ namespace Clinics.Api.Controllers
 
                         return Ok(new { message = "Patients reordered successfully" });
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         await transaction.RollbackAsync();
+                        _logger.LogError(ex, "Error during reorder");
                         throw;
                     }
                 }

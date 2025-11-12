@@ -39,14 +39,29 @@ namespace Clinics.Api.Services
                 // Create password hasher
                 var hasher = new PasswordHasher<User>();
 
-                // Create admin users with proper passwords
+                // Create an admin moderator for testing admin queue operations first
+                var adminModerator = new User
+                {
+                    Username = "admin_mod",
+                    FirstName = "مدير",
+                    LastName = "الاختبار",
+                    Role = "moderator",
+                    PasswordHash = hasher.HashPassword(null!, "adminmod123")
+                };
+
+                // Add admin moderator first to get its ID
+                _db.Users.Add(adminModerator);
+                await _db.SaveChangesAsync();
+
+                // Now create admin users with proper passwords, assigning them to admin moderator
                 var adminPrimary = new User
                 {
                     Username = "admin",
                     FirstName = "أحمد",
                     LastName = "المدير الأول",
                     Role = "primary_admin",
-                    PasswordHash = hasher.HashPassword(null!, "admin123")
+                    PasswordHash = hasher.HashPassword(null!, "admin123"),
+                    ModeratorId = adminModerator.Id  // Assign to admin moderator
                 };
 
                 var adminSecondary = new User
@@ -55,7 +70,8 @@ namespace Clinics.Api.Services
                     FirstName = "سارة",
                     LastName = "المديرة الثانية",
                     Role = "secondary_admin",
-                    PasswordHash = hasher.HashPassword(null!, "admin123")
+                    PasswordHash = hasher.HashPassword(null!, "admin123"),
+                    ModeratorId = adminModerator.Id  // Assign to admin moderator
                 };
 
                 // Create moderators
@@ -92,13 +108,13 @@ namespace Clinics.Api.Services
 
                 _logger.LogInformation("Created admin and moderator users.");
 
-                // Auto-create quotas for moderators (0 messages, 0 queues initially)
+                // Auto-create quotas for moderators with unlimited messages and queues
                 var quotaAhmed = new Quota
                 {
                     ModeratorUserId = moderatorAhmed.Id,
-                    MessagesQuota = 0,
+                    MessagesQuota = int.MaxValue,
                     ConsumedMessages = 0,
-                    QueuesQuota = 0,
+                    QueuesQuota = int.MaxValue,
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -106,14 +122,24 @@ namespace Clinics.Api.Services
                 var quotaSara = new Quota
                 {
                     ModeratorUserId = moderatorSara.Id,
-                    MessagesQuota = 0,
+                    MessagesQuota = int.MaxValue,
                     ConsumedMessages = 0,
-                    QueuesQuota = 0,
+                    QueuesQuota = int.MaxValue,
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
 
-                _db.Quotas.AddRange(quotaAhmed, quotaSara);
+                var quotaAdmin = new Quota
+                {
+                    ModeratorUserId = adminModerator.Id,
+                    MessagesQuota = int.MaxValue,
+                    ConsumedMessages = 0,
+                    QueuesQuota = int.MaxValue,
+                    ConsumedQueues = 0,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _db.Quotas.AddRange(quotaAhmed, quotaSara, quotaAdmin);
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation("Created quotas for moderators.");

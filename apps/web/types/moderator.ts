@@ -79,7 +79,6 @@ export interface ModeratorSettings {
 export interface Queue {
   id: number;
   doctorName: string;
-  description?: string;
   createdBy: number;
   moderatorId: number;
   currentPosition: number;
@@ -227,14 +226,15 @@ export interface AddUserToModeratorRequest {
 
 export interface CreateQueueRequest {
   doctorName: string;
-  description?: string;
   estimatedWaitMinutes?: number;
+  moderatorId: number;
+  currentPosition?: number;
 }
 
 export interface UpdateQueueRequest {
   doctorName?: string;
-  description?: string;
   estimatedWaitMinutes?: number;
+  currentPosition?: number;
 }
 
 export interface CreateMessageTemplateRequest {

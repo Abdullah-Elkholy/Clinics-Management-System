@@ -181,13 +181,13 @@ namespace Clinics.Api.Controllers
 
                 _db.ModeratorSettings.Add(settings);
 
-                // Create default quota (if needed)
+                // Create default quota (unlimited messages and queues)
                 var quota = new Quota
                 {
                     ModeratorUserId = moderator.Id,
-                    MessagesQuota = 1000,
+                    MessagesQuota = int.MaxValue,
                     ConsumedMessages = 0,
-                    QueuesQuota = 10,
+                    QueuesQuota = int.MaxValue,
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -308,6 +308,14 @@ namespace Clinics.Api.Controllers
 
                 if (settings != null)
                     _db.ModeratorSettings.Remove(settings);
+
+                // Delete associated quota
+                var quota = await _db.Quotas
+                    .Where(q => q.ModeratorUserId == id)
+                    .FirstOrDefaultAsync();
+
+                if (quota != null)
+                    _db.Quotas.Remove(quota);
 
                 _db.Users.Remove(moderator);
                 await _db.SaveChangesAsync();

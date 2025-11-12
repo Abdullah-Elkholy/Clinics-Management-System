@@ -24,8 +24,8 @@ DECLARE @SessionId UNIQUEIDENTIFIER = NEWID();
 -- 1. Insert test queue
 IF NOT EXISTS (SELECT 1 FROM Queues WHERE DoctorName = 'د. أحمد محمد')
 BEGIN
-    INSERT INTO Queues (DoctorName, Description, CreatedBy, CurrentPosition, EstimatedWaitMinutes)
-    VALUES ('د. أحمد محمد', 'عيادة الأسنان - اختبار', 1, 1, 15);
+    INSERT INTO Queues (DoctorName, CreatedBy, CurrentPosition, EstimatedWaitMinutes)
+    VALUES ('د. أحمد محمد', 1, 1, 15);
 END
 SET @QueueId = (SELECT TOP 1 Id FROM Queues WHERE DoctorName = 'د. أحمد محمد');
 

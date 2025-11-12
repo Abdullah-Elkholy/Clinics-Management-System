@@ -59,6 +59,8 @@ builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<QuotaService>();
 builder.Services.AddScoped<IUserContext, UserContext>();
 builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
+builder.Services.AddScoped<IPatientPositionService, PatientPositionService>();  // Add missing service
+builder.Services.AddScoped<IPhoneNormalizationService, PhoneNormalizationService>();  // Add phone normalization
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
 builder.Services.AddScoped<IAuditService, AuditService>();

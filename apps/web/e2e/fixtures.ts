@@ -145,7 +145,6 @@ export const E2EActions = {
     page: Page,
     name: string,
     moderatorId?: string,
-    description?: string
   ) {
     throw new Error('createQueue not implemented - UI not yet built. Phase 2 task.');
   },

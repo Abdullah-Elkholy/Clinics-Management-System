@@ -46,6 +46,35 @@ public class QuotaService
     }
 
     /// <summary>
+    /// Get or create quota for the effective moderator.
+    /// If quota exists, returns it. If missing, creates one with unlimited values.
+    /// Quota is always tied to a moderator—never created standalone.
+    /// </summary>
+    public async Task<Quota> GetOrCreateQuotaForModeratorAsync(int moderatorId)
+    {
+        var existingQuota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
+        
+        if (existingQuota != null)
+            return existingQuota;
+
+        // Create new unlimited quota for this moderator
+        var newQuota = new Quota
+        {
+            ModeratorUserId = moderatorId,
+            MessagesQuota = int.MaxValue,
+            ConsumedMessages = 0,
+            QueuesQuota = int.MaxValue,
+            ConsumedQueues = 0,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _context.Quotas.Add(newQuota);
+        await _context.SaveChangesAsync();
+
+        return newQuota;
+    }
+
+    /// <summary>
     /// Get quota for the effective moderator
     /// </summary>
     public async Task<Quota?> GetQuotaForUserAsync(int userId)

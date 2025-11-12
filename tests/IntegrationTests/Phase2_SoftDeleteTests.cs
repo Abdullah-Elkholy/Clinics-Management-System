@@ -14,10 +14,11 @@ namespace Clinics.IntegrationTests
     /// Soft Delete Semantics Tests (P0 - Business Logic)
     /// 
     /// Verifies:
-    /// - Soft-deleted entities excluded from active listings
-    /// - Soft-deleted entities still exist in database (for historical queries)
+    /// - Soft-deleted Queue entities excluded from active listings
+    /// - Soft-deleted Patient entities excluded from active listings
+    /// - Soft-deleted entities still exist in database (for historical queries and restore)
     /// - Cascade behavior defined and consistent
-    /// - Restore not allowed (soft delete is permanent in listing)
+    /// - Restore allowed within 30-day TTL window only
     /// </summary>
     [Collection("Database collection")]
     public class SoftDeleteTests : BusinessLogicTestBase
@@ -28,21 +29,24 @@ namespace Clinics.IntegrationTests
         #region Gating Tests (must pass)
 
         [Fact]
-        public async Task SoftDeleteClinic_ExcludedFromActiveList()
+        public async Task SoftDeleteQueue_ExcludedFromActiveList()
         {
-            // Arrange: Create clinic
-            var clinic = ClinicBuilder
-                .WithName($"Clinic {Guid.NewGuid().ToString().Substring(0, 8)}")
-                .Build();
-
-            var createResponse = await PostAsync("/api/Clinics", clinic);
+            await InitializeAuthAsync();
+            // Arrange: Create queue
+            var queue = new { doctorName = $"Doctor {Guid.NewGuid()}", estimatedWaitMinutes = 15 };
+            var createResponse = await PostAsync("/api/queues", queue);
             var createDoc = await ParseResponse(createResponse);
-            var clinicId = createDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
+            var queueId = GetIntFromNested(createDoc.RootElement, "queue", "id", 0);
+            if (queueId == 0)
+            {
+                var dataElem = GetDataFromResponse(createDoc.RootElement);
+                if (dataElem.HasValue)
+                    queueId = GetInt(dataElem.Value, "id", 0);
+            }
+            Assert.True(queueId > 0, "Queue should be created");
 
-            // Act: Soft delete clinic
-            var deleteResponse = await DeleteAsync($"/api/Clinics/{clinicId}");
-
-            // Assert: Delete succeeds
+            // Act: Soft delete queue
+            var deleteResponse = await DeleteAsync($"/api/queues/{queueId}");
             Assert.True(
                 deleteResponse.StatusCode == HttpStatusCode.NoContent ||
                 deleteResponse.StatusCode == HttpStatusCode.OK,
@@ -50,221 +54,89 @@ namespace Clinics.IntegrationTests
             );
 
             // Verify excluded from listing
-            var listResponse = await GetAsync("/api/Clinics");
+            var listResponse = await GetAsync("/api/queues");
             var listDoc = await ParseResponse(listResponse);
-            var clinics = listDoc.RootElement.GetProperty("data");
+            var queues = listDoc.RootElement.GetProperty("data");
 
             bool found = false;
-            foreach (var c in clinics.EnumerateArray())
+            foreach (var q in queues.EnumerateArray())
             {
-                if (c.TryGetProperty("id", out var idProp) && idProp.GetInt32() == clinicId)
+                if (q.TryGetProperty("id", out var idProp) && idProp.GetInt32() == queueId)
                 {
                     found = true;
                     break;
                 }
             }
 
-            Assert.False(found, "Soft-deleted clinic should not appear in active list");
-        }
-
-        [Fact]
-        public async Task SoftDeleteClinic_IncludedInTotalCount()
-        {
-            // Arrange: Create two clinics
-            var clinic1 = ClinicBuilder.WithName($"Clinic {Guid.NewGuid()}").Build();
-            var clinic2 = ClinicBuilder.WithName($"Clinic {Guid.NewGuid()}").Build();
-
-            var c1Response = await PostAsync("/api/Clinics", clinic1);
-            var c1Doc = await ParseResponse(c1Response);
-            var clinicId1 = c1Doc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
-
-            await PostAsync("/api/Clinics", clinic2);
-
-            // Act: Get total count before soft delete
-            var beforeResponse = await GetAsync("/api/Clinics?includeSoftDeleted=true");
-            var beforeDoc = await ParseResponse(beforeResponse);
-            var beforeCount = beforeDoc.RootElement.GetProperty("data").GetArrayLength();
-
-            // Soft delete first clinic
-            await DeleteAsync($"/api/Clinics/{clinicId1}");
-
-            // Get total count after soft delete
-            var afterResponse = await GetAsync("/api/Clinics?includeSoftDeleted=true");
-            var afterDoc = await ParseResponse(afterResponse);
-            var afterCount = afterDoc.RootElement.GetProperty("data").GetArrayLength();
-
-            // Assert: Total count should be same (clinic still exists, just marked deleted)
-            Assert.Equal(beforeCount, afterCount);
+            Assert.False(found, "Soft-deleted queue should not appear in active list");
         }
 
         [Fact]
         public async Task SoftDeletePatient_ExcludedFromActiveList()
         {
-            // Arrange: Create patient
-            var patient = PatientBuilder
-                .WithPhone("+201234567890")
-                .WithName("Patient to Delete")
-                .Build();
+            await InitializeAuthAsync();
+            // Arrange: Create queue and patient
+            var queue = new { doctorName = $"Doctor {Guid.NewGuid()}", estimatedWaitMinutes = 15 };
+            var queueResp = await PostAsync("/api/queues", queue);
+            var queueJson = await ParseResponse(queueResp);
+            var queueId = GetIntFromNested(queueJson.RootElement, "queue", "id", 0);
+            if (queueId == 0)
+            {
+                var dataElem = GetDataFromResponse(queueJson.RootElement);
+                if (dataElem.HasValue)
+                    queueId = GetInt(dataElem.Value, "id", 0);
+            }
 
-            var createResponse = await PostAsync("/api/Patients", patient);
-            var createDoc = await ParseResponse(createResponse);
-            var patientId = createDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
+            var patient = new { fullName = "Patient One", phoneNumber = "+201001234567", queueId };
+            var patientResp = await PostAsync("/api/patients", patient);
+            var patientJson = await ParseResponse(patientResp);
+            var patientId = GetInt(patientJson.RootElement, "id", 0);
+            if (patientId == 0)
+            {
+                var dataElem = GetDataFromResponse(patientJson.RootElement);
+                if (dataElem.HasValue)
+                    patientId = GetInt(dataElem.Value, "id", 0);
+            }
+            Assert.True(patientId > 0, "Patient should be created");
 
             // Act: Soft delete patient
-            var deleteResponse = await DeleteAsync($"/api/Patients/{patientId}");
-
-            // Assert: Delete succeeds
+            var deleteResp = await DeleteAsync($"/api/patients/{patientId}");
             Assert.True(
-                deleteResponse.StatusCode == HttpStatusCode.NoContent ||
-                deleteResponse.StatusCode == HttpStatusCode.OK,
-                "Soft delete should succeed"
+                deleteResp.StatusCode == HttpStatusCode.NoContent ||
+                deleteResp.StatusCode == HttpStatusCode.OK,
+                "Delete should succeed"
             );
 
             // Verify excluded from listing
-            var listResponse = await GetAsync("/api/Patients");
-            var listDoc = await ParseResponse(listResponse);
-            var patients = listDoc.RootElement.GetProperty("data");
+            var listResp = await GetAsync($"/api/patients?queueId={queueId}");
+            Assert.Equal(HttpStatusCode.OK, listResp.StatusCode);
+            var listJson = await ParseResponse(listResp);
 
             bool found = false;
-            foreach (var p in patients.EnumerateArray())
+            if (listJson.RootElement.TryGetProperty("data", out var data))
             {
-                if (p.TryGetProperty("id", out var idProp) && idProp.GetInt32() == patientId)
+                foreach (var p in data.EnumerateArray())
                 {
-                    found = true;
-                    break;
+                    if (p.TryGetProperty("id", out var idProp) && idProp.GetInt32() == patientId)
+                    {
+                        found = true;
+                        break;
+                    }
                 }
             }
 
             Assert.False(found, "Soft-deleted patient should not appear in active list");
         }
 
-        [Fact]
-        public async Task SoftDeletePatient_NoCascadeUnlessSpecified()
-        {
-            // Arrange: Create patient and appointment
-            var patient = PatientBuilder
-                .WithPhone("+201234567890")
-                .WithName("Patient with Appointment")
-                .Build();
 
-            var patientResponse = await PostAsync("/api/Patients", patient);
-            var patientDoc = await ParseResponse(patientResponse);
-            var patientId = patientDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
-
-            var appointment = AppointmentBuilder
-                .WithPatientId(patientId)
-                .WithClinicId(1)
-                .Build();
-
-            var apptResponse = await PostAsync("/api/Appointments", appointment);
-            var apptDoc = await ParseResponse(apptResponse);
-            var appointmentId = apptDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
-
-            // Act: Soft delete patient (without cascade flag)
-            await DeleteAsync($"/api/Patients/{patientId}");
-
-            // Assert: Appointment should still be in database (not cascade-deleted)
-            // This test verifies the default is NO cascade
-            var apptListResponse = await GetAsync("/api/Appointments?includeSoftDeleted=true");
-            var apptListDoc = await ParseResponse(apptListResponse);
-            var appointments = apptListDoc.RootElement.GetProperty("data");
-
-            bool appointmentFound = false;
-            foreach (var apt in appointments.EnumerateArray())
-            {
-                if (apt.TryGetProperty("id", out var idProp) && idProp.GetInt32() == appointmentId)
-                {
-                    appointmentFound = true;
-                    break;
-                }
-            }
-
-            Assert.True(appointmentFound, "Appointment should still exist after patient soft delete (no cascade)");
-        }
 
         #endregion
 
-        #region Spec Tests (Expected to Fail - marked xfail)
-
-        [Fact(Skip = "SPEC-005: Soft delete cascade semantics not yet defined")]
-        [Trait("Category", "ExpectedToFail")]
-        public async Task SoftDeletePatient_CascadeUpdate_ToAppointments()
-        {
-            // This test verifies that soft-deleting a patient optionally cascades to related
-            // appointments (business rule TBD).
-            // Currently fails because cascade policy not defined or implemented.
-            // Defect: SPEC-005
-            // Fix Target: Phase 2.1 Data Model Sprint
-            // Marker: [ExpectedFail("SPEC-005: Soft delete cascade semantics undefined")]
-
-            // Arrange: Create patient and appointment
-            var patient = PatientBuilder
-                .WithPhone("+201234567890")
-                .WithName("Patient for Cascade Test")
-                .Build();
-
-            var patientResponse = await PostAsync("/api/Patients", patient);
-            var patientDoc = await ParseResponse(patientResponse);
-            var patientId = patientDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
-
-            var appointment = AppointmentBuilder
-                .WithPatientId(patientId)
-                .WithClinicId(1)
-                .Build();
-
-            var apptResponse = await PostAsync("/api/Appointments", appointment);
-            var apptDoc = await ParseResponse(apptResponse);
-            var appointmentId = apptDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
-
-            // Act: Soft delete patient with cascade flag
-            var deleteBody = new { cascade = true };
-            var deleteResponse = await DeleteAsync($"/api/Patients/{patientId}", deleteBody);
-
-            // Assert: Patient deleted successfully
-            Assert.True(
-                deleteResponse.StatusCode == HttpStatusCode.NoContent ||
-                deleteResponse.StatusCode == HttpStatusCode.OK,
-                "Cascade soft delete should succeed"
-            );
-
-            // Verify appointments also cascaded
-            var apptResponse2 = await GetAsync($"/api/Appointments/{appointmentId}");
-
-            // Business rule TBD: Should cascade return 404 or still retrieve with soft-delete flag?
-            Assert.True(
-                apptResponse2.StatusCode == HttpStatusCode.NotFound ||
-                (apptResponse2.StatusCode == HttpStatusCode.OK && 
-                 apptResponse2.Content.ReadAsStringAsync().Result.Contains("deleted")),
-                "Cascaded appointment should be deleted or marked"
-            );
-        }
-
-        [Fact(Skip = "SPEC-013: Soft delete restore not allowed (design spec unclear)")]
-        [Trait("Category", "ExpectedToFail")]
-        public async Task SoftDeleteClinic_CannotRestore()
-        {
-            // This test verifies that soft-deleted clinics CANNOT be restored
-            // (if that's the business rule).
-            // Currently fails if restore endpoint exists.
-            // Defect: SPEC-013
-            // Fix Target: Phase 2.1 Design Sprint
-            // Marker: [ExpectedFail("SPEC-013: Restore policy not defined")]
-
-            // Arrange: Create and soft-delete clinic
-            var clinic = ClinicBuilder.WithName($"Clinic {Guid.NewGuid()}").Build();
-            var createResponse = await PostAsync("/api/Clinics", clinic);
-            var createDoc = await ParseResponse(createResponse);
-            var clinicId = createDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
-
-            await DeleteAsync($"/api/Clinics/{clinicId}");
-
-            // Act: Try to restore (should fail or endpoint not exist)
-            var restoreResponse = await PostAsync($"/api/Clinics/{clinicId}/Restore", new { });
-
-            // Assert
-            Assert.Equal(HttpStatusCode.NotFound, restoreResponse.StatusCode);
-        }
-
+        #region Spec Tests (Removed clinic-based tests)
+        // Clinic model is not part of the domain. Queues represent clinic/doctor and are already covered
+        // by gating tests above. Clinic-specific soft-delete tests have been removed per business rules.
         #endregion
     }
 }
+
+

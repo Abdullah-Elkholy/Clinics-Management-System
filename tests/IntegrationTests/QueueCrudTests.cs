@@ -54,7 +54,7 @@ public class QueueCrudTests : IClassFixture<CustomWebApplicationFactory<Program>
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
 
         // Create queue
-        var createBody = JsonSerializer.Serialize(new { doctorName = "Dr. Test", description = "desc", createdBy = 1, estimatedWaitMinutes = 5 });
+        var createBody = JsonSerializer.Serialize(new { doctorName = "Dr. Test", createdBy = 1, estimatedWaitMinutes = 5 });
         var createResp = await client.PostAsync("/api/queues", new StringContent(createBody, Encoding.UTF8, "application/json"));
         createResp.EnsureSuccessStatusCode();
         var createJson = JsonDocument.Parse(await createResp.Content.ReadAsStringAsync());
@@ -79,7 +79,7 @@ public class QueueCrudTests : IClassFixture<CustomWebApplicationFactory<Program>
         getJson.RootElement.GetProperty("data").GetProperty("doctorName").GetString().Should().Be("Dr. Test");
 
         // Update
-        var updateBody = JsonSerializer.Serialize(new { doctorName = "Dr. Updated", description = "newdesc", estimatedWaitMinutes = 10, currentPosition = 2 });
+        var updateBody = JsonSerializer.Serialize(new { doctorName = "Dr. Updated", estimatedWaitMinutes = 10, currentPosition = 2 });
         var updateResp = await client.PutAsync($"/api/queues/{id}", new StringContent(updateBody, Encoding.UTF8, "application/json"));
         updateResp.EnsureSuccessStatusCode();
         var updateJson = JsonDocument.Parse(await updateResp.Content.ReadAsStringAsync());

@@ -84,6 +84,12 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, errors = new[] { new { code = "InvalidRequest", message = "Invalid or missing request body. Expected JSON { \"username\":..., \"password\":... } or form-encoded username=...&password=..." } } });
                 }
 
+                // Validate empty/whitespace username or password
+                if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
+                {
+                    return BadRequest(new { success = false, errors = new[] { new { code = "MissingCredentials", message = "Username and password are required" } } });
+                }
+
                 var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
                 if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 

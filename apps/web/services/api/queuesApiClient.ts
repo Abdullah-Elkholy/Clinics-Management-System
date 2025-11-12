@@ -6,7 +6,6 @@
 export interface QueueDto {
   id: number;
   doctorName: string;
-  description?: string;
   createdBy: number;
   moderatorId: number;
   currentPosition: number;

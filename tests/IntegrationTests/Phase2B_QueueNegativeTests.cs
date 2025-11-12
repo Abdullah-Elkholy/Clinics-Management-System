@@ -63,7 +63,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         var client = _factory.CreateClient();
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = "Dr. Test", 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = 15 
         });
@@ -86,7 +85,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = "Dr. Test", 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = 15 
         });
@@ -110,7 +108,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = "Dr. Test", 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = 15 
         });
@@ -137,7 +134,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         
         var createBody = JsonSerializer.Serialize(new { 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = 15 
         });
@@ -161,7 +157,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = "", 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = 15 
         });
@@ -188,7 +183,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = "Dr. Test", 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = -5 
         });
@@ -215,7 +209,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         var veryLongName = new string('D', 1000);
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = veryLongName, 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = 15 
         });
@@ -242,7 +235,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         var maliciousName = "'; DROP TABLE Queues; --";
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = maliciousName, 
-            description = "Test queue", 
             createdBy = 1, 
             estimatedWaitMinutes = 15 
         });
@@ -253,7 +245,7 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         // Assert
         // Should either reject due to length/content validation or be safely stored
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.OK);
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.OK, HttpStatusCode.Created);
     }
 
     #endregion
@@ -291,7 +283,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         var updateBody = JsonSerializer.Serialize(new { 
             doctorName = "Dr. Updated", 
-            description = "Updated queue", 
             estimatedWaitMinutes = 20 
         });
         
@@ -336,7 +327,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = "Dr. ZeroWait", 
-            description = "Queue with 0 wait", 
             createdBy = 1, 
             estimatedWaitMinutes = 0 
         });
@@ -362,7 +352,6 @@ public class Phase2B_QueueNegativeTests : IClassFixture<CustomWebApplicationFact
         
         var createBody = JsonSerializer.Serialize(new { 
             doctorName = "Dr. LongWait", 
-            description = "Queue with very long wait", 
             createdBy = 1, 
             estimatedWaitMinutes = 10000 
         });

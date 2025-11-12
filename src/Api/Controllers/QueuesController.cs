@@ -37,6 +37,7 @@ namespace Clinics.Api.Controllers
             // Return basic queue list with patient counts for UI
             var qs = await _db.Queues
                 .AsNoTracking()
+                .Where(q => !q.IsDeleted)
                 .Select(q => new QueueDto {
                     Id = q.Id,
                     DoctorName = q.DoctorName,
@@ -52,7 +53,7 @@ namespace Clinics.Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
-            var q = await _db.Queues.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+            var q = await _db.Queues.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
             if (q == null) return NotFound(new { success = false });
             var dto = new QueueDto {
                 Id = q.Id,
@@ -91,8 +92,14 @@ namespace Clinics.Api.Controllers
                     return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
                 }
 
+                // Get moderator ID for this user
+                var moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+
+                // Ensure quota exists for this moderator (create if missing with unlimited values)
+                var quota = await _quotaService.GetOrCreateQuotaForModeratorAsync(moderatorId);
+
                 // Check if user has sufficient queue quota
-                var hasQuota = await _quotaService.HasQueuesQuotaAsync(userId);
+                var hasQuota = quota.RemainingQueues >= 1;
                 
                 if (!hasQuota)
                 {
@@ -109,6 +116,7 @@ namespace Clinics.Api.Controllers
                 { 
                     DoctorName = req.DoctorName, 
                     CreatedBy = userId,
+                    ModeratorId = moderatorId,
                     CurrentPosition = 1, 
                     EstimatedWaitMinutes = req.EstimatedWaitMinutes ?? 15
                 };
@@ -132,7 +140,7 @@ namespace Clinics.Api.Controllers
                     PatientCount = 0 
                 };
                 
-                return CreatedAtAction(nameof(Get), new { id = q.Id }, new { success = true, queue = dto });
+                return CreatedAtAction(nameof(Get), new { id = q.Id }, new { success = true, data = dto, queue = dto });
             }
             catch (InvalidOperationException ex)
             {
@@ -156,7 +164,19 @@ namespace Clinics.Api.Controllers
             if (req.EstimatedWaitMinutes.HasValue) q.EstimatedWaitMinutes = req.EstimatedWaitMinutes.Value;
             if (req.CurrentPosition.HasValue) q.CurrentPosition = req.CurrentPosition.Value;
             await _db.SaveChangesAsync();
-            return Ok(new { success = true, queue = q });
+            
+            var dto = new QueueDto
+            {
+                Id = q.Id,
+                DoctorName = q.DoctorName,
+                CreatedBy = q.CreatedBy,
+                ModeratorId = q.ModeratorId,
+                CurrentPosition = q.CurrentPosition,
+                EstimatedWaitMinutes = q.EstimatedWaitMinutes,
+                PatientCount = _db.Patients.Count(p => p.QueueId == q.Id && !p.IsDeleted)
+            };
+            
+            return Ok(new { success = true, data = dto, queue = dto });
         }
 
         [HttpDelete("{id}")]
@@ -167,6 +187,10 @@ namespace Clinics.Api.Controllers
             {
                 var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == id);
                 if (q == null) return NotFound(new { success = false });
+
+                // If already deleted, return OK (idempotent)
+                if (q.IsDeleted)
+                    return Ok(new { success = true });
 
                 // Get current user ID for audit
                 var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
@@ -324,6 +348,12 @@ namespace Clinics.Api.Controllers
                     if (queue.ModeratorId != userId)
                         return Forbid();
                 }
+
+                // Ensure quota exists for the queue's moderator before attempting restore
+                await _quotaService.GetOrCreateQuotaForModeratorAsync(queue.ModeratorId);
+
+                // Detach queue from DbContext before passing to UnitOfWork-based restore
+                _db.Entry(queue).State = EntityState.Detached;
 
                 // Attempt restore via cascade service
                 var restoreResult = await _quotaService.RestoreQueueAsync(queue, userId);

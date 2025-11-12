@@ -21,7 +21,6 @@ interface MessageTemplate {
   id: string;
   title: string;
   content: string;
-  description?: string;
   category?: string;
   queueId?: string;
   isActive: boolean;
@@ -242,9 +241,6 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
               </span>
             )}
           </div>
-          {template.description && (
-            <p className="text-xs text-gray-600 line-clamp-1">{template.description}</p>
-          )}
         </div>
         {template.isActive && (
           <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-medium flex-shrink-0 ml-2">
@@ -338,16 +334,6 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Description */}
-          {template.description && (
-            <div>
-              <h4 className="text-xs font-semibold text-gray-600 uppercase mb-2">الوصف</h4>
-              <p className="text-sm text-gray-700 bg-blue-50 p-3 rounded border border-blue-200">
-                {template.description}
-              </p>
-            </div>
-          )}
-
           {/* Message Content */}
           <div>
             <h4 className="text-xs font-semibold text-gray-600 uppercase mb-2">محتوى الرسالة</h4>

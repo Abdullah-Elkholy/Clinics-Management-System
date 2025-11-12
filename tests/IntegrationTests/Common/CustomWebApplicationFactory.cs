@@ -52,9 +52,11 @@ public class CustomWebApplicationFactory<TProgram> : WebApplicationFactory<TProg
                 services.Remove(descriptor);
 
             // Add test database context (in-memory) with unique name per factory
+            // Configure to suppress transaction warnings since in-memory DB doesn't support transactions
             services.AddDbContext<ApplicationDbContext>((sp, options) =>
             {
-                options.UseInMemoryDatabase(_dbName);
+                options.UseInMemoryDatabase(_dbName)
+                    .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning));
             });
 
             // Add Hangfire with in-memory storage

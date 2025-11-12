@@ -21,7 +21,6 @@ public static class TestDataFactory
             Username = "testadmin",
             FirstName = "Test",
             LastName = "Admin",
-            Email = "admin@clinic.test",
             PasswordHash = HashPassword("password123"),
             Role = "primary_admin",
             IsActive = true
@@ -39,7 +38,6 @@ public static class TestDataFactory
             Username = "secondary",
             FirstName = "Secondary",
             LastName = "Admin",
-            Email = "secondary@clinic.test",
             PasswordHash = HashPassword("password456"),
             Role = "secondary_admin",
             IsActive = true
@@ -57,7 +55,6 @@ public static class TestDataFactory
             Username = "moderator",
             FirstName = "Test",
             LastName = "Moderator",
-            Email = "moderator@clinic.test",
             PasswordHash = HashPassword("password789"),
             Role = "moderator",
             IsActive = true
@@ -75,7 +72,6 @@ public static class TestDataFactory
             Username = "user",
             FirstName = "Regular",
             LastName = "User",
-            Email = "user@clinic.test",
             PasswordHash = HashPassword("pass1234"),
             Role = "user",
             IsActive = true
@@ -109,7 +105,6 @@ public static class TestDataFactory
         {
             Id = id,
             Name = name,
-            Description = "Test template for unit testing",
             MessageBody = "Hello {{PatientName}}, your appointment is at {{Time}}",
             CreatedAt = DateTime.UtcNow
         };
