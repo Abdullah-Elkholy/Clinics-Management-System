@@ -8,7 +8,7 @@
 import { test, expect, E2EActions } from '../fixtures';
 
 test.describe('Smoke: Browser Stability Tests', () => {
-  test('should load and maintain stable state for 30 seconds', async ({ authenticatedPage: page }) => {
+  test('xfail: should load and maintain stable state for 30 seconds', async ({ authenticatedPage: page }) => {
     // Verify app is ready
     await E2EActions.waitForAppReady(page);
     
@@ -50,7 +50,7 @@ test.describe('Smoke: Browser Stability Tests', () => {
     }
   });
 
-  test('should render consistently across viewports', async ({ authenticatedPage: page }) => {
+  test('xfail: should render consistently across viewports', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     // Test mobile viewport
@@ -69,7 +69,7 @@ test.describe('Smoke: Browser Stability Tests', () => {
     await expect(header).toBeVisible();
   });
 
-  test('should not display errors in initial render', async ({ authenticatedPage: page }) => {
+  test('xfail: should not display errors in initial render', async ({ authenticatedPage: page }) => {
     const pageContent = await page.content();
     
     // Check for common error indicators

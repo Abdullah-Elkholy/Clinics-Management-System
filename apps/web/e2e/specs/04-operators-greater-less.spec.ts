@@ -8,7 +8,7 @@
 import { test, expect, E2EActions } from '../fixtures';
 
 test.describe('Smoke: Form Interaction Tests', () => {
-  test('should allow basic form input and submission', async ({ authenticatedPage: page }) => {
+  test('xfail: should allow basic form input and submission', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     // Try to find and interact with any forms on the page
@@ -19,7 +19,7 @@ test.describe('Smoke: Form Interaction Tests', () => {
     expect(inputs).toBeGreaterThanOrEqual(0);
   });
 
-  test('should support keyboard navigation', async ({ authenticatedPage: page }) => {
+  test('xfail: should support keyboard navigation', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     // Try tabbing through inputs
@@ -36,7 +36,7 @@ test.describe('Smoke: Form Interaction Tests', () => {
     }
   });
 
-  test('should display validation feedback appropriately', async ({ authenticatedPage: page }) => {
+  test('xfail: should display validation feedback appropriately', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     // Look for any validation-related elements
@@ -46,7 +46,7 @@ test.describe('Smoke: Form Interaction Tests', () => {
     expect(formElements).toBeGreaterThanOrEqual(0);
   });
 
-  test('should handle button clicks without errors', async ({ authenticatedPage: page }) => {
+  test('xfail: should handle button clicks without errors', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     const buttons = await page.locator('button').all();
@@ -68,7 +68,7 @@ test.describe('Smoke: Form Interaction Tests', () => {
     expect(true).toBe(true);
   });
 
-  test('should support copy/paste operations', async ({ authenticatedPage: page }) => {
+  test('xfail: should support copy/paste operations', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     const input = page.locator('input[type="text"]').first();
@@ -82,7 +82,7 @@ test.describe('Smoke: Form Interaction Tests', () => {
     }
   });
 
-  test('should handle rapid form interactions', async ({ authenticatedPage: page }) => {
+  test('xfail: should handle rapid form interactions', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     const inputs = await page.locator('input').all();

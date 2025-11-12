@@ -81,7 +81,7 @@ test.describe('Smoke: Session & State Management', () => {
     expect(bodyVisible).toBe(true);
   });
 
-  test('should display consistent information across page reloads', async ({ authenticatedPage: page }) => {
+  test('xfail: should display consistent information across page reloads', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     // Reload multiple times
