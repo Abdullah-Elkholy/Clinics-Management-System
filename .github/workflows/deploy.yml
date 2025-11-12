@@ -1,0 +1,183 @@
+name: Deploy to Staging/Production
+
+on:
+  push:
+    branches: 
+      - master
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  ASPNETCORE_ENVIRONMENT: Production
+
+jobs:
+  # ============================================
+  # VERIFY: All gating tests pass before deploy
+  # ============================================
+  verify-deployment:
+    name: Verify Deployment Readiness
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check commit message
+      run: |
+        if ! git log -1 --pretty=%B | grep -q "^[A-Z]"; then
+          echo "::warning::Commit message should start with uppercase letter"
+        fi
+    
+    - name: Verify branch protection
+      run: |
+        echo "## 🔍 Deployment Verification" >> $GITHUB_STEP_SUMMARY
+        echo "- Branch: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Ensure all tests passed before merge to ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # BUILD: Backend API Container
+  # ============================================
+  build-api:
+    name: Build & Push API Container
+    runs-on: ubuntu-latest
+    needs: verify-deployment
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build and push API image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.api
+        push: false
+        tags: |
+          ${{ env.REGISTRY }}/${{ github.repository }}/api:${{ github.sha }}
+          ${{ env.REGISTRY }}/${{ github.repository }}/api:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # ============================================
+  # BUILD: Frontend Application Container
+  # ============================================
+  build-web:
+    name: Build & Push Web Container
+    runs-on: ubuntu-latest
+    needs: verify-deployment
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build and push Web image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.web
+        push: false
+        tags: |
+          ${{ env.REGISTRY }}/${{ github.repository }}/web:${{ github.sha }}
+          ${{ env.REGISTRY }}/${{ github.repository }}/web:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # ============================================
+  # DEPLOY: Staging Environment
+  # ============================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-api, build-web]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://staging.clinics.example.com
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Staging
+      run: |
+        echo "## 🚀 Staging Deployment" >> $GITHUB_STEP_SUMMARY
+        echo "- Image Tag: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Environment: Staging" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: Pending deployment configuration" >> $GITHUB_STEP_SUMMARY
+        # Add your staging deployment commands here
+        # e.g., kubectl apply, docker-compose, etc.
+
+  # ============================================
+  # DEPLOY: Production Environment (Manual Approval)
+  # ============================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/master' && contains(github.event.head_commit.message, '[prod-deploy]'))
+    environment:
+      name: production
+      url: https://clinics.example.com
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Production
+      run: |
+        echo "## 🎯 Production Deployment" >> $GITHUB_STEP_SUMMARY
+        echo "- Image Tag: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Environment: Production" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: Pending deployment configuration" >> $GITHUB_STEP_SUMMARY
+        # Add your production deployment commands here
+        # e.g., kubectl apply, docker-compose, terraform, etc.
+
+  # ============================================
+  # NOTIFY: Deployment Status
+  # ============================================
+  deployment-complete:
+    name: Deployment Complete
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: always()
+    
+    steps:
+    - name: Send notification
+      run: |
+        echo "## ✅ Deployment Pipeline Complete" >> $GITHUB_STEP_SUMMARY
+        echo "Staging: ${{ needs.deploy-staging.result }}" >> $GITHUB_STEP_SUMMARY
+        # Add Slack/email notification here

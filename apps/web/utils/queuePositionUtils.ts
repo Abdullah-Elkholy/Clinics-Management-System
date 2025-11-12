@@ -277,7 +277,8 @@ export const isValidQueuePositions = (
 ): positions is number[] => {
   return (
     Array.isArray(positions) &&
-    positions.every((p) => typeof p === 'number' && p > 0 && p <= 10000)
+    positions.length > 0 &&
+    positions.every((p) => Number.isInteger(p) && p > 0 && p <= 10000)
   );
 };
 

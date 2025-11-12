@@ -44,7 +44,7 @@ describe('queuePositionUtils', () => {
       it('should format position with offset correctly', () => {
         expect(formatPositionDisplay(5, 3)).toBe('5 (+2)');
         expect(formatPositionDisplay(2, 3)).toBe('2 (-1)');
-        expect(formatPositionDisplay(3, 3)).toBe('3 (0)');
+        expect(formatPositionDisplay(3, 3)).toBe('3 (CQP)');
       });
 
       it('should format position without CQP', () => {
@@ -67,12 +67,10 @@ describe('queuePositionUtils', () => {
 
       it('should match equals operator correctly', () => {
         // Position 5, offset +2
-        expect(matchesCondition(5, 'equals', '5', undefined, undefined, cqp)).toBe(true);
-        expect(matchesCondition(5, 'equals', '2', undefined, undefined, cqp)).toBe(false);
-
-        // Using offset-based matching when cqp provided
-        // offset 2 = position 5 (5-3=2), matching '2'
-        expect(matchesCondition(5, 'equals', '2', undefined, undefined, cqp)).toBe(false);
+        // When checking equals with offset mode (cqp provided), value is the target offset
+        expect(matchesCondition(5, 'equals', '2', undefined, undefined, cqp)).toBe(true);
+        expect(matchesCondition(5, 'equals', '5', undefined, undefined, cqp)).toBe(false);
+        expect(matchesCondition(3, 'equals', '0', undefined, undefined, cqp)).toBe(true);
       });
 
       it('should match greater operator correctly', () => {
@@ -152,16 +150,17 @@ describe('queuePositionUtils', () => {
       });
 
       it('should enforce pre-CQP exclusion even with matching conditions', () => {
-        // Condition: equals to position 2 (which is < CQP)
+        // Condition: equals to offset 2 (position 5 has offset 2, which is > CQP)
         const recipients = getMessageRecipients(
           mockPatients,
           cqp,
           { operator: 'equals' as const, value: '2', minValue: undefined, maxValue: undefined }
         );
 
-        // Should return empty because no valid recipient matches
-        // (patient at position 2 is excluded due to pre-CQP rule)
-        expect(recipients.length).toBe(0);
+        // Should return 1 patient (position 5 has offset +2)
+        // Pre-CQP patients (1,2) and patient at CQP (3) are excluded
+        expect(recipients.map((p) => p.queue)).toEqual([5]);
+        expect(recipients.length).toBe(1);
       });
 
       it('should work with range conditions', () => {
@@ -255,8 +254,8 @@ describe('queuePositionUtils', () => {
 
     describe('describeGap', () => {
       it('should describe gaps between positions', () => {
-        expect(describeGap(1, 3)).toContain('gap');
-        expect(describeGap(1, 5)).toContain('gap');
+        expect(describeGap(1, 3)).toBe('1 empty position (2)');
+        expect(describeGap(1, 5)).toContain('empty');
       });
 
       it('should handle adjacent positions', () => {

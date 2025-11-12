@@ -1,15 +1,16 @@
-name: CI – Comprehensive Test Suite (Backend, Frontend, E2E)
+name: CI – Phase 1B Complete (Backend + Frontend + E2E Infrastructure)
 
 on:
   push:
-    branches: [ master, main, extra_backend ]
+    branches: [ master, main, Testing, extra_backend ]
   pull_request:
-    branches: [ master, main, extra_backend ]
+    branches: [ master, main, Testing, extra_backend ]
   workflow_dispatch:
 
 env:
   DOTNET_VERSION: '8.0.x'
   NODE_VERSION: '18'
+  ASPNETCORE_ENVIRONMENT: Test
   
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
