@@ -5,6 +5,7 @@
  * Complex operator workflow tests require full UI implementation and will be added in Phase 2.
  */
 
+// Use new auth fixture scaffold (Phase 2)
 import { test, expect } from '../fixtures';
 
 test.describe('Authentication & Basic Navigation', () => {

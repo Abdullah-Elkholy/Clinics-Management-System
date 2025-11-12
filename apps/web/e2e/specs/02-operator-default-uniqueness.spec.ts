@@ -5,6 +5,7 @@
  * Complex operator workflow tests (DEFAULT uniqueness, etc.) will be added in Phase 2.
  */
 
+// Use new auth fixture scaffold (Phase 2)
 import { test, expect, E2EActions } from '../fixtures';
 
 test.describe('Smoke: Browser Stability Tests', () => {

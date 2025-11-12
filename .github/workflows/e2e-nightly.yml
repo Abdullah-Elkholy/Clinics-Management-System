@@ -1,0 +1,104 @@
+name: Nightly E2E Full Suite
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 02:00 UTC daily
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '18'
+  ASPNETCORE_ENVIRONMENT: Test
+  BASE_URL: 'http://127.0.0.1:3000'
+
+jobs:
+  e2e-full:
+    name: Playwright Full Spec Run (Includes xfail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: apps/web/package-lock.json
+
+    - name: Install wait-on
+      run: npm install -g wait-on
+
+    - name: Restore .NET dependencies
+      run: dotnet restore
+
+    - name: Build backend
+      run: dotnet build -c Debug --no-restore
+
+    - name: Start backend API (background)
+      run: |
+        dotnet run --project src/Api/Clinics.Api.csproj --configuration Debug --no-build &
+        echo "Backend starting..."
+      shell: bash
+
+    - name: Wait for backend health endpoint
+      run: |
+        echo "Waiting for backend /health endpoint..."
+        wait-on http://127.0.0.1:5000/health
+      timeout-minutes: 2
+
+    - name: Install frontend dependencies
+      working-directory: apps/web
+      run: npm ci
+
+    - name: Install Playwright browsers
+      working-directory: apps/web
+      run: npx playwright install --with-deps
+
+    - name: Build frontend
+      working-directory: apps/web
+      run: npm run build
+
+    - name: Run Full Playwright Suite (includes xfail specs)
+      working-directory: apps/web
+      run: |
+        echo "Starting nightly full E2E run"
+        npx playwright test --reporter=html,json
+      env:
+        CI: true
+        BASE_URL: ${{ env.BASE_URL }}
+        # No GATING_RUN so xfail tests included
+      continue-on-error: true
+
+    - name: Upload Playwright Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nightly-e2e-playwright-report
+        path: apps/web/playwright-report/
+        retention-days: 14
+
+    - name: Upload Test Results JSON
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nightly-e2e-test-results
+        path: apps/web/test-results/
+        retention-days: 14
+
+    - name: Summary
+      if: always()
+      run: |
+        echo "## Nightly E2E Suite" >> $GITHUB_STEP_SUMMARY
+        echo "Run includes all xfail spec tests." >> $GITHUB_STEP_SUMMARY
+        echo "Artifacts: nightly-e2e-playwright-report, nightly-e2e-test-results" >> $GITHUB_STEP_SUMMARY
