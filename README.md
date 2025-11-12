@@ -530,7 +530,34 @@ Create `appsettings.json` in `src/Api`:
 
 ## 🧪 Testing
 
-### Operator Workflow Smoke Tests (Manual E2E)
+### Phase 1: Automated Test Infrastructure ✅ LIVE
+
+Complete end-to-end testing environment with backend integration tests, frontend unit/component tests, and E2E operator workflow automation.
+
+**Status**: ✅ Ready for Local Verification
+
+#### Framework Stack
+- **Backend**: xUnit, FluentAssertions, Testcontainers.MsSql
+- **Frontend**: Jest, React Testing Library, Playwright
+- **E2E**: Playwright (5 core operator workflows scripted)
+
+#### Quick Start
+
+```powershell
+# Backend tests
+$env:ASPNETCORE_ENVIRONMENT = "Test"
+dotnet test tests/IntegrationTests/IntegrationTests.csproj
+
+# Frontend tests
+cd apps/web
+npm test                    # Unit/component tests
+npm run test:e2e           # E2E operator workflows (headless)
+npm run test:e2e:headed    # E2E with visible browser
+```
+
+**See**: `docs/TESTING-QUICK-START.md` for detailed commands and `docs/PHASE-1-TESTING-IMPLEMENTATION.md` for architecture.
+
+#### Operator Workflow Smoke Tests (Automated E2E)
 
 **Scenario 1: Create EQUAL Condition**
 1. Frontend: Queue Dashboard → Manage Conditions

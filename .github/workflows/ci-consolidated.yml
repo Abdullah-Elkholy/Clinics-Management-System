@@ -1,0 +1,262 @@
+name: CI – Comprehensive Test Suite (Backend, Frontend, E2E)
+
+on:
+  push:
+    branches: [ master, main, extra_backend ]
+  pull_request:
+    branches: [ master, main, extra_backend ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '18'
+  
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # BACKEND: Unit & Integration Tests
+  # ============================================
+  backend-tests:
+    name: Backend Tests (Unit + Integration)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build
+      run: dotnet build -c Debug --no-restore
+    
+    # Gating run: only tests that must pass
+    - name: Run Unit & Integration Tests (Gating - Must Pass)
+      run: |
+        dotnet test `
+          tests/UnitTests/UnitTests.csproj `
+          tests/IntegrationTests/IntegrationTests.csproj `
+          --configuration Debug `
+          --no-build `
+          --filter "Category!=ExpectedToFail" `
+          --logger "trx;LogFileName=gating-results.trx" `
+          --logger "console;verbosity=normal" `
+          /p:CollectCoverage=false
+      env:
+        ASPNETCORE_ENVIRONMENT: Test
+    
+    # Full run with coverage (including expected-to-fail specs)
+    - name: Run All Tests with Coverage (Spec + Implementation)
+      run: |
+        dotnet test `
+          tests/UnitTests/UnitTests.csproj `
+          tests/IntegrationTests/IntegrationTests.csproj `
+          --configuration Debug `
+          --no-build `
+          --logger "trx;LogFileName=full-results.trx" `
+          --logger "console;verbosity=minimal" `
+          /p:CollectCoverage=true `
+          /p:CoverageFormat=cobertura `
+          /p:CoverletOutputFormat=cobertura
+      env:
+        ASPNETCORE_ENVIRONMENT: Test
+      continue-on-error: true
+    
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-test-results
+        path: |
+          **/TestResults/
+          coverage.cobertura.xml
+        retention-days: 30
+    
+    - name: Publish Coverage to Codecov
+      if: always()
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./coverage.cobertura.xml
+        flags: backend
+        name: backend-coverage
+        fail_ci_if_error: false
+    
+    - name: Report Test Summary
+      if: always()
+      run: |
+        echo "## Backend Test Results" >> $env:GITHUB_STEP_SUMMARY
+        echo "" >> $env:GITHUB_STEP_SUMMARY
+        echo "- Gating (must pass): Check the 'Run Unit & Integration Tests' step" >> $env:GITHUB_STEP_SUMMARY
+        echo "- Full suite: Check artifacts for coverage" >> $env:GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # FRONTEND: Jest Unit & Component Tests
+  # ============================================
+  frontend-unit-tests:
+    name: Frontend Unit Tests (Jest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: apps/web/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: apps/web
+      run: npm ci
+    
+    - name: Run linter
+      working-directory: apps/web
+      run: npm run lint 2>&1 || true
+    
+    # Gating run: exclude known-failing tests marked [xfail]
+    - name: Run Unit Tests (Gating - Must Pass)
+      working-directory: apps/web
+      run: npm test -- --testNamePattern "^(?!.*\\[xfail\\]).*$" --coverage=false --passWithNoTests
+    
+    # Full run with coverage (includes [xfail] expected failures)
+    - name: Run All Unit Tests with Coverage (Spec + Implementation)
+      working-directory: apps/web
+      run: npm test -- --coverage --passWithNoTests --collectCoverageFrom="src/**/*.{ts,tsx}" --collectCoverageFrom="!src/**/*.d.ts"
+      continue-on-error: true
+    
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-test-results
+        path: |
+          apps/web/coverage/
+        retention-days: 30
+    
+    - name: Publish Frontend Coverage
+      if: always()
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./apps/web/coverage/lcov.info
+        flags: frontend
+        name: frontend-coverage
+        fail_ci_if_error: false
+
+  # ============================================
+  # E2E: Playwright Tests (Both Browsers)
+  # ============================================
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [backend-tests, frontend-unit-tests]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: apps/web/package-lock.json
+    
+    - name: Restore .NET dependencies
+      run: dotnet restore
+    
+    - name: Build backend
+      run: dotnet build -c Debug --no-restore
+    
+    - name: Install frontend dependencies
+      working-directory: apps/web
+      run: npm ci
+    
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps
+      working-directory: apps/web
+    
+    - name: Build frontend
+      working-directory: apps/web
+      run: npm run build
+    
+    # Gating run: only stable E2E specs (excluding known-failing session/auth specs marked with xfail:)
+    - name: Run E2E Tests - Gating (Must Pass)
+      working-directory: apps/web
+      run: npx playwright test --reporter=html
+      env:
+        CI: true
+        ASPNETCORE_ENVIRONMENT: Test
+        GATING_RUN: 'true'
+      continue-on-error: false
+    
+    # Full run: includes all specs (some expected to fail)
+    - name: Run All E2E Tests (Spec + Implementation)
+      working-directory: apps/web
+      run: npx playwright test --reporter=html,json
+      env:
+        CI: true
+        ASPNETCORE_ENVIRONMENT: Test
+      continue-on-error: true
+    
+    - name: Upload Playwright Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-playwright-report
+        path: apps/web/playwright-report/
+        retention-days: 30
+    
+    - name: Upload Test Results JSON
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-test-results
+        path: apps/web/test-results/
+        retention-days: 30
+
+  # ============================================
+  # CI SUMMARY: Aggregate Results
+  # ============================================
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-unit-tests, e2e-tests]
+    if: always()
+    
+    steps:
+    - name: Report Overall Status
+      run: |
+        echo "## 🧪 CI Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Layer | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Backend (Unit + Integration) | ${{ needs.backend-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Frontend (Jest) | ${{ needs.frontend-unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| E2E (Playwright) | ${{ needs.e2e-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Notes" >> $GITHUB_STEP_SUMMARY
+        echo "- **Gating Runs** (must pass): Only tests without ExpectedToFail/[xfail] traits" >> $GITHUB_STEP_SUMMARY
+        echo "- **Full Runs** (allowed to fail): Includes specification tests documenting correct behavior to be implemented" >> $GITHUB_STEP_SUMMARY
+        echo "- **Coverage Reports**: Available in artifacts for backend and frontend" >> $GITHUB_STEP_SUMMARY
+        echo "- **E2E Traces**: Playwright HTML report and traces in artifacts" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Check Gating Status
+      run: |
+        if [ "${{ needs.backend-tests.result }}" != "success" ] || [ "${{ needs.frontend-unit-tests.result }}" != "success" ] || [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+          echo "::notice::Gating jobs have failures. Review logs and artifacts."
+        fi

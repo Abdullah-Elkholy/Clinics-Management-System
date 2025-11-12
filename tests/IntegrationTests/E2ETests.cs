@@ -9,14 +9,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using IntegrationTests.Common;
 
 namespace IntegrationTests;
 
-public class E2ETests : IClassFixture<WebApplicationFactory<Program>>
+public class E2ETests : IClassFixture<CustomWebApplicationFactory<Program>>
 {
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly CustomWebApplicationFactory<Program> _factory;
 
-    public E2ETests(WebApplicationFactory<Program> factory)
+    public E2ETests(CustomWebApplicationFactory<Program> factory)
     {
         _factory = factory;
     }

@@ -1,6 +1,7 @@
 using Clinics.Domain;
 using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
 namespace Clinics.Api.Services
 {
@@ -35,45 +36,58 @@ namespace Clinics.Api.Services
 
                 _logger.LogInformation("Starting database seeding...");
 
-                // Create admin users
+                // Create password hasher
+                var hasher = new PasswordHasher<User>();
+
+                // Create admin users with proper passwords
                 var adminPrimary = new User
                 {
-                    Username = "admin_primary",
+                    Username = "admin",
                     FirstName = "أحمد",
                     LastName = "المدير الأول",
                     Role = "primary_admin",
-                    PasswordHash = "AQAAAAIAAYagAAAAEFis02t8W90rJ6Pkqw6wwD45hx6QI2ArKLqW8tl77SnIidCWW43DLldUP2G1BhxkXw==" // In real app, use proper hashing
+                    PasswordHash = hasher.HashPassword(null!, "admin123")
                 };
 
                 var adminSecondary = new User
                 {
-                    Username = "admin_secondary",
+                    Username = "admin2",
                     FirstName = "سارة",
                     LastName = "المديرة الثانية",
                     Role = "secondary_admin",
-                    PasswordHash = "AQAAAAIAAYagAAAAEFmtEKOGKA5/ficlHNopu3+fZ1ly0ocuBAvJgl59wxjRQgGSFDlPgKNa+KR2a8vpTA=="
+                    PasswordHash = hasher.HashPassword(null!, "admin123")
                 };
 
                 // Create moderators
                 var moderatorAhmed = new User
                 {
-                    Username = "moderator_ahmed",
+                    Username = "mod1",
                     FirstName = "د.",
                     LastName = "أحمد",
                     Role = "moderator",
-                    PasswordHash = "AQAAAAIAAYagAAAAED2rs9SjaX3pu2CTEnn+zQ7BZmyYeHWYnD6QLOnwpthfMlk96bElhUhm7ElTbIDKlQ=="
+                    PasswordHash = hasher.HashPassword(null!, "mod123")
                 };
 
+                var regularUser = new User
+                {
+                    Username = "user1",
+                    FirstName = "مستخدم",
+                    LastName = "عادي",
+                    Role = "user",
+                    PasswordHash = hasher.HashPassword(null!, "user123")
+                };
+
+                // Add a second moderator for testing with multiple moderators
                 var moderatorSara = new User
                 {
-                    Username = "moderator_sara",
+                    Username = "mod2",
                     FirstName = "د.",
                     LastName = "سارة",
                     Role = "moderator",
-                    PasswordHash = "AQAAAAIAAYagAAAAEAl24nxVIY22QRB5OdNaWSlDWAVFL0NJRq5VxIpS2ReFYDg3Vh1KbnJbsNOnQPC/kw=="
+                    PasswordHash = hasher.HashPassword(null!, "mod123")
                 };
 
-                _db.Users.AddRange(adminPrimary, adminSecondary, moderatorAhmed, moderatorSara);
+                _db.Users.AddRange(adminPrimary, adminSecondary, moderatorAhmed, regularUser, moderatorSara);
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation("Created admin and moderator users.");
@@ -107,7 +121,7 @@ namespace Clinics.Api.Services
                 // Create queues for each moderator
                 var queueAhmed = new Queue
                 {
-                    DoctorName = "عيادة د. أحمد",
+                    DoctorName = "DefaultQueue",
                     ModeratorId = moderatorAhmed.Id,
                     CreatedBy = adminPrimary.Id,
                     CurrentPosition = 1,
@@ -156,7 +170,7 @@ namespace Clinics.Api.Services
                 // Create templates: 1 default per queue, 1-2 non-default per queue
                 var defaultTemplateAhmed = new MessageTemplate
                 {
-                    Title = "رسالة ترحيب أحمد",
+                    Title = "Welcome",
                     Content = "مرحباً {PN}، أنت في الموضع {CQP} في الطابور. الوقت المتوقع {ETR} دقيقة.",
                     CreatedBy = moderatorAhmed.Id,
                     ModeratorId = moderatorAhmed.Id,
@@ -168,7 +182,7 @@ namespace Clinics.Api.Services
 
                 var conditionalTemplateAhmed = new MessageTemplate
                 {
-                    Title = "رسالة خاصة (موضع مبكر)",
+                    Title = "AppointmentReminder",
                     Content = "مرحباً {PN}، أنت ستستدعى قريباً! الموضع: {CQP}",
                     CreatedBy = moderatorAhmed.Id,
                     ModeratorId = moderatorAhmed.Id,

@@ -91,3 +91,6 @@ TestResults/
 *.pdb
 
 docs/
+
+test-results
+playwright-report

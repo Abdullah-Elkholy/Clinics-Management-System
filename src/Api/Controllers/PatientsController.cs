@@ -76,6 +76,42 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
+        /// GET /api/patients/{id}
+        /// Get a single patient by ID.
+        /// </summary>
+        [HttpGet("{id}")]
+        public async Task<ActionResult<PatientDto>> Get(int id)
+        {
+            try
+            {
+                if (id <= 0)
+                    return BadRequest(new { success = false, error = "Invalid patient ID" });
+
+                var patient = await _db.Patients
+                    .Where(p => p.Id == id && !p.IsDeleted)
+                    .Select(p => new PatientDto
+                    {
+                        Id = p.Id,
+                        FullName = p.FullName,
+                        PhoneNumber = p.PhoneNumber,
+                        Position = p.Position,
+                        Status = p.Status
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (patient == null)
+                    return NotFound(new { success = false, error = "Patient not found" });
+
+                return Ok(new { success = true, data = patient });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching patient {PatientId}", id);
+                return StatusCode(500, new { success = false, error = "Error fetching patient" });
+            }
+        }
+
+        /// <summary>
         /// POST /api/patients
         /// Create a new patient in a queue.
         /// Position is auto-assigned as max(active)+1. Client position is ignored.
@@ -87,8 +123,27 @@ namespace Clinics.Api.Controllers
         {
             try
             {
+                // Validate request is not null
+                if (req == null)
+                    return BadRequest(new { success = false, error = "Request body is required" });
+
+                // Validate required fields explicitly
+                if (string.IsNullOrWhiteSpace(req.FullName))
+                    return BadRequest(new { success = false, error = "Full name is required" });
+
+                if (string.IsNullOrWhiteSpace(req.PhoneNumber))
+                    return BadRequest(new { success = false, error = "Phone number is required" });
+
+                if (req.QueueId <= 0)
+                    return BadRequest(new { success = false, error = "Valid Queue ID is required" });
+
                 if (!ModelState.IsValid)
-                    return BadRequest(ModelState);
+                    return BadRequest(new { success = false, errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
+
+                // Verify queue exists
+                var queueExists = await _db.Queues.AnyAsync(q => q.Id == req.QueueId && !q.IsDeleted);
+                if (!queueExists)
+                    return BadRequest(new { success = false, error = "Queue does not exist" });
 
                 // Determine insertion position: max(active patients) + 1. Only count active (!IsDeleted) patients.
                 // Client-provided position is ignored per business rule (baseline always at end).
@@ -137,7 +192,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating patient");
-                return StatusCode(500, new { message = "Error creating patient" });
+                return StatusCode(500, new { success = false, error = "Error creating patient", details = ex.Message });
             }
         }
 

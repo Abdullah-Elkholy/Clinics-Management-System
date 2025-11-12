@@ -133,7 +133,14 @@ else
     builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase("ClinicsDemoDb"));
     builder.Services.AddHangfire(config => config.UseMemoryStorage());
 }
-builder.Services.AddHangfireServer();
+
+// Only add Hangfire server in non-test environments
+// In tests, server startup causes timeout issues during cleanup
+if (!builder.Environment.IsEnvironment("Test"))
+{
+    builder.Services.AddHangfireServer();
+}
+
 // message sender and processor
 builder.Services.AddScoped<IMessageSender, SimulatedMessageSender>();
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
