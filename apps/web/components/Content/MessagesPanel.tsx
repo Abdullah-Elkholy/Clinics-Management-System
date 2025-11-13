@@ -438,11 +438,11 @@ export default function MessagesPanel() {
                             <tbody>
                               {messageTemplates.filter((t) => t.queueId === String(queue.id))
                                 .filter((t) => {
-                                  // Search filter
+                                  // Search filter by title or content
                                   const searchLower = searchTerm.toLowerCase();
                                   return (
                                     t.title.toLowerCase().includes(searchLower) ||
-                                    (t.description && t.description.toLowerCase().includes(searchLower))
+                                    (t.content && t.content.toLowerCase().includes(searchLower))
                                   );
                                 })
                                 .sort((a, b) => {
@@ -466,7 +466,10 @@ export default function MessagesPanel() {
                                     <td className="px-4 py-2">
                                       <div>
                                         <p className="font-medium text-gray-900">{template.title}</p>
-                                        <p className="text-xs text-gray-600 mt-1">{template.description}</p>
+                                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                                          {template.content.substring(0, 80)}
+                                          {template.content.length > 80 ? '...' : ''}
+                                        </p>
                                       </div>
                                     </td>
                                     <td className="px-4 py-2">

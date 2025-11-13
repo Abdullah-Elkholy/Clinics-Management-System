@@ -6,6 +6,27 @@
 
 import '@testing-library/jest-dom';
 import React from 'react';
+// Polyfill fetch in Jest (jsdom)
+import 'whatwg-fetch';
+import { server } from './msw/server';
+
+// Polyfill TextEncoder/TextDecoder for Node test environment (JWT decoding, etc.)
+try {
+  // @ts-ignore
+  if (typeof TextDecoder === 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { TextDecoder } = require('util');
+    (global as any).TextDecoder = TextDecoder;
+  }
+  // @ts-ignore
+  if (typeof TextEncoder === 'undefined') {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { TextEncoder } = require('util');
+    (global as any).TextEncoder = TextEncoder;
+  }
+} catch {
+  // noop – best-effort polyfill
+}
 
 // Mock react-hot-toast
 jest.mock('react-hot-toast', () => ({
@@ -75,23 +96,17 @@ global.File = jest.fn((parts, filename, options) => ({
   arrayBuffer: jest.fn(async () => new ArrayBuffer(0)),
 })) as any;
 
-// Mock Fetch for API calls
-global.fetch = jest.fn(async (url: string, options?: any) => {
-  // Default mock response; override in specific tests
-  return {
-    ok: true,
-    status: 200,
-    statusText: 'OK',
-    url: url || '',
-    type: 'basic' as ResponseType,
-    redirected: false,
-    json: async () => ({ success: true, data: {} }),
-    text: async () => '{}',
-    blob: async () => new Blob(),
-    arrayBuffer: async () => new ArrayBuffer(0),
-    clone: jest.fn(),
-    headers: new Headers(),
-  } as unknown as Response;
+// Start MSW for network interception in tests
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: 'bypass' });
+});
+
+afterEach(() => {
+  server.resetHandlers();
+});
+
+afterAll(() => {
+  server.close();
 });
 
 // Mock ResizeObserver (used in some components)
@@ -118,7 +133,8 @@ beforeAll(() => {
     if (
       typeof args[0] === 'string' &&
       (args[0].includes('Warning: ReactDOM.render') ||
-        args[0].includes('Not implemented: HTMLFormElement.prototype.submit'))
+        args[0].includes('Not implemented: HTMLFormElement.prototype.submit') ||
+        args[0].includes('Base64 decoding failed'))
     ) {
       return;
     }
@@ -129,7 +145,8 @@ beforeAll(() => {
     if (
       typeof args[0] === 'string' &&
       (args[0].includes('componentWillReceiveProps') ||
-        args[0].includes('componentWillMount'))
+        args[0].includes('componentWillMount') ||
+        args[0].includes('Failed to load queues from API:'))
     ) {
       return;
     }

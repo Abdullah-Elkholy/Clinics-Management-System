@@ -58,7 +58,6 @@ namespace Clinics.Api.Controllers
                         Id = p.Id,
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
-                        PhoneExtension = p.PhoneExtension,
                         Position = p.Position,
                         Status = p.Status
                     })
@@ -98,7 +97,6 @@ namespace Clinics.Api.Controllers
                         Id = p.Id,
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
-                        PhoneExtension = p.PhoneExtension,
                         Position = p.Position,
                         Status = p.Status
                     })
@@ -160,8 +158,8 @@ namespace Clinics.Api.Controllers
 
                 try
                 {
-                    // Normalize phone number and extract extension
-                    if (!_phoneNormalizationService.TryNormalizeWithExtension(req.PhoneNumber, out var normalizedPhone, out var extension))
+                    // Normalize phone number only (extensions not supported)
+                    if (!_phoneNormalizationService.TryNormalize(req.PhoneNumber, out var normalizedPhone))
                     {
                         return BadRequest(new { success = false, error = "Invalid phone number format" });
                     }
@@ -172,7 +170,6 @@ namespace Clinics.Api.Controllers
                         QueueId = req.QueueId,
                         FullName = req.FullName,
                         PhoneNumber = normalizedPhone ?? req.PhoneNumber,
-                        PhoneExtension = extension ?? req.PhoneExtension,
                         Position = insertPos,
                         Status = "waiting"
                     };
@@ -185,7 +182,6 @@ namespace Clinics.Api.Controllers
                         Id = patient.Id,
                         FullName = patient.FullName,
                         PhoneNumber = patient.PhoneNumber,
-                        PhoneExtension = patient.PhoneExtension,
                         Position = patient.Position,
                         Status = patient.Status
                     };
@@ -210,11 +206,9 @@ namespace Clinics.Api.Controllers
             }
         }
 
-        /// <summary>
-        /// PATCH /api/patients/{id}/position
-        /// Update a patient's position with atomic conflict resolution.
-        /// Position < 1 is coerced to 1. If occupied, shifts occupant and all >= position by +1.
-        /// </summary>
+    // PATCH /api/patients/{id}/position
+    // Update a patient's position with atomic conflict resolution.
+    // Position less than 1 is coerced to 1. If occupied, shifts occupant and all >= position by +1.
         [HttpPatch("{id}/position")]
         [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<IActionResult> UpdatePosition(int id, [FromBody] UpdatePatientPositionRequest req)
@@ -262,10 +256,14 @@ namespace Clinics.Api.Controllers
                     patient.FullName = req.FullName;
 
                 if (!string.IsNullOrEmpty(req.PhoneNumber))
-                    patient.PhoneNumber = req.PhoneNumber;
-
-                if (!string.IsNullOrEmpty(req.PhoneExtension))
-                    patient.PhoneExtension = req.PhoneExtension;
+                {
+                    // Normalize phone only (extensions not supported)
+                    if (!_phoneNormalizationService.TryNormalize(req.PhoneNumber, out var normalizedPhone))
+                    {
+                        return BadRequest(new { success = false, error = "Invalid phone number format" });
+                    }
+                    patient.PhoneNumber = normalizedPhone ?? req.PhoneNumber;
+                }
 
                 if (!string.IsNullOrEmpty(req.Status))
                     patient.Status = req.Status;
@@ -277,7 +275,6 @@ namespace Clinics.Api.Controllers
                     Id = patient.Id,
                     FullName = patient.FullName,
                     PhoneNumber = patient.PhoneNumber,
-                    PhoneExtension = patient.PhoneExtension,
                     Position = patient.Position,
                     Status = patient.Status
                 };
@@ -397,10 +394,8 @@ namespace Clinics.Api.Controllers
             }
         }
 
-        /// <summary>
-        /// GET /api/patients/trash?queueId=1&page=1&pageSize=10
-        /// Get soft-deleted patients (trash) for a queue.
-        /// </summary>
+    // GET /api/patients/trash?queueId=1&page=1&pageSize=10
+    // Get soft-deleted patients (trash) for a queue.
         [HttpGet("trash")]
         [Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<IActionResult> GetTrash([FromQuery] int? queueId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
@@ -452,10 +447,8 @@ namespace Clinics.Api.Controllers
             }
         }
 
-        /// <summary>
-        /// GET /api/patients/archived?queueId=1&page=1&pageSize=10
-        /// Admin-only endpoint to view archived patients (soft-deleted 30+ days ago).
-        /// </summary>
+    // GET /api/patients/archived?queueId=1&page=1&pageSize=10
+    // Admin-only endpoint to view archived patients (soft-deleted 30+ days ago).
         [HttpGet("archived")]
         [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> GetArchived([FromQuery] int? queueId, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)

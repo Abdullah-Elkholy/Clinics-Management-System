@@ -56,21 +56,28 @@ export const validateName = (name: string, fieldName: string = 'الاسم'): st
   if (!name || !name.trim()) {
     return `${fieldName} مطلوب`;
   }
-  
-  if (name.trim().length < 3) {
+
+  // Normalize whitespace
+  let normalized = name.trim();
+
+  // Allow optional Arabic doctor prefix "د." at the start (with optional spaces): e.g., "د. أحمد" or "د . أحمد"
+  // If present, strip the prefix for validation purposes only
+  normalized = normalized.replace(/^\s*د\s*\.\s*/, '');
+
+  if (normalized.length < 3) {
     return `${fieldName} يجب أن يكون 3 أحرف على الأقل`;
   }
-  
-  if (name.trim().length > 100) {
+
+  if (normalized.length > 100) {
     return `${fieldName} يجب أن لا يتجاوز 100 حرف`;
   }
-  
-  // Allow only letters, spaces, hyphens, and Arabic characters
+
+  // Allow only letters (Arabic/English), spaces, hyphens, and apostrophes
   const nameRegex = /^[\u0600-\u06FFa-zA-Z\s\-']{3,100}$/;
-  if (!nameRegex.test(name.trim())) {
+  if (!nameRegex.test(normalized)) {
     return `${fieldName} يحتوي على أحرف غير صالحة`;
   }
-  
+
   return null;
 };
 

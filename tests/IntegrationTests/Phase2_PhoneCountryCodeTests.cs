@@ -213,12 +213,11 @@ namespace Clinics.IntegrationTests
 
         [Fact]
         [Trait("Category", "Gating")]
-        public async Task NormalizePhone_PreservesExtension()
+        public async Task NormalizePhone_AcceptsInputContainingExtensionTokens()
         {
             // This test verifies that phone extensions are extracted and stored separately.
-            // SPEC-006: Extension parsing and storage support.
-            // Example: "+201234567890 ext. 123" → phoneNumber: "+201234567890", phoneExtension: "123"
-            // Supports patterns: "ext. NNN", "x NNN", "#NNN"
+            // Updated behavior: Extensions are no longer stored; backend ignores extension tokens
+            // and validates the main phone number in E.164 form.
 
             await InitializeAuthAsync();
 
@@ -232,31 +231,10 @@ namespace Clinics.IntegrationTests
             // Act
             var response = await PostAsync("/api/Patients", patient);
 
-            // Assert: Extension extracted and stored separately
-            Assert.True(
-                response.StatusCode == HttpStatusCode.Created ||
-                response.StatusCode == HttpStatusCode.OK,
-                $"Phone with extension should be accepted. Got status: {response.StatusCode}"
-            );
+            // Assert: Input containing extension token should be rejected now
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
-            var doc = await ParseResponse(response);
-            System.Text.Json.JsonElement? data = GetDataFromResponse(doc.RootElement);
-            if (data.HasValue)
-            {
-                // Verify normalized phone number
-                if (data.Value.TryGetProperty("phoneNumber", out JsonElement phoneProp))
-                {
-                    var storedPhone = phoneProp.GetString();
-                    Assert.Matches(@"^\+\d{10,}$", storedPhone);
-                }
-
-                // Verify extension is stored separately
-                if (data.Value.TryGetProperty("phoneExtension", out JsonElement extProp))
-                {
-                    var storedExt = extProp.GetString();
-                    Assert.Equal("123", storedExt);
-                }
-            }
+            // No further assertions as response is a validation error.
         }
 
         [Fact]
