@@ -39,56 +39,82 @@ jobs:
     - name: Build
       run: dotnet build -c Debug --no-restore
 
-    - name: Start SQL Server (Docker)
-      run: |
-        docker pull mcr.microsoft.com/mssql/server:2022-latest
-        docker run -e "ACCEPT_EULA=Y" -e "SA_PASSWORD=Your_password123" -p 1433:1433 -d --name sql1 mcr.microsoft.com/mssql/server:2022-latest
-
-    - name: Wait for SQL Server
+    - name: Install Chocolatey (if missing)
       shell: pwsh
       run: |
-        $retries = 30
-        $delay = 5
-        $ok = $false
-        for ($i=0; $i -lt $retries; $i++) {
-          try {
-            Add-Type -AssemblyName System.Data
-            $cn = New-Object System.Data.SqlClient.SqlConnection "Server=127.0.0.1,1433;User Id=sa;Password=Your_password123;TrustServerCertificate=True;"
-            $cn.Open(); $cn.Close(); $ok = $true; break
-          } catch { Start-Sleep -Seconds $delay }
+        if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         }
-        if (-not $ok) { throw 'SQL Server not ready' }
+
+    - name: Install SQL Server Express and tools
+      shell: pwsh
+      run: |
+        choco install sql-server-express -y --no-progress
+        choco install mssql-tools -y --no-progress || Write-Host "mssql-tools may already be installed"
+
+    - name: Start SQL Server service and configure SA
+      shell: pwsh
+      env:
+        SA_PASSWORD: ${{ secrets.SQL_SA_PASSWORD }}
+      run: |
+        Start-Service MSSQL`$SQLEXPRESS -ErrorAction SilentlyContinue
+        $timeout = [DateTime]::Now.AddMinutes(3)
+        while ((Get-Service MSSQL`$SQLEXPRESS).Status -ne 'Running') {
+          if ([DateTime]::Now -gt $timeout) { throw 'SQL Server did not start in time' }
+          Start-Sleep -Seconds 5
+        }
+        $pwd = $env:SA_PASSWORD
+        $alterSql = "ALTER LOGIN [sa] WITH PASSWORD = N'$pwd'; ALTER LOGIN [sa] ENABLE;"
+        sqlcmd -S .\SQLEXPRESS -E -Q $alterSql
+
+    - name: Create integration test DB
+      shell: pwsh
+      env:
+        SA_PASSWORD: ${{ secrets.SQL_SA_PASSWORD }}
+      run: |
+        sqlcmd -S .\SQLEXPRESS -U sa -P $env:SA_PASSWORD -Q "IF DB_ID('ClinicsDb') IS NULL CREATE DATABASE ClinicsDb;"
 
     - name: Apply EF migrations
       shell: pwsh
       env:
-        ConnectionStrings__DefaultConnection: Server=127.0.0.1,1433;Database=ClinicsDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
+        SA_PASSWORD: ${{ secrets.SQL_SA_PASSWORD }}
+        ConnectionStrings__DefaultConnection: Server=localhost\SQLEXPRESS;Database=ClinicsDb;User Id=sa;Password=${{ secrets.SQL_SA_PASSWORD }};TrustServerCertificate=True;
       run: |
         dotnet tool restore 2>$null | Out-Null
         dotnet ef database update --project src/Infrastructure/Infrastructure.csproj --startup-project src/Api/Clinics.Api.csproj
 
     - name: Verify seed data
       shell: pwsh
+      env:
+        SA_PASSWORD: ${{ secrets.SQL_SA_PASSWORD }}
       run: |
-        ./scripts/VerifySeed.ps1 -ConnectionString "Server=127.0.0.1,1433;Database=ClinicsDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;"
+        ./scripts/VerifySeed.ps1 -ConnectionString "Server=localhost\SQLEXPRESS;Database=ClinicsDb;User Id=sa;Password=$env:SA_PASSWORD;TrustServerCertificate=True;"
     
     # Gating run: only tests that must pass
     - name: Run Unit & Integration Tests (Gating - Must Pass)
+      shell: pwsh
+      env:
+        SA_PASSWORD: ${{ secrets.SQL_SA_PASSWORD }}
+        ConnectionStrings__DefaultConnection: Server=localhost\SQLEXPRESS;Database=ClinicsDb;User Id=sa;Password=${{ secrets.SQL_SA_PASSWORD }};TrustServerCertificate=True;
+        ASPNETCORE_ENVIRONMENT: Test
       run: |
         dotnet test tests/UnitTests/UnitTests.csproj --configuration Debug --no-build --filter "Category!=ExpectedToFail" --logger "trx;LogFileName=gating-results-unit.trx" --logger "console;verbosity=normal" /p:CollectCoverage=false
 
         dotnet test tests/IntegrationTests/IntegrationTests.csproj --configuration Debug --no-build --filter "Category!=ExpectedToFail" --logger "trx;LogFileName=gating-results-integration.trx" --logger "console;verbosity=normal" /p:CollectCoverage=false
-      env:
-        ASPNETCORE_ENVIRONMENT: Test
     
     # Full run with coverage (including expected-to-fail specs)
     - name: Run All Tests with Coverage (Spec + Implementation)
+      shell: pwsh
+      env:
+        SA_PASSWORD: ${{ secrets.SQL_SA_PASSWORD }}
+        ConnectionStrings__DefaultConnection: Server=localhost\SQLEXPRESS;Database=ClinicsDb;User Id=sa;Password=${{ secrets.SQL_SA_PASSWORD }};TrustServerCertificate=True;
+        ASPNETCORE_ENVIRONMENT: Test
       run: |
         dotnet test tests/UnitTests/UnitTests.csproj --configuration Debug --no-build --logger "trx;LogFileName=full-results-unit.trx" --logger "console;verbosity=minimal" /p:CollectCoverage=true /p:CoverletOutput=./coverage.unit.cobertura.xml /p:CoverletOutputFormat=cobertura
 
         dotnet test tests/IntegrationTests/IntegrationTests.csproj --configuration Debug --no-build --logger "trx;LogFileName=full-results-integration.trx" --logger "console;verbosity=minimal" /p:CollectCoverage=true /p:CoverletOutput=./coverage.integration.cobertura.xml /p:CoverletOutputFormat=cobertura
-      env:
-        ASPNETCORE_ENVIRONMENT: Test
       continue-on-error: true
     
     - name: Upload Test Results
@@ -101,11 +127,26 @@ jobs:
           ./coverage.*.cobertura.xml
         retention-days: 30
     
-    - name: Publish Coverage to Codecov
+    - name: Find coverage files
+      id: find_cov
       if: always()
+      shell: pwsh
+      run: |
+        $files = Get-ChildItem -Path $PWD -Recurse -Filter *.cobertura.xml -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+        if (!$files) {
+          Write-Host "No cobertura files found"
+          echo "files=" >> $env:GITHUB_OUTPUT
+          exit 0
+        }
+        $filesJoined = $files -join ','
+        Write-Host "Found coverage files: $filesJoined"
+        echo "files=$filesJoined" >> $env:GITHUB_OUTPUT
+    
+    - name: Publish Coverage to Codecov
+      if: always() && steps.find_cov.outputs.files != ''
       uses: codecov/codecov-action@v4
       with:
-        files: ./coverage.*.cobertura.xml
+        files: ${{ steps.find_cov.outputs.files }}
         flags: backend
         name: backend-coverage
         token: ${{ secrets.CODECOV_TOKEN }}
