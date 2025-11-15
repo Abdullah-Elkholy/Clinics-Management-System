@@ -72,6 +72,11 @@ namespace Clinics.Domain
 
         public int? UpdatedBy { get; set; }
 
+        /// <summary>
+        /// Last successful login timestamp
+        /// </summary>
+        public DateTime? LastLogin { get; set; }
+
         // Soft-delete fields
         [Required]
         public bool IsDeleted { get; set; } = false;
@@ -137,7 +142,7 @@ namespace Clinics.Domain
         public int QueueId { get; set; }
 
         [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; }
+        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         [Required]
         [StringLength(100)]
@@ -148,12 +153,15 @@ namespace Clinics.Domain
         [Phone]
         public string PhoneNumber { get; set; } = null!;
 
+    // PhoneExtension removed: all numbers validated and stored as single E.164 phone number.
+
         /// <summary>
-        /// Optional phone extension (e.g., "123" from "+201234567890 ext. 123").
-        /// Extracted during patient creation from PhoneNumber field.
+        /// Country code for the phone number (e.g., "+20", "+966")
+        /// Stored separately for display and validation purposes
         /// </summary>
+        [Required]
         [StringLength(10)]
-        public string? PhoneExtension { get; set; }
+        public string CountryCode { get; set; } = "+20";
 
         [Required]
         public int Position { get; set; }
@@ -215,7 +223,7 @@ namespace Clinics.Domain
         public int QueueId { get; set; }
 
         [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; }
+        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         [Required]
         public bool IsActive { get; set; } = true;
@@ -265,7 +273,7 @@ namespace Clinics.Domain
         public int? QueueId { get; set; }
 
         [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; }
+        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         public int? SenderUserId { get; set; }
 
@@ -350,7 +358,7 @@ namespace Clinics.Domain
         public int? QueueId { get; set; }
 
         [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; }
+        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         [StringLength(500)]
         public string? Reason { get; set; }
@@ -377,7 +385,7 @@ namespace Clinics.Domain
         public int ModeratorUserId { get; set; }
 
         [ForeignKey(nameof(ModeratorUserId))]
-        public User? Moderator { get; set; }
+        public User? Moderator { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         [Required]
         public int MessagesQuota { get; set; }
@@ -493,7 +501,7 @@ namespace Clinics.Domain
         public int QueueId { get; set; }
 
         [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; }
+        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         [Required]
         public int UserId { get; set; }
@@ -529,7 +537,7 @@ namespace Clinics.Domain
         public int ModeratorUserId { get; set; }
 
         [ForeignKey(nameof(ModeratorUserId))]
-        public User? Moderator { get; set; }
+        public User? Moderator { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         /// <summary>
         /// WhatsApp phone number associated with this moderator
@@ -593,7 +601,7 @@ namespace Clinics.Domain
         public int QueueId { get; set; }
 
         [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; }
+        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         /// <summary>
         /// Operator encodes template state and selection logic:

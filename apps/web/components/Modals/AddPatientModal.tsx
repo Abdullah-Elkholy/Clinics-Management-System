@@ -101,7 +101,7 @@ export default function AddPatientModal() {
       addToast('الحد الأقصى 50 مريض', 'error');
       return;
     }
-    setPatients([...patients, { name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
+  setPatients([...patients, { name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
   };
 
   const removePatientSlot = (index: number) => {
@@ -258,7 +258,7 @@ export default function AddPatientModal() {
       
       if (addedCount > 0) {
         addToast(`تم إضافة ${addedCount} مريض بنجاح`, 'success');
-        setPatients([{ name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
+  setPatients([{ name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
         setErrors({});
         closeModal('addPatient');
       } else {
@@ -481,6 +481,8 @@ export default function AddPatientModal() {
                               : 'border-gray-300 hover:border-gray-400 focus:ring-blue-500'
                           }`}
                         />
+
+                        {/* Phone Extension Input removed to reduce ambiguity */}
                       </div>
 
                       {patientError?.phone && (

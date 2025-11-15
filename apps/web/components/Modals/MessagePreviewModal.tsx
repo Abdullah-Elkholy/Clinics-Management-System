@@ -202,7 +202,7 @@ export default function MessagePreviewModal() {
             className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             <i className="fab fa-whatsapp"></i>
-            إرسال لـ {selectedCount - removedPatients.length} محدد
+            تأكيد الإرسال ({selectedCount - removedPatients.length})
           </button>
           <button
             onClick={() => closeModal('messagePreview')}

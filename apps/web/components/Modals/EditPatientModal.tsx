@@ -270,6 +270,8 @@ export default function EditPatientModal() {
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
             />
+
+            {/* Phone Extension Input removed to reduce ambiguity */}
           </div>
 
           {errors.phone && (
@@ -312,6 +314,7 @@ export default function EditPatientModal() {
               setName('');
               setUsername('');
               setPhone('');
+              // phoneExtension state removed
               setErrors({});
             }}
             disabled={isLoading}

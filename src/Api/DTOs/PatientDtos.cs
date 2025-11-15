@@ -14,11 +14,7 @@ namespace Clinics.Api.DTOs
 
         public string PhoneNumber { get; set; } = null!;
 
-        /// <summary>
-        /// Optional phone extension (e.g., "123" from "+201234567890 ext. 123").
-        /// Extracted during normalization if present.
-        /// </summary>
-        public string? PhoneExtension { get; set; }
+    // PhoneExtension removed: phone numbers now treated as a single E.164 value.
 
         public int Position { get; set; }
 
@@ -42,12 +38,7 @@ namespace Clinics.Api.DTOs
         [CountryCodeRequired(ErrorMessage = "Phone number must include country code (e.g., +201234567890)")]
         public string PhoneNumber { get; set; } = null!;
 
-        /// <summary>
-        /// Optional phone extension (e.g., "123" from "+201234567890 ext. 123").
-        /// Will be extracted during normalization if present in PhoneNumber.
-        /// </summary>
-        [StringLength(10, ErrorMessage = "Phone extension must not exceed 10 characters")]
-        public string? PhoneExtension { get; set; }
+    // PhoneExtension removed from create request.
 
         /// <summary>
         /// Optional desired position in queue. If not provided or 0, appends to end.
@@ -68,11 +59,7 @@ namespace Clinics.Api.DTOs
         [StringLength(35)]
         public string? PhoneNumber { get; set; }
 
-        /// <summary>
-        /// Optional phone extension to update.
-        /// </summary>
-        [StringLength(10, ErrorMessage = "Phone extension must not exceed 10 characters")]
-        public string? PhoneExtension { get; set; }
+    // PhoneExtension removed from update request.
 
         [StringLength(20)]
         public string? Status { get; set; }
