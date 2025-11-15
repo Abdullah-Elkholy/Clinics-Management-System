@@ -13,6 +13,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
+import logger from '@/utils/logger';
 // Mock data removed - using API data instead
 
 /**
@@ -110,7 +111,7 @@ export default function ModeratorMessagesOverview() {
           }
         }
       } catch (error) {
-        console.error('Failed to load templates in admin view:', error);
+        logger.error('Failed to load templates in admin view:', error);
       }
     };
 
@@ -622,7 +623,7 @@ export default function ModeratorMessagesOverview() {
                                                                     addToast('معرّف القالب غير صالح', 'error');
                                                                   }
                                                                 } catch (error) {
-                                                                  console.error('Failed to delete template:', error);
+                                                                  logger.error('Failed to delete template:', error);
                                                                   addToast('فشل حذف القالب', 'error');
                                                                 }
                                                               }

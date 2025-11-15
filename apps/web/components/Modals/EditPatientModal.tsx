@@ -10,6 +10,7 @@ import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
 import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import { useQueue } from '@/contexts/QueueContext';
+import logger from '@/utils/logger';
 
 export default function EditPatientModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -86,7 +87,7 @@ export default function EditPatientModal() {
       } catch (err) {
         // If fresh data fetch fails, fall back to existing data
         if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to fetch fresh patient data:', err);
+          logger.error('Failed to fetch fresh patient data:', err);
         }
         setFreshPatientData(null);
       }
@@ -218,6 +219,7 @@ export default function EditPatientModal() {
     if (Object.keys(updatePayload).length === 0) {
       addToast('لم يتم تغيير أي بيانات', 'info');
       closeModal('editPatient');
+      import logger from '@/utils/logger';
       return;
     }
 
@@ -271,7 +273,7 @@ export default function EditPatientModal() {
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0;
 
-  if (!isOpen) return null;
+              logger.error('Failed to fetch fresh patient data:', err);
 
   return (
     <Modal

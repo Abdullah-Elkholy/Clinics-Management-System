@@ -10,6 +10,7 @@ import { patientsApiClient, type PatientDto } from '@/services/api/patientsApiCl
 import { queueDtoToModel, templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/useToast';
+import logger from '@/utils/logger';
 
 interface QueueContextType {
   queues: Queue[];
@@ -53,7 +54,7 @@ interface QueueContextType {
   isMutatingCondition: boolean;
 }
 
-const QueueContext = createContext<QueueContextType | null>(null);
+export const QueueContext = createContext<QueueContextType | null>(null);
 
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user: currentUser } = useAuth();
@@ -102,7 +103,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setQueues([]);
       }
     } catch (error) {
-      console.warn('Failed to load queues from API:', error);
+      logger.warn('Failed to load queues from API:', error);
       setQueuesError('Failed to load queues');
       setQueues([]);
     } finally {
@@ -125,7 +126,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const queueIdNum = Number(selectedQueueId);
     if (isNaN(queueIdNum)) {
-      console.warn('Invalid queueId:', selectedQueueId);
+      logger.warn('Invalid queueId:', selectedQueueId);
       setPatients([]);
       return;
     }
@@ -142,7 +143,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     const queueIdNum = Number(qid);
     if (isNaN(queueIdNum)) {
-      console.warn('Invalid queueId:', qid);
+      logger.warn('Invalid queueId:', qid);
       setPatients([]);
       return;
     }
@@ -199,7 +200,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       setPatients(patientsData);
     } catch (error) {
-      console.warn('Failed to load patients:', error);
+      logger.warn('Failed to load patients:', error);
       setPatients([]);
     }
   }, [selectedQueueId]);
@@ -211,7 +212,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Validate that selectedQueueId is a valid number
     const queueIdNum = Number(selectedQueueId);
     if (isNaN(queueIdNum)) {
-      console.warn('Invalid queueId:', selectedQueueId);
+      logger.warn('Invalid queueId:', selectedQueueId);
       setMessageTemplates([]);
       setMessageConditions([]);
       return;
@@ -231,7 +232,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const templateResponse = await messageApiClient.getTemplates(queueIdNum);
           templateDtos = templateResponse.items || [];
         } catch (error) {
-          console.warn('Failed to load templates from API:', error);
+          logger.warn('Failed to load templates from API:', error);
           setTemplateError('Unable to load templates');
         }
 
@@ -240,7 +241,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const conditionResponse = await messageApiClient.getConditions(queueIdNum);
           conditionDtos = conditionResponse.items || [];
         } catch (error) {
-          console.warn('Failed to load conditions:', error);
+          logger.warn('Failed to load conditions:', error);
           setConditionsError('Unable to load conditions');
         }
 
@@ -266,7 +267,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setMessageConditions([]);
         }
       } catch (error) {
-        console.error('Unexpected error loading templates/conditions:', error);
+        logger.error('Unexpected error loading templates/conditions:', error);
         setTemplateError('An unexpected error occurred');
         setMessageTemplates([]);
         setMessageConditions([]);
@@ -380,7 +381,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setMessageTemplates((prev) => prev.filter((t) => t.id !== tempId));
         const errorMsg = error instanceof Error ? error.message : 'فشل إنشاء القالب';
         toast?.(errorMsg, 'error');
-        console.error('Failed to create template:', error);
+        logger.error('Failed to create template:', error);
       } finally {
         setIsMutatingTemplate(false);
       }
@@ -428,7 +429,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setMessageTemplates(originalTemplates);
         const errorMsg = error instanceof Error ? error.message : 'فشل تحديث القالب';
         toast?.(errorMsg, 'error');
-        console.error('Failed to update template:', error);
+        logger.error('Failed to update template:', error);
       } finally {
         setIsMutatingTemplate(false);
       }
@@ -463,7 +464,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setMessageTemplates(originalTemplates);
         const errorMsg = error instanceof Error ? error.message : 'فشل حذف القالب';
         toast?.(errorMsg, 'error');
-        console.error('Failed to delete template:', error);
+        logger.error('Failed to delete template:', error);
       } finally {
         setIsMutatingTemplate(false);
       }
@@ -526,7 +527,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setMessageConditions((prev) => prev.filter((c) => c.id !== tempId));
         const errorMsg = error instanceof Error ? error.message : 'فشل إضافة الشرط';
         toast?.(errorMsg, 'error');
-        console.error('Failed to create condition:', error);
+        logger.error('Failed to create condition:', error);
       } finally {
         setIsMutatingCondition(false);
       }
@@ -559,7 +560,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setMessageConditions(originalConditions);
         const errorMsg = error instanceof Error ? error.message : 'فشل حذف الشرط';
         toast?.(errorMsg, 'error');
-        console.error('Failed to delete condition:', error);
+        logger.error('Failed to delete condition:', error);
       } finally {
         setIsMutatingCondition(false);
       }
@@ -601,7 +602,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setMessageConditions(originalConditions);
         const errorMsg = error instanceof Error ? error.message : 'فشل تحديث الشرط';
         toast?.(errorMsg, 'error');
-        console.error('Failed to update condition:', error);
+        logger.error('Failed to update condition:', error);
       } finally {
         setIsMutatingCondition(false);
       }
@@ -614,7 +615,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     async (queueId: string) => {
       const queueIdNum = Number(queueId);
       if (isNaN(queueIdNum)) {
-        console.warn('Invalid queueId for refresh:', queueId);
+        logger.warn('Invalid queueId for refresh:', queueId);
         return;
       }
 
@@ -631,7 +632,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const templateResponse = await messageApiClient.getTemplates(queueIdNum);
           templateDtos = templateResponse.items || [];
         } catch (error) {
-          console.warn('Failed to refresh templates from API:', error);
+          logger.warn('Failed to refresh templates from API:', error);
           setTemplateError('Unable to refresh templates');
         }
 
@@ -640,7 +641,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const conditionResponse = await messageApiClient.getConditions(queueIdNum);
           conditionDtos = conditionResponse.items || [];
         } catch (error) {
-          console.warn('Failed to refresh conditions:', error);
+          logger.warn('Failed to refresh conditions:', error);
           setConditionsError('Unable to refresh conditions');
         }
 
@@ -683,7 +684,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           );
         }
       } catch (error) {
-        console.error('Unexpected error refreshing queue data:', error);
+        logger.error('Unexpected error refreshing queue data:', error);
         setTemplateError('An unexpected error occurred while refreshing');
       } finally {
         setIsLoadingTemplates(false);

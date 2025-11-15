@@ -143,13 +143,12 @@ jobs:
         echo "files=$filesJoined" >> $env:GITHUB_OUTPUT
     
     - name: Publish Coverage to Codecov
-      if: always() && steps.find_cov.outputs.files != ''
+      if: ${{ always() && steps.find_cov.outputs.files != '' }}
       uses: codecov/codecov-action@v4
       with:
         files: ${{ steps.find_cov.outputs.files }}
         flags: backend
         name: backend-coverage
-        token: ${{ secrets.CODECOV_TOKEN }}
       continue-on-error: true
     
     - name: Report Test Summary
@@ -207,7 +206,7 @@ jobs:
         retention-days: 30
     
     - name: Publish Frontend Coverage
-      if: always()
+      if: ${{ always() }}
       uses: codecov/codecov-action@v4
       with:
         files: ./apps/web/coverage/lcov.info

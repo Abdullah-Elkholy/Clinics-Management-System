@@ -4,15 +4,17 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, ValidationError } from '@/utils/validation';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCurrentUser } from '@/services/api/authApiClient';
+import logger from '@/utils/logger';
+import type { User } from '@/types';
 
 export default function AccountInfoModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
   const { user: currentUser } = useAuth();
-  const [freshUserData, setFreshUserData] = useState<any>(null);
+  const [freshUserData, setFreshUserData] = useState<User | null>(null);
   
   const [showPassword, setShowPassword] = useState(false);
   const [firstName, setFirstName] = useState('');
@@ -23,7 +25,6 @@ export default function AccountInfoModal() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [touched, setTouched] = useState(false);
 
   const isOpen = openModals.has('accountInfo');
   const modalData = getModalData('accountInfo');
@@ -40,7 +41,7 @@ export default function AccountInfoModal() {
       } catch (err) {
         // If fresh data fetch fails, fall back to currentUser from auth
         if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to fetch fresh user data:', err);
+          logger.error('Failed to fetch fresh user data:', err);
         }
         setFreshUserData(null);
       }
@@ -64,7 +65,7 @@ export default function AccountInfoModal() {
             setFreshUserData(data);
           } catch (err) {
             if (process.env.NODE_ENV === 'development') {
-              console.error('Failed to fetch fresh user data after edit:', err);
+              logger.error('Failed to fetch fresh user data after edit:', err);
             }
           }
         };
@@ -82,7 +83,7 @@ export default function AccountInfoModal() {
             setFreshUserData(data);
           } catch (err) {
             if (process.env.NODE_ENV === 'development') {
-              console.error('Failed to fetch fresh user data after edit:', err);
+              logger.error('Failed to fetch fresh user data after edit:', err);
             }
           }
         };
@@ -128,9 +129,9 @@ export default function AccountInfoModal() {
       setNewPassword('');
       setConfirmPassword('');
       setErrors({});
-      setTouched(false);
+      
     }
-  }, [isOpen, userToEdit?.id, userToEdit?.username]);
+  }, [isOpen, userToEdit]);
 
   const validateFields = () => {
     const newErrors: ValidationError = {};
@@ -174,8 +175,6 @@ export default function AccountInfoModal() {
     if (field === 'newPassword') setNewPassword(value);
     if (field === 'confirmPassword') setConfirmPassword(value);
     
-    setTouched(true);
-    
     // Clear error if exists
     if (errors[field]) {
       setErrors((prev) => {
@@ -187,14 +186,12 @@ export default function AccountInfoModal() {
   };
 
   const handleFieldBlur = () => {
-    setTouched(true);
     const newErrors = validateFields();
     setErrors(newErrors);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setTouched(true);
     
     const newErrors = validateFields();
     
@@ -217,7 +214,7 @@ export default function AccountInfoModal() {
         setNewPassword('');
         setConfirmPassword('');
         setErrors({});
-        setTouched(false);
+        
         closeModal('accountInfo');
         setIsLoading(false);
       }, 500);
@@ -238,7 +235,6 @@ export default function AccountInfoModal() {
         setLastName('');
         setUsername('');
         setErrors({});
-        setTouched(false);
       }}
       title="تعديل معلومات الحساب"
       size="lg"
@@ -425,7 +421,6 @@ export default function AccountInfoModal() {
               setLastName('');
               setUsername('');
               setErrors({});
-              setTouched(false);
             }}
             disabled={isLoading}
             className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

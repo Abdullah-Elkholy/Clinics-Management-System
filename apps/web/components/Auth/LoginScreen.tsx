@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { TEST_CREDENTIALS } from '../../constants';
+import logger from '@/utils/logger';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
@@ -29,7 +30,7 @@ export default function LoginScreen() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'حدث خطأ أثناء تسجيل الدخول';
       setError(errorMsg || 'فشل تسجيل الدخول');
-      console.error('Login error caught in UI:', err);
+      logger.error('Login error caught in UI:', err);
     } finally {
       setIsLoading(false);
     }

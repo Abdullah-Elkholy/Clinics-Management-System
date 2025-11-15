@@ -3,6 +3,7 @@
  */
 import { UserRole } from '@/types/roles';
 import { usersApiClient, userDtoToModel } from '@/services/api/usersApiClient';
+import logger from '@/utils/logger';
 
 export type { User, ModeratorQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
 import type { User } from '@/types/user';
@@ -90,29 +91,23 @@ class UserManagementService {
 
   async updateUser(id: string, payload: any): Promise<UserServiceResponse<User>> {
     try {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🔄 UserManagementService.updateUser called with:', {
-          userId: id,
-          payload: payload,
-        });
-      }
+      logger.debug('🔄 UserManagementService.updateUser called with:', {
+        userId: id,
+        payload,
+      });
 
       const user = await usersApiClient.updateUser(parseInt(id, 10), payload);
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log('✅ UserManagementService.updateUser received response:', user);
-      }
+      logger.debug('✅ UserManagementService.updateUser received response:', user);
 
       return { success: true, data: userDtoToModel(user) };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       
-      if (process.env.NODE_ENV === 'development') {
-        console.error('❌ UserManagementService.updateUser error:', {
-          error: error,
-          errorMsg: errorMsg,
-        });
-      }
+      logger.error('❌ UserManagementService.updateUser error:', {
+        error,
+        errorMsg,
+      });
 
       return {
         success: false,

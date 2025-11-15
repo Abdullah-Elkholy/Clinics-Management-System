@@ -17,6 +17,7 @@ import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
+import logger from '@/utils/logger';
 
 export default function QueueDashboard() {
   const { selectedQueueId, queues, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData } = useQueue();
@@ -568,7 +569,7 @@ export default function QueueDashboard() {
                       await refreshPatients(selectedQueueId);
                     }
                   } catch (error) {
-                    console.error('Error deleting patient:', error);
+                    logger.error('Error deleting patient:', error);
                     addToast('فشل حذف المريض', 'error');
                   }
                 }
@@ -734,7 +735,7 @@ export default function QueueDashboard() {
                       deletedCount++;
                     }
                   } catch (error) {
-                    console.error(`Failed to delete patient ${patientId}:`, error);
+                    logger.error(`Failed to delete patient ${patientId}:`, error);
                   }
                 }
                 
@@ -755,7 +756,7 @@ export default function QueueDashboard() {
                   addToast('فشل حذف المرضى', 'error');
                 }
               } catch (error) {
-                console.error('Error during bulk delete:', error);
+                logger.error('Error during bulk delete:', error);
                 addToast('حدث خطأ أثناء حذف المرضى', 'error');
               }
             }

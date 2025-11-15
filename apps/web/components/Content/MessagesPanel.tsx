@@ -17,6 +17,7 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
 import { formatLocalDate } from '@/utils/dateTimeUtils';
+import logger from '@/utils/logger';
 // Mock data removed - using API data instead
 
 /**
@@ -77,10 +78,6 @@ export default function MessagesPanel() {
    */
   const isAdminView = user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin);
   const isUserView = user && user.role === UserRole.User;
-
-  if (isAdminView || isUserView) {
-    return <ModeratorMessagesOverview />;
-  }
 
   // State for search, filtering, sorting
   const [searchTerm, setSearchTerm] = useState('');
@@ -316,6 +313,10 @@ export default function MessagesPanel() {
       },
     ];
   }, [userQuota]);
+
+  if (isAdminView || isUserView) {
+    return <ModeratorMessagesOverview />;
+  }
 
   return (
     <PanelWrapper>
@@ -605,7 +606,7 @@ export default function MessagesPanel() {
                                                   addToast('معرّف القالب غير صالح', 'error');
                                                 }
                                               } catch (error) {
-                                                console.error('Failed to delete template:', error);
+                                                logger.error('Failed to delete template:', error);
                                                 addToast('فشل حذف القالب', 'error');
                                               }
                                             }

@@ -8,9 +8,8 @@
  * Includes GET for fetching and POST/PUT/DELETE for mutations.
  */
 
-// @ts-nocheck - Disable type checking for deferred MSW integration
-import { http, HttpResponse } from 'msw';
-import { getMockTemplates, getMockConditions, createMockTemplate, createMockCondition } from '@/services/mock/mockData';
+import { rest, type RestContext, type ResponseComposition } from 'msw';
+import { getMockTemplates, getMockConditions } from '@/services/mock/mockData';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -18,48 +17,20 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 let mockTemplateStore: Record<number, any[]> = {};
 let mockConditionStore: Record<number, any[]> = {};
 let nextTemplateId = 100;
-let nextConditionId = 1000;
+let nextConditionId = 200;
 
-/**
- * Initialize mock stores from fixtures
- */
-function initializeMockStores() {
-  mockTemplateStore = {
-    1: getMockTemplates(1),
-    2: getMockTemplates(2),
-    3: getMockTemplates(3),
-  };
-  mockConditionStore = {
-    1: getMockConditions(1),
-    2: getMockConditions(2),
-    3: getMockConditions(3),
-  };
-}
-
-/**
- * Reset mock data (called before each test)
- */
-export function resetMockData() {
-  initializeMockStores();
-  nextTemplateId = 100;
-  nextConditionId = 1000;
-}
-
-// Initialize on import
-initializeMockStores();
-
+const jsonResponse = (
+  res: ResponseComposition,
+  ctx: RestContext,
+  data: unknown,
+  status = 200
+) => res(ctx.status(status), ctx.json(data));
 export const handlers = [
-  // ============================================
-  // Templates Endpoints
-  // ============================================
-
-  // GET /api/templates - List templates for a queue
-  http.get(`${API_BASE_URL}/templates`, ({ request }) => {
-    const url = new URL(request.url);
-    const queueId = url.searchParams.get('queueId');
-
+  // Templates collection
+  rest.get(`${API_BASE_URL}/templates`, (req, res, ctx) => {
+    const queueId = new URL(req.url.toString()).searchParams.get('queueId');
     if (!queueId) {
-      return HttpResponse.json({
+      return jsonResponse(res, ctx, {
         items: [],
         totalCount: 0,
         pageNumber: 1,
@@ -69,8 +40,7 @@ export const handlers = [
 
     const queueIdNum = Number(queueId);
     const templates = mockTemplateStore[queueIdNum] || [];
-
-    return HttpResponse.json({
+    return jsonResponse(res, ctx, {
       items: templates,
       totalCount: templates.length,
       pageNumber: 1,
@@ -78,34 +48,23 @@ export const handlers = [
     });
   }),
 
-  // GET /api/templates/:id - Get a specific template
-  http.get(`${API_BASE_URL}/templates/:id`, ({ params }) => {
-    const { id } = params;
-    const templateId = Number(id);
-
+  // Template details
+  rest.get(`${API_BASE_URL}/templates/:id`, (req, res, ctx) => {
+    const templateId = Number(req.params.id as string);
     for (const templates of Object.values(mockTemplateStore)) {
       const template = templates.find((t) => t.id === templateId);
       if (template) {
-        return HttpResponse.json(template);
+        return jsonResponse(res, ctx, template);
       }
     }
-
-    return HttpResponse.json(
-      { message: 'Template not found' },
-      { status: 404 }
-    );
+    return jsonResponse(res, ctx, { message: 'Template not found' }, 404);
   }),
 
-  // POST /api/templates - Create a new template
-  http.post(`${API_BASE_URL}/templates`, async ({ request }) => {
-    const body = await request.json() as any;
-    const { title, content, queueId, isActive = true } = body;
-
+  // Create template
+  rest.post(`${API_BASE_URL}/templates`, async (req, res, ctx) => {
+    const { title, content, queueId, isActive = true } = (await req.json()) as any;
     if (!title || !content || !queueId) {
-      return HttpResponse.json(
-        { message: 'Missing required fields' },
-        { status: 400 }
-      );
+      return jsonResponse(res, ctx, { message: 'Missing required fields' }, 400);
     }
 
     const newTemplate = {
@@ -122,16 +81,13 @@ export const handlers = [
       mockTemplateStore[queueId] = [];
     }
     mockTemplateStore[queueId].push(newTemplate);
-
-    return HttpResponse.json(newTemplate, { status: 201 });
+    return jsonResponse(res, ctx, newTemplate, 201);
   }),
 
-  // PUT /api/templates/:id - Update a template
-  http.put(`${API_BASE_URL}/templates/:id`, async ({ params, request }) => {
-    const { id } = params;
-    const templateId = Number(id);
-    const body = await request.json() as any;
-    const { title, content, isActive } = body;
+  // Update template
+  rest.put(`${API_BASE_URL}/templates/:id`, async (req, res, ctx) => {
+    const templateId = Number(req.params.id as string);
+    const { title, content, isActive } = (await req.json()) as any;
 
     for (const queueId in mockTemplateStore) {
       const templates = mockTemplateStore[queueId];
@@ -145,47 +101,32 @@ export const handlers = [
           updatedAt: new Date().toISOString(),
         };
         templates[index] = updated;
-        return HttpResponse.json(updated);
+        return jsonResponse(res, ctx, updated);
       }
     }
 
-    return HttpResponse.json(
-      { message: 'Template not found' },
-      { status: 404 }
-    );
+    return jsonResponse(res, ctx, { message: 'Template not found' }, 404);
   }),
 
-  // DELETE /api/templates/:id - Delete a template
-  http.delete(`${API_BASE_URL}/templates/:id`, ({ params }) => {
-    const { id } = params;
-    const templateId = Number(id);
-
+  // Delete template
+  rest.delete(`${API_BASE_URL}/templates/:id`, (req, res, ctx) => {
+    const templateId = Number(req.params.id as string);
     for (const queueId in mockTemplateStore) {
       const templates = mockTemplateStore[queueId];
       const index = templates.findIndex((t) => t.id === templateId);
       if (index !== -1) {
         templates.splice(index, 1);
-        return HttpResponse.json({}, { status: 204 });
+        return jsonResponse(res, ctx, {}, 204);
       }
     }
-
-    return HttpResponse.json(
-      { message: 'Template not found' },
-      { status: 404 }
-    );
+    return jsonResponse(res, ctx, { message: 'Template not found' }, 404);
   }),
 
-  // ============================================
-  // Conditions Endpoints
-  // ============================================
-
-  // GET /api/conditions - List conditions for a queue
-  http.get(`${API_BASE_URL}/conditions`, ({ request }) => {
-    const url = new URL(request.url);
-    const queueId = url.searchParams.get('queueId');
-
+  // Conditions collection
+  rest.get(`${API_BASE_URL}/conditions`, (req, res, ctx) => {
+    const queueId = new URL(req.url.toString()).searchParams.get('queueId');
     if (!queueId) {
-      return HttpResponse.json({
+      return jsonResponse(res, ctx, {
         items: [],
         totalCount: 0,
         pageNumber: 1,
@@ -195,8 +136,7 @@ export const handlers = [
 
     const queueIdNum = Number(queueId);
     const conditions = mockConditionStore[queueIdNum] || [];
-
-    return HttpResponse.json({
+    return jsonResponse(res, ctx, {
       items: conditions,
       totalCount: conditions.length,
       pageNumber: 1,
@@ -204,64 +144,48 @@ export const handlers = [
     });
   }),
 
-  // GET /api/conditions/:id - Get a specific condition
-  http.get(`${API_BASE_URL}/conditions/:id`, ({ params }) => {
-    const { id } = params;
-    const conditionId = Number(id);
-
+  // Condition details
+  rest.get(`${API_BASE_URL}/conditions/:id`, (req, res, ctx) => {
+    const conditionId = Number(req.params.id as string);
     for (const conditions of Object.values(mockConditionStore)) {
       const condition = conditions.find((c) => c.id === conditionId);
       if (condition) {
-        return HttpResponse.json(condition);
+        return jsonResponse(res, ctx, condition);
       }
     }
-
-    return HttpResponse.json(
-      { message: 'Condition not found' },
-      { status: 404 }
-    );
+    return jsonResponse(res, ctx, { message: 'Condition not found' }, 404);
   }),
 
-  // POST /api/conditions - Create a new condition
-  http.post(`${API_BASE_URL}/conditions`, async ({ request }) => {
-    const body = await request.json() as any;
-    const { templateId, operator, value, minValue, maxValue } = body;
-
-    if (!templateId || !operator) {
-      return HttpResponse.json(
-        { message: 'Missing required fields' },
-        { status: 400 }
-      );
+  // Create condition
+  rest.post(`${API_BASE_URL}/conditions`, async (req, res, ctx) => {
+    const { templateId, queueId, operator, value, minValue, maxValue } = (await req.json()) as any;
+    if (!templateId || !queueId || !operator) {
+      return jsonResponse(res, ctx, { message: 'Missing required fields' }, 400);
     }
 
     const newCondition = {
       id: nextConditionId++,
       templateId,
+      queueId,
       operator,
       value,
       minValue,
       maxValue,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    // Store under first queue for simplicity (templates could be in any queue)
-    const firstQueueId = Object.keys(mockConditionStore)[0];
-    if (firstQueueId && !mockConditionStore[Number(firstQueueId)]) {
-      mockConditionStore[Number(firstQueueId)] = [];
+    if (!mockConditionStore[queueId]) {
+      mockConditionStore[queueId] = [];
     }
-    if (firstQueueId) {
-      mockConditionStore[Number(firstQueueId)].push(newCondition);
-    }
-
-    return HttpResponse.json(newCondition, { status: 201 });
+    mockConditionStore[queueId].push(newCondition);
+    return jsonResponse(res, ctx, newCondition, 201);
   }),
 
-  // PUT /api/conditions/:id - Update a condition
-  http.put(`${API_BASE_URL}/conditions/:id`, async ({ params, request }) => {
-    const { id } = params;
-    const conditionId = Number(id);
-    const body = await request.json() as any;
-    const { operator, value, minValue, maxValue } = body;
+  // Update condition
+  rest.put(`${API_BASE_URL}/conditions/:id`, async (req, res, ctx) => {
+    const conditionId = Number(req.params.id as string);
+    const { operator, value, minValue, maxValue } = (await req.json()) as any;
 
     for (const queueId in mockConditionStore) {
       const conditions = mockConditionStore[queueId];
@@ -273,35 +197,27 @@ export const handlers = [
           ...(value !== undefined && { value }),
           ...(minValue !== undefined && { minValue }),
           ...(maxValue !== undefined && { maxValue }),
+          updatedAt: new Date().toISOString(),
         };
         conditions[index] = updated;
-        return HttpResponse.json(updated);
+        return jsonResponse(res, ctx, updated);
       }
     }
 
-    return HttpResponse.json(
-      { message: 'Condition not found' },
-      { status: 404 }
-    );
+    return jsonResponse(res, ctx, { message: 'Condition not found' }, 404);
   }),
 
-  // DELETE /api/conditions/:id - Delete a condition
-  http.delete(`${API_BASE_URL}/conditions/:id`, ({ params }) => {
-    const { id } = params;
-    const conditionId = Number(id);
-
+  // Delete condition
+  rest.delete(`${API_BASE_URL}/conditions/:id`, (req, res, ctx) => {
+    const conditionId = Number(req.params.id as string);
     for (const queueId in mockConditionStore) {
       const conditions = mockConditionStore[queueId];
       const index = conditions.findIndex((c) => c.id === conditionId);
       if (index !== -1) {
         conditions.splice(index, 1);
-        return HttpResponse.json({}, { status: 204 });
+        return jsonResponse(res, ctx, {}, 204);
       }
     }
-
-    return HttpResponse.json(
-      { message: 'Condition not found' },
-      { status: 404 }
-    );
+    return jsonResponse(res, ctx, { message: 'Condition not found' }, 404);
   }),
 ];

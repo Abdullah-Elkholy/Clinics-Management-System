@@ -3,7 +3,7 @@ name: PR Gating Checks (Quick Validation)
 on:
   pull_request:
     branches: [ master, main, Testing, extra_backend ]
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 env:
   DOTNET_VERSION: '8.0.x'
@@ -86,7 +86,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: backend-gating-results
-        path: **/TestResults/
+        path: '**/TestResults/'
         retention-days: 14
 
   # ============================================

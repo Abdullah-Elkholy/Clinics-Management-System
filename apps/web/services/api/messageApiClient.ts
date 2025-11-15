@@ -1,7 +1,9 @@
+/* global RequestInit, HeadersInit */
 /**
  * Type-safe API client for Clinics Management System backend
  * Centralizes all API calls with automatic auth header handling
  */
+import logger from '@/utils/logger';
 
 // ============================================
 // DTOs (matching backend DTOs exactly)
@@ -40,6 +42,7 @@ export interface CreateTemplateRequest {
   conditionValue?: number;
   conditionMinValue?: number;
   conditionMaxValue?: number;
+  isActive?: boolean;
 }
 
 export interface UpdateTemplateRequest {
@@ -117,9 +120,57 @@ export interface ListResponse<T> {
   pageSize: number;
 }
 
+type LegacyListResponse<T> = Partial<ListResponse<T>> & {
+  data?: T[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+};
+
 export interface ApiError {
   message: string;
   statusCode: number;
+}
+
+const DEFAULT_ERROR_MESSAGE = 'API request failed';
+
+const extractErrorMessage = (payload: unknown, fallback = DEFAULT_ERROR_MESSAGE): string => {
+  if (typeof payload === 'string') {
+    return payload || fallback;
+  }
+
+  if (payload && typeof payload === 'object' && 'message' in payload) {
+    const message = (payload as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message || fallback;
+    }
+  }
+
+  return fallback;
+};
+
+const emptyListResponse = <T>(pageNumber: number, pageSize: number): ListResponse<T> => ({
+  items: [],
+  totalCount: 0,
+  pageNumber,
+  pageSize,
+});
+
+function normalizeListResponse<T>(
+  payload: unknown,
+  defaults: { pageNumber: number; pageSize: number }
+): ListResponse<T> {
+  if (payload && typeof payload === 'object') {
+    const data = payload as LegacyListResponse<T>;
+    return {
+      items: data.items ?? data.data ?? [],
+      totalCount: data.totalCount ?? data.total ?? (data.items ?? data.data)?.length ?? 0,
+      pageNumber: data.pageNumber ?? data.page ?? defaults.pageNumber,
+      pageSize: data.pageSize ?? defaults.pageSize,
+    };
+  }
+
+  return emptyListResponse<T>(defaults.pageNumber, defaults.pageSize);
 }
 
 // ============================================
@@ -166,7 +217,7 @@ export async function fetchAPI<T>(
   });
 
   // Handle non-JSON responses
-  let data: any;
+  let data: unknown;
   const contentType = response.headers.get('content-type');
   if (contentType?.includes('application/json')) {
     data = await response.json();
@@ -176,7 +227,7 @@ export async function fetchAPI<T>(
 
   if (!response.ok) {
     throw {
-      message: data?.message || 'API request failed',
+      message: extractErrorMessage(data),
       statusCode: response.status,
     } as ApiError;
   }
@@ -269,7 +320,7 @@ async function withRetry<T>(
 export async function getTemplates(queueId?: number): Promise<ListResponse<TemplateDto>> {
   // Validate queueId is a valid number
   if (queueId !== undefined && isNaN(queueId)) {
-    console.error('Invalid queueId provided to getTemplates:', queueId);
+    logger.error('Invalid queueId provided to getTemplates:', queueId);
     return { items: [], totalCount: 0, pageNumber: 0, pageSize: 0 };
   }
   
@@ -338,18 +389,10 @@ export async function getTrashTemplates(options?: {
 
   const queryString = params.toString();
   const response = await withRetry(() =>
-    fetchAPI(`/templates/trash?${queryString}`)
+    fetchAPI<LegacyListResponse<TemplateDto>>(`/templates/trash?${queryString}`)
   );
-  
-  if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
-    return {
-      items: (response as any).data || [],
-      totalCount: (response as any).total || 0,
-      pageNumber: (response as any).page || page,
-      pageSize: (response as any).pageSize || pageSize,
-    };
-  }
-  return response;
+
+  return normalizeListResponse<TemplateDto>(response, { pageNumber: page, pageSize });
 }
 
 /**
@@ -370,9 +413,13 @@ export async function getArchivedTemplates(queueId: number, options?: {
   }
 
   const queryString = params.toString();
-  return withRetry(() =>
-    fetchAPI(`/templates/archived/list?${queryString}`)
+  const pageNumber = options?.pageNumber || 1;
+  const pageSize = options?.pageSize || 10;
+  const response = await withRetry(() =>
+    fetchAPI<LegacyListResponse<TemplateDto>>(`/templates/archived/list?${queryString}`)
   );
+
+  return normalizeListResponse<TemplateDto>(response, { pageNumber, pageSize });
 }
 
 /**
@@ -404,10 +451,9 @@ export async function setTemplateAsDefault(id: number): Promise<TemplateDto> {
 /**
  * Get all conditions for a specific queue
  */
-export async function getConditions(queueId: number): Promise<ListResponse<ConditionDto>> {
-  // Validate queueId is a valid number
-  if (isNaN(queueId)) {
-    console.error('Invalid queueId provided to getConditions:', queueId);
+export async function getConditions(queueId?: number): Promise<ListResponse<ConditionDto>> {
+  if (queueId !== undefined && isNaN(queueId)) {
+    logger.error('Invalid queueId provided to getConditions:', queueId);
     return { items: [], totalCount: 0, pageNumber: 0, pageSize: 0 };
   }
   

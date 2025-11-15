@@ -7,7 +7,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { UserRole, Feature, PANEL_ACCESS } from '@/types/roles';
+import { UserRole, Feature, PANEL_ACCESS, ROLE_PERMISSIONS, ROLE_METADATA } from '@/types/roles';
 import {
   canAccess,
   canAccessPanel,
@@ -103,7 +103,7 @@ export const useAccessibleFeatures = (): Feature[] => {
     if (!user?.role) {
       return [];
     }
-    return Array.from(require('@/types/roles').ROLE_PERMISSIONS[user.role] || []);
+    return Array.from(ROLE_PERMISSIONS[user.role] || []);
   }, [user?.role]);
 };
 
@@ -193,7 +193,6 @@ export const useRoleInfo = (): { displayName: string; description: string; color
     if (!user?.role) {
       return { displayName: 'مستخدم', description: 'دور غير معروف', color: 'gray', icon: 'user' };
     }
-    const { ROLE_METADATA } = require('@/types/roles');
     return ROLE_METADATA[user.role] || { displayName: 'مستخدم', description: 'دور غير معروف', color: 'gray', icon: 'user' };
   }, [user?.role]);
 };

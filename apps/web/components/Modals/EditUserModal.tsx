@@ -7,6 +7,7 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { User } from '@/services/userManagementService';
 import Modal from './Modal';
 import { useState, useEffect } from 'react';
+import logger from '@/utils/logger';
 
 interface EditUserModalProps {
   selectedUser?: User | null;
@@ -60,7 +61,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       } catch (err) {
         // If fresh data fetch fails, fall back to existing data
         if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to fetch fresh user data:', err);
+          logger.error('Failed to fetch fresh user data:', err);
         }
         setFreshUserData(null);
       }

@@ -13,6 +13,7 @@ import { SidebarHeader } from './SidebarHeader';
 import { NavigationItem } from './NavigationItem';
 import { TabItem } from './TabItem';
 import { QueueListItem } from './QueueListItem';
+import logger from '@/utils/logger';
 
 export default function Navigation() {
   const { queues, selectedQueueId, setSelectedQueueId, moderators, queuesLoading } = useQueue();
@@ -142,7 +143,7 @@ export default function Navigation() {
     const list = queues.filter(q => q.moderatorId === uid || q.moderatorId === uname);
     // Minimal debug to help diagnose if still empty
     if (process.env.NODE_ENV !== 'production' && list.length === 0) {
-      console.debug('[ModeratorQueues] No queues matched for moderator', {
+      logger.debug('[ModeratorQueues] No queues matched for moderator', {
         userId: uid,
         username: uname,
         queueModeratorIds: queues.map(q => q.moderatorId).slice(0, 10),

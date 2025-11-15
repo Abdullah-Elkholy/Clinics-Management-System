@@ -12,6 +12,7 @@ import { queuesApiClient } from '@/services/api/queuesApiClient';
 import { useUI } from '@/contexts/UIContext';
 import TrashTab from '@/components/TrashTab';
 import { TabNavigation } from '@/components/Common/TabNavigation';
+import logger from '@/utils/logger';
 
 interface Tab {
   id: string;
@@ -53,7 +54,7 @@ export default function QueuesManagementView() {
       setTrashPageNumber(page);
     } catch (error: any) {
       setTrashError(error?.message || 'Failed to load trash queues');
-      console.error('Error loading trash queues:', error);
+      logger.error('Error loading trash queues:', error);
     } finally {
       setIsLoadingTrash(false);
     }
@@ -73,7 +74,7 @@ export default function QueuesManagementView() {
       setArchivedPageNumber(page);
     } catch (error: any) {
       setArchivedError(error?.message || 'Failed to load archived queues');
-      console.error('Error loading archived queues:', error);
+      logger.error('Error loading archived queues:', error);
     } finally {
       setIsLoadingArchived(false);
     }

@@ -8,24 +8,36 @@ import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+import logger from '@/utils/logger';
+import type { MessageTemplate } from '@/types/messageTemplate';
 // Use QueueContext to perform API calls for templates
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 // Mock data removed - using API data instead
+
+type AddTemplateModalData = {
+  queueId?: string | number;
+};
 
 export default function AddTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { selectedQueueId, addMessageTemplate, messageTemplates, addMessageCondition, messageConditions, refreshQueueData } = useQueue();
+  const {
+    selectedQueueId,
+    addMessageTemplate,
+    addMessageCondition,
+    messageTemplates,
+    messageConditions,
+    refreshQueueData,
+  } = useQueue();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
   const [showDefaultWarning, setShowDefaultWarning] = useState(false);
-  const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<any>(null);
-  const [touched, setTouched] = useState(false);
+  const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<MessageTemplate | null>(null);
+  const [hasConfirmedDefaultOverride, setHasConfirmedDefaultOverride] = useState(false);
 
   // Condition choice states - for building actual condition data
   const [selectedOperator, setSelectedOperator] = useState<'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT' | null>(null);
@@ -34,7 +46,7 @@ export default function AddTemplateModal() {
   const [selectedMaxValue, setSelectedMaxValue] = useState<number | undefined>(undefined);
 
   const isOpen = openModals.has('addTemplate');
-  const modalData = getModalData('addTemplate') as any;
+  const modalData = getModalData('addTemplate') as AddTemplateModalData | undefined;
   const queueId = modalData?.queueId || selectedQueueId;
 
   const MAX_CONTENT_LENGTH = 1000;
@@ -45,43 +57,66 @@ export default function AddTemplateModal() {
       setTitle('');
       setContent('');
       setErrors({});
-      setTouched(false);
       setIsLoading(false);
-      setSelectedConditionId(null);
       setSelectedOperator(null);
       setSelectedValue(undefined);
       setSelectedMinValue(undefined);
       setSelectedMaxValue(undefined);
       setShowDefaultWarning(false);
       setExistingDefaultTemplate(null);
+      setHasConfirmedDefaultOverride(false);
     }
   }, [isOpen]);
 
-  // Handle condition selection
-  const handleConditionChange = (conditionId: string | null) => {
-    // If selecting a default condition, check if one already exists
-    if (conditionId && conditionId.startsWith('DEFAULT_')) {
-      const existingDefaultCondition = messageConditions.find(
-        (c) => c.queueId === String(queueId) && c.id?.startsWith('DEFAULT_')
-      );
-      if (existingDefaultCondition) {
-        // Find the template associated with this condition
-        const existingTemplate = messageTemplates.find(
-          (t) => t.id === existingDefaultCondition.templateId
-        );
-        if (existingTemplate) {
-          setExistingDefaultTemplate(existingTemplate);
-          setShowDefaultWarning(true);
-          return;
-        }
-      }
+  useEffect(() => {
+    if (!queueId) {
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+      setHasConfirmedDefaultOverride(false);
+      return;
     }
-    setSelectedConditionId(conditionId);
-  };
+
+    if (selectedOperator !== 'DEFAULT') {
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+      setHasConfirmedDefaultOverride(false);
+      return;
+    }
+
+    if (hasConfirmedDefaultOverride) {
+      return;
+    }
+
+    const existingDefaultCondition = messageConditions.find(
+      (condition) =>
+        condition.queueId === String(queueId) && condition.operator === 'DEFAULT'
+    );
+
+    if (!existingDefaultCondition) {
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+      return;
+    }
+
+    const defaultTemplate = messageTemplates.find(
+      (template) => template.id === existingDefaultCondition.templateId
+    );
+
+    if (defaultTemplate) {
+      setExistingDefaultTemplate(defaultTemplate);
+      setShowDefaultWarning(true);
+    }
+  }, [
+    selectedOperator,
+    queueId,
+    hasConfirmedDefaultOverride,
+    messageConditions,
+    messageTemplates,
+  ]);
 
   const confirmDefaultOverride = () => {
-    setSelectedConditionId(selectedConditionId);
     setShowDefaultWarning(false);
+    setHasConfirmedDefaultOverride(true);
   };
 
   const insertVariable = (variable: string) => {
@@ -125,13 +160,6 @@ export default function AddTemplateModal() {
     }
   };
 
-  /**
-   * Validate condition value - must be >= 1
-   */
-  const validateConditionValue = (value: number | undefined): boolean => {
-    return value !== undefined && value > 0;
-  };
-
   const handleFieldChange = (fieldName: string, value: string) => {
     if (fieldName === 'title') {
       setTitle(value);
@@ -143,8 +171,6 @@ export default function AddTemplateModal() {
         return;
       }
     }
-    setTouched(true);
-    
     // Validate on change for better UX
     if (errors[fieldName]) {
       validateField(fieldName, value);
@@ -152,7 +178,6 @@ export default function AddTemplateModal() {
   };
 
   const handleFieldBlur = (fieldName: string) => {
-    setTouched(true);
     if (fieldName === 'title') {
       validateField(fieldName, title);
     } else if (fieldName === 'content') {
@@ -160,9 +185,8 @@ export default function AddTemplateModal() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setTouched(true);
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     
     // Validate all fields
     const newErrors: ValidationError = {};
@@ -265,13 +289,34 @@ export default function AddTemplateModal() {
           createdBy: '', // Will be populated from backend response after API call
           createdAt: new Date(), // Will be populated from backend response after API call
         });
+
+        if (queueId) {
+          const queueIdStr = String(queueId);
+          const priority =
+            messageConditions.filter((condition) => condition.queueId === queueIdStr).length + 1;
+
+          await addMessageCondition({
+            queueId: queueIdStr,
+            templateId: String(createdTemplate.id),
+            name: `${title} شرط`,
+            priority,
+            enabled: true,
+            operator: conditionOperator,
+            value:
+              conditionOperator === 'RANGE' || conditionOperator === 'DEFAULT'
+                ? undefined
+                : selectedValue,
+            minValue: conditionOperator === 'RANGE' ? selectedMinValue : undefined,
+            maxValue: conditionOperator === 'RANGE' ? selectedMaxValue : undefined,
+            template: content,
+          });
+        }
       }
       
       // Clear form fields after successful creation
       setTitle('');
       setContent('');
       setErrors({});
-      setSelectedConditionId(null);
       setSelectedOperator(null);
       setSelectedValue(undefined);
       setSelectedMinValue(undefined);
@@ -285,7 +330,7 @@ export default function AddTemplateModal() {
         window.dispatchEvent(new CustomEvent('templateDataUpdated'));
       }, 100);
     } catch (error) {
-      console.error('Failed to add template:', error);
+      logger.error('Failed to add template:', error);
       addToast('حدث خطأ أثناء إضافة القالب', 'error');
     } finally {
       setIsLoading(false);
@@ -305,15 +350,14 @@ export default function AddTemplateModal() {
         setTitle('');
         setContent('');
         setErrors({});
-        setTouched(false);
         setIsLoading(false);
-        setSelectedConditionId(null);
         setSelectedOperator(null);
         setSelectedValue(undefined);
         setSelectedMinValue(undefined);
         setSelectedMaxValue(undefined);
         setShowDefaultWarning(false);
         setExistingDefaultTemplate(null);
+        setHasConfirmedDefaultOverride(false);
       }}
       title="إضافة قالب رسالة جديد"
       size="lg"
@@ -503,15 +547,14 @@ export default function AddTemplateModal() {
               setTitle('');
               setContent('');
               setErrors({});
-              setTouched(false);
               setIsLoading(false);
-              setSelectedConditionId(null);
               setSelectedOperator(null);
               setSelectedValue(undefined);
               setSelectedMinValue(undefined);
               setSelectedMaxValue(undefined);
               setShowDefaultWarning(false);
               setExistingDefaultTemplate(null);
+              setHasConfirmedDefaultOverride(false);
             }}
             disabled={isLoading}
             className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -547,8 +590,12 @@ export default function AddTemplateModal() {
         onConfirm={confirmDefaultOverride}
         onCancel={() => {
           setShowDefaultWarning(false);
-          setSelectedConditionId(null);
           setExistingDefaultTemplate(null);
+          setHasConfirmedDefaultOverride(false);
+          setSelectedOperator(null);
+          setSelectedValue(undefined);
+          setSelectedMinValue(undefined);
+          setSelectedMaxValue(undefined);
         }}
       />
     </Modal>

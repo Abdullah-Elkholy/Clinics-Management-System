@@ -8,6 +8,7 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { User } from '@/services/userManagementService';
 import Modal from './Modal';
 import { useState, useEffect } from 'react';
+import logger from '@/utils/logger';
 
 interface EditAccountModalProps {
   selectedUser?: User | null;
@@ -211,18 +212,14 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       }
 
       // Debug logging
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📤 Sending update payload:', {
-          userId: userToEdit.id,
-          payload: updatePayload,
-        });
-      }
+      logger.debug('📤 Sending update payload:', {
+        userId: userToEdit.id,
+        payload: updatePayload,
+      });
 
       const success = await actions.updateUser(userToEdit.id, updatePayload);
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log('✅ Update response success:', success);
-      }
+      logger.debug('✅ Update response success:', success);
       
       if (!success) {
         addToast('فشل تحديث البيانات', 'error');
@@ -261,9 +258,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       const errorMsg = err instanceof Error ? err.message : 'خطأ غير معروف';
       addToast(`حدث خطأ: ${errorMsg}`, 'error');
       
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Update error:', err);
-      }
+      logger.error('Update error:', err);
     } finally {
       setIsLoading(false);
     }

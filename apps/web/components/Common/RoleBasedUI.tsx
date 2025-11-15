@@ -9,7 +9,13 @@
 
 import React, { ReactNode } from 'react';
 import { UserRole } from '@/types/roles';
-import { hasAnyRole, hasRoleOrHigher } from '@/utils/roleBasedUI';
+import {
+  hasAnyRole,
+  hasRoleOrHigher,
+  getRoleNameAr,
+  getRoleColor,
+  getRoleIcon,
+} from '@/utils/roleBasedUI';
 
 /**
  * Props for role-based components
@@ -181,7 +187,6 @@ interface RoleBadgeProps {
 export function RoleBadge({ role, size = 'md', showIcon = true }: RoleBadgeProps) {
   if (!role) return null;
 
-  const { getRoleNameAr, getRoleColor, getRoleIcon } = require('@/utils/roleBasedUI');
   const roleColor = getRoleColor(role);
   const roleIcon = getRoleIcon(role);
   const roleName = getRoleNameAr(role);
@@ -213,7 +218,6 @@ interface RoleIndicatorProps {
 export function RoleIndicator({ userRole }: RoleIndicatorProps) {
   if (!userRole) return null;
 
-  const { getRoleNameAr, getRoleIcon } = require('@/utils/roleBasedUI');
   const roleName = getRoleNameAr(userRole);
   const roleIcon = getRoleIcon(userRole);
 

@@ -4,11 +4,12 @@ import { useModal } from '@/contexts/ModalContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { useUI } from '@/contexts/UIContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { validateName, validatePhone, ValidationError, hasErrors } from '@/utils/validation';
+import { validateName, ValidationError, hasErrors } from '@/utils/validation';
 import { getModeratorInfo } from '@/utils/moderatorAggregation';
 import { queuesApiClient } from '@/services/api/queuesApiClient';
+import logger from '@/utils/logger';
 import Modal from './Modal';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 
 export default function AddQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -49,7 +50,7 @@ export default function AddQueueModal() {
     validateField(doctorName);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setTouched(true);
     
@@ -70,7 +71,7 @@ export default function AddQueueModal() {
       const createdByUserId = currentUser?.id ? Number(currentUser.id) : 0;
       const queueModeratorId = targetModeratorId ? Number(targetModeratorId) : createdByUserId;
 
-      const newQueue = await queuesApiClient.createQueue({
+      await queuesApiClient.createQueue({
         doctorName: doctorName.trim(),
         moderatorId: queueModeratorId,
         createdBy: createdByUserId,
@@ -95,17 +96,16 @@ export default function AddQueueModal() {
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('queueDataUpdated'));
       }, 100);
-    } catch (error: any) {
-      // Better error handling using API client's formatter
-      const errorMessage = queuesApiClient.formatApiError?.(error) || error?.message || 'حدث خطأ غير معروف';
-      console.error('Failed to add queue:', errorMessage);
+    } catch (error: unknown) {
+      const typedError = error as { message?: string } | undefined;
+      const errorMessage =
+        queuesApiClient.formatApiError?.(typedError) || typedError?.message || 'حدث خطأ غير معروف';
+      logger.error('Failed to add queue:', errorMessage);
       addToast(`حدث خطأ: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);
     }
   };
-
-  const isSubmitDisabled = hasErrors(errors) || !doctorName.trim() || isLoading;
 
   if (!isOpen) return null;
 
@@ -136,10 +136,10 @@ export default function AddQueueModal() {
               يرجى تصحيح الأخطاء التالية:
             </p>
             <ul className="space-y-1 text-sm text-red-700">
-              {Object.entries(errors).map(([field, error]) => (
+              {Object.entries(errors).map(([field, errorMessage]) => (
                 <li key={field} className="flex items-center gap-2">
                   <span className="inline-block w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                  {error}
+                  {errorMessage}
                 </li>
               ))}
             </ul>
@@ -178,7 +178,7 @@ export default function AddQueueModal() {
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={hasErrors(errors) || !doctorName.trim() || isLoading}
             className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (

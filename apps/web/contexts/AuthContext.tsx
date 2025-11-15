@@ -5,6 +5,7 @@ import { useUI } from './UIContext';
 import type { User, AuthState } from '../types';
 import { UserRole } from '@/types/roles';
 import { login as loginApi, logout as logoutApi, getCurrentUser } from '@/services/api/authApiClient';
+import logger from '@/utils/logger';
 
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
@@ -104,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   }
                   return new TextDecoder('utf-8').decode(bytes);
                 } catch (e) {
-                  console.error('❌ Base64 decoding failed:', e);
+                  logger.error('❌ Base64 decoding failed:', e);
                   throw new Error('Failed to decode JWT payload');
                 }
               };
@@ -184,7 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
               return { success: true };
             } catch (e) {
-              console.warn('Failed to decode JWT:', e);
+              logger.warn('Failed to decode JWT:', e);
               // Still set user as authenticated even if decode fails
               setAuthState({
                 user: {
@@ -216,7 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Rich error log to avoid {} empty object in console (development only)
         if (process.env.NODE_ENV === 'development') {
           try {
-            console.error(`Login error (attempt ${attemptNumber + 1}/${RETRY_DELAYS.length + 1}):`, {
+            logger.error(`Login error (attempt ${attemptNumber + 1}/${RETRY_DELAYS.length + 1}):`, {
               raw: err,
               type: typeof err,
               keys: err ? Object.keys(err) : [],
@@ -327,7 +328,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       // Silently fail - user data will refresh on next page reload
       if (process.env.NODE_ENV === 'development') {
-        console.error('Failed to refresh user data:', err);
+        logger.error('Failed to refresh user data:', err);
       }
     }
   }, []); // No dependencies - uses functional setState to access current state

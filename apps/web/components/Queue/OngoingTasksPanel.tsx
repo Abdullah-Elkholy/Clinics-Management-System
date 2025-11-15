@@ -14,6 +14,7 @@ import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import { Patient } from '@/types';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
+import logger from '@/utils/logger';
 
 interface Session {
   id: string;
@@ -73,7 +74,7 @@ export default function OngoingTasksPanel() {
         // Dispatch event to notify other components
         window.dispatchEvent(new CustomEvent('ongoingTasksDataUpdated'));
       } catch (error) {
-        console.error('Failed to refetch ongoing tasks:', error);
+        logger.error('Failed to refetch ongoing tasks:', error);
       }
     };
 

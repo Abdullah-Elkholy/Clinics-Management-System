@@ -36,7 +36,6 @@ export const TrashCountdownBadge: React.FC<TrashCountdownBadgeProps> = ({
 
   const isExpired = daysRemaining === 0;
   const isWarning = daysRemaining > 0 && daysRemaining <= 7;
-  const isNormal = daysRemaining > 7;
 
   // Determine badge color based on days remaining
   let badgeClass = 'px-3 py-1 rounded-full text-sm font-medium';

@@ -9,24 +9,25 @@ import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
 import { messageApiClient, type TemplateDto } from '@/services/api/messageApiClient';
 import { templateDtoToModel } from '@/services/api/adapters';
+import logger from '@/utils/logger';
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
-import { useState, useEffect } from 'react';
-// Mock data removed - using API data instead
+import { useState, useEffect, useMemo, type FormEvent } from 'react';
+import type { MessageTemplate } from '@/types/messageTemplate';
+import type { ConditionOperator } from '@/types/messageCondition';
 
 export default function EditTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { selectedQueueId, updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions, refreshQueueData } = useQueue();
+  const { updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions, refreshQueueData } = useQueue();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
-  const [currentTemplate, setCurrentTemplate] = useState<any>(null);
+  const [currentTemplate, setCurrentTemplate] = useState<MessageTemplate | null>(null);
   const [showDefaultWarning, setShowDefaultWarning] = useState(false);
-  const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<any>(null);
-  const [touched, setTouched] = useState(false);
+  const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<MessageTemplate | null>(null);
+  const [hasConfirmedDefaultOverride, setHasConfirmedDefaultOverride] = useState(false);
 
   // Condition choice states - for building actual condition data
   const [selectedOperator, setSelectedOperator] = useState<'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT' | null>(null);
@@ -39,7 +40,7 @@ export default function EditTemplateModal() {
   const templateId = modalData?.templateId as string | undefined;
 
   const MAX_CONTENT_LENGTH = 1000;
-  const [freshTemplateData, setFreshTemplateData] = useState<any>(null);
+  const [freshTemplateData, setFreshTemplateData] = useState<MessageTemplate | null>(null);
 
   // Fetch fresh template data when modal opens
   useEffect(() => {
@@ -59,7 +60,7 @@ export default function EditTemplateModal() {
       } catch (err) {
         // If fresh data fetch fails, fall back to existing data
         if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to fetch fresh template data:', err);
+          logger.error('Failed to fetch fresh template data:', err);
         }
         setFreshTemplateData(null);
       }
@@ -83,47 +84,100 @@ export default function EditTemplateModal() {
       setCurrentTemplate(freshTemplate);
       setTitle(freshTemplate.title || '');
       setContent(freshTemplate.content || '');
-      // Find the condition for this template to get its condition ID
-      const templateCondition = messageConditions.find((c) => c.templateId === freshTemplate.id);
-      setSelectedConditionId(templateCondition?.id || null);
-      
-      // Set condition operator and values from the condition
-      if (templateCondition) {
-        setSelectedOperator(templateCondition.operator as any || null);
-        setSelectedValue(templateCondition.value);
-        setSelectedMinValue(templateCondition.minValue);
-        setSelectedMaxValue(templateCondition.maxValue);
-      }
-      setErrors({});
-      setTouched(false);
-    }
-  }, [isOpen, freshTemplate?.id, freshTemplate?.title, freshTemplate?.content, messageConditions]);
 
-  // Handle condition selection
-  const handleConditionChange = (conditionId: string | null) => {
-    // If selecting a different default condition, check if one already exists elsewhere
-    const currentTemplateCondition = messageConditions.find((c) => c.templateId === currentTemplate?.id);
-    if (conditionId && conditionId.startsWith('DEFAULT_') && currentTemplateCondition?.id !== conditionId) {
-      const existingDefaultCondition = messageConditions.find(
-        (c) => c.queueId === currentTemplate?.queueId && 
-               c.templateId !== currentTemplate?.id &&
-               c.id?.startsWith('DEFAULT_')
-      );
-      if (existingDefaultCondition) {
-        const existingTemplate = messageTemplates.find((t) => t.id === existingDefaultCondition.templateId);
-        if (existingTemplate) {
-          setExistingDefaultTemplate(existingTemplate);
-          setShowDefaultWarning(true);
-          return;
-        }
+      const templateConditionForTemplate =
+        messageConditions.find((condition) => condition.templateId === freshTemplate.id) ??
+        freshTemplate.condition ??
+        null;
+
+      if (templateConditionForTemplate) {
+        const nextOperator =
+          templateConditionForTemplate.operator === 'UNCONDITIONED'
+            ? null
+            : (templateConditionForTemplate.operator as 'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT');
+        setSelectedOperator(nextOperator);
+        setSelectedValue(templateConditionForTemplate.value);
+        setSelectedMinValue(templateConditionForTemplate.minValue);
+        setSelectedMaxValue(templateConditionForTemplate.maxValue);
+      } else {
+        setSelectedOperator(null);
+        setSelectedValue(undefined);
+        setSelectedMinValue(undefined);
+        setSelectedMaxValue(undefined);
       }
+
+      setErrors({});
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+      setHasConfirmedDefaultOverride(false);
     }
-    setSelectedConditionId(conditionId);
-  };
+  }, [isOpen, freshTemplate, messageConditions]);
+
+  const templateCondition = useMemo(() => {
+    if (!currentTemplate) return null;
+    return (
+      messageConditions.find((condition) => condition.templateId === currentTemplate.id) ??
+      currentTemplate.condition ??
+      null
+    );
+  }, [currentTemplate, messageConditions]);
+
+  useEffect(() => {
+    if (!currentTemplate?.queueId) {
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+      setHasConfirmedDefaultOverride(false);
+      return;
+    }
+
+    if (selectedOperator !== 'DEFAULT') {
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+      setHasConfirmedDefaultOverride(false);
+      return;
+    }
+
+    if (hasConfirmedDefaultOverride) {
+      return;
+    }
+
+    const queueIdStr = String(currentTemplate.queueId);
+    const existingDefaultCondition = messageConditions.find(
+      (condition) =>
+        String(condition.queueId) === queueIdStr &&
+        condition.operator === 'DEFAULT' &&
+        condition.templateId !== currentTemplate.id
+    );
+
+    if (!existingDefaultCondition) {
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+      return;
+    }
+
+    const defaultTemplate = messageTemplates.find(
+      (template) => template.id === existingDefaultCondition.templateId
+    );
+
+    if (defaultTemplate) {
+      setExistingDefaultTemplate(defaultTemplate);
+      setShowDefaultWarning(true);
+    } else {
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+    }
+  }, [
+    selectedOperator,
+    currentTemplate?.queueId,
+    currentTemplate?.id,
+    hasConfirmedDefaultOverride,
+    messageConditions,
+    messageTemplates,
+  ]);
 
   const confirmDefaultOverride = () => {
-    setSelectedConditionId(selectedConditionId);
     setShowDefaultWarning(false);
+    setHasConfirmedDefaultOverride(true);
   };
 
   const insertVariable = (variable: string) => {
@@ -167,13 +221,6 @@ export default function EditTemplateModal() {
     }
   };
 
-  /**
-   * Validate condition value - must be >= 1
-   */
-  const validateConditionValue = (value: number | undefined): boolean => {
-    return value !== undefined && value > 0;
-  };
-
   const handleFieldChange = (fieldName: string, value: string) => {
     if (fieldName === 'title') {
       setTitle(value);
@@ -185,7 +232,6 @@ export default function EditTemplateModal() {
         return;
       }
     }
-    setTouched(true);
 
     // Validate on change for better UX
     if (errors[fieldName]) {
@@ -194,7 +240,6 @@ export default function EditTemplateModal() {
   };
 
   const handleFieldBlur = (fieldName: string) => {
-    setTouched(true);
     if (fieldName === 'title') {
       validateField(fieldName, title);
     } else if (fieldName === 'content') {
@@ -202,19 +247,20 @@ export default function EditTemplateModal() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setTouched(true);
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
 
     // Validate all fields
     const newErrors: ValidationError = {};
 
-    if (validateName(title, 'عنوان القالب')) {
-      newErrors.title = validateName(title, 'عنوان القالب') || '';
+    const titleError = validateName(title, 'عنوان القالب');
+    if (titleError) {
+      newErrors.title = titleError;
     }
 
-    if (validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH)) {
-      newErrors.content = validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH) || '';
+    const contentError = validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH);
+    if (contentError) {
+      newErrors.content = contentError;
     }
 
     // Validate condition if operator is selected
@@ -229,10 +275,8 @@ export default function EditTemplateModal() {
         if (selectedMinValue && selectedMaxValue && selectedMinValue >= selectedMaxValue) {
           newErrors.range = 'الحد الأدنى يجب أن يكون أقل من الحد الأقصى';
         }
-      } else {
-        if (!selectedValue || selectedValue <= 0) {
-          newErrors.value = 'القيمة مطلوبة ويجب أن تكون > 0';
-        }
+      } else if (!selectedValue || selectedValue <= 0) {
+        newErrors.value = 'القيمة مطلوبة ويجب أن تكون > 0';
       }
     }
 
@@ -263,6 +307,19 @@ export default function EditTemplateModal() {
       return;
     }
 
+    const conditionOperator = (
+      selectedOperator ?? templateCondition?.operator ?? 'UNCONDITIONED'
+    ) as ConditionOperator;
+
+    const normalizedValue =
+      conditionOperator === 'EQUAL' ||
+      conditionOperator === 'GREATER' ||
+      conditionOperator === 'LESS'
+        ? selectedValue
+        : undefined;
+    const normalizedMinValue = conditionOperator === 'RANGE' ? selectedMinValue : undefined;
+    const normalizedMaxValue = conditionOperator === 'RANGE' ? selectedMaxValue : undefined;
+
     try {
       setIsLoading(true);
 
@@ -272,20 +329,30 @@ export default function EditTemplateModal() {
         content,
       });
 
-      // Update condition if operator or values changed
-      const templateCondition = messageConditions.find((c) => c.templateId === currentTemplate.id);
-      if (templateCondition && selectedOperator) {
+      // Call API to update condition if it exists, otherwise create a new one
+      if (templateCondition) {
         const conditionIdNum = Number(templateCondition.id);
         if (!isNaN(conditionIdNum)) {
           await messageApiClient.updateCondition(conditionIdNum, {
-            operator: selectedOperator,
-            value: (selectedOperator === 'EQUAL' || selectedOperator === 'GREATER' || selectedOperator === 'LESS') 
-              ? selectedValue 
-              : undefined,
-            minValue: selectedOperator === 'RANGE' ? selectedMinValue : undefined,
-            maxValue: selectedOperator === 'RANGE' ? selectedMaxValue : undefined,
+            operator: conditionOperator,
+            value: normalizedValue,
+            minValue: normalizedMinValue,
+            maxValue: normalizedMaxValue,
           });
         }
+      } else {
+        await messageApiClient.createCondition({
+          templateId: templateBackendId,
+          queueId: queueIdNum,
+          operator: conditionOperator,
+          value: normalizedValue,
+          minValue: normalizedMinValue,
+          maxValue: normalizedMaxValue,
+        });
+      }
+
+      if (conditionOperator === 'DEFAULT') {
+        await messageApiClient.setTemplateAsDefault(templateBackendId);
       }
 
       addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
@@ -300,23 +367,50 @@ export default function EditTemplateModal() {
         updateMessageTemplate(currentTemplate.id, {
           title,
           content,
-          updatedAt: new Date(), // Will be populated from backend response after API call
+          updatedAt: new Date(), // Will be overwritten by backend value
         });
+
+        if (templateCondition) {
+          updateMessageCondition(templateCondition.id, {
+            operator: conditionOperator,
+            value: normalizedValue,
+            minValue: normalizedMinValue,
+            maxValue: normalizedMaxValue,
+            template: content,
+          });
+        } else {
+          const queueIdStr = String(currentTemplate.queueId);
+          const priority =
+            messageConditions.filter((condition) => String(condition.queueId) === queueIdStr).length + 1;
+
+          await addMessageCondition({
+            queueId: queueIdStr,
+            templateId: currentTemplate.id,
+            name: `${title} شرط`,
+            priority,
+            enabled: true,
+            operator: conditionOperator,
+            value: normalizedValue,
+            minValue: normalizedMinValue,
+            maxValue: normalizedMaxValue,
+            template: content,
+          });
+        }
       }
-      
       // Clear form fields after successful update
       setTitle('');
       setContent('');
       setErrors({});
-      setTouched(false);
-      setSelectedConditionId(null);
       setSelectedOperator(null);
       setSelectedValue(undefined);
       setSelectedMinValue(undefined);
       setSelectedMaxValue(undefined);
       setCurrentTemplate(null);
       setFreshTemplateData(null);
-      
+      setExistingDefaultTemplate(null);
+      setShowDefaultWarning(false);
+      setHasConfirmedDefaultOverride(false);
+
       closeModal('editTemplate');
       
       // Trigger a custom event to notify other components to refetch
@@ -325,6 +419,7 @@ export default function EditTemplateModal() {
         window.dispatchEvent(new CustomEvent('templateDataUpdated'));
       }, 100);
     } catch (error) {
+      logger.error('Failed to update template:', error);
       addToast('حدث خطأ أثناء تحديث القالب', 'error');
     } finally {
       setIsLoading(false);
@@ -344,15 +439,16 @@ export default function EditTemplateModal() {
         setTitle('');
         setContent('');
         setErrors({});
-        setTouched(false);
         setIsLoading(false);
-        setSelectedConditionId(null);
         setSelectedOperator(null);
         setSelectedValue(undefined);
         setSelectedMinValue(undefined);
         setSelectedMaxValue(undefined);
         setCurrentTemplate(null);
         setFreshTemplateData(null);
+        setExistingDefaultTemplate(null);
+        setShowDefaultWarning(false);
+        setHasConfirmedDefaultOverride(false);
       }}
       title="تحرير قالب رسالة"
       size="lg"
@@ -542,15 +638,16 @@ export default function EditTemplateModal() {
               setTitle('');
               setContent('');
               setErrors({});
-              setTouched(false);
               setIsLoading(false);
-              setSelectedConditionId(null);
               setSelectedOperator(null);
               setSelectedValue(undefined);
               setSelectedMinValue(undefined);
               setSelectedMaxValue(undefined);
               setCurrentTemplate(null);
               setFreshTemplateData(null);
+              setExistingDefaultTemplate(null);
+              setShowDefaultWarning(false);
+              setHasConfirmedDefaultOverride(false);
             }}
             disabled={isLoading}
             className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -586,8 +683,24 @@ export default function EditTemplateModal() {
         onConfirm={confirmDefaultOverride}
         onCancel={() => {
           setShowDefaultWarning(false);
-          setSelectedConditionId(currentTemplate?.conditionId || null);
           setExistingDefaultTemplate(null);
+          setHasConfirmedDefaultOverride(false);
+
+          if (templateCondition) {
+            const revertOperator =
+              templateCondition.operator === 'UNCONDITIONED'
+                ? null
+                : (templateCondition.operator as 'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT');
+            setSelectedOperator(revertOperator);
+            setSelectedValue(templateCondition.value);
+            setSelectedMinValue(templateCondition.minValue);
+            setSelectedMaxValue(templateCondition.maxValue);
+          } else {
+            setSelectedOperator(null);
+            setSelectedValue(undefined);
+            setSelectedMinValue(undefined);
+            setSelectedMaxValue(undefined);
+          }
         }}
       />
     </Modal>

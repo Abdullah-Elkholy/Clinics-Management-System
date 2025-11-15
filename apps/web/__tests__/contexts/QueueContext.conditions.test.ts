@@ -28,7 +28,7 @@
 import { renderHook, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import React from 'react';
-import { QueueProvider } from '@/contexts/QueueContext';
+import { QueueProvider, QueueContext } from '@/contexts/QueueContext';
 import type { MessageCondition } from '@/types';
 import * as messageApiClient from '@/services/api/messageApiClient';
 
@@ -52,10 +52,7 @@ jest.mock('@/hooks/useToast', () => ({
 }));
 
 // Mock useQueue hook to access context in tests
-const useQueue = () => {
-  const context = React.useContext(require('@/contexts/QueueContext').QueueContext);
-  return context;
-};
+const useQueue = () => React.useContext(QueueContext);
 
 describe('QueueContext: Condition CRUD Operations', () => {
   let mockApiClient: jest.Mocked<typeof messageApiClient>;

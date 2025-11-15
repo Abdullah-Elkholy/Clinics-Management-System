@@ -6,9 +6,11 @@
  * Supports pagination, restore actions, and countdown badges
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import TrashCountdownBadge from './TrashCountdownBadge';
 import { formatDeletionDate, getDaysRemainingInTrash, getRestoreErrorMessage, parseRestoreError } from '@/utils/trashUtils';
+
+type TrashItemPrimitive = string | number | boolean | null | undefined | Date;
 
 interface TrashItem {
   id: string | number;
@@ -16,7 +18,7 @@ interface TrashItem {
   title?: string;
   deletedAt: string;
   deletedBy?: number | string;
-  [key: string]: any;
+  [key: string]: TrashItemPrimitive;
 }
 
 interface TrashTabProps {
@@ -127,6 +129,19 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   const displayColumns = columns || getDefaultColumns();
   const totalPages = Math.ceil(totalCount / pageSize);
   const isRestorable = (item: TrashItem) => getDaysRemainingInTrash(item.deletedAt) > 0;
+  const getColumnValue = (item: TrashItem, key: string): string => {
+    const value = item[key];
+
+    if (value === null || typeof value === 'undefined') {
+      return '—';
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    return String(value);
+  };
 
   const handleRestore = async (id: string | number) => {
     setRestoring((prev) => new Set([...prev, id]));
@@ -258,7 +273,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                     )}
                     {displayColumns.map((col) => (
                       <td key={col.key} className="px-4 py-3 text-gray-900">
-                        {col.render ? col.render(item) : item[col.key]?.toString() || '—'}
+                        {col.render ? col.render(item) : getColumnValue(item, col.key)}
                       </td>
                     ))}
                     <td className="px-4 py-3 text-right">
