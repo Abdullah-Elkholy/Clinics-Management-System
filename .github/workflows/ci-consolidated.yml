@@ -44,11 +44,19 @@ jobs:
       run: |
         dotnet test `
           tests/UnitTests/UnitTests.csproj `
+          --configuration Debug `
+          --no-build `
+          --filter "Category!=ExpectedToFail" `
+          --logger "trx;LogFileName=gating-unit-results.trx" `
+          --logger "console;verbosity=normal" `
+          /p:CollectCoverage=false
+        
+        dotnet test `
           tests/IntegrationTests/IntegrationTests.csproj `
           --configuration Debug `
           --no-build `
           --filter "Category!=ExpectedToFail" `
-          --logger "trx;LogFileName=gating-results.trx" `
+          --logger "trx;LogFileName=gating-integration-results.trx" `
           --logger "console;verbosity=normal" `
           /p:CollectCoverage=false
       env:
@@ -59,13 +67,22 @@ jobs:
       run: |
         dotnet test `
           tests/UnitTests/UnitTests.csproj `
+          --configuration Debug `
+          --no-build `
+          --logger "trx;LogFileName=full-unit-results.trx" `
+          --logger "console;verbosity=minimal" `
+          /p:CollectCoverage=true `
+          /p:CoverletOutput=./TestResults/UnitTests/ `
+          /p:CoverletOutputFormat=cobertura
+        
+        dotnet test `
           tests/IntegrationTests/IntegrationTests.csproj `
           --configuration Debug `
           --no-build `
-          --logger "trx;LogFileName=full-results.trx" `
+          --logger "trx;LogFileName=full-integration-results.trx" `
           --logger "console;verbosity=minimal" `
           /p:CollectCoverage=true `
-          /p:CoverageFormat=cobertura `
+          /p:CoverletOutput=./TestResults/IntegrationTests/ `
           /p:CoverletOutputFormat=cobertura
       env:
         ASPNETCORE_ENVIRONMENT: Test
@@ -78,14 +95,15 @@ jobs:
         name: backend-test-results
         path: |
           **/TestResults/
-          coverage.cobertura.xml
+          **/TestResults/**/coverage.cobertura.xml
         retention-days: 30
     
     - name: Publish Coverage to Codecov
       if: always()
       uses: codecov/codecov-action@v4
       with:
-        files: ./coverage.cobertura.xml
+        files: ./tests/UnitTests/TestResults/UnitTests/coverage.cobertura.xml,./tests/IntegrationTests/TestResults/IntegrationTests/coverage.cobertura.xml
+        token: ${{ secrets.CODECOV_TOKEN }}
         flags: backend
         name: backend-coverage
         fail_ci_if_error: false
