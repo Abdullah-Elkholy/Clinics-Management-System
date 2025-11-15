@@ -8,16 +8,16 @@
 
 describe('PatientForm Validation', () => {
   // Helper: Validate patient form field
-  const validatePatientField = (field: string, value: any): string | null => {
+  const validatePatientField = (field: string, value: unknown): string | null => {
     switch (field) {
       case 'fullName':
-        if (!value || value.trim().length === 0) return 'Full name is required';
+        if (typeof value !== 'string' || !value || value.trim().length === 0) return 'Full name is required';
         if (value.length < 2) return 'Full name must be at least 2 characters';
         if (value.length > 100) return 'Full name must not exceed 100 characters';
         return null;
 
       case 'phoneNumber':
-        if (!value || value.trim().length === 0) return 'Phone number is required';
+        if (typeof value !== 'string' || !value || value.trim().length === 0) return 'Phone number is required';
         if (!/^\+\d{10,}$/.test(value.replace(/[\s\-()]/g, ''))) {
           return 'Phone number must start with + and contain at least 10 digits';
         }
@@ -96,7 +96,7 @@ describe('PatientForm Validation', () => {
 
     it('should accept phone with spaces and dashes', () => {
       // After normalization/cleanup
-      const cleanPhone = '+20 123 456 7890'.replace(/[\s\-]/g, '');
+      const cleanPhone = '+20 123 456 7890'.replace(/[\s-]/g, '');
       const error = validatePatientField('phoneNumber', cleanPhone);
       expect(error).toBeNull();
     });

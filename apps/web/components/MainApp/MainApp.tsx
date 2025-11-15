@@ -20,7 +20,7 @@ import * as Modals from '../Modals';
 function MainAppContent() {
   const { selectedQueueId } = useQueue();
   const { currentPanel } = useUI();
-  const { isCollapsed, isHydrated } = useSidebarCollapse();
+  const { isCollapsed } = useSidebarCollapse();
   const [customSidebarWidth, setCustomSidebarWidth] = React.useState<number | null>(null);
 
   // Listen for sidebar custom width changes and respond to collapse state

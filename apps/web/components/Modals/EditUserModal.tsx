@@ -1,12 +1,12 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, validateUsername, ValidationError } from '@/utils/validation';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { User } from '@/services/userManagementService';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
 import logger from '@/utils/logger';
 
 interface EditUserModalProps {

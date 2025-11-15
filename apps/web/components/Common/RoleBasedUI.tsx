@@ -82,18 +82,22 @@ interface RoleSwitchProps {
 }
 
 export function RoleSwitch({ userRole, children }: RoleSwitchProps) {
-  return <>{React.Children.toArray(children).find((child: any) => {
-    if (!child) return false;
+  return <>{React.Children.toArray(children).find((child) => {
+    const element = child as React.ReactElement<{ role?: UserRole }>;
+    if (!element) return false;
     
     // Check if it's a RoleCase
-    if (child.type === RoleCase) {
-      return child.props.role === userRole;
+    if (element.type === RoleCase) {
+      return element.props.role === userRole;
     }
     
     // Check if it's a RoleDefault (always matches if no RoleCase matched)
-    if (child.type === RoleDefault) {
+    if (element.type === RoleDefault) {
       const hasMatchingCase = React.Children.toArray(children).some(
-        (sibling: any) => sibling?.type === RoleCase && sibling.props.role === userRole
+        (sibling) => {
+          const siblingElement = sibling as React.ReactElement<{ role?: UserRole }>;
+          return siblingElement?.type === RoleCase && siblingElement.props.role === userRole;
+        }
       );
       return !hasMatchingCase;
     }

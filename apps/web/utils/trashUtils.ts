@@ -75,22 +75,23 @@ export function parseRestoreError(error: unknown): RestoreError {
   }
 
   const apiError = normalizeApiError(error);
-  const { statusCode } = apiError;
-  let { message } = apiError;
+  const { statusCode, message } = apiError;
 
   // Parse error code from message or headers
   let errorType = RestoreErrorType.UNKNOWN;
 
   if (message.includes('restore_window_expired')) {
     errorType = RestoreErrorType.RESTORE_WINDOW_EXPIRED;
-  } else if (message.includes('quota_insufficient') || statusCode === 409) {
+  } else if (message.includes('quota_insufficient')) {
     errorType = RestoreErrorType.QUOTA_INSUFFICIENT;
   } else if (statusCode === 404) {
     errorType = RestoreErrorType.NOT_FOUND;
   } else if (statusCode === 403) {
     errorType = RestoreErrorType.PERMISSION_DENIED;
   } else if (statusCode === 409) {
-    errorType = RestoreErrorType.CONFLICT;
+    errorType = message.includes('quota')
+      ? RestoreErrorType.QUOTA_INSUFFICIENT
+      : RestoreErrorType.CONFLICT;
   }
 
   // Extract metadata if available

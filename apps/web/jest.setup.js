@@ -1,8 +1,8 @@
 import '@testing-library/jest-dom';
 
-// MSW imports deferred until testing phase (msw not yet installed)
-// import { server } from './mocks/server'
-// import { resetMockData } from './mocks/handlers'
+// MSW imports for mock network layer
+import { server } from './src/test/msw/server';
+import { resetMockData } from './src/test/msw/handlers';
 import { cleanup } from '@testing-library/react';
 import { QueryClient } from '@tanstack/react-query';
 

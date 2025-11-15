@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,7 +8,6 @@ import { validateName, validateUsername, ValidationError } from '@/utils/validat
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { User } from '@/services/userManagementService';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
 import logger from '@/utils/logger';
 
 interface EditAccountModalProps {

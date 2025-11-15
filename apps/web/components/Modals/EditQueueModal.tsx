@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
@@ -7,7 +8,6 @@ import { validateName, ValidationError } from '@/utils/validation';
 import { queuesApiClient, type QueueDto } from '@/services/api/queuesApiClient';
 import { queueDtoToModel } from '@/services/api/adapters';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
 import logger from '@/utils/logger';
 
 export default function EditQueueModal() {

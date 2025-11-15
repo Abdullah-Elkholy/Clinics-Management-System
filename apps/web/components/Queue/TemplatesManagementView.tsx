@@ -49,7 +49,7 @@ export default function TemplatesManagementView() {
       setIsLoadingTrash(true);
       setTrashError('');
       try {
-        const response = await messageApiClient.getTrashTemplates(Number(selectedQueueId), {
+        const response = await messageApiClient.getTrashTemplates({
           pageNumber: page,
           pageSize,
         });

@@ -38,7 +38,7 @@ export default function ToastContainer() {
     return colors[type] || colors.info;
   };
 
-  const handleDebugClick = (toast: any) => {
+  const handleDebugClick = (toast: { id: string; debugData?: unknown }) => {
     const isExpanded = expandedToastId === toast.id;
     setExpandedToastId(isExpanded ? null : toast.id);
     if (isDebugEnabled && toast.debugData && process.env.NODE_ENV === 'development') {

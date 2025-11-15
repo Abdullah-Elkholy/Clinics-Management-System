@@ -1,11 +1,11 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { COUNTRY_CODES } from '@/constants';
 import { validateCountryCode, validateName, validatePhone, ValidationError, MAX_PHONE_DIGITS } from '@/utils/validation';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
 import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
@@ -219,7 +219,6 @@ export default function EditPatientModal() {
     if (Object.keys(updatePayload).length === 0) {
       addToast('لم يتم تغيير أي بيانات', 'info');
       closeModal('editPatient');
-      import logger from '@/utils/logger';
       return;
     }
 
@@ -272,8 +271,6 @@ export default function EditPatientModal() {
 
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0;
-
-              logger.error('Failed to fetch fresh patient data:', err);
 
   return (
     <Modal

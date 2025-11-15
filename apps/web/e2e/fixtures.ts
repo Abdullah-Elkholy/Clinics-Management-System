@@ -12,7 +12,7 @@ export interface TestFixtures {
 }
 
 export const test = base.extend<TestFixtures>({
-  authenticatedPage: async ({ page }, use) => {
+  authenticatedPage: async ({ page }, provideAuthenticatedPage) => {
     // Navigate to login and wait for full page load
     await page.goto('/login', { waitUntil: 'networkidle' });
     
@@ -71,7 +71,7 @@ export const test = base.extend<TestFixtures>({
     logger.info(`[E2E] Authenticated page ready. Final URL: ${page.url()}`);
 
     // Provide authenticated page to test
-    await use(page);
+    await provideAuthenticatedPage(page);
   },
 });
 
@@ -143,9 +143,9 @@ export const E2EActions = {
    * @deprecated - Requires full UI implementation (Phase 2)
    */
   async createQueue(
-    page: Page,
-    name: string,
-    moderatorId?: string,
+    _page: Page,
+    _name: string,
+    _moderatorId?: string,
   ) {
     throw new Error('createQueue not implemented - UI not yet built. Phase 2 task.');
   },
@@ -155,10 +155,10 @@ export const E2EActions = {
    * @deprecated - Requires full UI implementation (Phase 2)
    */
   async createTemplate(
-    page: Page,
-    name: string,
-    queueId: string,
-    conditions?: Array<{ operator: string; value?: string; min?: number; max?: number }>
+    _page: Page,
+    _name: string,
+    _queueId: string,
+    _conditions?: Array<{ operator: string; value?: string; min?: number; max?: number }>
   ) {
     throw new Error('createTemplate not implemented - UI not yet built. Phase 2 task.');
   },
@@ -168,10 +168,10 @@ export const E2EActions = {
    * @deprecated - Requires full UI implementation (Phase 2)
    */
   async createPatient(
-    page: Page,
-    name: string,
-    email: string,
-    conditions?: Record<string, string>
+    _page: Page,
+    _name: string,
+    _email: string,
+    _conditions?: Record<string, string>
   ) {
     throw new Error('createPatient not implemented - UI not yet built. Phase 2 task.');
   },
@@ -180,7 +180,7 @@ export const E2EActions = {
    * Placeholder for future: Expand patient row
    * @deprecated - Requires full UI implementation (Phase 2)
    */
-  async expandPatientRow(page: Page, patientName: string) {
+  async expandPatientRow(_page: Page, _patientName: string) {
     throw new Error('expandPatientRow not implemented - UI not yet built. Phase 2 task.');
   },
 
@@ -188,7 +188,7 @@ export const E2EActions = {
    * Placeholder for future: Validate operator overlay
    * @deprecated - Requires full UI implementation (Phase 2)
    */
-  async validateOperatorOverlay(page: Page, operatorType: string) {
+  async validateOperatorOverlay(_page: Page, _operatorType: string) {
     throw new Error('validateOperatorOverlay not implemented - UI not yet built. Phase 2 task.');
   },
 
@@ -196,7 +196,7 @@ export const E2EActions = {
    * Placeholder for future: Toast verification
    * @deprecated - Requires full UI implementation (Phase 2)
    */
-  async expectToast(page: Page, message: string, type: 'success' | 'error' | 'info' = 'success') {
+  async expectToast(_page: Page, _message: string, _type: 'success' | 'error' | 'info' = 'success') {
     throw new Error('expectToast not implemented - UI not yet built. Phase 2 task.');
   },
 };

@@ -21,8 +21,8 @@ describe('QuotaButton Component', () => {
   // Helper: Button state based on quota
   const getButtonState = (quotaRemaining: number, isLoading: boolean) => {
     const enabled = isButtonEnabled(quotaRemaining, isLoading);
-    let label = enabled ? 'Send Message' : 'Quota Exhausted';
-    let tooltip =
+    const label = enabled ? 'Send Message' : 'Quota Exhausted';
+    const tooltip =
       quotaRemaining > 0
         ? `${quotaRemaining} messages remaining`
         : 'Monthly quota exhausted';

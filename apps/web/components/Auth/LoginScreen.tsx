@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { TEST_CREDENTIALS } from '../../constants';
 import logger from '@/utils/logger';
@@ -98,9 +99,9 @@ export default function LoginScreen() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="أدخل كلمة المرور"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              onKeyPress={(e) => {
+              onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  handleSubmit(e as any);
+                  handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>);
                 }
               }}
             />

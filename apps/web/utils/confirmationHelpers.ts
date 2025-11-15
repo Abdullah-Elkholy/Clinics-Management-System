@@ -49,3 +49,29 @@ export function createActionConfirmation(action: string, isDangerous = false): C
     isDangerous,
   };
 }
+
+/**
+ * Creates a confirmation message for restoration
+ */
+export function createRestoreConfirmation(itemName: string, isDangerous = false): ConfirmOptions {
+  return {
+    title: 'تأكيد الاستعادة',
+    message: `هل أنت متأكد من استعادة ${itemName}؟`,
+    confirmText: 'استعادة',
+    cancelText: 'إلغاء',
+    isDangerous,
+  };
+}
+
+/**
+ * Creates a confirmation message for bulk restoration
+ */
+export function createBulkRestoreConfirmation(count: number, itemType: string, isDangerous = false): ConfirmOptions {
+  return {
+    title: 'تأكيد الاستعادة',
+    message: `هل أنت متأكد من استعادة ${count} ${itemType}؟`,
+    confirmText: 'استعادة الجميع',
+    cancelText: 'إلغاء',
+    isDangerous,
+  };
+}

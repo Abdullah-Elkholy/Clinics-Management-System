@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect, useState, type FC } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UIProvider } from '@/contexts/UIContext';
@@ -6,11 +6,11 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { QueueProvider, useQueue } from '@/contexts/QueueContext';
 import queuesApiClient from '@/services/api/queuesApiClient';
 
-const Harness: React.FC<{ remount: number; onRemount: () => void }> = ({ remount, onRemount }) => {
+const Harness: FC<{ remount: number; onRemount: () => void }> = ({ remount, onRemount }) => {
   const { login } = useAuth();
   const { queues } = useQueue();
 
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       await login('tester', 'password');
     })();
@@ -39,8 +39,8 @@ const Harness: React.FC<{ remount: number; onRemount: () => void }> = ({ remount
   );
 };
 
-const Shell: React.FC = () => {
-  const [key, setKey] = React.useState(0);
+const Shell: FC = () => {
+  const [key, setKey] = useState(0);
   return (
     <UIProvider>
       <AuthProvider>

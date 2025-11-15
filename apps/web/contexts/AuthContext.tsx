@@ -305,9 +305,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const refreshUser = useCallback(async () => {
     try {
-      const response = await getCurrentUser();
-      // getCurrentUser returns { success: true, data: { Id, Username, FirstName, LastName, Role, RoleDisplayName } }
-      const freshUserData = response?.data || response;
+      const freshUserData = await getCurrentUser();
       if (freshUserData) {
         // Update user data while preserving authentication state
         setAuthState((prev) => {
@@ -317,9 +315,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...prev,
             user: {
               ...prev.user,
-              firstName: freshUserData.FirstName || freshUserData.firstName || prev.user.firstName,
-              lastName: freshUserData.LastName || freshUserData.lastName || prev.user.lastName,
-              username: freshUserData.Username || freshUserData.username || prev.user.username,
+              firstName: freshUserData.firstName || prev.user.firstName,
+              lastName: freshUserData.lastName || prev.user.lastName,
+              username: freshUserData.username || prev.user.username,
               // Preserve other fields that might not be in getCurrentUser response
             },
           };

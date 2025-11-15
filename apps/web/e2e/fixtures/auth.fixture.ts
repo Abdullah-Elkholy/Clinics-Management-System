@@ -1,9 +1,9 @@
-import { test as base, expect, Page } from '@playwright/test';
+import { test as base, Page } from '@playwright/test';
 
 // Authenticated test context that logs into the app once per test
 // Phase 2: Replace selectors/credentials with real values or API-based login
 export const test = base.extend<{ authenticatedPage: Page }>({
-  authenticatedPage: async ({ page }, use) => {
+  authenticatedPage: async ({ page }, provideAuthenticatedPage) => {
     // Read baseURL from Playwright config
     await page.goto('/login', { waitUntil: 'domcontentloaded' });
 
@@ -33,7 +33,7 @@ export const test = base.extend<{ authenticatedPage: Page }>({
       // Keep going; some flows may keep user on /login in test env
     }
 
-    await use(page);
+    await provideAuthenticatedPage(page);
   },
 });
 

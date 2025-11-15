@@ -29,11 +29,10 @@
  * - Search filters moderators
  */
 
-import { renderHook, act } from '@testing-library/react';
-import React from 'react';
-import { useQueue } from '@/contexts/QueueContext';
-import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
-import { groupQueuesByModerator } from '@/utils/moderatorAggregation';
+import { renderHook as _renderHook, act as _act } from '@testing-library/react';
+import { useQueue as _useQueue } from '@/contexts/QueueContext';
+import type { ModeratorWithStats as _ModeratorWithStats } from '@/utils/moderatorAggregation';
+import { groupQueuesByModerator as _groupQueuesByModerator } from '@/utils/moderatorAggregation';
 
 jest.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({

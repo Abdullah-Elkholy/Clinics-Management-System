@@ -129,7 +129,7 @@ if (typeof globalWithPolyfills.File === 'undefined') {
 
     globalWithPolyfills.File = MockFile as unknown as FileCtor;
   } else {
-    function MockFileFallback(
+    const MockFileFallback = function (
       this: unknown,
       parts: BlobPart[] = [],
       filename = 'mock-file',
@@ -160,7 +160,7 @@ if (typeof globalWithPolyfills.File === 'undefined') {
       };
 
       return fileLike as unknown as File;
-    }
+    };
 
     globalWithPolyfills.File = MockFileFallback as unknown as FileCtor;
   }

@@ -1,3 +1,4 @@
+import type { User } from '@/types';
 /**
  * Authentication API Client
  * Handles login and authentication-related API calls
@@ -21,8 +22,8 @@ export interface LoginResponse {
 
 export class ApiError extends Error {
   statusCode: number;
-  details?: any;
-  constructor(message: string, statusCode: number, details?: any) {
+  details?: unknown;
+  constructor(message: string, statusCode: number, details?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.statusCode = statusCode;
@@ -65,7 +66,7 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
     body: JSON.stringify(credentials),
   });
 
-  let data: any;
+  let data: unknown;
   const contentType = response.headers.get('content-type');
   if (contentType?.includes('application/json')) {
     data = await response.json();
@@ -74,7 +75,7 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
   }
 
   if (!response.ok) {
-    const message = (typeof data === 'string' ? data : (data?.errors?.[0]?.message || data?.message)) || response.statusText || 'Login failed';
+    const message = (typeof data === 'string' ? data : ((data as Record<string, unknown>)?.errors as Array<{message: string}>)?.[0]?.message || (data as Record<string, unknown>)?.message as string) || response.statusText || 'Login failed';
     throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
   }
 
@@ -84,12 +85,12 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
 /**
  * Get current authenticated user information
  */
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<User> {
   const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}/auth/me`;
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
@@ -101,7 +102,7 @@ export async function getCurrentUser() {
     headers,
   });
 
-  let data: any;
+  let data: unknown;
   const contentType = response.headers.get('content-type');
   if (contentType?.includes('application/json')) {
     data = await response.json();
@@ -110,11 +111,11 @@ export async function getCurrentUser() {
   }
 
   if (!response.ok) {
-    const message = (typeof data === 'string' ? data : data?.message) || response.statusText || 'Failed to get current user';
+    const message = (typeof data === 'string' ? data : (data as Record<string, unknown>)?.message as string) || response.statusText || 'Failed to get current user';
     throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
   }
 
-  return data;
+  return data as User;
 }
 
 /**

@@ -1,14 +1,14 @@
-import React, { useEffect } from 'react';
+import { useEffect, type FC } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { UIProvider, useUI } from '@/contexts/UIContext';
+import { UIProvider } from '@/contexts/UIContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ModalProvider, useModal } from '@/contexts/ModalContext';
 import { QueueProvider, useQueue } from '@/contexts/QueueContext';
 import AddPatientModal from '@/components/Modals/AddPatientModal';
 
 // Harness to render the app tree and control modal/queue selection
-const Harness: React.FC = () => {
+const Harness: FC = () => {
   const { login } = useAuth();
   const { openModal } = useModal();
   const { setSelectedQueueId, patients } = useQueue();
@@ -28,7 +28,7 @@ const Harness: React.FC = () => {
   );
 };
 
-const AppTree: React.FC = () => (
+const AppTree: FC = () => (
   <UIProvider>
     <AuthProvider>
       <ModalProvider>

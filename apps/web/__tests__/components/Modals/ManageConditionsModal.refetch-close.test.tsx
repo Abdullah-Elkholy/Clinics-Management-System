@@ -27,8 +27,8 @@ jest.mock('@/contexts/QueueContext', () => ({
     queues: [{ id: '1', doctorName: 'د. أحمد' }],
     selectedQueueId: '1',
     messageTemplates: [
-      { id: '101', queueId: '1', title: 'قالب نشط', content: 'x', isActive: true, variables: [], createdAt: new Date(), createdBy: 'u', condition: { operator: 'EQUAL' } as any },
-      { id: '102', queueId: '1', title: 'قالب بدون شرط', content: 'y', isActive: true, variables: [], createdAt: new Date(), createdBy: 'u', condition: { operator: 'UNCONDITIONED' } as any },
+      { id: '101', queueId: '1', title: 'قالب نشط', content: 'x', isActive: true, variables: [], createdAt: new Date(), createdBy: 'u', condition: { operator: 'EQUAL', id: '201', queueId: '1', templateId: '101', enabled: true, priority: 0, template: '', createdAt: new Date() } },
+      { id: '102', queueId: '1', title: 'قالب بدون شرط', content: 'y', isActive: true, variables: [], createdAt: new Date(), createdBy: 'u', condition: { operator: 'UNCONDITIONED', id: '202', queueId: '1', templateId: '102', enabled: true, priority: 0, template: '', createdAt: new Date() } },
     ],
     messageConditions: [
       { id: '201', queueId: '1', templateId: '101', operator: 'EQUAL', value: 1, enabled: true, priority: 0, createdAt: new Date() },
@@ -42,7 +42,7 @@ jest.mock('@/contexts/QueueContext', () => ({
 jest.mock('@/services/api/messageApiClient', () => ({
   messageApiClient: {
     setTemplateAsDefault: (id: number) => setTemplateAsDefaultMock(id),
-    updateCondition: (id: number, dto: any) => updateConditionApiMock(id, dto),
+    updateCondition: (id: number, dto: unknown) => updateConditionApiMock(id, dto),
   },
 }));
 

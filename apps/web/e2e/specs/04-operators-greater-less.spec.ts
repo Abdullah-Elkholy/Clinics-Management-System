@@ -12,7 +12,7 @@ test.describe('Smoke: Form Interaction Tests', () => {
     await E2EActions.waitForAppReady(page);
 
     // Try to find and interact with any forms on the page
-    const forms = await page.locator('form').count();
+    const _forms = await page.locator('form').count();
     const inputs = await page.locator('input').count();
 
     // At minimum we should have interacted with login form (already done by fixture)

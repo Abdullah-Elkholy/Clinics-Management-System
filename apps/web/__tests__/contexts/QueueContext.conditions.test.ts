@@ -25,11 +25,10 @@
  * - RANGE: offset ∈ [minValue, maxValue]
  */
 
-import { renderHook, act } from '@testing-library/react';
-import type { ReactNode } from 'react';
-import React from 'react';
-import { QueueProvider, QueueContext } from '@/contexts/QueueContext';
-import type { MessageCondition } from '@/types';
+import { renderHook as _renderHook, act as _act } from '@testing-library/react';
+import type { ReactNode as _ReactNode } from 'react';
+// import { QueueContext } from '@/contexts/QueueContext';
+import type { MessageCondition as _MessageCondition } from '@/types';
 import * as messageApiClient from '@/services/api/messageApiClient';
 
 // ============================================
@@ -51,15 +50,14 @@ jest.mock('@/hooks/useToast', () => ({
   }),
 }));
 
-// Mock useQueue hook to access context in tests
-const useQueue = () => React.useContext(QueueContext);
+// (helper removed; future tests can use renderHook with providers)
 
 describe('QueueContext: Condition CRUD Operations', () => {
-  let mockApiClient: jest.Mocked<typeof messageApiClient>;
+  let _mockApiClient: jest.Mocked<typeof messageApiClient>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockApiClient = messageApiClient as jest.Mocked<typeof messageApiClient>;
+    _mockApiClient = messageApiClient as jest.Mocked<typeof messageApiClient>;
   });
 
   describe('addMessageCondition', () => {

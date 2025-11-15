@@ -367,7 +367,7 @@ export async function updateTemplate(id: number, data: UpdateTemplateRequest): P
  * Delete a template (with automatic retry on network failures)
  */
 export async function deleteTemplate(id: number): Promise<void> {
-  return withRetry(() =>
+  await withRetry(() =>
     fetchAPI(`/templates/${id}`, {
       method: 'DELETE',
     })

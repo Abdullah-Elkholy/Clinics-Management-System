@@ -6,7 +6,8 @@ import UserManagementPanel from './UserManagementPanel';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/types/roles';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import type { User } from '@/types/user';
 
 export default function ManagementPanel() {
   const { user: currentUser } = useAuth();
@@ -43,7 +44,7 @@ export default function ManagementPanel() {
   }, [state.users]);
 
   // Get users managed by a specific moderator
-  const getUsersByModerator = (moderatorId: string): any[] => {
+  const getUsersByModerator = (moderatorId: string): User[] => {
     return state.users.filter(
       (u) => u.role === UserRole.User && u.assignedModerator === moderatorId
     );

@@ -116,7 +116,7 @@ describe('Phone Utilities', () => {
 
       // Should preserve the extension part
       expect(result).toContain('ext');
-      expect(result).toMatch(/ext[\.\s]*123/i);
+      expect(result).toMatch(/ext[.\s]*123/i);
     });
 
     it('should handle extension with various formats', () => {
@@ -194,11 +194,11 @@ describe('Phone Utilities', () => {
 
   describe('Error: Invalid Inputs', () => {
     it('should handle null gracefully', () => {
-      expect(() => formatPhone(null as any)).not.toThrow();
+      expect(() => formatPhone(null as unknown as string)).not.toThrow();
     });
 
     it('should handle undefined gracefully', () => {
-      expect(() => formatPhone(undefined as any)).not.toThrow();
+      expect(() => formatPhone(undefined as unknown as string)).not.toThrow();
     });
 
     it('should handle alphabetic input', () => {

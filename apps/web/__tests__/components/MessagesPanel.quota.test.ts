@@ -24,8 +24,7 @@
  * - Error state shows fallback message
  */
 
-import { renderHook, act } from '@testing-library/react';
-import React from 'react';
+import { renderHook as _renderHook, act as _act } from '@testing-library/react';
 import * as messageApiClient from '@/services/api/messageApiClient';
 import type { MyQuotaDto } from '@/services/api/messageApiClient';
 
@@ -43,11 +42,11 @@ jest.mock('@/hooks/useToast', () => ({
 }));
 
 describe('MessagesPanel: Quota Display', () => {
-  let mockApiClient: jest.Mocked<typeof messageApiClient>;
+  let _mockApiClient: jest.Mocked<typeof messageApiClient>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockApiClient = messageApiClient as jest.Mocked<typeof messageApiClient>;
+    _mockApiClient = messageApiClient as jest.Mocked<typeof messageApiClient>;
   });
 
   describe('Quota Retrieval', () => {

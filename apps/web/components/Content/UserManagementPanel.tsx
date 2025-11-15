@@ -132,11 +132,11 @@ export default function UserManagementPanel() {
   const [trashPatientsError, setTrashPatientsError] = useState<string>('');
   const [trashPatientsPageNumber, setTrashPatientsPageNumber] = useState(1);
   const [trashPatientsTotalCount, setTrashPatientsTotalCount] = useState(0);
-  const [archivedItems, setArchivedItems] = useState<any[]>([]);
-  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
-  const [archivedError, setArchivedError] = useState<string>('');
-  const [archivedPageNumber, setArchivedPageNumber] = useState(1);
-  const [archivedTotalCount, setArchivedTotalCount] = useState(0);
+  const [_archivedItems, _setArchivedItems] = useState<any[]>([]);
+  const [_isLoadingArchived, _setIsLoadingArchived] = useState(false);
+  const [_archivedError, _setArchivedError] = useState<string>('');
+  const [_archivedPageNumber, _setArchivedPageNumber] = useState(1);
+  const [_archivedTotalCount, _setArchivedTotalCount] = useState(0);
 
   const loadTrashUsers = useCallback(async (page: number) => {
     setIsLoadingTrash(true);

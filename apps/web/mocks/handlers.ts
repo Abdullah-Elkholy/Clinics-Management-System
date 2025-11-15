@@ -14,8 +14,8 @@ import { getMockTemplates, getMockConditions } from '@/services/mock/mockData';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 // In-memory storage for test mutations (reset between tests)
-let mockTemplateStore: Record<number, any[]> = {};
-let mockConditionStore: Record<number, any[]> = {};
+const mockTemplateStore: Record<number, any[]> = {};
+const mockConditionStore: Record<number, any[]> = {};
 let nextTemplateId = 100;
 let nextConditionId = 200;
 

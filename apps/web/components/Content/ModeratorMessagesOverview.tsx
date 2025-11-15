@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
 import logger from '@/utils/logger';
+import type { MessageCondition } from '@/types/messageCondition';
 // Mock data removed - using API data instead
 
 /**
@@ -46,18 +47,18 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function ModeratorMessagesOverview() {
-  const { moderators, queues, messageTemplates, selectedQueueId, setSelectedQueueId, refreshQueueData } = useQueue();
+  const { moderators, queues, messageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
   const { addToast } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
-  const { select } = useSelectDialog();
+  const { select: _select } = useSelectDialog();
 
   // State for search and expansion
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedModerators, setExpandedModerators] = useState<Set<string | number>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
   const [userQuota, setUserQuota] = useState<MyQuotaDto | null>(null);
-  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+  const [_isLoadingQuota, setIsLoadingQuota] = useState(false);
 
   /**
    * Load user's quota from API on component mount
@@ -156,12 +157,12 @@ export default function ModeratorMessagesOverview() {
   /**
    * Check for condition intersections in a queue (same logic as MessagesPanel)
    */
-  const checkConditionIntersections = (queueId: string) => {
-    const queueConditions: any[] = [];
+  const checkConditionIntersections = (_queueId: string) => {
+    const queueConditions: MessageCondition[] = [];
 
     if (queueConditions.length < 2) return [];
 
-    const intersections: Array<{ cond1: any; cond2: any; message: string }> = [];
+    const intersections: Array<{ cond1: MessageCondition; cond2: MessageCondition; message: string }> = [];
 
     for (let i = 0; i < queueConditions.length; i++) {
       for (let j = i + 1; j < queueConditions.length; j++) {
@@ -190,7 +191,7 @@ export default function ModeratorMessagesOverview() {
   /**
    * Get range representation of a condition
    */
-  const getConditionRange = (cond: any): { min: number; max: number } | null => {
+  const getConditionRange = (cond: MessageCondition): { min: number; max: number } | null => {
     switch (cond.operator) {
       case 'EQUAL':
         if (cond.value === undefined || cond.value <= 0) return null;
@@ -212,7 +213,7 @@ export default function ModeratorMessagesOverview() {
   /**
    * Check if two conditions overlap
    */
-  const conditionsOverlap = (cond1: any, cond2: any): boolean => {
+  const conditionsOverlap = (cond1: MessageCondition, cond2: MessageCondition): boolean => {
     const range1 = getConditionRange(cond1);
     const range2 = getConditionRange(cond2);
     
@@ -224,7 +225,7 @@ export default function ModeratorMessagesOverview() {
   /**
    * Get human-readable condition text
    */
-  const getConditionText = (cond: any): string => {
+  const getConditionText = (cond: MessageCondition): string => {
     const operatorMap: Record<string, string> = {
       'EQUAL': 'يساوي',
       'GREATER': 'أكثر من',
@@ -413,7 +414,7 @@ export default function ModeratorMessagesOverview() {
                       <div className="flex flex-wrap gap-2">
                         {moderator.queues
                           .map((queue) => {
-                            const queueConditions: any[] = [];
+                            const queueConditions: MessageCondition[] = [];
 
                             if (queueConditions.length < 2) return null;
 
@@ -557,7 +558,7 @@ export default function ModeratorMessagesOverview() {
                                             </thead>
                                             <tbody>
                                               {queueTemplates
-                                                .sort((a, b) => {
+                                                .sort((_a, _b) => {
                                                   return 0;
                                                 })
                                                 .map((template) => {
@@ -575,14 +576,14 @@ export default function ModeratorMessagesOverview() {
                                                             <span className="text-green-600 text-xs font-medium">✓ افتراضي</span>
                                                           ) : (
                                                             <span className="text-sm font-semibold text-blue-600">
-                                                              {(condition as any).operator === 'EQUAL' && 'يساوي'}
-                                                              {(condition as any).operator === 'GREATER' && 'أكثر من'}
-                                                              {(condition as any).operator === 'LESS' && 'أقل من'}
-                                                              {(condition as any).operator === 'RANGE' && 'نطاق'}
+                                                              {condition.operator === 'EQUAL' && 'يساوي'}
+                                                              {condition.operator === 'GREATER' && 'أكثر من'}
+                                                              {condition.operator === 'LESS' && 'أقل من'}
+                                                              {condition.operator === 'RANGE' && 'نطاق'}
                                                               {' '}
-                                                              {(condition as any).operator === 'RANGE' 
-                                                                ? `${(condition as any).minValue}-${(condition as any).maxValue}` 
-                                                                : (condition as any).value}
+                                                              {condition.operator === 'RANGE' 
+                                                                ? `${condition.minValue}-${condition.maxValue}` 
+                                                                : condition.value}
                                                             </span>
                                                           )
                                                         ) : (
@@ -601,31 +602,35 @@ export default function ModeratorMessagesOverview() {
                                                             <i className="fas fa-edit"></i>
                                                           </button>
                                                           <button
-                                                            onClick={async () => {
-                                                              const confirmed = await confirm(createDeleteConfirmation('القالب: ' + template.title));
-                                                              if (confirmed) {
-                                                                try {
-                                                                  const templateIdNum = Number(template.id);
-                                                                  if (!isNaN(templateIdNum)) {
-                                                                    await messageApiClient.deleteTemplate(templateIdNum);
-                                                                    addToast('تم حذف القالب: ' + template.title, 'success');
-                                                                    
-                                                                    // Refetch queue data to reflect changes
-                                                                    if (typeof refreshQueueData === 'function' && queue.id) {
-                                                                      await refreshQueueData(String(queue.id));
-                                                                    }
-                                                                    
-                                                                    // Trigger a custom event to notify other components to refetch
-                                                                    setTimeout(() => {
-                                                                      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-                                                                    }, 100);
-                                                                  } else {
-                                                                    addToast('معرّف القالب غير صالح', 'error');
-                                                                  }
-                                                                } catch (error) {
-                                                                  logger.error('Failed to delete template:', error);
-                                                                  addToast('فشل حذف القالب', 'error');
+                                                            onClick={async (e) => {
+                                                              e.preventDefault();
+                                                              e.stopPropagation();
+                                                              
+                                                              try {
+                                                                const confirmOptions = createDeleteConfirmation('القالب: ' + template.title);
+                                                                const confirmed = await confirm(confirmOptions);
+                                                                if (!confirmed) return;
+                                                                
+                                                                const templateIdNum = Number(template.id);
+                                                                if (isNaN(templateIdNum)) {
+                                                                  addToast('معرّف القالب غير صالح', 'error');
+                                                                  return;
                                                                 }
+
+                                                                await messageApiClient.deleteTemplate(templateIdNum);
+                                                                
+                                                                // Refetch queue data to reflect changes
+                                                                if (typeof refreshQueueData === 'function' && queue.id) {
+                                                                  await refreshQueueData(String(queue.id));
+                                                                }
+                                                                
+                                                                // Notify other components
+                                                                window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+                                                                
+                                                                addToast('تم حذف القالب: ' + template.title, 'success');
+                                                              } catch (error: any) {
+                                                                const errorMsg = error?.message || error?.error || 'فشل حذف القالب';
+                                                                addToast(errorMsg, 'error');
                                                               }
                                                             }}
                                                             className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors"

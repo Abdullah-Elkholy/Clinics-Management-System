@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: CI – Phase 1B Complete (Backend + Frontend + E2E Infrastructure)
 
 on:
@@ -149,6 +150,7 @@ jobs:
         files: ${{ steps.find_cov.outputs.files }}
         flags: backend
         name: backend-coverage
+        token: ${{ secrets.CODECOV_TOKEN }}
       continue-on-error: true
     
     - name: Report Test Summary
@@ -213,6 +215,7 @@ jobs:
         flags: frontend
         name: frontend-coverage
         fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   # ============================================
   # E2E: Playwright Tests (Both Browsers)

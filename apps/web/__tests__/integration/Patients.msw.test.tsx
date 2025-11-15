@@ -1,15 +1,15 @@
-import React from 'react';
+import { useEffect, type FC } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UIProvider } from '@/contexts/UIContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { QueueProvider, useQueue } from '@/contexts/QueueContext';
 
-const Harness: React.FC = () => {
+const Harness: FC = () => {
   const { login } = useAuth();
   const { setSelectedQueueId, patients, togglePatientSelection } = useQueue();
 
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       await login('tester', 'password');
     })();
@@ -27,7 +27,7 @@ const Harness: React.FC = () => {
   );
 };
 
-const AppTree: React.FC = () => (
+const AppTree: FC = () => (
   <UIProvider>
     <AuthProvider>
       <QueueProvider>

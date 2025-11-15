@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useRef, ReactNode } from 'react';
 import ConfirmationDialog from '@/components/Modals/ConfirmationDialog';
 
 interface ConfirmOptions {
@@ -24,11 +24,11 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
     message: '',
   });
   const [isLoading, setIsLoading] = useState(false);
-  let resolveConfirm: ((value: boolean) => void) | null = null;
+  const resolveConfirmRef = useRef<((value: boolean) => void) | null>(null);
 
   const confirm = (opts: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
-      resolveConfirm = resolve;
+      resolveConfirmRef.current = resolve;
       setOptions(opts);
       setIsOpen(true);
       setIsLoading(false);
@@ -37,15 +37,17 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
 
   const handleConfirm = () => {
     setIsLoading(true);
-    if (resolveConfirm) {
-      resolveConfirm(true);
+    if (resolveConfirmRef.current) {
+      resolveConfirmRef.current(true);
+      resolveConfirmRef.current = null;
     }
     setIsOpen(false);
   };
 
   const handleCancel = () => {
-    if (resolveConfirm) {
-      resolveConfirm(false);
+    if (resolveConfirmRef.current) {
+      resolveConfirmRef.current(false);
+      resolveConfirmRef.current = null;
     }
     setIsOpen(false);
   };

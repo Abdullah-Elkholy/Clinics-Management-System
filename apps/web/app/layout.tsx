@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 import '../styles/app.css';
 import { UIProvider } from '../contexts/UIContext';
 import { AuthProvider } from '../contexts/AuthContext';
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <html lang="ar" dir="rtl">

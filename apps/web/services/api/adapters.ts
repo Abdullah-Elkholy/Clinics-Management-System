@@ -65,14 +65,17 @@ export function conditionDtoToModel(dto: ConditionDto, index?: number): MessageC
  * Convert backend QueueDto to frontend Queue
  */
 export function queueDtoToModel(dto: QueueDto): Queue {
+  const dtoExtended = dto as QueueDto & { moderatorId?: number };
   return {
     id: dto.id.toString(),
     doctorName: dto.doctorName,
     // Prefer explicit moderatorId from API; fall back to createdBy if missing for backward compatibility
-    moderatorId: (dto as any).moderatorId !== undefined && (dto as any).moderatorId !== null
-      ? (dto as any).moderatorId.toString()
+    moderatorId: dtoExtended.moderatorId !== undefined && dtoExtended.moderatorId !== null
+      ? dtoExtended.moderatorId.toString()
       : dto.createdBy.toString(),
     isActive: dto.isActive,
+    currentPosition: dto.currentPosition,
+    estimatedWaitMinutes: dto.estimatedWaitMinutes,
   };
 }
 

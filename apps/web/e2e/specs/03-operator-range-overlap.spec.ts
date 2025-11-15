@@ -39,7 +39,7 @@ test.describe('Smoke: API Integration Tests', () => {
     await E2EActions.waitForAppReady(page);
 
     // Get initial page state
-    const initialContent = await page.content();
+    const _initialContent = await page.content();
 
     // Reload page
     await page.reload();

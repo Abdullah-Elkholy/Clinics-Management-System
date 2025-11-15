@@ -9,6 +9,8 @@
 import React, { useState } from 'react';
 import TrashCountdownBadge from './TrashCountdownBadge';
 import { formatDeletionDate, getDaysRemainingInTrash, getRestoreErrorMessage, parseRestoreError } from '@/utils/trashUtils';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { createRestoreConfirmation } from '@/utils/confirmationHelpers';
 
 type TrashItemPrimitive = string | number | boolean | null | undefined | Date;
 
@@ -60,6 +62,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   adminOnly = false,
   isAdmin = false,
 }) => {
+  const { confirm } = useConfirmDialog();
   const [restoring, setRestoring] = useState<Set<string | number>>(new Set());
   const [restoreErrors, setRestoreErrors] = useState<Map<string | number, string>>(new Map());
 
@@ -144,6 +147,12 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   };
 
   const handleRestore = async (id: string | number) => {
+    const item = items.find((i) => i.id === id);
+    const itemName = item?.name || item?.title || `${entityType} #${id}`;
+    
+    const confirmed = await confirm(createRestoreConfirmation(itemName));
+    if (!confirmed) return;
+    
     setRestoring((prev) => new Set([...prev, id]));
     setRestoreErrors((prev) => {
       const newErrors = new Map(prev);

@@ -24,7 +24,7 @@ interface RequireFeatureProps {
   /** Children to render if access granted */
   children: React.ReactNode;
   /** Custom validation function */
-  validate?: (user: any) => boolean;
+  validate?: (user: { id: string; role: UserRole }) => boolean;
 }
 
 /**

@@ -45,9 +45,9 @@ export default function MessagePreviewModal() {
     return messageConditions.filter(c => String(c.queueId) === String(queueId));
   }, [messageConditions, queueId]);
 
-  // Get default template from real templates
+  // Get default template ONLY if explicitly marked by DEFAULT condition (do not fallback silently)
   const defaultTemplate = useMemo(() => {
-    return realTemplates.find(t => t.condition?.operator === 'DEFAULT') || realTemplates[0];
+    return realTemplates.find(t => t.condition?.operator === 'DEFAULT');
   }, [realTemplates]);
 
   // Preview data with queue positions - use data from modal, fallback to context patients
@@ -93,19 +93,15 @@ export default function MessagePreviewModal() {
   }, [data?.queueName, queue]);
 
   // Build a QueueMessageConfig from real data
-  const messageConfig: QueueMessageConfig = useMemo(() => {
-    return {
-      queueId: queueId || 'default',
-      queueName,
-      defaultTemplate: defaultTemplate?.content || `مرحباً بك {PN}، ترتيبك الحالي هو {PQP}، الوقت المتبقي المقدر حتى دورك هو {ETR}. شكراً لانتظارك عند ${queueName}`,
-      conditions: realConditions.map(c => ({
-        operator: c.operator,
-        value: c.value,
-        minValue: c.minValue,
-        maxValue: c.maxValue,
-      })),
-    };
-  }, [queueId, queueName, defaultTemplate, realConditions]);
+  const messageConfig: QueueMessageConfig = useMemo(() => ({
+    queueId: queueId || 'default',
+    queueName,
+    // Only include a default template if one truly exists
+    defaultTemplate: defaultTemplate?.content,
+    conditions: realConditions,
+  }), [queueId, queueName, defaultTemplate, realConditions]);
+
+  const missingDefaultTemplate = !defaultTemplate;
 
   // Resolve all patients using the service
   const patientArray = useMemo(() => {
@@ -171,7 +167,7 @@ export default function MessagePreviewModal() {
     const templateToUse = defaultTemplateId ? Number(defaultTemplateId) : (defaultTemplate ? Number(defaultTemplate.id) : null);
     
     if (!templateToUse || isNaN(templateToUse)) {
-      addToast('القالب الافتراضي غير محدد', 'error');
+      addToast('القالب الافتراضي غير محدد، برجاء إنشاء قالب وجعله افتراضياً أولاً', 'error');
       return;
     }
 
@@ -245,6 +241,15 @@ export default function MessagePreviewModal() {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col flex-1">
+          {missingDefaultTemplate && (
+            <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-200 flex items-start gap-3 text-sm text-yellow-800">
+              <i className="fas fa-exclamation-triangle mt-1"></i>
+              <div>
+                <p className="font-medium">لا يوجد قالب افتراضي معرف لهذا الطابور.</p>
+                <p className="mt-1">قم بإنشاء قالب جديد وجعل حالته DEFAULT من خلال إدارة القوالب، أو اختر قالباً افتراضياً قبل المتابعة. لن يمكنك إرسال الرسائل بدون قالب افتراضي.</p>
+              </div>
+            </div>
+          )}
           <div className="px-4 py-3 bg-gray-50 border-b flex-shrink-0">
             <h4 className="font-bold text-gray-800">جدول المعاينة</h4>
           </div>
@@ -310,7 +315,7 @@ export default function MessagePreviewModal() {
         <div className="flex gap-3 pt-4 border-t flex-shrink-0">
           <button
             onClick={handleConfirmSend}
-            disabled={selectedCount - removedPatients.length === 0 || isSending}
+            disabled={missingDefaultTemplate || selectedCount - removedPatients.length === 0 || isSending}
             className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             {isSending ? (
@@ -321,7 +326,7 @@ export default function MessagePreviewModal() {
             ) : (
               <>
                 <i className="fab fa-whatsapp"></i>
-                تأكيد الإرسال ({selectedCount - removedPatients.length})
+                {missingDefaultTemplate ? 'مطلوب قالب افتراضي' : `تأكيد الإرسال (${selectedCount - removedPatients.length})`}
               </>
             )}
           </button>
