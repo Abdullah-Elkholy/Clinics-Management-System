@@ -98,7 +98,10 @@ export default function InputDialog({
 
             {/* Input Field with Enhanced Styling */}
             <div className="relative">
+              <label htmlFor="inputDialog-input" className="sr-only">{placeholder || 'إدخال نص'}</label>
               <input
+                id="inputDialog-input"
+                name="input"
                 ref={inputRef}
                 type={inputType}
                 value={value}

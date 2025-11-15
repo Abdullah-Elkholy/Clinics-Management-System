@@ -201,7 +201,6 @@ namespace Clinics.Api.Services
                     CreatedBy = moderatorAhmed.Id,
                     ModeratorId = moderatorAhmed.Id,
                     QueueId = queueAhmed.Id,
-                    IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -213,7 +212,6 @@ namespace Clinics.Api.Services
                     CreatedBy = moderatorAhmed.Id,
                     ModeratorId = moderatorAhmed.Id,
                     QueueId = queueAhmed.Id,
-                    IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -225,7 +223,6 @@ namespace Clinics.Api.Services
                     CreatedBy = moderatorSara.Id,
                     ModeratorId = moderatorSara.Id,
                     QueueId = queueSara.Id,
-                    IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -237,11 +234,11 @@ namespace Clinics.Api.Services
                     CreatedBy = moderatorSara.Id,
                     ModeratorId = moderatorSara.Id,
                     QueueId = queueSara.Id,
-                    IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
 
+                // Add templates first (without MessageConditionId)
                 _db.MessageTemplates.AddRange(
                     defaultTemplateAhmed, conditionalTemplateAhmed,
                     defaultTemplateSara, conditionalTemplateSara
@@ -250,10 +247,9 @@ namespace Clinics.Api.Services
 
                 _logger.LogInformation("Created message templates.");
 
-                // Create conditions: DEFAULT for default templates, specific operators for conditional ones
+                // Create conditions first: DEFAULT for default templates, specific operators for conditional ones
                 var defaultConditionAhmed = new MessageCondition
                 {
-                    TemplateId = defaultTemplateAhmed.Id,
                     QueueId = queueAhmed.Id,
                     Operator = "DEFAULT",
                     CreatedAt = DateTime.UtcNow,
@@ -262,7 +258,6 @@ namespace Clinics.Api.Services
 
                 var conditionAhmed = new MessageCondition
                 {
-                    TemplateId = conditionalTemplateAhmed.Id,
                     QueueId = queueAhmed.Id,
                     Operator = "LESS",
                     Value = 4, // Send if current position < 4
@@ -272,7 +267,6 @@ namespace Clinics.Api.Services
 
                 var defaultConditionSara = new MessageCondition
                 {
-                    TemplateId = defaultTemplateSara.Id,
                     QueueId = queueSara.Id,
                     Operator = "DEFAULT",
                     CreatedAt = DateTime.UtcNow,
@@ -281,7 +275,6 @@ namespace Clinics.Api.Services
 
                 var conditionSara = new MessageCondition
                 {
-                    TemplateId = conditionalTemplateSara.Id,
                     QueueId = queueSara.Id,
                     Operator = "RANGE",
                     MinValue = 2,
@@ -294,6 +287,13 @@ namespace Clinics.Api.Services
                     defaultConditionAhmed, conditionAhmed,
                     defaultConditionSara, conditionSara
                 );
+                await _db.SaveChangesAsync(); // Save to get condition IDs
+
+                // Update templates with MessageConditionId
+                defaultTemplateAhmed.MessageConditionId = defaultConditionAhmed.Id;
+                conditionalTemplateAhmed.MessageConditionId = conditionAhmed.Id;
+                defaultTemplateSara.MessageConditionId = defaultConditionSara.Id;
+                conditionalTemplateSara.MessageConditionId = conditionSara.Id;
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation("Created message conditions.");

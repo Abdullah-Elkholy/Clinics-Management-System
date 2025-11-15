@@ -18,6 +18,7 @@ interface QueueContextType {
   addQueue: (queue: Omit<Queue, 'id'>) => void;
   updateQueue: (id: string, queue: Partial<Queue>) => void;
   deleteQueue: (id: string) => void;
+  refreshQueues: () => Promise<void>;
   selectedQueueId: string | null;
   setSelectedQueueId: (id: string | null) => void;
   patients: Patient[];
@@ -25,6 +26,7 @@ interface QueueContextType {
   updatePatient: (id: number | string, patient: Partial<Patient>) => void;
   deletePatient: (id: number | string) => void;
   reorderPatients: (patients: Patient[]) => void;
+  refreshPatients: (queueId?: string) => Promise<void>;
   togglePatientSelection: (id: number | string) => void;
   selectAllPatients: () => void;
   clearPatientSelection: () => void;
@@ -80,32 +82,33 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    const loadQueues = async () => {
-      try {
-        setQueuesLoading(true);
-        setQueuesError(null);
-        
-        const response = await queuesApiClient.getQueues();
-
-        // The API can return either { items: QueueDto[] } or { data: QueueDto[] }
-        const list = (response as any)?.items ?? (response as any)?.data ?? [];
-        if (Array.isArray(list) && list.length > 0) {
-          const queuesData: Queue[] = list.map((dto: any) => queueDtoToModel(dto as QueueDto));
-          setQueues(queuesData);
-        } else {
-          setQueues([]);
-        }
-      } catch (error) {
-        console.warn('Failed to load queues from API:', error);
-        setQueuesError('Failed to load queues');
-        setQueues([]);
-      } finally {
-        setQueuesLoading(false);
-      }
-    };
-
-    loadQueues();
+    refreshQueues();
   }, [currentUser]);
+
+  // Public: refresh queues list from backend
+  const refreshQueues = useCallback(async () => {
+    try {
+      setQueuesLoading(true);
+      setQueuesError(null);
+
+      const response = await queuesApiClient.getQueues();
+
+      // The API can return either { items: QueueDto[] } or { data: QueueDto[] }
+      const list = (response as any)?.items ?? (response as any)?.data ?? [];
+      if (Array.isArray(list) && list.length > 0) {
+        const queuesData: Queue[] = list.map((dto: any) => queueDtoToModel(dto as QueueDto));
+        setQueues(queuesData);
+      } else {
+        setQueues([]);
+      }
+    } catch (error) {
+      console.warn('Failed to load queues from API:', error);
+      setQueuesError('Failed to load queues');
+      setQueues([]);
+    } finally {
+      setQueuesLoading(false);
+    }
+  }, []);
 
   // Memoized list of moderators with aggregated stats
   const moderators = useMemo(
@@ -127,27 +130,78 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
-    const loadPatients = async () => {
-      try {
-        const response = await patientsApiClient.getPatients(queueIdNum);
-        const patientDtos = response.items || [];
-        const patientsData: Patient[] = patientDtos.map((dto: PatientDto) => ({
+    refreshPatients(selectedQueueId);
+  }, [selectedQueueId]);
+
+  // Public: refresh patients for a queue (defaults to selected queue)
+  const refreshPatients = useCallback(async (queueId?: string) => {
+    const qid = queueId ?? selectedQueueId;
+    if (!qid) {
+      setPatients([]);
+      return;
+    }
+    const queueIdNum = Number(qid);
+    if (isNaN(queueIdNum)) {
+      console.warn('Invalid queueId:', qid);
+      setPatients([]);
+      return;
+    }
+    try {
+      const response = await patientsApiClient.getPatients(queueIdNum);
+      const patientDtos = response.items || [];
+      const patientsData: Patient[] = patientDtos.map((dto: PatientDto) => {
+        // Parse country code and phone from E.164 format (e.g., "+20118542431")
+        const phoneNumber = dto.phoneNumber || '';
+        // Use countryCode from DTO if available, otherwise extract from phone number
+        let countryCode = dto.countryCode || '+20';
+        let phone = phoneNumber;
+        
+        // If phone number is in E.164 format (starts with +), extract country code and phone
+        if (phoneNumber.startsWith('+')) {
+          const countryCodeDigits = countryCode.replace(/[^\d]/g, '');
+          // If phone starts with the country code, remove it
+          if (phoneNumber.startsWith(`+${countryCodeDigits}`)) {
+            phone = phoneNumber.substring(countryCodeDigits.length + 1);
+            // Remove leading zero for countries that require it (like Egypt +20)
+            if (countryCodeDigits === '20' && phone.startsWith('0')) {
+              phone = phone.substring(1);
+            }
+          } else {
+            // Try to extract country code from phone number
+        const match = phoneNumber.match(/^\+(\d{1,3})(.*)$/);
+            if (match) {
+              countryCode = `+${match[1]}`;
+              phone = match[2];
+              // Remove leading zero for Egypt
+              if (match[1] === '20' && phone.startsWith('0')) {
+                phone = phone.substring(1);
+              }
+            }
+          }
+        } else {
+          // Phone doesn't have country code prefix, use the one from DTO
+          // Remove leading zero if present for countries that require it
+          if (countryCode === '+20' && phone.startsWith('0')) {
+            phone = phone.substring(1);
+          }
+        }
+
+        return {
           id: dto.id.toString(),
           queueId: queueIdNum.toString(),
           name: dto.fullName,
-          phone: dto.phoneNumber,
+          phone: phone,
+          countryCode: countryCode,
           position: dto.position,
           status: dto.status,
           selected: false,
-        }));
-        setPatients(patientsData);
-      } catch (error) {
-        console.warn('Failed to load patients:', error);
-        setPatients([]);
-      }
-    };
-
-    loadPatients();
+        };
+      });
+      setPatients(patientsData);
+    } catch (error) {
+      console.warn('Failed to load patients:', error);
+      setPatients([]);
+    }
   }, [selectedQueueId]);
 
   // Load templates and conditions from API when selected queue changes
@@ -366,7 +420,6 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await messageApiClient.updateTemplate(backendId, {
           title: templateUpdates.title,
           content: templateUpdates.content,
-          isActive: templateUpdates.isActive,
         });
 
         toast?.('تم تحديث القالب بنجاح', 'success');
@@ -591,26 +644,43 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setConditionsError('Unable to refresh conditions');
         }
 
-        // Convert DTOs to models
+        // Convert DTOs to models and update templates for this queue
+        // Replace templates for this queue to ensure condition updates are reflected
         if (templateDtos.length > 0) {
-          const templates: MessageTemplate[] = templateDtos.map((dto: TemplateDto) =>
+          const newTemplates: MessageTemplate[] = templateDtos.map((dto: TemplateDto) =>
             templateDtoToModel(dto, queueId)
           );
-          setMessageTemplates(templates);
-          if (templates.length > 0) {
-            setSelectedMessageTemplateId(templates[0].id);
+          
+          // Update templates: replace templates for this queue, keep others
+          setMessageTemplates((prevTemplates) => {
+            const templatesForOtherQueues = prevTemplates.filter(t => t.queueId !== queueId);
+            return [...templatesForOtherQueues, ...newTemplates];
+          });
+          
+          if (newTemplates.length > 0) {
+            setSelectedMessageTemplateId(newTemplates[0].id);
           }
         } else {
-          setMessageTemplates([]);
+          // If no templates for this queue, remove them
+          setMessageTemplates((prevTemplates) => 
+            prevTemplates.filter(t => t.queueId !== queueId)
+          );
         }
 
+        // Update conditions: replace conditions for this queue
         if (conditionDtos.length > 0) {
           const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) =>
             conditionDtoToModel(dto, idx)
           );
-          setMessageConditions(conditions);
+          setMessageConditions((prevConditions) => {
+            const conditionsForOtherQueues = prevConditions.filter(c => c.queueId !== queueId);
+            return [...conditionsForOtherQueues, ...conditions];
+          });
         } else {
-          setMessageConditions([]);
+          // If no conditions for this queue, remove them
+          setMessageConditions((prevConditions) => 
+            prevConditions.filter(c => c.queueId !== queueId)
+          );
         }
       } catch (error) {
         console.error('Unexpected error refreshing queue data:', error);
@@ -631,6 +701,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addQueue,
         updateQueue,
         deleteQueue,
+        refreshQueues,
         selectedQueueId,
         setSelectedQueueId,
         patients,
@@ -638,6 +709,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updatePatient,
         deletePatient,
         reorderPatients,
+        refreshPatients,
         togglePatientSelection,
         selectAllPatients,
         clearPatientSelection,

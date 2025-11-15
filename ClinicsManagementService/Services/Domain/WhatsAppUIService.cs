@@ -500,7 +500,7 @@ namespace ClinicsManagementService.Services.Domain
                                     else
                                     {
                                         _notifier.Notify($"Unexpected iconType: {iconType}");
-                                        string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                                        string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
                                         await _screenshotService.TakeScreenshotAsync(browserSession, screenshotPath);
                                         _notifier.Notify($"Screenshot taken for unexpected icon: {screenshotPath}");
                                         await Task.Delay(pollIntervalMs);
@@ -767,7 +767,7 @@ namespace ClinicsManagementService.Services.Domain
                 }
             }
 
-            string fallbackScreenshotPath = $"Screenshots/status_fallback_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+            string fallbackScreenshotPath = $"Screenshots/status_fallback_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
             await _screenshotService.TakeScreenshotAsync(browserSession, fallbackScreenshotPath);
             _notifier.Notify($"Screenshot taken for fallback status: {fallbackScreenshotPath}");
 

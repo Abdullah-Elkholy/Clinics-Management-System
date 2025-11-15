@@ -11,8 +11,9 @@ export interface UserDto {
   role: 'primary_admin' | 'secondary_admin' | 'moderator' | 'user';
   moderatorId?: number;
   isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastLogin?: string | null;
 }
 
 export interface UserSettingsDto {
@@ -89,8 +90,20 @@ async function fetchAPI<T>(
   }
 
   if (!response.ok) {
+    const errorMessage = data?.message || data || 'API request failed';
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.error('❌ API Error:', {
+        url: url,
+        status: response.status,
+        statusText: response.statusText,
+        message: errorMessage,
+        responseData: data,
+      });
+    }
+
     throw {
-      message: data?.message || 'API request failed',
+      message: errorMessage,
       statusCode: response.status,
     } as ApiError;
   }
@@ -167,10 +180,11 @@ export async function updateUserSettings(
  */
 export async function createUser(data: {
   firstName: string;
-  lastName: string;
+  lastName?: string;
   username: string;
   role: string;
   moderatorId?: number;
+  password?: string;
 }): Promise<UserDto> {
   return fetchAPI('/users', {
     method: 'POST',
@@ -185,10 +199,35 @@ export async function updateUser(
   userId: number,
   data: Partial<UserDto>
 ): Promise<UserDto> {
-  return fetchAPI(`/users/${userId}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('📤 usersApiClient.updateUser sending:', {
+      userId: userId,
+      data: data,
+      url: `/users/${userId}`,
+    });
+  }
+
+  try {
+    const result: UserDto = await fetchAPI(`/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ usersApiClient.updateUser received:', result);
+    }
+
+    return result;
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('❌ usersApiClient.updateUser error:', {
+        error: error,
+        userId: userId,
+        payload: data,
+      });
+    }
+    throw error;
+  }
 }
 
 /**
@@ -209,15 +248,26 @@ export async function getTrashUsers(options?: {
   pageSize?: number;
 }): Promise<ListResponse<UserDto>> {
   const params = new URLSearchParams();
-  if (options?.pageNumber !== undefined) {
-    params.append('pageNumber', options.pageNumber.toString());
-  }
-  if (options?.pageSize !== undefined) {
-    params.append('pageSize', options.pageSize.toString());
-  }
+  const page = options?.pageNumber || 1;
+  const pageSize = options?.pageSize || 10;
+  params.append('page', page.toString());
+  params.append('pageSize', pageSize.toString());
 
   const queryString = params.toString();
-  return fetchAPI(`/users/trash/list${queryString ? `?${queryString}` : ''}`);
+  const response = await fetchAPI(`/users/trash?${queryString}`);
+  
+  // Backend returns { success: true, data: users, total, page, pageSize }
+  // We need to transform it to ListResponse format
+  if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
+    return {
+      items: (response as any).data || [],
+      totalCount: (response as any).total || 0,
+      pageNumber: (response as any).page || page,
+      pageSize: (response as any).pageSize || pageSize,
+    };
+  }
+  
+  return response;
 }
 
 /**
@@ -229,15 +279,26 @@ export async function getArchivedUsers(options?: {
   pageSize?: number;
 }): Promise<ListResponse<UserDto>> {
   const params = new URLSearchParams();
-  if (options?.pageNumber !== undefined) {
-    params.append('pageNumber', options.pageNumber.toString());
-  }
-  if (options?.pageSize !== undefined) {
-    params.append('pageSize', options.pageSize.toString());
-  }
+  const page = options?.pageNumber || 1;
+  const pageSize = options?.pageSize || 10;
+  params.append('page', page.toString());
+  params.append('pageSize', pageSize.toString());
 
   const queryString = params.toString();
-  return fetchAPI(`/users/archived/list${queryString ? `?${queryString}` : ''}`);
+  const response = await fetchAPI(`/users/archived?${queryString}`);
+  
+  // Backend returns { success: true, data: users, total, page, pageSize }
+  // We need to transform it to ListResponse format
+  if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
+    return {
+      items: (response as any).data || [],
+      totalCount: (response as any).total || 0,
+      pageNumber: (response as any).page || page,
+      pageSize: (response as any).pageSize || pageSize,
+    };
+  }
+  
+  return response;
 }
 
 /**
@@ -262,8 +323,9 @@ export function userDtoToModel(dto: UserDto): any {
     username: dto.username,
     role: dto.role,
     isActive: dto.isActive,
-    createdAt: new Date(dto.createdAt),
-    updatedAt: new Date(dto.updatedAt),
+    createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
+    updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
+    lastLogin: dto.lastLogin ? new Date(dto.lastLogin) : undefined,
     moderatorId: dto.moderatorId, // keep for reference; use assignedModerator in frontend logic
     assignedModerator: dto.moderatorId ? dto.moderatorId.toString() : undefined, // canonical field for filtering
   };

@@ -135,10 +135,11 @@ public static class TestDataFactory
 
         public MessageCondition Build()
         {
+            // Note: TemplateId is no longer on MessageCondition - relationship is reversed
+            // MessageTemplate now has MessageConditionId foreign key
             return new MessageCondition
             {
                 Id = _id,
-                TemplateId = _templateId,
                 QueueId = _queueId,
                 Operator = _operator,
                 Value = _value,

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ModeratorQuota } from '@/types/user';
+import { useModeratorQuota } from '@/hooks/useModeratorQuota';
 
 interface ModeratorQuotaDisplayProps {
   quota?: ModeratorQuota;
@@ -17,13 +18,19 @@ interface ModeratorQuotaDisplayProps {
  * Features: Total/Used/Remaining breakdown, collapsible section, highlighted edit button
  */
 export default function ModeratorQuotaDisplay({
-  quota,
+  quota: propQuota,
   moderatorId,
   onEdit,
   onEditMessages,
   onEditQueues,
 }: ModeratorQuotaDisplayProps) {
   const [showDetails, setShowDetails] = useState(true); // Default expanded
+  
+  // Fetch quota from API if not provided
+  const { quota: fetchedQuota, loading: quotaLoading } = useModeratorQuota(moderatorId);
+  
+  // Use prop quota if provided, otherwise use fetched quota
+  const quota = propQuota || fetchedQuota;
 
   // Default quota if not provided
   const displayQuota: ModeratorQuota = quota || {

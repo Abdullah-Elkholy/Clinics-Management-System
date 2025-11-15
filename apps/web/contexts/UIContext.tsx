@@ -19,9 +19,10 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done'>('welcome');
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
+  const toastCounterRef = React.useRef(0);
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${++toastCounterRef.current}`;
     const toast: Toast = { id, message, type, debugData };
     setToasts((prev) => [...prev, toast]);
 

@@ -7,6 +7,7 @@ using Clinics.Infrastructure.Services;
 using Clinics.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Linq;
 
 namespace Clinics.Api.Controllers
 {
@@ -48,7 +49,9 @@ namespace Clinics.Api.Controllers
                 var moderatorId = _userContext.GetModeratorId();
                 var isAdmin = _userContext.IsAdmin();
 
-                IQueryable<MessageTemplate> query = _db.MessageTemplates.AsQueryable();
+                IQueryable<MessageTemplate> query = _db.MessageTemplates
+                    .Where(t => !t.IsDeleted) // Only show non-deleted templates (active = !IsDeleted)
+                    .AsQueryable();
 
                 // Filter by queue if specified
                 if (queueId.HasValue)
@@ -83,13 +86,15 @@ namespace Clinics.Api.Controllers
                     Content = t.Content,
                     ModeratorId = t.ModeratorId,
                     QueueId = t.QueueId,
-                    IsActive = t.IsActive,
                     CreatedAt = t.CreatedAt,
                     UpdatedAt = t.UpdatedAt,
+                    CreatedBy = t.CreatedBy,
+                    UpdatedBy = t.UpdatedBy,
+                    IsDeleted = t.IsDeleted, // Single source of truth: active = !IsDeleted
                     Condition = t.Condition != null ? new ConditionDto
                     {
                         Id = t.Condition.Id,
-                        TemplateId = t.Condition.TemplateId,
+                        TemplateId = t.Id, // Template ID from the template entity
                         QueueId = t.Condition.QueueId,
                         Operator = t.Condition.Operator,
                         Value = t.Condition.Value,
@@ -116,12 +121,74 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
+        /// GET /api/templates/{id}
+        /// Get a single template by ID.
+        /// </summary>
+        [HttpGet("{id}")]
+        public async Task<ActionResult<TemplateDto>> Get(int id)
+        {
+            try
+            {
+                var template = await _db.MessageTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
+                
+                if (template == null)
+                    return NotFound(new { message = "Template not found" });
+
+                var moderatorId = _userContext.GetModeratorId();
+                var isAdmin = _userContext.IsAdmin();
+
+                // Verify ownership
+                if (!isAdmin && template.ModeratorId != moderatorId)
+                    return Forbid();
+
+                // Load condition
+                await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
+
+                var dto = new TemplateDto
+                {
+                    Id = template.Id,
+                    Title = template.Title,
+                    Content = template.Content,
+                    ModeratorId = template.ModeratorId,
+                    QueueId = template.QueueId,
+                    CreatedAt = template.CreatedAt,
+                    UpdatedAt = template.UpdatedAt,
+                    CreatedBy = template.CreatedBy,
+                    UpdatedBy = template.UpdatedBy,
+                    IsDeleted = template.IsDeleted,
+                    Condition = template.Condition != null ? new ConditionDto
+                    {
+                        Id = template.Condition.Id,
+                        TemplateId = template.Id, // Template ID from the template entity
+                        QueueId = template.Condition.QueueId,
+                        Operator = template.Condition.Operator,
+                        Value = template.Condition.Value,
+                        MinValue = template.Condition.MinValue,
+                        MaxValue = template.Condition.MaxValue,
+                        CreatedAt = template.Condition.CreatedAt,
+                        UpdatedAt = template.Condition.UpdatedAt
+                    } : null
+                };
+
+                return Ok(dto);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching template {TemplateId}", id);
+                return StatusCode(500, new { message = "Error fetching template" });
+            }
+        }
+
+        /// <summary>
         /// POST /api/templates
         /// Create a new template for a specific queue.
         /// </summary>
         [HttpPost]
         public async Task<ActionResult<TemplateDto>> Create([FromBody] CreateTemplateRequest req)
         {
+            // Use transaction to ensure template and condition are created atomically
+            using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
                 if (!ModelState.IsValid)
@@ -140,20 +207,104 @@ namespace Clinics.Api.Controllers
                     return Forbid();
 
                 var userId = _userContext.GetUserId();
+                
+                // Step 1: Validate and prepare condition data first
+                // Determine operator: default to UNCONDITIONED if not provided
+                var conditionOperator = string.IsNullOrWhiteSpace(req.ConditionOperator) 
+                    ? "UNCONDITIONED" 
+                    : req.ConditionOperator.ToUpper();
+
+                // Validate operator
+                var validOperators = new[] { "UNCONDITIONED", "DEFAULT", "EQUAL", "GREATER", "LESS", "RANGE" };
+                if (!validOperators.Contains(conditionOperator))
+                {
+                    await transaction.RollbackAsync();
+                    return BadRequest(new { message = $"Invalid operator: {conditionOperator}. Must be one of: {string.Join(", ", validOperators)}" });
+                }
+
+                // Validate condition values based on operator
+                if (conditionOperator == "RANGE")
+                {
+                    if (!req.ConditionMinValue.HasValue || !req.ConditionMaxValue.HasValue)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "MinValue and MaxValue are required for RANGE operator" });
+                    }
+                    if (req.ConditionMinValue.Value <= 0 || req.ConditionMaxValue.Value <= 0)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "MinValue and MaxValue must be greater than 0" });
+                    }
+                    if (req.ConditionMinValue.Value >= req.ConditionMaxValue.Value)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "MinValue must be less than MaxValue" });
+                    }
+                }
+                else if (conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS")
+                {
+                    if (!req.ConditionValue.HasValue)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = $"Value is required for {conditionOperator} operator" });
+                    }
+                    if (req.ConditionValue.Value <= 0)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "Value must be greater than 0" });
+                    }
+                }
+
+                // Check for DEFAULT operator uniqueness (only one DEFAULT per queue)
+                if (conditionOperator == "DEFAULT")
+                {
+                    var existingDefault = await _db.Set<MessageCondition>()
+                        .FirstOrDefaultAsync(c => c.QueueId == req.QueueId && c.Operator == "DEFAULT");
+                    if (existingDefault != null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { message = "A default template already exists for this queue. Please set the existing default template to a different operator first." });
+                    }
+                }
+
+                // Step 2: Create the condition first (one-to-one required relationship)
+                var condition = new MessageCondition
+                {
+                    QueueId = req.QueueId,
+                    Operator = conditionOperator,
+                    Value = conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS" 
+                        ? req.ConditionValue 
+                        : null,
+                    MinValue = conditionOperator == "RANGE" ? req.ConditionMinValue : null,
+                    MaxValue = conditionOperator == "RANGE" ? req.ConditionMaxValue : null,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _db.Set<MessageCondition>().Add(condition);
+                await _db.SaveChangesAsync(); // Save to get the condition ID
+
+                // Step 3: Create the template with MessageConditionId foreign key
                 var template = new MessageTemplate
                 {
                     Title = req.Title,
                     Content = req.Content,
-                    IsActive = req.IsActive,
                     CreatedBy = userId,
                     ModeratorId = queue.ModeratorId,
                     QueueId = req.QueueId,
+                    MessageConditionId = condition.Id, // Set foreign key to condition
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
 
                 _db.MessageTemplates.Add(template);
                 await _db.SaveChangesAsync();
+
+                // Commit transaction
+                await transaction.CommitAsync();
+
+                // Reload template with condition for DTO
+                await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
 
                 var dto = new TemplateDto
                 {
@@ -162,13 +313,15 @@ namespace Clinics.Api.Controllers
                     Content = template.Content,
                     ModeratorId = template.ModeratorId,
                     QueueId = template.QueueId,
-                    IsActive = template.IsActive,
                     CreatedAt = template.CreatedAt,
                     UpdatedAt = template.UpdatedAt,
+                    CreatedBy = template.CreatedBy,
+                    UpdatedBy = template.UpdatedBy,
+                    IsDeleted = template.IsDeleted, // Single source of truth: active = !IsDeleted
                     Condition = template.Condition != null ? new ConditionDto
                     {
                         Id = template.Condition.Id,
-                        TemplateId = template.Condition.TemplateId,
+                        TemplateId = template.Id, // Template ID from the template entity
                         QueueId = template.Condition.QueueId,
                         Operator = template.Condition.Operator,
                         Value = template.Condition.Value,
@@ -183,6 +336,7 @@ namespace Clinics.Api.Controllers
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error creating template");
                 return StatusCode(500, new { message = "Error creating template" });
             }
@@ -193,7 +347,8 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var existing = await _db.MessageTemplates.FindAsync(id);
+                var existing = await _db.MessageTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
                 if (existing == null)
                     return NotFound(new { message = "Template not found" });
 
@@ -210,9 +365,11 @@ namespace Clinics.Api.Controllers
                 if (!string.IsNullOrEmpty(req.Content))
                     existing.Content = req.Content;
 
-                if (req.IsActive.HasValue)
-                    existing.IsActive = req.IsActive.Value;
+                // Get current user ID for audit
+                var userId = _userContext.GetUserId();
 
+                // Set UpdatedBy and UpdatedAt for audit trail
+                existing.UpdatedBy = userId;
                 existing.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
 
@@ -223,13 +380,15 @@ namespace Clinics.Api.Controllers
                     Content = existing.Content,
                     ModeratorId = existing.ModeratorId,
                     QueueId = existing.QueueId,
-                    IsActive = existing.IsActive,
                     CreatedAt = existing.CreatedAt,
                     UpdatedAt = existing.UpdatedAt,
+                    CreatedBy = existing.CreatedBy,
+                    UpdatedBy = existing.UpdatedBy,
+                    IsDeleted = existing.IsDeleted, // Single source of truth: active = !IsDeleted
                     Condition = existing.Condition != null ? new ConditionDto
                     {
                         Id = existing.Condition.Id,
-                        TemplateId = existing.Condition.TemplateId,
+                        TemplateId = existing.Id, // Template ID from the template entity
                         QueueId = existing.Condition.QueueId,
                         Operator = existing.Condition.Operator,
                         Value = existing.Condition.Value,
@@ -254,7 +413,8 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var existing = await _db.MessageTemplates.FindAsync(id);
+                var existing = await _db.MessageTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
                 if (existing == null)
                     return NotFound(new { message = "Template not found" });
 
@@ -296,7 +456,8 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var template = await _db.MessageTemplates.FindAsync(id);
+                var template = await _db.MessageTemplates
+                    .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
                 if (template == null)
                     return NotFound(new { message = "Template not found" });
 
@@ -314,22 +475,32 @@ namespace Clinics.Api.Controllers
                 {
                     try
                     {
+                        // Unify datetime for this bulk operation
+                        var operationTimestamp = DateTime.UtcNow;
+
                         // Set all other conditions in the same queue to UNCONDITIONED
-                        var otherConditions = await _db.Set<MessageCondition>()
-                            .Where(c => c.QueueId == template.QueueId && c.TemplateId != id)
+                        // Find other templates in the same queue and get their conditions
+                        var otherTemplates = await _db.MessageTemplates
+                            .Where(t => t.QueueId == template.QueueId && t.Id != id && !t.IsDeleted)
+                            .Include(t => t.Condition)
                             .ToListAsync();
+                        var otherConditions = otherTemplates
+                            .Where(t => t.Condition != null)
+                            .Select(t => t.Condition!)
+                            .ToList();
                         foreach (var other in otherConditions)
                         {
                             other.Operator = "UNCONDITIONED";
                             other.Value = null;
                             other.MinValue = null;
                             other.MaxValue = null;
-                            other.UpdatedAt = DateTime.UtcNow;
+                            other.UpdatedAt = operationTimestamp;
                         }
 
                         // Get or create condition for this template with DEFAULT operator
-                        var condition = await _db.Set<MessageCondition>()
-                            .FirstOrDefaultAsync(c => c.TemplateId == id);
+                        // Load the template with its condition
+                        await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
+                        var condition = template.Condition;
                         if (condition != null)
                         {
                             condition.Operator = "DEFAULT";
@@ -340,15 +511,19 @@ namespace Clinics.Api.Controllers
                         }
                         else
                         {
+                            // Create new condition
                             condition = new MessageCondition
                             {
-                                TemplateId = id,
                                 QueueId = template.QueueId,
                                 Operator = "DEFAULT",
                                 CreatedAt = DateTime.UtcNow,
                                 UpdatedAt = DateTime.UtcNow
                             };
                             _db.Set<MessageCondition>().Add(condition);
+                            await _db.SaveChangesAsync(); // Save to get condition ID
+                            
+                            // Update template with MessageConditionId
+                            template.MessageConditionId = condition.Id;
                         }
 
                         template.UpdatedAt = DateTime.UtcNow;
@@ -363,13 +538,12 @@ namespace Clinics.Api.Controllers
                             Content = template.Content,
                             ModeratorId = template.ModeratorId,
                             QueueId = template.QueueId,
-                            IsActive = template.IsActive,
                             CreatedAt = template.CreatedAt,
                             UpdatedAt = template.UpdatedAt,
                             Condition = condition != null ? new ConditionDto
                             {
                                 Id = condition.Id,
-                                TemplateId = condition.TemplateId,
+                                TemplateId = id, // Template ID from the template entity
                                 QueueId = condition.QueueId,
                                 Operator = condition.Operator,
                                 Value = condition.Value,
@@ -427,7 +601,6 @@ namespace Clinics.Api.Controllers
                         t.Content,
                         t.ModeratorId,
                         t.QueueId,
-                        t.IsActive,
                         DefaultOperator = t.Condition != null && t.Condition.Operator == "DEFAULT" ? "DEFAULT" : null,
                         t.DeletedAt,
                         DaysRemainingInTrash = _ttlQueries.GetDaysRemainingInTrash(t, 30),
@@ -468,7 +641,6 @@ namespace Clinics.Api.Controllers
                         t.Content,
                         t.ModeratorId,
                         t.QueueId,
-                        t.IsActive,
                         DefaultOperator = t.Condition != null && t.Condition.Operator == "DEFAULT" ? "DEFAULT" : null,
                         t.DeletedAt,
                         DaysDeleted = t.DeletedAt.HasValue ? (int)(DateTime.UtcNow - t.DeletedAt.Value).TotalDays : 0,
@@ -539,20 +711,9 @@ namespace Clinics.Api.Controllers
         }
     }
 
-    public class CreateTemplateRequest
-    {
-        public string Title { get; set; } = null!;
-        public string Content { get; set; } = null!;
-        public int QueueId { get; set; }
-        public bool IsShared { get; set; } = true;
-        public bool IsActive { get; set; } = true;
-    }
+    // Note: CreateTemplateRequest and UpdateTemplateRequest are defined in Clinics.Api.DTOs.TemplateConditionDtos
+    // This duplicate definition has been removed to use the DTOs version which includes condition fields.
 
-    public class UpdateTemplateRequest
-    {
-        public string? Title { get; set; }
-        public string? Content { get; set; }
-        public bool? IsShared { get; set; }
-        public bool? IsActive { get; set; }
-    }
+    // Note: UpdateTemplateRequest is defined in Clinics.Api.DTOs.TemplateConditionDtos
+    // This duplicate definition has been removed.
 }

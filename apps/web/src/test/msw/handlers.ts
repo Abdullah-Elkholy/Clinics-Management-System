@@ -37,7 +37,7 @@ type QueueRow = {
   updatedAt?: string;
 };
 
-const db = {
+const createDb = () => ({
   templates: new Map<number, TemplateRow[]>([
     [123, [
       {
@@ -126,6 +126,12 @@ const db = {
     } as QueueRow,
   ] as QueueRow[],
   nextQueueId: 12,
+});
+
+let db = createDb();
+
+export const resetDb = () => {
+  db = createDb();
 };
 
 export const handlers = [

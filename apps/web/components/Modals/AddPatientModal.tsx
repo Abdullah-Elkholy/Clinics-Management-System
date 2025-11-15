@@ -5,11 +5,11 @@ import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validatePhone, ValidationError, validateCountryCode, MAX_PHONE_DIGITS } from '@/utils/validation';
 import { COUNTRY_CODES } from '@/constants';
-import { queuesApiClient } from '@/services/api/queuesApiClient';
+import { patientsApiClient } from '@/services/api/patientsApiClient';
 import Modal from './Modal';
 import { useState } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
-import { getEffectiveCountryCode } from '@/utils/core.utils';
+import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
 
 interface PatientField {
   name: string;
@@ -25,7 +25,7 @@ interface PatientErrors {
 export default function AddPatientModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { selectedQueueId, addPatient } = useQueue();
+  const { selectedQueueId, refreshPatients } = useQueue();
   const [patients, setPatients] = useState<PatientField[]>([
     { name: '', phone: '', countryCode: '+20', customCountryCode: '' }
   ]);
@@ -227,43 +227,46 @@ export default function AddPatientModal() {
         return;
       }
 
-      // Process valid patients with effective country codes
-      const patientsToAdd = validPatients.map(p => ({
-        name: p.name.trim(),
-        phone: p.phone.trim(),
-        countryCode: p.effectiveCountryCode,
-        status: 'waiting' as const,
-      }));
-      
-      // Make API calls to add patients to queue
+      // Process valid patients and call backend API
+      const qidNum = Number(queueId);
       let addedCount = 0;
-      for (const patient of patientsToAdd) {
+      for (const p of validPatients) {
         try {
-          // Call API to add patient to queue
-          // For now, use local addPatient since backend endpoint may not exist yet
-          // TODO: Replace with API call once POST /queues/{queueId}/patients is available
-          addPatient({
-            queueId: String(queueId),
-            name: patient.name,
-            phone: patient.phone,
-            countryCode: patient.countryCode,
-            status: patient.status,
+          const phoneNumber = normalizePhoneNumber(p.phone.trim(), p.effectiveCountryCode);
+          await patientsApiClient.createPatient({
+            queueId: qidNum,
+            fullName: p.name.trim(),
+            phoneNumber,
+            countryCode: p.effectiveCountryCode, // Send countryCode explicitly
           });
           addedCount++;
         } catch (err) {
-          console.error(`Failed to add patient: ${patient.name}`, err);
-          // Continue adding other patients
+          console.error(`Failed to add patient: ${p.name}`, err);
         }
       }
       
-      if (addedCount > 0) {
-        addToast(`تم إضافة ${addedCount} مريض بنجاح`, 'success');
-  setPatients([{ name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
-        setErrors({});
-        closeModal('addPatient');
-      } else {
+      if (addedCount === 0) {
         addToast('فشل إضافة المرضى', 'error');
+        return;
       }
+
+      addToast(`تم إضافة ${addedCount} مريض بنجاح`, 'success');
+      
+      // Reload patients from backend to reflect latest state
+      // Wait for refetch to complete before closing modal and dispatching event
+      await refreshPatients(String(queueId));
+      
+      // Clear form fields after successful creation
+      setPatients([{ name: '', phone: '', countryCode: '+20', customCountryCode: '' }]);
+      setErrors({});
+      
+      closeModal('addPatient');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure refreshPatients has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+      }, 100);
     } catch (error) {
       console.error('Failed to add patients:', error);
       addToast('حدث خطأ أثناء إضافة المرضى', 'error');
@@ -395,11 +398,13 @@ export default function AddPatientModal() {
                   <div className="grid grid-cols-2 gap-3">
                     {/* Name Field */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label htmlFor={`addPatient-name-${index}`} className="block text-sm font-medium text-gray-700 mb-1">
                         <i className="fas fa-signature text-gray-500 ml-1"></i>
                         الاسم الكامل *
                       </label>
                       <input
+                        id={`addPatient-name-${index}`}
+                        name={`patient-${index}-name`}
                         type="text"
                         value={patient.name}
                         onChange={(e) => updatePatient(index, 'name', e.target.value)}
@@ -442,6 +447,8 @@ export default function AddPatientModal() {
                         {/* Custom Country Code Input (only when OTHER is selected) */}
                         {patient.countryCode === 'OTHER' && (
                           <input
+                            id={`addPatient-customCountryCode-${index}`}
+                            name={`patient-${index}-customCountryCode`}
                             type="text"
                             value={patient.customCountryCode || ''}
                             onChange={(e) => {
@@ -466,6 +473,8 @@ export default function AddPatientModal() {
 
                         {/* Phone Input */}
                         <input
+                          id={`addPatient-phone-${index}`}
+                          name={`patient-${index}-phone`}
                           type="tel"
                           value={patient.phone}
                           onChange={(e) => updatePatient(index, 'phone', e.target.value)}

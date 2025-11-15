@@ -174,6 +174,8 @@ namespace Clinics.Domain
         [Required]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+        public int? CreatedBy { get; set; }
+
         public DateTime? UpdatedAt { get; set; }
 
         public int? UpdatedBy { get; set; }
@@ -226,9 +228,6 @@ namespace Clinics.Domain
         public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
         [Required]
-        public bool IsActive { get; set; } = true;
-
-        [Required]
         public DateTime CreatedAt { get; set; }
 
         /// <summary>
@@ -237,12 +236,28 @@ namespace Clinics.Domain
         public DateTime? UpdatedAt { get; set; }
 
         /// <summary>
-        /// Navigation to one-to-one condition (mandatory relationship).
+        /// Foreign key to the one-to-one condition (REQUIRED relationship at database level).
+        /// Every MessageTemplate MUST have exactly one MessageCondition.
+        /// 
+        /// Database-level enforcement:
+        /// - MessageConditionId is [Required] (non-nullable in database)
+        /// - Unique index on MessageConditionId ensures exactly one condition per template
+        /// - Foreign key with CASCADE delete (deleting template deletes condition)
+        /// - ApplicationDbContext configures this as .IsRequired() with .OnDelete(DeleteBehavior.Cascade)
+        /// </summary>
+        [Required]
+        public int MessageConditionId { get; set; }
+
+        /// <summary>
+        /// Navigation to one-to-one condition (REQUIRED relationship at database level).
+        /// Every MessageTemplate MUST have exactly one MessageCondition.
+        /// 
         /// Condition.Operator encodes template state:
         ///   - DEFAULT: This template is the queue default (selected when no active condition matches). Exactly one per queue enforced by filtered unique index.
         ///   - UNCONDITIONED: Template has no custom selection criteria ("بدون شرط"). Used for templates without specific rules.
         ///   - EQUAL/GREATER/LESS/RANGE: Active condition determining when this template is selected.
         /// </summary>
+        [ForeignKey(nameof(MessageConditionId))]
         public MessageCondition? Condition { get; set; }
 
         // Audit fields (UpdatedBy already present; ensure it exists)
@@ -559,18 +574,20 @@ namespace Clinics.Domain
     }
 
     /// <summary>
-    /// MessageCondition: One-to-one relationship with MessageTemplate.
-    /// Represents optional condition criteria for template selection during message sending.
+    /// MessageCondition: One-to-one REQUIRED relationship with MessageTemplate.
+    /// Represents condition criteria for template selection during message sending.
     /// 
-    /// Semantics:
-    /// - Null TemplateId in MessageCondition = Template has NO condition (default template for queue)
-    /// - Non-null TemplateId in MessageCondition = Template has custom condition with this criteria
+    /// Relationship:
+    /// - The relationship is owned by MessageTemplate (MessageTemplate has MessageConditionId foreign key)
+    /// - Every MessageCondition MUST belong to exactly one MessageTemplate
+    /// - Every MessageTemplate MUST have exactly one MessageCondition
     /// 
     /// Validation:
-    /// - Unique index on TemplateId (max one condition per template)
+    /// - Unique index on MessageTemplate.MessageConditionId (one condition per template)
     /// - QueueId is required (each condition belongs to a specific queue)
-    /// - Operator must be one of: EQUAL, GREATER, LESS, RANGE
+    /// - Operator must be one of: DEFAULT, UNCONDITIONED, EQUAL, GREATER, LESS, RANGE
     /// - Value required for EQUAL/GREATER/LESS; MinValue and MaxValue required for RANGE
+    /// - DEFAULT operator: Exactly one per queue (enforced by filtered unique index)
     /// </summary>
     [Table("MessageConditions")]
     public class MessageCondition : ISoftDeletable
@@ -579,18 +596,17 @@ namespace Clinics.Domain
         public int Id { get; set; }
 
         /// <summary>
-        /// One-to-one relationship with MessageTemplate.
-        /// Unique constraint ensures max one condition per template.
+        /// Navigation property to the one-to-one REQUIRED relationship with MessageTemplate.
+        /// 
+        /// The relationship is now owned by MessageTemplate (MessageTemplate has MessageConditionId foreign key).
+        /// Every MessageCondition MUST belong to exactly one MessageTemplate.
+        /// 
         /// The Operator encodes the semantic state of the template:
         ///   - DEFAULT: This template is the queue default (fallback when no active condition matches).
         ///              Exactly one per queue enforced by filtered unique index: WHERE Operator = 'DEFAULT'.
         ///   - UNCONDITIONED: No custom criteria; template selection is unconditioned ("بدون شرط").
         ///   - EQUAL/GREATER/LESS/RANGE: Active condition; template selected when patient field matches operator/values.
         /// </summary>
-        [Required]
-        public int TemplateId { get; set; }
-
-        [ForeignKey(nameof(TemplateId))]
         public MessageTemplate? Template { get; set; }
 
         /// <summary>

@@ -1,5 +1,7 @@
 'use client';
 
+import { formatPhoneForDisplay } from '@/utils/phoneUtils';
+
 import { useState } from 'react';
 import { useQueue } from '../../contexts/QueueContext';
 
@@ -76,7 +78,7 @@ export default function PatientsTable() {
                   </td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{patient.position}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">{patient.name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{patient.countryCode} {patient.phone}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{formatPhoneForDisplay(patient.phone, patient.countryCode || '+20')}</td>
                   <td className="px-6 py-4 text-sm">
                     <div className="flex space-x-2 space-x-reverse">
                       <button className="text-blue-600 hover:text-blue-700">

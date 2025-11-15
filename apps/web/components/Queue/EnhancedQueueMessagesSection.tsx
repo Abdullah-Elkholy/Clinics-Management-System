@@ -11,6 +11,8 @@
 
 'use client';
 
+import { formatLocalDate } from '@/utils/dateTimeUtils';
+
 import React, { useState, useCallback, useMemo } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
@@ -72,10 +74,9 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
       );
     }
 
-    // Filter by status
-    if (filterStatus !== 'all') {
-      result = result.filter((t) => (filterStatus === 'active' ? t.isActive : !t.isActive));
-    }
+    // Filter by deleted status (isActive removed, using isDeleted only)
+    // Only show non-deleted templates
+    result = result.filter((t) => !t.isDeleted);
 
     // Sort
     if (sortBy === 'date') {
@@ -87,9 +88,8 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
     return result;
   }, [templates, searchTerm, filterStatus, sortBy]);
 
-  // Separate active and inactive templates
-  const activeTemplates = filteredAndSortedTemplates.filter((t) => t.isActive);
-  const inactiveTemplates = filteredAndSortedTemplates.filter((t) => !t.isActive);
+  // All templates are shown (filtered by isDeleted above)
+  // isActive removed - using isDeleted only
 
   const handleToggleTemplate = useCallback(
     (templateId: string) => {
@@ -127,7 +127,6 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
           title: `${template.title} (نسخة)`,
           content: template.content,
           queueId: template.queueId,
-          isActive: template.isActive,
           variables: template.variables || [],
           createdBy: template.createdBy || '',
           createdAt: new Date(),
@@ -142,7 +141,7 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
     async (templateId: string) => {
       const template = templates.find((t) => t.id === templateId);
       if (!template) return;
-      await updateMessageTemplate(templateId, { isActive: !template.isActive });
+      // isActive removed - templates are active unless deleted
     },
     [templates, updateMessageTemplate]
   );
@@ -155,15 +154,8 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
         await deleteMessageTemplate(id);
       }
       onTemplateDeleted?.();
-    } else if (bulkAction === 'activate' || bulkAction === 'deactivate') {
-      for (const id of selectedIds) {
-        const template = templates.find((t) => t.id === id);
-        if (template && template.isActive !== (bulkAction === 'activate')) {
-          await updateMessageTemplate(id, { isActive: bulkAction === 'activate' });
-        }
-      }
-      onTemplateUpdated?.();
-    }
+    } 
+    // isActive removed - activate/deactivate actions no longer available
 
     setSelectedTemplates(new Set());
     setShowBulkDeleteModal(false);
@@ -180,7 +172,6 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
           title: formData.title,
           content: formData.content,
           queueId: queueId,
-          isActive: true,
           variables: [],
           createdBy: '',
           createdAt: new Date(),
@@ -458,17 +449,15 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
                 {/* Status Badge */}
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                    template.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-800'
+                    'bg-green-100 text-green-800'
                   }`}
                 >
                   <i
                     className={`fas fa-circle text-xs ${
-                      template.isActive ? 'text-green-600' : 'text-gray-600'
+                      'text-green-600'
                     }`}
                   ></i>
-                  {template.isActive ? 'نشط' : 'معطل'}
+                  نشط
                 </span>
               </div>
             </div>
@@ -481,7 +470,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
           <div className="flex items-center gap-4 text-xs text-gray-600 mb-3">
             <div className="flex items-center gap-1">
               <i className="fas fa-calendar"></i>
-              {new Date(template.createdAt).toLocaleDateString('ar-EG')}
+              {formatLocalDate(template.createdAt)}
             </div>
           </div>
 
@@ -502,15 +491,11 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
               <i className="fas fa-copy text-sm"></i>
             </button>
             <button
-              onClick={onToggleStatus}
-              title={template.isActive ? 'تعطيل' : 'تفعيل'}
-              className={`p-2 rounded transition-colors ${
-                template.isActive
-                  ? 'text-yellow-600 hover:bg-yellow-50'
-                  : 'text-green-600 hover:bg-green-50'
-              }`}
+              onClick={() => handleDeleteTemplate(template.id)}
+              title="حذف"
+              className="p-2 rounded transition-colors text-red-600 hover:bg-red-50"
             >
-              <i className={`fas ${template.isActive ? 'fa-ban' : 'fa-check'} text-sm`}></i>
+              <i className="fas fa-trash text-sm"></i>
             </button>
             <button
               onClick={onDelete}

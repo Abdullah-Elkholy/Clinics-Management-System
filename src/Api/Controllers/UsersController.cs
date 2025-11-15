@@ -103,7 +103,10 @@ namespace Clinics.Api.Controllers
                     u.FirstName,
                     u.LastName,
                     u.Role,
-                    u.ModeratorId
+                    u.ModeratorId,
+                    u.CreatedAt,
+                    u.UpdatedAt,
+                    u.LastLogin
                 }).ToList();
                 
                 return Ok(new { 
@@ -280,12 +283,44 @@ namespace Clinics.Api.Controllers
                 if (req.LastName != null)
                     targetUser.LastName = req.LastName.Trim();
 
+                // Update username if provided
+                if (!string.IsNullOrEmpty(req.Username))
+                {
+                    var trimmedUsername = req.Username.Trim();
+                    
+                    // Check if username is already taken (by a different user)
+                    var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Username == trimmedUsername && u.Id != id);
+                    if (existingUser != null)
+                        return BadRequest(new { success = false, error = "Username already exists" });
+                    
+                    targetUser.Username = trimmedUsername;
+                }
+
                 // Handle password update if provided
                 if (!string.IsNullOrEmpty(req.Password))
                 {
-                    var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
-                    targetUser.PasswordHash = hasher.HashPassword(targetUser, req.Password);
+                    // If CurrentPassword is provided, verify it (for users updating their own password)
+                    if (!string.IsNullOrEmpty(req.CurrentPassword))
+                    {
+                        var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+                        var verificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash, req.CurrentPassword);
+                        
+                        if (verificationResult == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed)
+                            return BadRequest(new { success = false, error = "Current password is incorrect" });
+                        
+                        // Validate that new password is different from current password
+                        var newPasswordVerificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash, req.Password);
+                        if (newPasswordVerificationResult == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success)
+                            return BadRequest(new { success = false, error = "New password must be different from current password" });
+                    }
+                    
+                    var newHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+                    targetUser.PasswordHash = newHasher.HashPassword(targetUser, req.Password);
                 }
+
+                // Set UpdatedBy and UpdatedAt for audit trail
+                targetUser.UpdatedBy = currentUserId;
+                targetUser.UpdatedAt = DateTime.UtcNow;
 
                 await _db.SaveChangesAsync();
                 return Ok(targetUser);

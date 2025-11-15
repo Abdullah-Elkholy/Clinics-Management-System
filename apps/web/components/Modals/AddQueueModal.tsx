@@ -12,7 +12,7 @@ import { useState } from 'react';
 
 export default function AddQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
-  const { addQueue } = useQueue();
+  const { refreshQueues } = useQueue();
   const { addToast } = useUI();
   const { user: currentUser } = useAuth();
   
@@ -77,23 +77,27 @@ export default function AddQueueModal() {
         currentPosition: 1,
         isActive: true,
       });
-
-      // Add to local state after successful API call using the returned queue ID
-      addQueue({
-        doctorName: newQueue.doctorName,
-        moderatorId: String(newQueue.moderatorId),
-      });
-
       addToast('تم إضافة الطابور بنجاح', 'success');
       
-      // Reset form
+      // Refresh queues list from backend to include the newly created queue
+      // Wait for refetch to complete before closing modal and dispatching event
+      await refreshQueues();
+
+      // Clear form fields after successful creation
       setDoctorName('');
       setErrors({});
       setTouched(false);
+      
       closeModal('addQueue');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure refreshQueues has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('queueDataUpdated'));
+      }, 100);
     } catch (error: any) {
-      // Better error handling
-      const errorMessage = error?.message || error?.error || JSON.stringify(error) || 'حدث خطأ غير معروف';
+      // Better error handling using API client's formatter
+      const errorMessage = queuesApiClient.formatApiError?.(error) || error?.message || 'حدث خطأ غير معروف';
       console.error('Failed to add queue:', errorMessage);
       addToast(`حدث خطأ: ${errorMessage}`, 'error');
     } finally {
@@ -144,10 +148,12 @@ export default function AddQueueModal() {
 
         {/* Doctor Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="addQueue-doctorName" className="block text-sm font-medium text-gray-700 mb-2">
             اسم الطبيب *
           </label>
           <input
+            id="addQueue-doctorName"
+            name="doctorName"
             type="text"
             value={doctorName ?? ''}
             onChange={(e) => handleFieldChange(e.target.value)}

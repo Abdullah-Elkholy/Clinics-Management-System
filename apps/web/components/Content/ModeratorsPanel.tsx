@@ -394,11 +394,11 @@ export default function ModeratorsPanel() {
                       </p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
-                      moderator.isActive 
+                      !(moderator.isDeleted ?? false)
                         ? 'bg-blue-100 text-blue-800' 
                         : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {moderator.isActive ? 'نشط' : 'معطل'}
+                      {!(moderator.isDeleted ?? false) ? 'نشط' : 'معطل'}
                     </span>
                   </div>
 
@@ -417,13 +417,13 @@ export default function ModeratorsPanel() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-600">تاريخ الإنشاء:</span>
                       <span className="text-sm font-medium text-gray-900">
-                        {new Date(moderator.createdAt).toLocaleDateString('ar-SA')}
+                        {new Date(moderator.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-600">آخر تحديث:</span>
                       <span className="text-sm font-medium text-gray-900">
-                        {new Date(moderator.updatedAt).toLocaleDateString('ar-SA')}
+                        {new Date(moderator.updatedAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </span>
                     </div>
                   </div>

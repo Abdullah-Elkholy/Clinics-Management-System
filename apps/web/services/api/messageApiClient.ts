@@ -12,10 +12,12 @@ export interface TemplateDto {
   title: string;
   content: string;
   queueId: number;
-  isActive: boolean;
   condition?: ConditionDto;  // operator-driven state: DEFAULT, UNCONDITIONED, or active rule
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+  createdBy?: number;
+  updatedBy?: number;
+  isDeleted: boolean; // Single source of truth: active = !isDeleted
 }
 
 export interface ConditionDto {
@@ -34,13 +36,15 @@ export interface CreateTemplateRequest {
   title: string;
   content: string;
   queueId: number;
-  isActive?: boolean;
+  conditionOperator?: string;
+  conditionValue?: number;
+  conditionMinValue?: number;
+  conditionMaxValue?: number;
 }
 
 export interface UpdateTemplateRequest {
   title?: string;
   content?: string;
-  isActive?: boolean;
 }
 
 export interface CreateConditionRequest {
@@ -322,23 +326,30 @@ export async function deleteTemplate(id: number): Promise<void> {
 /**
  * List deleted templates in trash (soft-deleted within 30 days)
  */
-export async function getTrashTemplates(queueId: number, options?: {
+export async function getTrashTemplates(options?: {
   pageNumber?: number;
   pageSize?: number;
 }): Promise<ListResponse<TemplateDto>> {
+  const page = options?.pageNumber || 1;
+  const pageSize = options?.pageSize || 10;
   const params = new URLSearchParams();
-  params.append('queueId', queueId.toString());
-  if (options?.pageNumber !== undefined) {
-    params.append('pageNumber', options.pageNumber.toString());
-  }
-  if (options?.pageSize !== undefined) {
-    params.append('pageSize', options.pageSize.toString());
-  }
+  params.append('page', page.toString());
+  params.append('pageSize', pageSize.toString());
 
   const queryString = params.toString();
-  return withRetry(() =>
-    fetchAPI(`/templates/trash/list?${queryString}`)
+  const response = await withRetry(() =>
+    fetchAPI(`/templates/trash?${queryString}`)
   );
+  
+  if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
+    return {
+      items: (response as any).data || [],
+      totalCount: (response as any).total || 0,
+      pageNumber: (response as any).page || page,
+      pageSize: (response as any).pageSize || pageSize,
+    };
+  }
+  return response;
 }
 
 /**
@@ -501,7 +512,7 @@ export async function updateQuota(
 // ============================================
 
 /**
- * Send a message
+ * Send a message (single patient)
  */
 export async function sendMessage(data: {
   templateId: number;
@@ -509,6 +520,21 @@ export async function sendMessage(data: {
   patientPhone: string;
 }): Promise<{ id: number; status: string }> {
   return fetchAPI('/messages', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Send messages to multiple patients (bulk)
+ */
+export async function sendMessages(data: {
+  templateId: number;
+  patientIds: number[];
+  channel?: string;
+  overrideContent?: string;
+}): Promise<{ success: boolean; queued: number }> {
+  return fetchAPI('/messages/send', {
     method: 'POST',
     body: JSON.stringify(data),
   });
@@ -624,6 +650,7 @@ export const messageApiClient = {
   
   // Messages
   sendMessage,
+  sendMessages,
   retryMessage,
   
   // Failed Tasks

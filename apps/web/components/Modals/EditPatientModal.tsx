@@ -5,45 +5,123 @@ import { useUI } from '@/contexts/UIContext';
 import { COUNTRY_CODES } from '@/constants';
 import { validateCountryCode, validateName, validatePhone, ValidationError, MAX_PHONE_DIGITS } from '@/utils/validation';
 import Modal from './Modal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
-import { getEffectiveCountryCode } from '@/utils/core.utils';
+import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import { patientsApiClient } from '@/services/api/patientsApiClient';
+import { useQueue } from '@/contexts/QueueContext';
 
 export default function EditPatientModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
   const data = getModalData('editPatient');
+  const { refreshPatients, queues, patients } = useQueue();
 
-  const initialName = data?.patient?.name ?? '';
-  const initialUsername = data?.patient?.username ?? '';
-  const initialPhone = data?.patient?.phone ?? '';
-  const initialCountryCode = data?.patient?.countryCode ?? '+20';
-
-  const [name, setName] = useState(initialName);
-  const [username, setUsername] = useState(initialUsername);
-  const [phone, setPhone] = useState(initialPhone);
-  const [countryCode, setCountryCode] = useState(initialCountryCode);
+  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('+20');
   const [customCountryCode, setCustomCountryCode] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
   const [initialValues, setInitialValues] = useState({
-    name: initialName,
-    username: initialUsername,
+    name: '',
+    username: '',
+    phone: '',
   });
 
   const isOpen = openModals.has('editPatient');
-
-  // When modal opens with data, keep local state in sync
-  if (isOpen && (name === '' && initialName !== '')) {
-    setName(initialName);
-  }
-  if (isOpen && (phone === '' && initialPhone !== '')) {
-    setPhone(initialPhone);
-  }
-  if (isOpen && countryCode === initialCountryCode && initialCountryCode !== data?.patient?.countryCode) {
-    setCountryCode(data?.patient?.countryCode ?? '+20');
-  }
+  const [freshPatientData, setFreshPatientData] = useState<any>(null);
+  
+  // Fetch fresh patient data when modal opens
+  useEffect(() => {
+    if (!isOpen || !data?.patient?.id) return;
+    
+    const fetchFreshPatientData = async () => {
+      try {
+        const patientIdNum = Number(data?.patient?.id);
+        if (!isNaN(patientIdNum) && patientIdNum > 0) {
+          const freshPatientDto = await patientsApiClient.getPatient(patientIdNum);
+          // Defensive check: ensure freshPatientDto exists and has required fields
+          if (freshPatientDto && typeof freshPatientDto === 'object' && 'id' in freshPatientDto) {
+            const patientId = freshPatientDto.id;
+            // Ensure id is a valid number before converting to string
+            if (patientId !== undefined && patientId !== null && !isNaN(Number(patientId))) {
+              // Parse phone number from E.164 format if needed
+              const phoneNumber = freshPatientDto.phoneNumber || '';
+              const countryCode = freshPatientDto.countryCode || '+20';
+              
+              // Extract phone number without country code if it's in E.164 format
+              let phone = phoneNumber;
+              if (phoneNumber.startsWith('+')) {
+                const countryCodeDigits = countryCode.replace(/[^\d]/g, '');
+                if (phoneNumber.startsWith(`+${countryCodeDigits}`)) {
+                  phone = phoneNumber.substring(countryCodeDigits.length + 1);
+                  // Remove leading zero for countries that require it
+                  if (countryCodeDigits === '20' && phone.startsWith('0')) {
+                    phone = phone.substring(1);
+                  }
+                }
+              }
+              
+            // Convert backend DTO to frontend format
+            const freshPatient = {
+                id: String(patientId),
+              name: freshPatientDto.fullName || '',
+                phone: phone,
+                countryCode: countryCode,
+              queueId: data?.patient?.queueId || '',
+            };
+            setFreshPatientData(freshPatient);
+          } else {
+              // If ID is invalid, use existing patient data
+              setFreshPatientData(null);
+            }
+          } else {
+            // If response structure is invalid, use existing patient data
+            setFreshPatientData(null);
+          }
+        }
+      } catch (err) {
+        // If fresh data fetch fails, fall back to existing data
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to fetch fresh patient data:', err);
+        }
+        setFreshPatientData(null);
+      }
+    };
+    
+    // Always refetch when modal opens to ensure fresh data
+    fetchFreshPatientData();
+  }, [isOpen, data?.patient?.id]);
+  
+  // Get fresh patient data - prioritize freshPatientData, then patients array, then props
+  const freshPatient = freshPatientData 
+    || (data?.patient?.id 
+      ? patients.find(p => p.id === data?.patient?.id) || data?.patient
+      : data?.patient);
+  
+  // Use useEffect to properly initialize state when modal opens with patient data
+  // Get fresh patient data
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    if (freshPatient) {
+      setName(freshPatient.name ?? '');
+      setUsername(freshPatient.username ?? '');
+      setPhone(freshPatient.phone ?? '');
+      setCountryCode(freshPatient.countryCode ?? '+20');
+      setCustomCountryCode('');
+      setInitialValues({
+        name: freshPatient.name ?? '',
+        username: freshPatient.username ?? '',
+        phone: freshPatient.phone ?? '',
+      });
+      setErrors({});
+      setTouched(false);
+    }
+  }, [isOpen, freshPatient?.id, freshPatient?.name, freshPatient?.phone, freshPatient?.countryCode]); // Depend on patient ID and key fields to re-init when data updates
 
   const validateFields = () => {
     const newErrors: ValidationError = {};
@@ -61,7 +139,7 @@ export default function EditPatientModal() {
       }
     }
     
-    if (phone !== initialPhone) {
+    if (phone !== initialValues.phone) {
       const phoneError = validatePhone(phone);
       if (phoneError) newErrors.phone = phoneError;
     }
@@ -120,10 +198,11 @@ export default function EditPatientModal() {
       updatePayload.username = username.trim();
     }
     
-    if (phone !== initialPhone) {
+    if (phone !== initialValues.phone) {
       updatePayload.phone = phone.trim();
     }
     
+    const initialCountryCode = data?.patient?.countryCode ?? '+20';
     if (countryCode !== initialCountryCode || customCountryCode) {
       const effectiveCountryCode = getEffectiveCountryCode(countryCode, customCountryCode);
       const countryCodeError = validateCountryCode(effectiveCountryCode, true);
@@ -142,21 +221,46 @@ export default function EditPatientModal() {
       return;
     }
 
-    const updated = {
-      ...data?.patient,
-      ...updatePayload,
-    };
-
-    // call onSave callback if provided
     try {
       setIsLoading(true);
-      data?.onSave && data.onSave(updated);
+      const patientIdNum = Number(data?.patient?.id);
+      if (isNaN(patientIdNum)) {
+        throw new Error('معرّف المريض غير صالح');
+      }
+
+      // Map to API payload fields
+      const apiPayload: any = {};
+      if (updatePayload.name) apiPayload.fullName = updatePayload.name;
+      if (updatePayload.phone || updatePayload.countryCode) {
+        const effectiveCode = getEffectiveCountryCode(countryCode, customCountryCode);
+        const phoneRaw = updatePayload.phone || data?.patient?.phone || '';
+        apiPayload.phoneNumber = normalizePhoneNumber(phoneRaw, effectiveCode);
+        // Send countryCode explicitly (backend will extract it if not provided, but better to send it)
+        apiPayload.countryCode = effectiveCode;
+      }
+
+      await patientsApiClient.updatePatient(patientIdNum, apiPayload);
+
       addToast('تم تحديث بيانات المريض بنجاح', 'success');
+      
+      // Refresh patients to reflect changes
+      // Wait for refetch to complete before closing modal and dispatching event
+      await refreshPatients(String(data?.patient?.queueId || ''));
+      
+      // Clear form fields after successful update
       setName('');
       setUsername('');
       setPhone('');
       setErrors({});
+      setTouched(false);
+      
       closeModal('editPatient');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure refreshPatients has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+      }, 100);
     } catch (err) {
       addToast('حدث خطأ أثناء تحديث البيانات', 'error');
     } finally {
@@ -193,8 +297,10 @@ export default function EditPatientModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
+          <label htmlFor="editPatient-name" className="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
           <input
+            id="editPatient-name"
+            name="name"
             type="text"
             value={name ?? ''}
             onChange={(e) => handleFieldChange('name', e.target.value)}
@@ -216,7 +322,7 @@ export default function EditPatientModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف وكود الدولة *</label>
+          <label htmlFor="editPatient-phone" className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف وكود الدولة *</label>
           <div className="flex flex-wrap gap-2">
             {/* Country Code Selector */}
             <CountryCodeSelector
@@ -231,6 +337,8 @@ export default function EditPatientModal() {
             {/* Custom Country Code Input (only when OTHER is selected) */}
             {countryCode === 'OTHER' && (
               <input
+                id="editPatient-customCountryCode"
+                name="customCountryCode"
                 type="text"
                 value={customCountryCode ?? ''}
                 onChange={(e) => {
@@ -255,6 +363,8 @@ export default function EditPatientModal() {
 
             {/* Phone Input */}
             <input
+              id="editPatient-phone"
+              name="phone"
               type="tel"
               value={phone ?? ''}
               onChange={(e) => handleFieldChange('phone', e.target.value)}

@@ -20,11 +20,11 @@ export function templateDtoToModel(dto: TemplateDto, queueId?: string): MessageT
     title: dto.title,
     content: dto.content,
     variables: extractVariablesFromTemplate(dto.content),
-    isActive: dto.isActive ?? true,
     condition: dto.condition ? conditionDtoToModel(dto.condition) : undefined,
     createdAt: new Date(dto.createdAt),
     updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
-    createdBy: '', // Backend may not provide this; align with API response
+    createdBy: dto.createdBy?.toString() || '', // Use real CreatedBy from backend
+    isDeleted: dto.isDeleted ?? false, // Single source of truth: active = !isDeleted
   };
 }
 
@@ -91,7 +91,7 @@ export function patientDtoToModel(dto: QueuePatientDto): Patient {
     id: dto.id.toString(),
     name: `${dto.firstName} ${dto.lastName}`,
     phone: dto.phoneNumber,
-    countryCode: '+20', // Default; backend should provide this if available
+    countryCode: dto.countryCode || '+20', // Use real countryCode from backend, fallback to default
     queueId: dto.queueId.toString(),
     position: dto.position,
     status: statusMap[dto.status] || dto.status,

@@ -6,17 +6,18 @@ import UsageGuideSection from '../Common/UsageGuideSection';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
-import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
 import { messageApiClient } from '@/services/api/messageApiClient';
+import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+// Use QueueContext to perform API calls for templates
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 // Mock data removed - using API data instead
 
 export default function AddTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { selectedQueueId, addMessageTemplate, messageTemplates, addMessageCondition, messageConditions } = useQueue();
+  const { selectedQueueId, addMessageTemplate, messageTemplates, addMessageCondition, messageConditions, refreshQueueData } = useQueue();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
@@ -37,6 +38,24 @@ export default function AddTemplateModal() {
   const queueId = modalData?.queueId || selectedQueueId;
 
   const MAX_CONTENT_LENGTH = 1000;
+
+  // Reset all state when modal opens to ensure clean state
+  useEffect(() => {
+    if (isOpen) {
+      setTitle('');
+      setContent('');
+      setErrors({});
+      setTouched(false);
+      setIsLoading(false);
+      setSelectedConditionId(null);
+      setSelectedOperator(null);
+      setSelectedValue(undefined);
+      setSelectedMinValue(undefined);
+      setSelectedMaxValue(undefined);
+      setShowDefaultWarning(false);
+      setExistingDefaultTemplate(null);
+    }
+  }, [isOpen]);
 
   // Handle condition selection
   const handleConditionChange = (conditionId: string | null) => {
@@ -178,40 +197,77 @@ export default function AddTemplateModal() {
     setErrors(newErrors);
     
     if (Object.keys(newErrors).length > 0) {
+      // Don't set isLoading to true if validation fails
       return;
     }
     
+    // Validate queue ID before setting isLoading
+    if (!queueId) {
+      addToast('يجب تحديد طابور', 'error');
+      return;
+    }
+    
+    // Validate queue ID is a valid number
+    const queueIdNum = Number(queueId);
+    if (isNaN(queueIdNum)) {
+      addToast('معرّف الطابور غير صالح', 'error');
+      return;
+    }
+    
+    // Check for duplicate template title in same queue
+    const existingTemplate = messageTemplates.find(
+      (t) => t.queueId === String(queueIdNum) && t.title.toLowerCase() === title.toLowerCase()
+    );
+    if (existingTemplate) {
+      addToast(`قالب بعنوان "${title}" موجود بالفعل في هذا الطابور`, 'error');
+      return;
+    }
+
     try {
       setIsLoading(true);
-      
-      // Validate queue ID
-      if (!queueId) {
-        addToast('يجب تحديد طابور', 'error');
-        return;
-      }
 
-      // Make API call to create template
-      const newTemplateDto = await messageApiClient.createTemplate({
+      // Determine the operator: if no operator selected, use UNCONDITIONED
+      const conditionOperator = selectedOperator || 'UNCONDITIONED';
+      
+      // Create the template with condition in one call (backend handles one-to-one relationship)
+      const createdTemplate = await messageApiClient.createTemplate({
         title,
         content,
-        queueId: Number(queueId),
-        isActive: true,
+        queueId: queueIdNum,
+        conditionOperator: conditionOperator,
+        conditionValue: (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS') 
+          ? selectedValue 
+          : undefined,
+        conditionMinValue: conditionOperator === 'RANGE' ? selectedMinValue : undefined,
+        conditionMaxValue: conditionOperator === 'RANGE' ? selectedMaxValue : undefined,
       });
 
-      // Add template to local state after successful API call
-      addMessageTemplate({
-        title: newTemplateDto.title,
-        content: newTemplateDto.content,
-        queueId: String(newTemplateDto.queueId),
-        isActive: newTemplateDto.isActive,
-        variables: [],
-        createdBy: '',
-        createdAt: new Date(newTemplateDto.createdAt),
-      });
+      // If DEFAULT operator was selected, set the template as default
+      // (Backend creates the condition, but we need to call setTemplateAsDefault for DEFAULT)
+      if (conditionOperator === 'DEFAULT') {
+        await messageApiClient.setTemplateAsDefault(createdTemplate.id);
+      }
 
-      addToast('تم إضافة قالب الرسالة بنجاح', 'success');
+      addToast('تم إضافة قالب الرسالة والشرط بنجاح', 'success');
       
-      // Reset form
+      // Always refetch full data to reflect server truth
+      // Wait for refetch to complete before closing modal and dispatching event
+      if (typeof refreshQueueData === 'function' && queueId) {
+        await refreshQueueData(String(queueId));
+      } else {
+        // Fallback: update via context helper (in tests, this is usually a mock and won't hit API)
+        // Note: createdBy and createdAt will be set by backend, but we provide defaults for test mocks
+        await addMessageTemplate({
+          title,
+          content,
+          queueId: String(queueId),
+          variables: [],
+          createdBy: '', // Will be populated from backend response after API call
+          createdAt: new Date(), // Will be populated from backend response after API call
+        });
+      }
+      
+      // Clear form fields after successful creation
       setTitle('');
       setContent('');
       setErrors({});
@@ -220,7 +276,14 @@ export default function AddTemplateModal() {
       setSelectedValue(undefined);
       setSelectedMinValue(undefined);
       setSelectedMaxValue(undefined);
+      
       closeModal('addTemplate');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure refreshQueueData has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+      }, 100);
     } catch (error) {
       console.error('Failed to add template:', error);
       addToast('حدث خطأ أثناء إضافة القالب', 'error');
@@ -243,6 +306,14 @@ export default function AddTemplateModal() {
         setContent('');
         setErrors({});
         setTouched(false);
+        setIsLoading(false);
+        setSelectedConditionId(null);
+        setSelectedOperator(null);
+        setSelectedValue(undefined);
+        setSelectedMinValue(undefined);
+        setSelectedMaxValue(undefined);
+        setShowDefaultWarning(false);
+        setExistingDefaultTemplate(null);
       }}
       title="إضافة قالب رسالة جديد"
       size="lg"
@@ -257,10 +328,12 @@ export default function AddTemplateModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="addTemplate-title" className="block text-sm font-medium text-gray-700 mb-2">
             عنوان القالب *
           </label>
           <input
+            id="addTemplate-title"
+            name="title"
             type="text"
             value={title ?? ''}
             onChange={(e) => handleFieldChange('title', e.target.value)}
@@ -282,10 +355,12 @@ export default function AddTemplateModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="addTemplate-content" className="block text-sm font-medium text-gray-700 mb-2">
             محتوى الرسالة *
           </label>
           <textarea
+            id="addTemplate-content"
+            name="content"
             value={content ?? ''}
             onChange={(e) => handleFieldChange('content', e.target.value)}
             onBlur={() => handleFieldBlur('content')}
@@ -406,8 +481,8 @@ export default function AddTemplateModal() {
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading}
-            className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || hasValidationErrors}
+            className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>
@@ -428,6 +503,15 @@ export default function AddTemplateModal() {
               setTitle('');
               setContent('');
               setErrors({});
+              setTouched(false);
+              setIsLoading(false);
+              setSelectedConditionId(null);
+              setSelectedOperator(null);
+              setSelectedValue(undefined);
+              setSelectedMinValue(undefined);
+              setSelectedMaxValue(undefined);
+              setShowDefaultWarning(false);
+              setExistingDefaultTemplate(null);
             }}
             disabled={isLoading}
             className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

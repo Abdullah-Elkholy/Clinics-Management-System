@@ -9,20 +9,27 @@ export interface PatientDto {
   id: number;
   fullName: string;
   phoneNumber: string;
+  countryCode?: string;
   position: number;
   status: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: number;
+  updatedBy?: number;
 }
 
 export interface CreatePatientRequest {
   queueId: number;
   fullName: string;
   phoneNumber: string;
+  countryCode?: string;
   position?: number;
 }
 
 export interface UpdatePatientRequest {
   fullName?: string;
   phoneNumber?: string;
+  countryCode?: string;
   status?: string;
 }
 
@@ -71,6 +78,16 @@ export async function updatePatient(id: number, data: UpdatePatientRequest): Pro
 export async function deletePatient(id: number): Promise<void> {
   return messageApiClient.fetchAPI(`/patients/${id}`, {
     method: 'DELETE',
+  });
+}
+
+/**
+ * Update a patient's position
+ */
+export async function updatePatientPosition(id: number, position: number): Promise<PatientDto> {
+  return messageApiClient.fetchAPI(`/patients/${id}/position`, {
+    method: 'PATCH',
+    body: JSON.stringify({ position }),
   });
 }
 
@@ -141,6 +158,7 @@ export const patientsApiClient = {
   getPatient,
   createPatient,
   updatePatient,
+  updatePatientPosition,
   deletePatient,
   reorderPatients,
   getTrashPatients,

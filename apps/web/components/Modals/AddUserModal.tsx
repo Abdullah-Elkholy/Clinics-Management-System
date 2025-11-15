@@ -172,19 +172,36 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
 
       const success = await actions.createUser(userPayload);
       
-      if (success) {
-        addToast('تم إضافة المستخدم بنجاح', 'success');
-        setFirstName('');
-        setLastName('');
-        setUsername('');
-        setPassword('');
-        setConfirmPassword('');
-        setErrors({});
-        setTouched(false);
-        closeModal('addUser');
-        onUserAdded?.();
-        onClose?.();
+      if (!success) {
+        addToast('فشل إضافة المستخدم', 'error');
+        return;
       }
+
+      addToast('تم إضافة المستخدم بنجاح', 'success');
+      
+      // Refetch users list to ensure UI is in sync with backend
+      // Wait for refetch to complete before closing modal and dispatching event
+      await actions.fetchUsers();
+      
+      // Clear form fields after successful creation
+      setFirstName('');
+      setLastName('');
+      setUsername('');
+      setPassword('');
+      setConfirmPassword('');
+      setErrors({});
+      setTouched(false);
+      
+      closeModal('addUser');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure fetchUsers has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('userDataUpdated'));
+      }, 100);
+      
+      onUserAdded?.();
+      onClose?.();
     } catch (err) {
       addToast('حدث خطأ أثناء إضافة المستخدم', 'error');
     } finally {
@@ -244,8 +261,10 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
+            <label htmlFor="addUser-firstName" className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
             <input
+              id="addUser-firstName"
+              name="firstName"
               type="text"
               value={firstName ?? ''}
               onChange={(e) => handleFieldChange('firstName', e.target.value)}
@@ -266,8 +285,10 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
+            <label htmlFor="addUser-lastName" className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
             <input
+              id="addUser-lastName"
+              name="lastName"
               type="text"
               value={lastName ?? ''}
               onChange={(e) => handleFieldChange('lastName', e.target.value)}
@@ -290,8 +311,10 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
+          <label htmlFor="addUser-username" className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
           <input
+            id="addUser-username"
+            name="username"
             type="text"
             value={username ?? ''}
             onChange={(e) => handleFieldChange('username', e.target.value)}
@@ -344,7 +367,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="block text-sm font-medium text-gray-700">كلمة المرور *</label>
+              <label htmlFor="addUser-password" className="block text-sm font-medium text-gray-700">كلمة المرور *</label>
               <button
                 type="button"
                 onClick={generateRandomPassword}
@@ -357,6 +380,8 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
             </div>
             <div className="relative">
               <input
+                id="addUser-password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
                 value={password ?? ''}
                 onChange={(e) => handleFieldChange('password', e.target.value)}
@@ -386,9 +411,11 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">تأكيد كلمة المرور *</label>
+            <label htmlFor="addUser-confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">تأكيد كلمة المرور *</label>
             <div className="relative">
               <input
+                id="addUser-confirmPassword"
+                name="confirmPassword"
                 type={showConfirmPassword ? 'text' : 'password'}
                 value={confirmPassword ?? ''}
                 onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}

@@ -2,63 +2,126 @@
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { formatPositionDisplay } from '@/utils/queuePositionUtils';
 import { resolvePatientMessages } from '@/services/queueMessageService';
 import { QueueMessageConfig, MessageResolution } from '@/types/messageCondition';
 import { Patient } from '@/types';
-// Mock data removed - using API data instead
-import { useState } from 'react';
+import { messageApiClient } from '@/services/api/messageApiClient';
+import { useState, useMemo } from 'react';
 import Modal from './Modal';
 
 export default function MessagePreviewModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { queues, messageTemplates, messageConditions, patients: contextPatients } = useQueue();
   const data = getModalData('messagePreview');
 
   const isOpen = openModals.has('messagePreview');
   const selectedCount = data?.selectedPatientCount ?? 0;
   const selectedPatientIds = data?.selectedPatients ?? [];
   const currentCQP = data?.currentCQP ? parseInt(data.currentCQP) : undefined;
+  const queueId = data?.queueId;
+  const defaultTemplateId = data?.defaultTemplateId; // Template ID from queue data
 
   // State for removed patients
   const [removedPatients, setRemovedPatients] = useState<string[]>([]);
+  const [isSending, setIsSending] = useState(false);
 
-  // Preview data with queue positions - use data from modal or empty array
-  const previewPatients: Patient[] = data?.patients || [];
+  // Get queue data from context as fallback
+  const queue = useMemo(() => {
+    if (!queueId) return null;
+    return queues.find(q => String(q.id) === String(queueId));
+  }, [queues, queueId]);
+
+  // Get real templates and conditions from context
+  const realTemplates = useMemo(() => {
+    if (!queueId) return [];
+    return messageTemplates.filter(t => String(t.queueId) === String(queueId));
+  }, [messageTemplates, queueId]);
+
+  const realConditions = useMemo(() => {
+    if (!queueId) return [];
+    return messageConditions.filter(c => String(c.queueId) === String(queueId));
+  }, [messageConditions, queueId]);
+
+  // Get default template from real templates
+  const defaultTemplate = useMemo(() => {
+    return realTemplates.find(t => t.condition?.operator === 'DEFAULT') || realTemplates[0];
+  }, [realTemplates]);
+
+  // Preview data with queue positions - use data from modal, fallback to context patients
+  const previewPatients: Patient[] = useMemo(() => {
+    if (data?.patients && data.patients.length > 0) {
+      return data.patients;
+    }
+    // Fallback to context patients filtered by selected IDs
+    if (queueId && selectedPatientIds.length > 0) {
+      return contextPatients.filter(p => 
+        String(p.queueId) === String(queueId) && selectedPatientIds.includes(String(p.id))
+      );
+    }
+    return [];
+  }, [data?.patients, contextPatients, queueId, selectedPatientIds]);
 
   // Sort patients by queue position (الترتيب) - ascending order
-  const sortedPatients = [...previewPatients].sort((a, b) => {
-    // Sort by queueId (treating as string GUID)
-    const queueIdA = a.queueId || '';
-    const queueIdB = b.queueId || '';
-    return queueIdA.localeCompare(queueIdB);
-  });
+  const sortedPatients = useMemo(() => {
+    return [...previewPatients].sort((a, b) => {
+      const posA = a.position || 0;
+      const posB = b.position || 0;
+      return posA - posB;
+    });
+  }, [previewPatients]);
 
-  // Real values for message variables
-  const currentQueuePosition = currentCQP !== undefined ? parseInt(String(currentCQP)) : 3;  // CQP value
-  const estimatedTimePerSession = data?.estimatedTimeRemaining || 15;  // ETS in minutes
-  const queueName = data?.queueName || 'د. أحمد محمد';  // DN: doctor name
+  // Real values for message variables from queue or data
+  const currentQueuePosition = useMemo(() => {
+    if (currentCQP !== undefined) return parseInt(String(currentCQP));
+    if (queue && 'currentPosition' in queue) return (queue as any).currentPosition || 3;
+    return 3;
+  }, [currentCQP, queue]);
 
-  // Build a QueueMessageConfig from data (for service resolution)
-  // For now, default config with no conditions (defaults to simple message)
-  const messageConfig: QueueMessageConfig = {
-    queueId: data?.queueId || 'default',
-    queueName,
-    defaultTemplate: data?.messageTemplate || `مرحباً بك {PN}، ترتيبك الحالي هو {PQP}، الوقت المتبقي المقدر حتى دورك هو {ETR}. شكراً لانتظارك عند ${queueName}`,
-    conditions: data?.conditions || [],
-  };
+  const estimatedTimePerSession = useMemo(() => {
+    if (data?.estimatedTimeRemaining) return parseInt(String(data.estimatedTimeRemaining));
+    if (queue && 'estimatedWaitMinutes' in queue) return (queue as any).estimatedWaitMinutes || 15;
+    return 15;
+  }, [data?.estimatedTimeRemaining, queue]);
+
+  const queueName = useMemo(() => {
+    if (data?.queueName) return data.queueName;
+    if (queue) return queue.doctorName;
+    return 'د. أحمد محمد';
+  }, [data?.queueName, queue]);
+
+  // Build a QueueMessageConfig from real data
+  const messageConfig: QueueMessageConfig = useMemo(() => {
+    return {
+      queueId: queueId || 'default',
+      queueName,
+      defaultTemplate: defaultTemplate?.content || `مرحباً بك {PN}، ترتيبك الحالي هو {PQP}، الوقت المتبقي المقدر حتى دورك هو {ETR}. شكراً لانتظارك عند ${queueName}`,
+      conditions: realConditions.map(c => ({
+        operator: c.operator,
+        value: c.value,
+        minValue: c.minValue,
+        maxValue: c.maxValue,
+      })),
+    };
+  }, [queueId, queueName, defaultTemplate, realConditions]);
 
   // Resolve all patients using the service
-  const patientArray = sortedPatients
-    .filter((p) => selectedPatientIds.includes(p.id) && !removedPatients.includes(String(p.id)))
-    .map((p) => ({ id: String(p.id), name: p.name, position: p.position || 0 }));
+  const patientArray = useMemo(() => {
+    return sortedPatients
+      .filter((p) => selectedPatientIds.includes(String(p.id)) && !removedPatients.includes(String(p.id)))
+      .map((p) => ({ id: String(p.id), name: p.name, position: p.position || 0 }));
+  }, [sortedPatients, selectedPatientIds, removedPatients]);
 
-  const resolutions = resolvePatientMessages(
-    messageConfig,
-    patientArray,
-    currentQueuePosition,
-    { estimatedTimePerSessionMinutes: estimatedTimePerSession }
-  );
+  const resolutions = useMemo(() => {
+    return resolvePatientMessages(
+      messageConfig,
+      patientArray,
+      currentQueuePosition,
+      { estimatedTimePerSessionMinutes: estimatedTimePerSession }
+    );
+  }, [messageConfig, patientArray, currentQueuePosition, estimatedTimePerSession]);
 
   // Group resolutions by resolvedTemplate for grouped display
   const groupedByTemplate = resolutions.reduce(
@@ -71,9 +134,20 @@ export default function MessagePreviewModal() {
     {} as Record<string, MessageResolution[]>
   );
   
-  // Helper function to format phone number
+  // Helper function to format phone number using the utility
   const formatPhoneNumber = (phone: string, countryCode: string = '+20') => {
-    return `${countryCode} ${phone}`;
+    // Import formatPhoneForDisplay at the top, but for now use inline logic
+    if (!phone) return '';
+    let cleaned = phone.replace(/[^\d]/g, '');
+    const countryCodeDigits = countryCode.replace(/[^\d]/g, '');
+    if (cleaned.startsWith(countryCodeDigits)) {
+      cleaned = cleaned.substring(countryCodeDigits.length);
+    }
+    // Remove leading zero for Egypt
+    if (countryCodeDigits === '20' && cleaned.startsWith('0')) {
+      cleaned = cleaned.substring(1);
+    }
+    return `${countryCode} ${cleaned}`;
   };
 
   // Function to get badge color and text for resolution reason
@@ -92,9 +166,47 @@ export default function MessagePreviewModal() {
     }
   };
 
-  const handleConfirmSend = () => {
-    addToast(`تم إرسال ${selectedCount} رسالة بنجاح`, 'success');
-    closeModal('messagePreview');
+  const handleConfirmSend = async () => {
+    // Use default template from real templates if defaultTemplateId is not provided
+    const templateToUse = defaultTemplateId ? Number(defaultTemplateId) : (defaultTemplate ? Number(defaultTemplate.id) : null);
+    
+    if (!templateToUse || isNaN(templateToUse)) {
+      addToast('القالب الافتراضي غير محدد', 'error');
+      return;
+    }
+
+    const patientsToSend = resolutions
+      .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
+      .map((res) => Number(res.patientId))
+      .filter((id) => !isNaN(id));
+
+    if (patientsToSend.length === 0) {
+      addToast('لا يوجد مرضى لإرسال الرسائل لهم', 'error');
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      await messageApiClient.sendMessages({
+        templateId: templateToUse,
+        patientIds: patientsToSend,
+        channel: 'whatsapp',
+      });
+
+      addToast(`تم إرسال ${patientsToSend.length} رسالة بنجاح`, 'success');
+      closeModal('messagePreview');
+      
+      // Trigger refetch events
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+        window.dispatchEvent(new CustomEvent('queueDataUpdated'));
+        window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+      }, 100);
+    } catch (err: any) {
+      addToast(err?.message || 'فشل إرسال الرسائل', 'error');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleRemovePatient = (patientId: string | number) => {
@@ -170,7 +282,7 @@ export default function MessagePreviewModal() {
                           </div>
                         </td>
                         <td className="px-4 py-2">{resolution.patientName}</td>
-                        <td className="px-4 py-2">{formatPhoneNumber(patient.phone, patient.countryCode)}</td>
+                        <td className="px-4 py-2">{formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}</td>
                         <td className="px-4 py-2 text-gray-600 max-w-xs">{resolution.resolvedTemplate}</td>
                         <td className="px-4 py-2 text-center">
                           <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${reasonBadge.bg} ${reasonBadge.text}`}>
@@ -198,11 +310,20 @@ export default function MessagePreviewModal() {
         <div className="flex gap-3 pt-4 border-t flex-shrink-0">
           <button
             onClick={handleConfirmSend}
-            disabled={selectedCount - removedPatients.length === 0}
+            disabled={selectedCount - removedPatients.length === 0 || isSending}
             className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            <i className="fab fa-whatsapp"></i>
-            تأكيد الإرسال ({selectedCount - removedPatients.length})
+            {isSending ? (
+              <>
+                <i className="fas fa-spinner fa-spin"></i>
+                جاري الإرسال...
+              </>
+            ) : (
+              <>
+                <i className="fab fa-whatsapp"></i>
+                تأكيد الإرسال ({selectedCount - removedPatients.length})
+              </>
+            )}
           </button>
           <button
             onClick={() => closeModal('messagePreview')}

@@ -22,13 +22,21 @@ describe('ConditionSelector Component', () => {
   ): string[] => {
     const disabled = new Set<string>();
 
+    // Direct conflicts from selected -> conflictsWith
     selectedCodes.forEach((selectedCode) => {
       const selected = allConditions.find((c) => c.code === selectedCode);
       if (selected) {
-        // Disable conflicts
         selected.conflictsWith.forEach((conflict) => {
           disabled.add(conflict);
         });
+      }
+    });
+
+    // Also disable any condition that lists a selected one in its conflicts
+    allConditions.forEach((condition) => {
+      const conflictsWithSelected = condition.conflictsWith.some((c) => selectedCodes.includes(c));
+      if (conflictsWithSelected) {
+        disabled.add(condition.code);
       }
     });
 

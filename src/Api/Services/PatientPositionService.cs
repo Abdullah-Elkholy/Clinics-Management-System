@@ -3,10 +3,12 @@
  * File: src/Api/Services/PatientPositionService.cs
  * 
  * Handles patient position updates with atomic conflict resolution.
- * When moving a patient to a position occupied by another patient:
- * - The moved patient takes the target position.
- * - The occupant and all patients with position >= target increment by 1.
- * - All changes occur in a single transaction.
+ * Business rule: Conflict-first strategy
+ * - First checks if target position is already occupied
+ * - If not occupied, places patient at target position without shifting
+ * - If occupied, shifts ALL active patients at position >= targetPosition by +1
+ * - No backward shifting; gaps in positions are allowed
+ * - All changes occur in a single transaction for atomicity
  */
 
 using Clinics.Domain;
@@ -19,7 +21,7 @@ public interface IPatientPositionService
 {
     /// <summary>
     /// Update a patient's position with atomic conflict resolution.
-    /// Position < 1 is coerced to 1 and conflicts are handled.
+    /// Position less than 1 is coerced to 1 and conflicts are handled.
     /// </summary>
     Task<(bool Success, string ErrorMessage)> UpdatePatientPositionAsync(int patientId, int targetPosition);
 }
@@ -69,52 +71,58 @@ public class PatientPositionService : IPatientPositionService
             await using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                // Get all active patients in the same queue for comparison
-                var activePatients = await _db.Patients
-                    .Where(p => p.QueueId == queueId && !p.IsDeleted)
-                    .ToListAsync();
+                // Store original position for logging
+                int originalPosition = patient.Position;
 
-                // Determine if we're moving backward (lower position) or forward (higher position)
-                int currentPos = patient.Position;
-                bool movingBackward = targetPosition < currentPos;
+                // Check if target position is already occupied by another patient
+                var conflictingPatient = await _db.Patients
+                    .FirstOrDefaultAsync(p => p.QueueId == queueId && !p.IsDeleted && 
+                                               p.Id != patientId && p.Position == targetPosition);
 
-                if (movingBackward)
+                int shiftedCount = 0;
+
+                if (conflictingPatient == null)
                 {
-                    // Moving backward: shift patients from targetPosition to currentPos-1 forward by +1
-                    // Example: move from 8 to 2 -> patients at 2,4,5,7 shift to 3,5,6,8
-                    var toShift = activePatients
-                        .Where(p => p.Id != patientId && p.Position >= targetPosition && p.Position < currentPos)
-                        .ToList();
+                    // No conflict: simply place patient at target position without shifting
+                    patient.Position = targetPosition;
+                    patient.UpdatedAt = operationTimestamp;
 
-                    foreach (var p in toShift)
-                    {
-                        p.Position++;
-                    }
+                    await _db.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    _logger.LogInformation(
+                        "Patient {PatientId} position updated from {OldPosition} to {NewPosition} in queue {QueueId}. No conflicts, no shifting required.",
+                        patientId, originalPosition, targetPosition, queueId);
                 }
                 else
                 {
-                    // Moving forward: shift patients from currentPos+1 to targetPosition backward by -1
-                    // This isn't typical in your use case but handle it for completeness
-                    var toShift = activePatients
-                        .Where(p => p.Id != patientId && p.Position > currentPos && p.Position <= targetPosition)
-                        .ToList();
+                    // Conflict exists: apply shift strategy
+                    // Shift ALL active patients at position >= targetPosition by +1
+                    // This creates an empty slot at targetPosition for the moving patient
+                    var patientsToShift = await _db.Patients
+                        .Where(p => p.QueueId == queueId && !p.IsDeleted && p.Id != patientId && p.Position >= targetPosition)
+                        .OrderByDescending(p => p.Position) // Process from highest to lowest to avoid conflicts
+                        .ToListAsync();
 
-                    foreach (var p in toShift)
+                    foreach (var p in patientsToShift)
                     {
-                        p.Position--;
+                        p.Position++;
+                        p.UpdatedAt = operationTimestamp;
                     }
+
+                    shiftedCount = patientsToShift.Count;
+
+                    // Set the moved patient to the target position
+                    patient.Position = targetPosition;
+                    patient.UpdatedAt = operationTimestamp;
+
+                    await _db.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    _logger.LogInformation(
+                        "Patient {PatientId} position updated from {OldPosition} to {NewPosition} in queue {QueueId}. Conflict detected, shifted {ShiftedCount} patients forward.",
+                        patientId, originalPosition, targetPosition, queueId, shiftedCount);
                 }
-
-                // Set the moved patient to the target position
-                patient.Position = targetPosition;
-                patient.UpdatedAt = operationTimestamp;
-
-                await _db.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                _logger.LogInformation(
-                    "Patient {PatientId} position updated from {OldPosition} to {NewPosition} in queue {QueueId} at {Timestamp}",
-                    patientId, currentPos, targetPosition, queueId, operationTimestamp);
 
                 return (true, "");
             }

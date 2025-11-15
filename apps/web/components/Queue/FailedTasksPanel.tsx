@@ -14,6 +14,7 @@ import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
+import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 
 interface Session {
   id: string;
@@ -87,6 +88,49 @@ export default function FailedTasksPanel() {
     };
 
     loadFailedTasks();
+  }, [page, pageSize]);
+
+  /**
+   * Listen for data updates and refetch
+   */
+  useEffect(() => {
+    const handleDataUpdate = async () => {
+      // Refetch failed tasks when data is updated
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await messageApiClient.getFailedTasks({
+          pageNumber: page,
+          pageSize: pageSize,
+        });
+        
+        if (response.items && response.items.length > 0) {
+          setSessions([]);
+        } else {
+          setSessions([]);
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load failed tasks';
+        setError(errorMessage);
+        setSessions([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    window.addEventListener('patientDataUpdated', handleDataUpdate);
+    window.addEventListener('queueDataUpdated', handleDataUpdate);
+    window.addEventListener('templateDataUpdated', handleDataUpdate);
+    window.addEventListener('messageSent', handleDataUpdate);
+    window.addEventListener('messageFailed', handleDataUpdate);
+
+    return () => {
+      window.removeEventListener('patientDataUpdated', handleDataUpdate);
+      window.removeEventListener('queueDataUpdated', handleDataUpdate);
+      window.removeEventListener('templateDataUpdated', handleDataUpdate);
+      window.removeEventListener('messageSent', handleDataUpdate);
+      window.removeEventListener('messageFailed', handleDataUpdate);
+    };
   }, [page, pageSize]);
 
   /**
@@ -378,7 +422,7 @@ export default function FailedTasksPanel() {
       />
     ),
     name: patient.name,
-    phone: `${patient.countryCode || '+966'} ${patient.phone}`,
+    phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
     message: (
       <div
         className={`text-sm text-gray-700 ${

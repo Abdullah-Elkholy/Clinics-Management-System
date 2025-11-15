@@ -13,9 +13,9 @@ interface EditUserModalProps {
 }
 
 export default function EditUserModal({ selectedUser }: EditUserModalProps) {
-  const { openModals, closeModal } = useModal();
+  const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const [, actions] = useUserManagement();
+  const [state, actions] = useUserManagement();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
@@ -26,6 +26,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [freshUserData, setFreshUserData] = useState<User | null>(null);
   
   // Track initial values to detect changes
   const [initialValues, setInitialValues] = useState({
@@ -35,24 +36,63 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   });
 
   const isOpen = openModals.has('editUser');
+  const modalData = getModalData('editUser');
+  
+  // Use modal data if available, fallback to prop for backward compatibility
+  const userToEditFromProps = modalData?.user || selectedUser;
+  
+  // Get fresh user data - prioritize freshUserData, then state.users, then props
+  const userToEdit = freshUserData 
+    || (userToEditFromProps?.id 
+      ? state.users.find(u => u.id === userToEditFromProps.id) || userToEditFromProps
+      : userToEditFromProps);
 
-  // Load selected user data when modal opens
+  // Fetch fresh user data when modal opens
   useEffect(() => {
-    if (isOpen && selectedUser) {
-      setFirstName(selectedUser.firstName);
-      setLastName(selectedUser.lastName || '');
-      setUsername(selectedUser.username);
+    if (!isOpen || !userToEditFromProps?.id) return;
+    
+    const fetchFreshUserData = async () => {
+      try {
+        const freshUser = await actions.getUser(userToEditFromProps.id);
+        if (freshUser) {
+          setFreshUserData(freshUser);
+        }
+      } catch (err) {
+        // If fresh data fetch fails, fall back to existing data
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to fetch fresh user data:', err);
+        }
+        setFreshUserData(null);
+      }
+    };
+    
+    // Always refetch when modal opens to ensure fresh data
+    fetchFreshUserData();
+  }, [isOpen, userToEditFromProps?.id]);
+
+  // Load selected user data when modal opens - use fresh data
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    // Use fresh user data (most reliable and always fresh after getUser call)
+    // Fallback to userToEditFromProps if not available
+    const user = userToEdit;
+    
+    if (user) {
+      setFirstName(user.firstName || '');
+      setLastName(user.lastName || '');
+      setUsername(user.username || '');
       setPassword('');
       setConfirmPassword('');
       setInitialValues({
-        firstName: selectedUser.firstName,
-        lastName: selectedUser.lastName || '',
-        username: selectedUser.username,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        username: user.username || '',
       });
       setTouched(false);
       setErrors({});
     }
-  }, [isOpen, selectedUser]);
+  }, [isOpen, userToEdit?.id, userToEdit?.firstName, userToEdit?.lastName, userToEdit?.username]);
 
   // Generate random password
   const generateRandomPassword = () => {
@@ -150,7 +190,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       return;
     }
 
-    if (!selectedUser) {
+    if (!userToEdit) {
       addToast('لم يتم تحديد مستخدم', 'error');
       return;
     }
@@ -184,19 +224,35 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
         return;
       }
 
-      const success = await actions.updateUser(selectedUser.id, updatePayload);
+      const success = await actions.updateUser(userToEdit.id, updatePayload);
       
-      if (success) {
-        addToast('تم تحديث بيانات المستخدم بنجاح', 'success');
-        setFirstName('');
-        setLastName('');
-        setUsername('');
-        setPassword('');
-        setConfirmPassword('');
-        setErrors({});
-        setTouched(false);
-        closeModal('editUser');
+      if (!success) {
+        addToast('فشل تحديث البيانات', 'error');
+        return;
       }
+
+      addToast('تم تحديث بيانات المستخدم بنجاح', 'success');
+      
+      // Refetch users list to ensure UI is in sync with backend
+      // Wait for refetch to complete before closing modal and dispatching event
+      await actions.fetchUsers();
+      
+      // Clear form fields after successful update
+      setFirstName('');
+      setLastName('');
+      setUsername('');
+      setPassword('');
+      setConfirmPassword('');
+      setErrors({});
+      setTouched(false);
+      
+      closeModal('editUser');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure fetchUsers has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('userDataUpdated'));
+      }, 100);
     } catch (err) {
       addToast('حدث خطأ أثناء تحديث البيانات', 'error');
     } finally {
@@ -251,8 +307,10 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
+            <label htmlFor="editUser-firstName" className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
             <input
+              id="editUser-firstName"
+              name="firstName"
               type="text"
               value={firstName ?? ''}
               onChange={(e) => handleFieldChange('firstName', e.target.value)}
@@ -273,8 +331,10 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
+            <label htmlFor="editUser-lastName" className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
             <input
+              id="editUser-lastName"
+              name="lastName"
               type="text"
               value={lastName ?? ''}
               onChange={(e) => handleFieldChange('lastName', e.target.value)}
@@ -297,8 +357,10 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
+          <label htmlFor="editUser-username" className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
           <input
+            id="editUser-username"
+            name="username"
             type="text"
             value={username ?? ''}
             onChange={(e) => handleFieldChange('username', e.target.value)}
@@ -323,7 +385,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="block text-sm font-medium text-gray-700">كلمة المرور الجديدة *</label>
+              <label htmlFor="editUser-password" className="block text-sm font-medium text-gray-700">كلمة المرور الجديدة *</label>
               <button
                 type="button"
                 onClick={generateRandomPassword}
@@ -336,6 +398,8 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
             </div>
             <div className="relative">
               <input
+                id="editUser-password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
                 value={password ?? ''}
                 onChange={(e) => handleFieldChange('password', e.target.value)}
@@ -365,9 +429,11 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">تأكيد كلمة المرور الجديدة *</label>
+            <label htmlFor="editUser-confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">تأكيد كلمة المرور الجديدة *</label>
             <div className="relative">
               <input
+                id="editUser-confirmPassword"
+                name="confirmPassword"
                 type={showConfirmPassword ? 'text' : 'password'}
                 value={confirmPassword ?? ''}
                 onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}

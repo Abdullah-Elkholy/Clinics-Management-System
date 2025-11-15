@@ -3,6 +3,7 @@ using Clinics.Domain;
 using Clinics.Infrastructure;
 using Clinics.Api.DTOs;
 using Clinics.Api.Services;
+using Clinics.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
@@ -18,17 +19,23 @@ namespace Clinics.Api.Controllers
         private readonly QuotaService _quotaService;
         private readonly ILogger<QueuesController> _logger;
         private readonly Clinics.Api.Services.IQueueCascadeService _queueCascadeService;
+        private readonly IWebHostEnvironment _env;
+        private readonly ISoftDeleteTTLQueries<Queue> _ttlQueries;
 
         public QueuesController(
             ApplicationDbContext db, 
             QuotaService quotaService,
             ILogger<QueuesController> logger,
-            Clinics.Api.Services.IQueueCascadeService queueCascadeService)
+            Clinics.Api.Services.IQueueCascadeService queueCascadeService,
+            IWebHostEnvironment env,
+            IGenericUnitOfWork unitOfWork)
         {
             _db = db;
             _quotaService = quotaService;
             _logger = logger;
             _queueCascadeService = queueCascadeService;
+            _env = env;
+            _ttlQueries = unitOfWork.TTLQueries<Queue>();
         }
 
         [HttpGet]
@@ -73,6 +80,14 @@ namespace Clinics.Api.Controllers
         {
             try
             {
+                // Log DB target for diagnostics
+                try
+                {
+                    var conn = _db.Database.GetDbConnection();
+                    _logger.LogInformation("DB Target: Provider={Provider}, DataSource={DataSource}, Database={Database}", _db.Database.ProviderName, conn.DataSource, conn.Database);
+                }
+                catch { }
+
                 if (!ModelState.IsValid)
                 {
                     return BadRequest(new 
@@ -84,72 +99,189 @@ namespace Clinics.Api.Controllers
 
                 // Get current user ID
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("nameid")?.Value
                     ?? User.FindFirst("sub")?.Value
-                    ?? User.FindFirst("userId")?.Value;
+                    ?? User.FindFirst("userId")?.Value
+                    ?? User.FindFirst("id")?.Value
+                    ?? User.FindFirst("Id")?.Value;
                     
                 if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
                 {
                     return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
                 }
 
-                // Get moderator ID for this user
-                var moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+                // Determine if caller is admin
+                var isAdmin = User.IsInRole("primary_admin") || User.IsInRole("secondary_admin");
 
-                // Ensure quota exists for this moderator (create if missing with unlimited values)
-                var quota = await _quotaService.GetOrCreateQuotaForModeratorAsync(moderatorId);
-
-                // Check if user has sufficient queue quota
-                var hasQuota = quota.RemainingQueues >= 1;
-                
-                if (!hasQuota)
+                int moderatorId;
+                if (isAdmin && req.ModeratorId.HasValue)
                 {
-                    _logger.LogWarning("User {UserId} attempted to create queue but has insufficient quota", userId);
-                    return BadRequest(new 
-                    { 
-                        success = false, 
-                        error = "حصة الطوابير غير كافية",
-                        code = "QUOTA_EXCEEDED"
-                    });
+                    _logger.LogInformation("CreateQueue(Admin): userId={UserId}, targetModeratorId={TargetModeratorId}, doctorName={DoctorName}", userId, req.ModeratorId, req.DoctorName);
+                    // Admin can specify the target moderator
+                    moderatorId = req.ModeratorId.Value;
+
+                    // Validate target moderator exists and is a moderator
+                    var targetModerator = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == moderatorId && u.Role == "moderator" && !u.IsDeleted);
+                    if (targetModerator == null)
+                    {
+                        return BadRequest(new
+                        {
+                            success = false,
+                            error = "المشرف المحدد غير موجود"
+                        });
+                    }
+
+                    // Ensure quota exists for this moderator (create if missing with unlimited values)
+                    var quota = await _quotaService.GetOrCreateQuotaForModeratorAsync(moderatorId);
+
+                    // Check if moderator has sufficient queue quota
+                    var hasQuota = quota.RemainingQueues >= 1;
+                    if (!hasQuota)
+                    {
+                        _logger.LogWarning("Admin {UserId} attempted to create queue for moderator {ModeratorId} but insufficient quota", userId, moderatorId);
+                        return BadRequest(new
+                        {
+                            success = false,
+                            error = "حصة الطوابير غير كافية",
+                            code = "QUOTA_EXCEEDED"
+                        });
+                    }
+
+                    var q = new Queue
+                    {
+                        DoctorName = req.DoctorName,
+                        CreatedBy = userId, // audit who performed the action
+                        ModeratorId = moderatorId,
+                        CurrentPosition = 1,
+                        EstimatedWaitMinutes = req.EstimatedWaitMinutes ?? 15
+                    };
+
+                    _db.Queues.Add(q);
+                    await _db.SaveChangesAsync();
+
+                    // Consume quota for the specified moderator
+                    await _quotaService.ConsumeQueueQuotaForModeratorAsync(moderatorId);
+
+                    _logger.LogInformation("Admin {UserId} created queue {QueueId} for moderator {ModeratorId}, consumed quota", userId, q.Id, moderatorId);
+
+                    var dto = new QueueDto
+                    {
+                        Id = q.Id,
+                        DoctorName = q.DoctorName,
+                        CreatedBy = q.CreatedBy,
+                        ModeratorId = q.ModeratorId,
+                        CurrentPosition = q.CurrentPosition,
+                        EstimatedWaitMinutes = q.EstimatedWaitMinutes,
+                        PatientCount = 0
+                    };
+
+                    return CreatedAtAction(nameof(Get), new { id = q.Id }, new { success = true, data = dto, queue = dto });
                 }
+                else
+                {
+                    // Non-admin flow: use the effective moderator mapping from the user
+                    moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
 
-                var q = new Queue 
-                { 
-                    DoctorName = req.DoctorName, 
-                    CreatedBy = userId,
-                    ModeratorId = moderatorId,
-                    CurrentPosition = 1, 
-                    EstimatedWaitMinutes = req.EstimatedWaitMinutes ?? 15
-                };
-                
-                _db.Queues.Add(q);
-                await _db.SaveChangesAsync();
+                    _logger.LogInformation("CreateQueue(User/mod): userId={UserId}, effectiveModeratorId={ModeratorId}, doctorName={DoctorName}", userId, moderatorId, req.DoctorName);
 
-                // Consume queue quota after successful creation
-                await _quotaService.ConsumeQueueQuotaAsync(userId);
-                
-                _logger.LogInformation("User {UserId} created queue {QueueId}, consumed quota", userId, q.Id);
+                    // Validate moderator exists (defensive; GetEffectiveModeratorIdAsync should ensure mapping)
+                    var targetModerator = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == moderatorId && u.Role == "moderator" && !u.IsDeleted);
+                    if (targetModerator == null)
+                    {
+                        _logger.LogWarning("Effective moderator {ModeratorId} for user {UserId} not found", moderatorId, userId);
+                        return BadRequest(new { success = false, error = "لا يمكن تحديد المشرف المرتبط بالمستخدم" });
+                    }
 
-                var dto = new QueueDto 
-                { 
-                    Id = q.Id, 
-                    DoctorName = q.DoctorName, 
-                    CreatedBy = q.CreatedBy,
-                    ModeratorId = q.ModeratorId,
-                    CurrentPosition = q.CurrentPosition, 
-                    EstimatedWaitMinutes = q.EstimatedWaitMinutes, 
-                    PatientCount = 0 
-                };
-                
-                return CreatedAtAction(nameof(Get), new { id = q.Id }, new { success = true, data = dto, queue = dto });
+                    // Ensure quota exists for this moderator (create if missing with unlimited values)
+                    var quota = await _quotaService.GetOrCreateQuotaForModeratorAsync(moderatorId);
+
+                    // Check if user has sufficient queue quota
+                    var hasQuota = quota.RemainingQueues >= 1;
+
+                    if (!hasQuota)
+                    {
+                        _logger.LogWarning("User {UserId} attempted to create queue but has insufficient quota", userId);
+                        return BadRequest(new
+                        {
+                            success = false,
+                            error = "حصة الطوابير غير كافية",
+                            code = "QUOTA_EXCEEDED"
+                        });
+                    }
+
+                    var q = new Queue
+                    {
+                        DoctorName = req.DoctorName,
+                        CreatedBy = userId,
+                        ModeratorId = moderatorId,
+                        CurrentPosition = 1,
+                        EstimatedWaitMinutes = req.EstimatedWaitMinutes ?? 15
+                    };
+
+                    _db.Queues.Add(q);
+                    await _db.SaveChangesAsync();
+
+                    // Consume queue quota after successful creation (user-based method)
+                    await _quotaService.ConsumeQueueQuotaAsync(userId);
+
+                    _logger.LogInformation("User {UserId} created queue {QueueId}, consumed quota", userId, q.Id);
+
+                    var dto = new QueueDto
+                    {
+                        Id = q.Id,
+                        DoctorName = q.DoctorName,
+                        CreatedBy = q.CreatedBy,
+                        ModeratorId = q.ModeratorId,
+                        CurrentPosition = q.CurrentPosition,
+                        EstimatedWaitMinutes = q.EstimatedWaitMinutes,
+                        PatientCount = 0
+                    };
+
+                    return CreatedAtAction(nameof(Get), new { id = q.Id }, new { success = true, data = dto, queue = dto });
+                }
             }
             catch (InvalidOperationException ex)
             {
                 _logger.LogError(ex, "Quota operation failed for user");
                 return BadRequest(new { success = false, error = ex.Message });
             }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "DB error creating queue");
+                var msg = dbEx.InnerException?.Message ?? dbEx.Message;
+                if (msg.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) || msg.Contains("constraint", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new { success = false, error = "تعذر إنشاء الطابور بسبب مرجع غير صالح (المشرف غير موجود)" });
+                }
+                if (_env.IsDevelopment())
+                {
+                    try
+                    {
+                        var conn = _db.Database.GetDbConnection();
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = msg, db = new { provider = _db.Database.ProviderName, dataSource = conn.DataSource, database = conn.Database } });
+                    }
+                    catch
+                    {
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = msg });
+                    }
+                }
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور" });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating queue");
+                if (_env.IsDevelopment())
+                {
+                    try
+                    {
+                        var conn = _db.Database.GetDbConnection();
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = ex.Message, stackTrace = ex.StackTrace, db = new { provider = _db.Database.ProviderName, dataSource = conn.DataSource, database = conn.Database } });
+                    }
+                    catch
+                    {
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = ex.Message, stackTrace = ex.StackTrace });
+                    }
+                }
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور" });
             }
         }
@@ -158,11 +290,29 @@ namespace Clinics.Api.Controllers
         [Authorize(Roles = "primary_admin,secondary_admin")]
         public async Task<IActionResult> Update(int id, [FromBody] QueueUpdateRequest req)
         {
+            // Get current user ID for audit
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("nameid")?.Value
+                ?? User.FindFirst("sub")?.Value
+                ?? User.FindFirst("userId")?.Value
+                ?? User.FindFirst("id")?.Value
+                ?? User.FindFirst("Id")?.Value;
+            
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+            }
+
             var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == id);
             if (q == null) return NotFound(new { success = false });
             q.DoctorName = req.DoctorName;
             if (req.EstimatedWaitMinutes.HasValue) q.EstimatedWaitMinutes = req.EstimatedWaitMinutes.Value;
             if (req.CurrentPosition.HasValue) q.CurrentPosition = req.CurrentPosition.Value;
+            
+            // Set UpdatedAt and UpdatedBy for audit trail
+            q.UpdatedAt = DateTime.UtcNow;
+            q.UpdatedBy = userId;
+            
             await _db.SaveChangesAsync();
             
             var dto = new QueueDto
@@ -251,9 +401,7 @@ namespace Clinics.Api.Controllers
                 var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
                 if (user == null) return Unauthorized();
 
-                var query = _db.Queues
-                    .AsNoTracking()
-                    .Where(q => q.IsDeleted && q.DeletedAt >= DateTime.UtcNow.AddDays(-30));
+                var query = _ttlQueries.QueryTrash(30).AsQueryable();
 
                 // Non-admin users see only their own queues
                 if (user.Role != "primary_admin" && user.Role != "secondary_admin")
@@ -272,7 +420,7 @@ namespace Clinics.Api.Controllers
                         q.DoctorName,
                         q.ModeratorId,
                         DeletedAt = q.DeletedAt!.Value,
-                        DaysRemainingInTrash = (int)Math.Ceiling((q.DeletedAt!.Value.AddDays(30) - DateTime.UtcNow).TotalDays),
+                        DaysRemainingInTrash = _ttlQueries.GetDaysRemainingInTrash(q, 30),
                         DeletedBy = q.DeletedBy
                     })
                     .ToListAsync();
@@ -296,9 +444,7 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var query = _db.Queues
-                    .AsNoTracking()
-                    .Where(q => q.IsDeleted && q.DeletedAt < DateTime.UtcNow.AddDays(-30));
+                var query = _ttlQueries.QueryArchived(30).AsQueryable();
 
                 var total = await query.CountAsync();
                 var archivedQueues = await query
@@ -336,9 +482,29 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var queue = await _db.Queues.FirstOrDefaultAsync(q => q.Id == id && q.IsDeleted);
+                var queue = await _db.Queues.IgnoreQueryFilters().FirstOrDefaultAsync(q => q.Id == id);
                 if (queue == null) 
-                    return NotFound(new { success = false, error = "Queue not found or not deleted" });
+                    return NotFound(new { success = false, error = "Queue not found", statusCode = 404 });
+
+                // Check if queue is deleted
+                if (!queue.IsDeleted)
+                    return BadRequest(new { success = false, error = "Queue is not in trash", statusCode = 400 });
+
+                // Check TTL - only allow restore for items in trash (within 30 days)
+                if (!_ttlQueries.IsRestoreAllowed(queue, 30))
+                {
+                    var daysElapsed = queue.DeletedAt.HasValue
+                        ? (int)(DateTime.UtcNow - queue.DeletedAt.Value).TotalDays
+                        : 0;
+                    return Conflict(new
+                    {
+                        success = false,
+                        error = "restore_window_expired",
+                        message = "لا يمكن استعادة الطابور بعد 30 يومًا من الحذف",
+                        statusCode = 409,
+                        metadata = new { daysElapsed, ttlDays = 30 }
+                    });
+                }
 
                 // Check if moderator owns this queue (non-admins only)
                 var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");

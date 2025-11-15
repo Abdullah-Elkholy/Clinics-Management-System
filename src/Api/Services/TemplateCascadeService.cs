@@ -59,28 +59,38 @@ public class TemplateCascadeService : ITemplateCascadeService
     public async Task<(bool Success, string ErrorMessage)> SoftDeleteTemplateAsync(
         int templateId, int deletedByUserId, int? replacementTemplateId = null)
     {
+        // Wrap in transaction for atomicity
+        await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
+            // Unify datetime for this bulk operation
+            var deletionTimestamp = DateTime.UtcNow;
+
             var template = await _db.MessageTemplates
                 .FirstOrDefaultAsync(t => t.Id == templateId && !t.IsDeleted);
 
             if (template == null)
             {
+                await transaction.RollbackAsync();
                 return (false, "Template not found");
             }
 
             // If this template has a DEFAULT condition, require replacement or ensure there's another default
-            var templateCondition = await _db.Set<MessageCondition>()
-                .FirstOrDefaultAsync(c => c.TemplateId == template.Id && !c.IsDeleted);
+            // Load template's condition via navigation property
+            await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
+            var templateCondition = template.Condition != null && !template.Condition.IsDeleted 
+                ? template.Condition 
+                : null;
             
             if (templateCondition?.Operator == "DEFAULT")
             {
                 var otherActiveTemplates = await _db.MessageTemplates
-                    .Where(t => t.QueueId == template.QueueId && t.Id != templateId && !t.IsDeleted && t.IsActive)
+                    .Where(t => t.QueueId == template.QueueId && t.Id != templateId && !t.IsDeleted)
                     .ToListAsync();
 
                 if (otherActiveTemplates.Count == 0 && !replacementTemplateId.HasValue)
                 {
+                    await transaction.RollbackAsync();
                     return (false, "default_template_replacement_required");
                 }
 
@@ -90,30 +100,38 @@ public class TemplateCascadeService : ITemplateCascadeService
                     var replacement = otherActiveTemplates.FirstOrDefault(t => t.Id == replacementTemplateId.Value);
                     if (replacement == null)
                     {
+                        await transaction.RollbackAsync();
                         return (false, "Replacement template not found or not active");
                     }
                     
-                    var replacementCondition = await _db.Set<MessageCondition>()
-                        .FirstOrDefaultAsync(c => c.TemplateId == replacement.Id && !c.IsDeleted);
+                    // Load replacement template's condition via navigation property
+                    await _db.Entry(replacement).Reference(t => t.Condition).LoadAsync();
+                    var replacementCondition = replacement.Condition != null && !replacement.Condition.IsDeleted 
+                        ? replacement.Condition 
+                        : null;
                     if (replacementCondition != null)
                     {
                         replacementCondition.Operator = "DEFAULT";
                         replacementCondition.Value = null;
                         replacementCondition.MinValue = null;
                         replacementCondition.MaxValue = null;
-                        replacementCondition.UpdatedAt = DateTime.UtcNow;
+                        replacementCondition.UpdatedAt = deletionTimestamp;
                     }
                     else
                     {
+                        // Create new condition
                         replacementCondition = new MessageCondition
                         {
-                            TemplateId = replacement.Id,
                             QueueId = template.QueueId,
                             Operator = "DEFAULT",
-                            CreatedAt = DateTime.UtcNow,
-                            UpdatedAt = DateTime.UtcNow
+                            CreatedAt = deletionTimestamp,
+                            UpdatedAt = deletionTimestamp
                         };
                         _db.Set<MessageCondition>().Add(replacementCondition);
+                        await _db.SaveChangesAsync(); // Save to get condition ID
+                        
+                        // Update replacement template with MessageConditionId
+                        replacement.MessageConditionId = replacementCondition.Id;
                     }
                 }
                 // NOTE: No auto-fallback to first active template. Frontend enforces explicit replacement.
@@ -121,31 +139,32 @@ public class TemplateCascadeService : ITemplateCascadeService
 
             // Mark template as deleted
             template.IsDeleted = true;
-            template.DeletedAt = DateTime.UtcNow;
+            template.DeletedAt = deletionTimestamp;
             template.DeletedBy = deletedByUserId;
 
-            // Soft-delete related conditions
-            var conditions = await _db.Set<MessageCondition>()
-                .Where(c => c.TemplateId == template.Id && !c.IsDeleted)
-                .ToListAsync();
+            // Soft-delete related condition (one-to-one relationship)
+            var condition = template.Condition;
+            var conditions = condition != null && !condition.IsDeleted ? new[] { condition } : Array.Empty<MessageCondition>();
 
-            foreach (var condition in conditions)
+            foreach (var cond in conditions)
             {
-                condition.IsDeleted = true;
-                condition.DeletedAt = DateTime.UtcNow;
-                condition.DeletedBy = deletedByUserId;
+                cond.IsDeleted = true;
+                cond.DeletedAt = deletionTimestamp;
+                cond.DeletedBy = deletedByUserId;
             }
 
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             _logger.LogInformation(
                 "Template {TemplateId} soft-deleted by user {UserId} at {Timestamp}",
-                templateId, deletedByUserId, DateTime.UtcNow);
+                templateId, deletedByUserId, deletionTimestamp);
 
             return (true, "");
         }
         catch (Exception ex)
         {
+            await transaction.RollbackAsync();
             _logger.LogError(ex, "Error soft-deleting template {TemplateId}", templateId);
             return (false, "An error occurred while deleting the template");
         }
@@ -188,18 +207,23 @@ public class TemplateCascadeService : ITemplateCascadeService
                 template.DeletedAt = null;
                 template.DeletedBy = null;
 
-                // Get the template's condition
-                var templateCondition = await _db.Set<MessageCondition>()
-                    .FirstOrDefaultAsync(c => c.TemplateId == template.Id);
+                // Get the template's condition via navigation property
+                await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
+                var templateCondition = template.Condition;
 
                 // Guard against duplicate defaults: if this template's condition was DEFAULT,
                 // but another template is now the default for this queue, convert to UNCONDITIONED on restore
                 if (templateCondition?.Operator == "DEFAULT" && template.QueueId > 0)
                 {
-                    var currentDefaultCondition = await _db.Set<MessageCondition>()
-                        .FirstOrDefaultAsync(c => c.QueueId == template.QueueId && c.Operator == "DEFAULT" && 
-                                              c.TemplateId != template.Id && 
-                                              !c.IsDeleted);
+                    // Find other templates in the same queue that have DEFAULT condition
+                    var otherTemplatesWithDefault = await _db.MessageTemplates
+                        .Where(t => t.QueueId == template.QueueId && t.Id != template.Id && !t.IsDeleted)
+                        .Include(t => t.Condition)
+                        .ToListAsync();
+                    var currentDefaultCondition = otherTemplatesWithDefault
+                        .Where(t => t.Condition != null && t.Condition.Operator == "DEFAULT" && !t.Condition.IsDeleted)
+                        .Select(t => t.Condition!)
+                        .FirstOrDefault();
 
                     if (currentDefaultCondition != null)
                     {
@@ -209,23 +233,25 @@ public class TemplateCascadeService : ITemplateCascadeService
                         templateCondition.MinValue = null;
                         templateCondition.MaxValue = null;
                         templateCondition.UpdatedAt = DateTime.UtcNow;
+                        // Get the template ID that owns this default condition
+                        var defaultTemplateId = await _db.MessageTemplates
+                            .Where(t => t.MessageConditionId == currentDefaultCondition.Id)
+                            .Select(t => t.Id)
+                            .FirstOrDefaultAsync();
                         _logger.LogInformation(
                             "Template {TemplateId} restored with UNCONDITIONED operator since template {DefaultId} is already default for queue {QueueId}",
-                            template.Id, currentDefaultCondition.TemplateId, template.QueueId);
+                            template.Id, defaultTemplateId, template.QueueId);
                     }
                 }
 
-                // Restore related conditions
-                // Only restoring conditions deleted during cascade window (DeletedAt >= parent deletion timestamp)
-                var conditions = await _db.Set<MessageCondition>()
-                    .Where(c => c.TemplateId == template.Id && c.IsDeleted && c.DeletedAt.HasValue && c.DeletedAt >= deletedAtValue)
-                    .ToListAsync();
-
-                foreach (var condition in conditions)
+                // Restore related condition (one-to-one relationship)
+                // Only restoring condition deleted during cascade window (DeletedAt >= parent deletion timestamp)
+                var conditionToRestore = template.Condition;
+                if (conditionToRestore != null && conditionToRestore.IsDeleted && conditionToRestore.DeletedAt.HasValue && conditionToRestore.DeletedAt >= deletedAtValue)
                 {
-                    condition.IsDeleted = false;
-                    condition.DeletedAt = null;
-                    condition.DeletedBy = null;
+                    conditionToRestore.IsDeleted = false;
+                    conditionToRestore.DeletedAt = null;
+                    conditionToRestore.DeletedBy = null;
                 }
 
                 await _db.SaveChangesAsync();
@@ -282,25 +308,40 @@ public class TemplateCascadeService : ITemplateCascadeService
 
     public async Task<int> PermanentlyDeleteArchivedTemplatesAsync()
     {
-        var archivedTemplates = await _db.MessageTemplates
-            .Where(t => t.IsDeleted && t.DeletedAt.HasValue && (DateTime.UtcNow - t.DeletedAt.Value).TotalDays > TTL_DAYS)
-            .ToListAsync();
-
-        foreach (var template in archivedTemplates)
+        // Wrap in transaction for atomicity
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
         {
-            var conditions = await _db.Set<MessageCondition>()
-                .Where(c => c.TemplateId == template.Id)
+            // Unify datetime for this bulk operation
+            var operationTimestamp = DateTime.UtcNow;
+
+            var archivedTemplates = await _db.MessageTemplates
+                .Where(t => t.IsDeleted && t.DeletedAt.HasValue && (operationTimestamp - t.DeletedAt.Value).TotalDays > TTL_DAYS)
+                .Include(t => t.Condition)
                 .ToListAsync();
-            foreach (var condition in conditions)
+
+            foreach (var template in archivedTemplates)
             {
-                _db.Set<MessageCondition>().Remove(condition);
+                // Delete condition first (one-to-one relationship)
+                if (template.Condition != null)
+                {
+                    _db.Set<MessageCondition>().Remove(template.Condition);
+                }
+
+                _db.MessageTemplates.Remove(template);
             }
 
-            _db.MessageTemplates.Remove(template);
+            int deleted = await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            
+            _logger.LogInformation("Permanently deleted {Count} archived templates at {Timestamp}", deleted, operationTimestamp);
+            return deleted;
         }
-
-        int deleted = await _db.SaveChangesAsync();
-        _logger.LogInformation("Permanently deleted {Count} archived templates", deleted);
-        return deleted;
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error permanently deleting archived templates");
+            throw;
+        }
     }
 }

@@ -45,7 +45,7 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function ModeratorMessagesOverview() {
-  const { moderators, queues, messageTemplates, selectedQueueId, setSelectedQueueId } = useQueue();
+  const { moderators, queues, messageTemplates, selectedQueueId, setSelectedQueueId, refreshQueueData } = useQueue();
   const { addToast } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
@@ -77,6 +77,45 @@ export default function ModeratorMessagesOverview() {
 
     loadQuota();
   }, []);
+
+  /**
+   * Load all templates for all queues when queues are available (admin view)
+   * This ensures templates are fetched initially without needing to select a specific queue
+   */
+  useEffect(() => {
+    const loadAllTemplates = async () => {
+      if (queues.length === 0) return;
+      
+      // Only load if we don't have templates yet (avoid unnecessary refetches)
+      if (messageTemplates.length > 0) return;
+
+      try {
+        // Fetch all templates (no queueId filter for admin view)
+        const templateResponse = await messageApiClient.getTemplates();
+        const templateDtos = templateResponse.items || [];
+
+        // Convert DTOs to models and refresh each queue's data
+        // This ensures templates are properly loaded into the context
+        if (templateDtos.length > 0 && typeof refreshQueueData === 'function') {
+          // Get unique queue IDs from the loaded templates
+          const templateQueueIds = new Set(
+            templateDtos
+              .map(dto => dto.queueId?.toString())
+              .filter((id): id is string => id !== undefined)
+          );
+          
+          // Refresh data for each queue that has templates
+          for (const queueId of templateQueueIds) {
+            await refreshQueueData(queueId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load templates in admin view:', error);
+      }
+    };
+
+    loadAllTemplates();
+  }, [queues, messageTemplates.length, refreshQueueData]);
 
   // Toggle moderator expansion
   const toggleModeratorExpanded = useCallback((moderatorId: string | number) => {
@@ -561,8 +600,32 @@ export default function ModeratorMessagesOverview() {
                                                             <i className="fas fa-edit"></i>
                                                           </button>
                                                           <button
-                                                            onClick={() => {
-                                                              addToast('تم حذف القالب: ' + template.title, 'success');
+                                                            onClick={async () => {
+                                                              const confirmed = await confirm(createDeleteConfirmation('القالب: ' + template.title));
+                                                              if (confirmed) {
+                                                                try {
+                                                                  const templateIdNum = Number(template.id);
+                                                                  if (!isNaN(templateIdNum)) {
+                                                                    await messageApiClient.deleteTemplate(templateIdNum);
+                                                                    addToast('تم حذف القالب: ' + template.title, 'success');
+                                                                    
+                                                                    // Refetch queue data to reflect changes
+                                                                    if (typeof refreshQueueData === 'function' && queue.id) {
+                                                                      await refreshQueueData(String(queue.id));
+                                                                    }
+                                                                    
+                                                                    // Trigger a custom event to notify other components to refetch
+                                                                    setTimeout(() => {
+                                                                      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+                                                                    }, 100);
+                                                                  } else {
+                                                                    addToast('معرّف القالب غير صالح', 'error');
+                                                                  }
+                                                                } catch (error) {
+                                                                  console.error('Failed to delete template:', error);
+                                                                  addToast('فشل حذف القالب', 'error');
+                                                                }
+                                                              }
                                                             }}
                                                             className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors"
                                                             title="حذف"

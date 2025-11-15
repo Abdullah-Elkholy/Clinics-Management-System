@@ -511,6 +511,7 @@ export default function UploadModal() {
           <input
             type="file"
             id="excelFile"
+            name="excelFile"
             accept=".xlsx,.xls,.csv"
             onChange={handleFileSelect}
             disabled={isProcessing}
@@ -654,6 +655,7 @@ export default function UploadModal() {
                                 <div className="relative">
                                   <input
                                     type="text"
+                                    name={`cell-${actualRowIdx}-${cellIdx}`}
                                     value={cell}
                                     onChange={(e) => handleCellEdit(actualRowIdx, cellIdx, e.target.value)}
                                     className={`w-full px-2 py-1 border rounded text-gray-700 focus:outline-none focus:ring-2 text-sm ${

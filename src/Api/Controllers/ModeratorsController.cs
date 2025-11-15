@@ -40,8 +40,8 @@ namespace Clinics.Api.Controllers
                         FirstName = u.FirstName,
                         LastName = u.LastName,
                         IsActive = true,
-                        CreatedAt = DateTime.Now,
-                        UpdatedAt = DateTime.Now
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
                     })
                     .ToListAsync();
 
@@ -107,8 +107,8 @@ namespace Clinics.Api.Controllers
                     FirstName = moderator.FirstName,
                     LastName = moderator.LastName,
                     IsActive = true,
-                    CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
                     TotalManagedUsers = managedUsers,
                     TotalQueues = queues,
                     TotalMessageTemplates = templates,
@@ -203,8 +203,8 @@ namespace Clinics.Api.Controllers
                     LastName = moderator.LastName,
                     WhatsAppPhoneNumber = req.WhatsAppPhoneNumber,
                     IsActive = true,
-                    CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 };
 
                 return Ok(new { success = true, data = result });
@@ -264,8 +264,8 @@ namespace Clinics.Api.Controllers
                     LastName = moderator.LastName,
                     WhatsAppPhoneNumber = settings?.WhatsAppPhoneNumber,
                     IsActive = settings?.IsActive ?? true,
-                    CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 };
 
                 return Ok(new { success = true, data = result });
@@ -357,7 +357,7 @@ namespace Clinics.Api.Controllers
                         ModeratorId = u.ModeratorId,
                         ModeratorName = moderator.FullName,
                         IsActive = true,
-                        CreatedAt = DateTime.Now
+                        CreatedAt = DateTime.UtcNow
                     })
                     .ToListAsync();
 
@@ -435,7 +435,7 @@ namespace Clinics.Api.Controllers
                     ModeratorId = user.ModeratorId,
                     ModeratorName = moderator.FullName,
                     IsActive = true,
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 return Ok(new { success = true, data = result });

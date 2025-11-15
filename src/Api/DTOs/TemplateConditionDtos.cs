@@ -5,6 +5,7 @@ namespace Clinics.Api.DTOs
 {
     /// <summary>
     /// DTO for creating a new message template (per-queue).
+    /// Condition is automatically created with the template (one-to-one required relationship).
     /// </summary>
     public class CreateTemplateRequest
     {
@@ -21,7 +22,27 @@ namespace Clinics.Api.DTOs
 
         public bool IsShared { get; set; } = true;
 
-        public bool IsActive { get; set; } = true;
+        /// <summary>
+        /// Condition operator. Defaults to "UNCONDITIONED" if not provided.
+        /// Must be one of: UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS, RANGE
+        /// </summary>
+        [RegularExpression("^(UNCONDITIONED|DEFAULT|EQUAL|GREATER|LESS|RANGE)$", ErrorMessage = "Operator must be UNCONDITIONED, DEFAULT, EQUAL, GREATER, LESS, or RANGE")]
+        public string? ConditionOperator { get; set; }
+
+        /// <summary>
+        /// Condition value for EQUAL, GREATER, or LESS operators.
+        /// </summary>
+        public int? ConditionValue { get; set; }
+
+        /// <summary>
+        /// Minimum value for RANGE operator.
+        /// </summary>
+        public int? ConditionMinValue { get; set; }
+
+        /// <summary>
+        /// Maximum value for RANGE operator.
+        /// </summary>
+        public int? ConditionMaxValue { get; set; }
     }
 
     /// <summary>
@@ -36,8 +57,6 @@ namespace Clinics.Api.DTOs
         public string? Content { get; set; }
 
         public bool? IsShared { get; set; }
-
-        public bool? IsActive { get; set; }
     }
 
     /// <summary>
@@ -61,11 +80,19 @@ namespace Clinics.Api.DTOs
 
         public bool IsShared { get; set; }
 
-        public bool IsActive { get; set; }
-
         public DateTime CreatedAt { get; set; }
 
         public DateTime? UpdatedAt { get; set; }
+
+        public int? CreatedBy { get; set; }
+
+        public int? UpdatedBy { get; set; }
+
+        /// <summary>
+        /// Soft-delete flag. Template is active when IsDeleted = false.
+        /// This replaces the old IsActive field - single source of truth.
+        /// </summary>
+        public bool IsDeleted { get; set; }
 
         /// <summary>
         /// Associated condition for this template. 

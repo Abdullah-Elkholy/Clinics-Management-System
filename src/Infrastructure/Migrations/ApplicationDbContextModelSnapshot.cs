@@ -259,9 +259,6 @@ namespace Infrastructure.Migrations
                     b.Property<int>("QueueId")
                         .HasColumnType("int");
 
-                    b.Property<int>("TemplateId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -272,9 +269,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("TemplateId")
-                        .IsUnique();
 
                     b.HasIndex("QueueId", "Operator")
                         .IsUnique()
@@ -353,11 +347,11 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("DeletedBy")
                         .HasColumnType("int");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
+
+                    b.Property<int>("MessageConditionId")
+                        .HasColumnType("int");
 
                     b.Property<int>("ModeratorId")
                         .HasColumnType("int");
@@ -379,6 +373,9 @@ namespace Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedBy");
+
+                    b.HasIndex("MessageConditionId")
+                        .IsUnique();
 
                     b.HasIndex("ModeratorId");
 
@@ -431,8 +428,18 @@ namespace Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CountryCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasDefaultValue("+20");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2");
@@ -643,6 +650,9 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<DateTime?>("LastLogin")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("LastName")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
@@ -738,7 +748,8 @@ namespace Infrastructure.Migrations
 
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
-                        .HasForeignKey("QueueId");
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Message");
 
@@ -756,7 +767,8 @@ namespace Infrastructure.Migrations
 
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
-                        .HasForeignKey("QueueId");
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Clinics.Domain.MessageTemplate", "Template")
                         .WithMany()
@@ -774,18 +786,10 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
                         .HasForeignKey("QueueId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Clinics.Domain.MessageTemplate", "Template")
-                        .WithOne("Condition")
-                        .HasForeignKey("Clinics.Domain.MessageCondition", "TemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Queue");
-
-                    b.Navigation("Template");
                 });
 
             modelBuilder.Entity("Clinics.Domain.MessageSession", b =>
@@ -793,7 +797,7 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
                         .HasForeignKey("QueueId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Queue");
@@ -801,6 +805,12 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Clinics.Domain.MessageTemplate", b =>
                 {
+                    b.HasOne("Clinics.Domain.MessageCondition", "Condition")
+                        .WithOne("Template")
+                        .HasForeignKey("Clinics.Domain.MessageTemplate", "MessageConditionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("Clinics.Domain.User", "Moderator")
                         .WithMany()
                         .HasForeignKey("ModeratorId")
@@ -810,8 +820,10 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
                         .HasForeignKey("QueueId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Condition");
 
                     b.Navigation("Moderator");
 
@@ -823,7 +835,7 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.User", "Moderator")
                         .WithMany()
                         .HasForeignKey("ModeratorUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Moderator");
@@ -834,7 +846,7 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
                         .HasForeignKey("QueueId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Queue");
@@ -856,7 +868,7 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.User", "Moderator")
                         .WithMany()
                         .HasForeignKey("ModeratorUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Moderator");
@@ -872,9 +884,9 @@ namespace Infrastructure.Migrations
                     b.Navigation("Moderator");
                 });
 
-            modelBuilder.Entity("Clinics.Domain.MessageTemplate", b =>
+            modelBuilder.Entity("Clinics.Domain.MessageCondition", b =>
                 {
-                    b.Navigation("Condition");
+                    b.Navigation("Template");
                 });
 
             modelBuilder.Entity("Clinics.Domain.User", b =>

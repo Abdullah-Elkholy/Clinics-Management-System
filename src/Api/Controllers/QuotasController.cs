@@ -104,6 +104,63 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
+        /// Get quota for a specific moderator
+        /// All authenticated users can read quota data, but only see their own moderator's quota
+        /// Admins can see any moderator's quota
+        /// </summary>
+        [HttpGet("{moderatorId:int}")]
+        public async Task<ActionResult<QuotaDto>> GetQuota(int moderatorId)
+        {
+            try
+            {
+                var currentUserId = _userContext.GetUserId();
+                var isAdmin = _userContext.IsAdmin();
+                
+                // If not admin, verify user is requesting their own moderator's quota
+                if (!isAdmin)
+                {
+                    var effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(currentUserId);
+                    if (effectiveModeratorId != moderatorId)
+                    {
+                        return Forbid(); // Can only view own moderator's quota
+                    }
+                }
+                
+                var quota = await _db.Quotas
+                    .FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
+
+                if (quota == null)
+                {
+                    // Return default quota if not found
+                    return Ok(new QuotaDto
+                    {
+                        Id = 0,
+                        Limit = -1, // Unlimited
+                        Used = 0,
+                        QueuesLimit = -1, // Unlimited
+                        QueuesUsed = 0,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+
+                return Ok(new QuotaDto
+                {
+                    Id = quota.Id,
+                    Limit = quota.MessagesQuota,
+                    Used = quota.ConsumedMessages,
+                    QueuesLimit = quota.QueuesQuota,
+                    QueuesUsed = quota.ConsumedQueues,
+                    UpdatedAt = quota.UpdatedAt
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching quota for moderator {ModeratorId}", moderatorId);
+                return StatusCode(500, new { message = "Error fetching quota" });
+            }
+        }
+
+        /// <summary>
         /// Add quota to moderator (admin only)
         /// </summary>
         [HttpPost("{moderatorId}/add")]

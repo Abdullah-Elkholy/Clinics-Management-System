@@ -77,6 +77,7 @@ class UserManagementService {
         username: payload.username,
         role: payload.role || 'user',
         moderatorId: payload.moderatorId,
+        password: payload.password, // Include password if provided
       });
       return { success: true, data: userDtoToModel(user) };
     } catch (error) {
@@ -89,12 +90,33 @@ class UserManagementService {
 
   async updateUser(id: string, payload: any): Promise<UserServiceResponse<User>> {
     try {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔄 UserManagementService.updateUser called with:', {
+          userId: id,
+          payload: payload,
+        });
+      }
+
       const user = await usersApiClient.updateUser(parseInt(id, 10), payload);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ UserManagementService.updateUser received response:', user);
+      }
+
       return { success: true, data: userDtoToModel(user) };
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.error('❌ UserManagementService.updateUser error:', {
+          error: error,
+          errorMsg: errorMsg,
+        });
+      }
+
       return {
         success: false,
-        error: `Failed to update user: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to update user: ${errorMsg}`,
       };
     }
   }

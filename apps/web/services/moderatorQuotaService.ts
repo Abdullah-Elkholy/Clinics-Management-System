@@ -80,10 +80,41 @@ class ModeratorQuotaService {
       };
 
       return { success: true, data: quota };
-    } catch (error) {
+    } catch (error: any) {
+      // Handle 405 Method Not Allowed and other errors gracefully
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Extract statusCode from various error shapes
+      const statusCode = error?.statusCode || error?.status || (error?.message?.includes('405') ? 405 : undefined) || (error?.message?.includes('403') ? 403 : undefined);
+      
+      // If it's a 405 or 403, return default quota instead of error
+      if (statusCode === 405 || statusCode === 403 || errorMessage?.includes('405') || errorMessage?.includes('403') || errorMessage?.includes('Method Not Allowed') || errorMessage?.includes('Forbidden')) {
+        // Return default unlimited quota for non-admin users or when endpoint is not available
+        const defaultQuota: ModeratorQuota = {
+          id: `quota-${moderatorId}`,
+          moderatorId,
+          messagesQuota: {
+            limit: -1,
+            used: 0,
+            percentage: 0,
+            isLow: false,
+            warningThreshold: 80,
+          },
+          queuesQuota: {
+            limit: -1,
+            used: 0,
+            percentage: 0,
+            isLow: false,
+            warningThreshold: 80,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        return { success: true, data: defaultQuota };
+      }
+      
       return {
         success: false,
-        error: `Failed to fetch quota: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to fetch quota: ${errorMessage}`,
       };
     }
   }
@@ -103,10 +134,23 @@ class ModeratorQuotaService {
           queuesLimit: updates.queuesQuota?.limit || 0,
         });
       } else {
-        await messageApiClient.updateQuota(parseInt(moderatorId), {
-          limit: updates.messagesQuota?.limit,
-          queuesLimit: updates.queuesQuota?.limit,
-        });
+        // Build payload with only defined values that are >= 1
+        const payload: { limit?: number; queuesLimit?: number } = {};
+        if (updates.messagesQuota?.limit !== undefined && updates.messagesQuota.limit >= 1) {
+          payload.limit = updates.messagesQuota.limit;
+        }
+        if (updates.queuesQuota?.limit !== undefined && updates.queuesQuota.limit >= 1) {
+          payload.queuesLimit = updates.queuesQuota.limit;
+        }
+        
+        if (Object.keys(payload).length === 0) {
+          return {
+            success: false,
+            error: 'الحد الأدنى يجب أن يكون 1 أو أكثر',
+          };
+        }
+        
+        await messageApiClient.updateQuota(parseInt(moderatorId), payload);
       }
       
       return this.getQuota(moderatorId);
