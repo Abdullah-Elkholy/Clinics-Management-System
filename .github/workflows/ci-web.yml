@@ -17,7 +17,7 @@ jobs:
           node-version: '18'
       - name: Install dependencies
         working-directory: apps/web
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Run tests
         working-directory: apps/web
         run: npm test -- --watchAll=false --passWithNoTests

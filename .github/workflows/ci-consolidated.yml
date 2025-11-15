@@ -75,31 +75,18 @@ jobs:
     # Gating run: only tests that must pass
     - name: Run Unit & Integration Tests (Gating - Must Pass)
       run: |
-        dotnet test `
-          tests/UnitTests/UnitTests.csproj `
-          tests/IntegrationTests/IntegrationTests.csproj `
-          --configuration Debug `
-          --no-build `
-          --filter "Category!=ExpectedToFail" `
-          --logger "trx;LogFileName=gating-results.trx" `
-          --logger "console;verbosity=normal" `
-          /p:CollectCoverage=false
+        dotnet test tests/UnitTests/UnitTests.csproj --configuration Debug --no-build --filter "Category!=ExpectedToFail" --logger "trx;LogFileName=gating-results-unit.trx" --logger "console;verbosity=normal" /p:CollectCoverage=false
+
+        dotnet test tests/IntegrationTests/IntegrationTests.csproj --configuration Debug --no-build --filter "Category!=ExpectedToFail" --logger "trx;LogFileName=gating-results-integration.trx" --logger "console;verbosity=normal" /p:CollectCoverage=false
       env:
         ASPNETCORE_ENVIRONMENT: Test
     
     # Full run with coverage (including expected-to-fail specs)
     - name: Run All Tests with Coverage (Spec + Implementation)
       run: |
-        dotnet test `
-          tests/UnitTests/UnitTests.csproj `
-          tests/IntegrationTests/IntegrationTests.csproj `
-          --configuration Debug `
-          --no-build `
-          --logger "trx;LogFileName=full-results.trx" `
-          --logger "console;verbosity=minimal" `
-          /p:CollectCoverage=true `
-          /p:CoverageFormat=cobertura `
-          /p:CoverletOutputFormat=cobertura
+        dotnet test tests/UnitTests/UnitTests.csproj --configuration Debug --no-build --logger "trx;LogFileName=full-results-unit.trx" --logger "console;verbosity=minimal" /p:CollectCoverage=true /p:CoverletOutput=./coverage.unit.cobertura.xml /p:CoverletOutputFormat=cobertura
+
+        dotnet test tests/IntegrationTests/IntegrationTests.csproj --configuration Debug --no-build --logger "trx;LogFileName=full-results-integration.trx" --logger "console;verbosity=minimal" /p:CollectCoverage=true /p:CoverletOutput=./coverage.integration.cobertura.xml /p:CoverletOutputFormat=cobertura
       env:
         ASPNETCORE_ENVIRONMENT: Test
       continue-on-error: true
@@ -111,17 +98,18 @@ jobs:
         name: backend-test-results
         path: |
           **/TestResults/
-          coverage.cobertura.xml
+          ./coverage.*.cobertura.xml
         retention-days: 30
     
     - name: Publish Coverage to Codecov
       if: always()
       uses: codecov/codecov-action@v4
       with:
-        files: ./coverage.cobertura.xml
+        files: ./coverage.*.cobertura.xml
         flags: backend
         name: backend-coverage
-        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+      continue-on-error: true
     
     - name: Report Test Summary
       if: always()

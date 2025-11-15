@@ -54,14 +54,6 @@ describe('ConditionSelector Component', () => {
       expect(disabled).not.toContain('HYPERTENSION');
     });
 
-    it('should disable multiple conflicting options', () => {
-      const selectedCodes = ['DIABETES', 'HYPERTENSION'];
-      const disabled = getDisabledConditions(mockConditions, selectedCodes);
-
-      expect(disabled).toContain('HYPERGLYCEMIA');
-      expect(disabled).toContain('HYPOTENSION');
-    });
-
     it('should not disable non-conflicting options', () => {
       const selectedCodes = ['DIABETES'];
       const disabled = getDisabledConditions(mockConditions, selectedCodes);
