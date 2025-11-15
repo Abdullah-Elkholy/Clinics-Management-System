@@ -20,14 +20,14 @@ interface ModeratorQuotaDisplayProps {
 export default function ModeratorQuotaDisplay({
   quota: propQuota,
   moderatorId,
-  onEdit,
+  onEdit: _onEdit,
   onEditMessages,
   onEditQueues,
 }: ModeratorQuotaDisplayProps) {
   const [showDetails, setShowDetails] = useState(true); // Default expanded
   
   // Fetch quota from API if not provided
-  const { quota: fetchedQuota, loading: quotaLoading } = useModeratorQuota(moderatorId);
+  const { quota: fetchedQuota, loading: _quotaLoading } = useModeratorQuota(moderatorId);
   
   // Use prop quota if provided, otherwise use fetched quota
   const quota = propQuota || fetchedQuota;
@@ -54,7 +54,7 @@ export default function ModeratorQuotaDisplay({
     updatedAt: new Date(),
   };
 
-  const getProgressColor = (isLow: boolean, percentage: number): string => {
+  const _getProgressColor = (isLow: boolean, percentage: number): string => {
     if (percentage >= 100) return 'bg-red-500';
     if (isLow) return 'bg-yellow-500';
     return 'bg-green-500';

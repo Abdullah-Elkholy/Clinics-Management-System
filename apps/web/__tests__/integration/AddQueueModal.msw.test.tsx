@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect, type FC } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UIProvider, useUI } from '@/contexts/UIContext';
@@ -8,7 +8,7 @@ import { QueueProvider, useQueue } from '@/contexts/QueueContext';
 import AddQueueModal from '@/components/Modals/AddQueueModal';
 
 // Harness to wire providers and expose simple controls/state for assertions
-const Harness: React.FC = () => {
+const Harness: FC = () => {
   const { login } = useAuth();
   const { openModal } = useModal();
   const { queues } = useQueue();
@@ -29,7 +29,7 @@ const Harness: React.FC = () => {
   );
 };
 
-const AppTree: React.FC = () => (
+const AppTree: FC = () => (
   <UIProvider>
     <AuthProvider>
       <ModalProvider>

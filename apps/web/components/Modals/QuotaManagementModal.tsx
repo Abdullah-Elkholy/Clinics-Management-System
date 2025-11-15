@@ -5,6 +5,7 @@ import { useUI } from '@/contexts/UIContext';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import Modal from './Modal';
 import { useState, useEffect } from 'react';
+import logger from '@/utils/logger';
 
 export default function QuotaManagementModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -94,7 +95,7 @@ export default function QuotaManagementModal() {
     } catch (error: any) {
       const errorMessage = messageApiClient.formatApiError?.(error) || error?.message || 'حدث خطأ أثناء تحديث الحصة';
       addToast(errorMessage, 'error');
-      console.error('Failed to update quota:', error);
+      logger.error('Failed to update quota:', error);
     } finally {
       setIsLoading(false);
     }

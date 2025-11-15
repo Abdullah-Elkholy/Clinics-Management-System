@@ -338,6 +338,8 @@ export const usePrevious = <T,>(value: T): T | undefined => {
 /**
  * Reusable hook to detect click outside of an element
  */
+import React from 'react';
+
 export const useClickOutside = (
   ref: React.RefObject<HTMLElement>,
   callback: () => void

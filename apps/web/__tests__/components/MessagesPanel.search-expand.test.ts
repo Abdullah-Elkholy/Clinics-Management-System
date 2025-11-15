@@ -115,7 +115,7 @@ describe('MessagesPanel: Search and Expand/Collapse', () => {
 
   describe('Gating: Per-Queue Toggle', () => {
     it('should toggle queue expanded state on/off', () => {
-      let expandedQueues = new Set<string>();
+      const expandedQueues = new Set<string>();
 
       // Toggle on
       const queueId = '1';
@@ -194,7 +194,7 @@ describe('MessagesPanel: Search and Expand/Collapse', () => {
         // - "..." appended if content > 80 chars
         // - Multi-line content truncated with line-clamp-2
         const content = mockTemplates.template1.content;
-        const preview = content.substring(0, 80) + (content.length > 80 ? '...' : '');
+        const _preview = content.substring(0, 80) + (content.length > 80 ? '...' : '');
         // Verify preview displays correctly in UI
       }
     );

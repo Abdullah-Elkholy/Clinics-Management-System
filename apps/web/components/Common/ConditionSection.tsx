@@ -41,7 +41,7 @@ export function ConditionSection({
   onSelectedConditionChange,
   disabled = false,
   errors = {},
-  hideInfo = false,
+  hideInfo: _hideInfo = false,
 }: ConditionSectionProps) {
   const operatorOptions = [
     { value: 'EQUAL', label: 'يساوي' },

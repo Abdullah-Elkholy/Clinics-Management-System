@@ -148,7 +148,6 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
 
   const handleBulkAction = useCallback(async () => {
     const selectedIds = Array.from(selectedTemplates);
-
     if (bulkAction === 'delete') {
       for (const id of selectedIds) {
         await deleteMessageTemplate(id);
@@ -183,6 +182,10 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
     },
     [editingTemplate, updateMessageTemplate, addMessageTemplate, onTemplateUpdated, onTemplateAdded, queueId]
   );
+
+  // With isActive removed, treat all non-deleted as active
+  const activeTemplates = filteredAndSortedTemplates;
+  const inactiveTemplates: MessageTemplate[] = [];
 
   if (loading) {
     return (
@@ -426,7 +429,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
   onEdit,
   onDelete,
   onDuplicate,
-  onToggleStatus,
+    onToggleStatus: _onToggleStatus,
 }) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
@@ -491,7 +494,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
               <i className="fas fa-copy text-sm"></i>
             </button>
             <button
-              onClick={() => handleDeleteTemplate(template.id)}
+              onClick={onDelete}
               title="حذف"
               className="p-2 rounded transition-colors text-red-600 hover:bg-red-50"
             >

@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import type { MessageTemplate, MessageCondition } from '@/types';
 
 const closeModalMock = jest.fn();
 const getModalDataMock = jest.fn(() => ({ templateId: '101' }));
@@ -7,20 +8,20 @@ const addToastMock = jest.fn();
 const updateMessageTemplateMock = jest.fn();
 
 // Stable data references to avoid infinite effects triggered by new arrays
-const templates = [
+const templates: MessageTemplate[] = [
   {
     id: '101',
     queueId: '1',
     title: 'عنوان قديم',
     content: 'محتوى قديم',
-    isActive: true,
+    isDeleted: false,
     variables: [],
     createdAt: new Date(),
     createdBy: 'user',
   },
-] as any[];
+];
 
-const conditions = [
+const conditions: MessageCondition[] = [
   {
     id: '201',
     queueId: '1',
@@ -28,9 +29,10 @@ const conditions = [
     operator: 'UNCONDITIONED',
     enabled: true,
     priority: 0,
+    template: '',
     createdAt: new Date(),
   },
-] as any[];
+];
 
 const queueContextValue = {
   selectedQueueId: '1',

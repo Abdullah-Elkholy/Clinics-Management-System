@@ -13,6 +13,7 @@ import { usersApiClient } from '@/services/api/usersApiClient';
 import { useUI } from '@/contexts/UIContext';
 import TrashTab from '@/components/TrashTab';
 import { TabNavigation } from '@/components/Common/TabNavigation';
+import logger from '@/utils/logger';
 
 interface Tab {
   id: string;
@@ -54,7 +55,7 @@ export default function UsersManagementView() {
       setTrashPageNumber(page);
     } catch (error: any) {
       setTrashError(error?.message || 'Failed to load trash users');
-      console.error('Error loading trash users:', error);
+      logger.error('Error loading trash users:', error);
     } finally {
       setIsLoadingTrash(false);
     }
@@ -74,7 +75,7 @@ export default function UsersManagementView() {
       setArchivedPageNumber(page);
     } catch (error: any) {
       setArchivedError(error?.message || 'Failed to load archived users');
-      console.error('Error loading archived users:', error);
+      logger.error('Error loading archived users:', error);
     } finally {
       setIsLoadingArchived(false);
     }

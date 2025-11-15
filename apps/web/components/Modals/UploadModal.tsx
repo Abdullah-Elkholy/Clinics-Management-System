@@ -1,9 +1,9 @@
 'use client';
 
+import React, { useState } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import Modal from './Modal';
-import { useState } from 'react';
 import { validateCellValue, validateExcelRow, sanitizeInput, validateCountryCode } from '@/utils/validation';
 import { COUNTRY_CODES } from '@/constants';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
@@ -232,7 +232,7 @@ export default function UploadModal() {
     if (!editablePreview) return;
     
     // Create new row with same structure as headers
-    const newRow = editablePreview[0].map((header, idx) => {
+    const newRow = editablePreview[0].map((header, _idx) => {
       const headerName = header?.toString() || '';
       // Initialize country code column with selected value
       if (headerName.includes('كود') || headerName.toLowerCase().includes('country')) {

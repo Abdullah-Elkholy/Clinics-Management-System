@@ -13,10 +13,12 @@ import { SidebarHeader } from './SidebarHeader';
 import { NavigationItem } from './NavigationItem';
 import { TabItem } from './TabItem';
 import { QueueListItem } from './QueueListItem';
+import logger from '@/utils/logger';
+import queuesApiClient from '@/services/api/queuesApiClient';
 
 export default function Navigation() {
-  const { queues, selectedQueueId, setSelectedQueueId, moderators, queuesLoading } = useQueue();
-  const { currentPanel, setCurrentPanel } = useUI();
+  const { queues, selectedQueueId, setSelectedQueueId, moderators, queuesLoading, refreshQueues } = useQueue();
+  const { currentPanel, setCurrentPanel, addToast } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { isCollapsed, toggleCollapse, isHydrated } = useSidebarCollapse();
@@ -142,7 +144,7 @@ export default function Navigation() {
     const list = queues.filter(q => q.moderatorId === uid || q.moderatorId === uname);
     // Minimal debug to help diagnose if still empty
     if (process.env.NODE_ENV !== 'production' && list.length === 0) {
-      console.debug('[ModeratorQueues] No queues matched for moderator', {
+      logger.debug('[ModeratorQueues] No queues matched for moderator', {
         userId: uid,
         username: uname,
         queueModeratorIds: queues.map(q => q.moderatorId).slice(0, 10),
@@ -165,18 +167,27 @@ export default function Navigation() {
     const queue = queues.find((q) => q.id === queueId);
     const isConfirmed = await confirm(createDeleteConfirmation(`${queue?.doctorName || 'الطابور'}`));
     if (isConfirmed) {
-      // TODO: Implement delete queue API call
-      // For now, just select another queue if this one was selected
-      if (selectedQueueId === queueId && queues.length > 1) {
-        const otherQueue = queues.find((q) => q.id !== queueId);
-        if (otherQueue) {
-          setSelectedQueueId(otherQueue.id);
+      try {
+        await queuesApiClient.deleteQueue(Number(queueId));
+        addToast('تم حذف الطابور بنجاح', 'success');
+        
+        // Select another queue if this one was selected
+        if (selectedQueueId === queueId && queues.length > 1) {
+          const otherQueue = queues.find((q) => q.id !== queueId);
+          if (otherQueue) {
+            setSelectedQueueId(otherQueue.id);
+          }
+        } else if (queues.length === 1) {
+          setSelectedQueueId(null);
+          setCurrentPanel('welcome');
         }
-      } else if (queues.length === 1) {
-        setSelectedQueueId(null);
-        setCurrentPanel('welcome');
+        
+        // Refresh queues list
+        await refreshQueues();
+      } catch (error: any) {
+        logger.error('Error deleting queue:', error);
+        addToast(error?.message || 'فشل حذف الطابور', 'error');
       }
-      // TODO: Call API to delete queue
     }
   };
 

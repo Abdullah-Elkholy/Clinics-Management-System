@@ -45,7 +45,7 @@
  * - Refresh on close reloads templates and conditions from backend
  */
 
-import type { MessageCondition } from '@/types/messageCondition';
+import type { MessageCondition as _MessageCondition } from '@/types/messageCondition';
 
 // Helper type for testing
 import type { ConditionOperator } from '@/types/messageCondition';

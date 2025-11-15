@@ -8,7 +8,7 @@
 import { test, expect, E2EActions } from '../fixtures';
 
 test.describe('Smoke: Session & State Management', () => {
-  test('xfail: should maintain user session across browser tabs', async ({ authenticatedPage: page }, testInfo) => {
+  test('xfail: should maintain user session across browser tabs', async ({ authenticatedPage: page }, _testInfo) => {
     await E2EActions.waitForAppReady(page);
 
     // Get current auth state (URL should not contain /login)
@@ -103,13 +103,13 @@ test.describe('Smoke: Session & State Management', () => {
     await E2EActions.waitForAppReady(page);
 
     let successfulRequests = 0;
-    let failedRequests = 0;
+    let _failedRequests = 0;
 
     page.on('response', (response) => {
       if (response.status() < 400) {
         successfulRequests++;
       } else {
-        failedRequests++;
+        _failedRequests++;
       }
     });
 

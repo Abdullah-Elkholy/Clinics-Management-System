@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect, useMemo, type FC } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UIProvider } from '@/contexts/UIContext';
@@ -6,17 +6,17 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { QueueProvider, useQueue } from '@/contexts/QueueContext';
 import patientsApiClient from '@/services/api/patientsApiClient';
 
-const Harness: React.FC = () => {
+const Harness: FC = () => {
   const { login } = useAuth();
   const { setSelectedQueueId, patients } = useQueue();
 
-  React.useEffect(() => {
+  useEffect(() => {
     (async () => {
       await login('tester', 'password');
     })();
   }, [login]);
 
-  const firstByPosition = React.useMemo(() => {
+  const firstByPosition = useMemo(() => {
     if (!patients.length) return '';
     const minPos = Math.min(...patients.map(p => p.position));
     return patients.find(p => p.position === minPos)?.name ?? '';
@@ -33,7 +33,7 @@ const Harness: React.FC = () => {
   );
 };
 
-const AppTree: React.FC = () => (
+const AppTree: FC = () => (
   <UIProvider>
     <AuthProvider>
       <QueueProvider>

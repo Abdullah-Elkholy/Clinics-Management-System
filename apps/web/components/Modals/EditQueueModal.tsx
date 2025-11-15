@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
@@ -7,7 +8,7 @@ import { validateName, ValidationError } from '@/utils/validation';
 import { queuesApiClient, type QueueDto } from '@/services/api/queuesApiClient';
 import { queueDtoToModel } from '@/services/api/adapters';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
+import logger from '@/utils/logger';
 
 export default function EditQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -41,7 +42,7 @@ export default function EditQueueModal() {
       } catch (err) {
         // If fresh data fetch fails, fall back to existing data
         if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to fetch fresh queue data:', err);
+          logger.error('Failed to fetch fresh queue data:', err);
         }
         setFreshQueueData(null);
       }
@@ -98,7 +99,7 @@ export default function EditQueueModal() {
     
     if (!queue?.id) {
       addToast('خطأ: معرّف الطابور غير صالح', 'error');
-      console.error('Queue ID is missing or invalid:', queue);
+      logger.error('Queue ID is missing or invalid:', queue);
       return;
     }
     
@@ -160,7 +161,7 @@ export default function EditQueueModal() {
         errorMessage = queuesApiClient.formatApiError?.(err) || (err as any)?.message || errorMessage;
       }
       
-      console.error('Failed to update queue:', { error: err, parsed: errorMessage });
+      logger.error('Failed to update queue:', { error: err, parsed: errorMessage });
       addToast(`حدث خطأ أثناء تحديث الطابور: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);

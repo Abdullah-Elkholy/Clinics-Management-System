@@ -1,15 +1,16 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { COUNTRY_CODES } from '@/constants';
 import { validateCountryCode, validateName, validatePhone, ValidationError, MAX_PHONE_DIGITS } from '@/utils/validation';
 import Modal from './Modal';
-import { useState, useEffect } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
 import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import { useQueue } from '@/contexts/QueueContext';
+import logger from '@/utils/logger';
 
 export default function EditPatientModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -86,7 +87,7 @@ export default function EditPatientModal() {
       } catch (err) {
         // If fresh data fetch fails, fall back to existing data
         if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to fetch fresh patient data:', err);
+          logger.error('Failed to fetch fresh patient data:', err);
         }
         setFreshPatientData(null);
       }
@@ -270,8 +271,6 @@ export default function EditPatientModal() {
 
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0;
-
-  if (!isOpen) return null;
 
   return (
     <Modal

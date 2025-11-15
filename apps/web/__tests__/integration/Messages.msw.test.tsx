@@ -1,18 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type FC } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UIProvider, useUI } from '@/contexts/UIContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { ModalProvider, useModal } from '@/contexts/ModalContext';
+import { ModalProvider } from '@/contexts/ModalContext';
 import { QueueProvider, useQueue } from '@/contexts/QueueContext';
-import { messageApiClient } from '@/services/api/messageApiClient';
+import { messageApiClient, type FailedTaskDto } from '@/services/api/messageApiClient';
 
 // Harness component to expose failed tasks and messages state for testing
-const Harness: React.FC = () => {
+const Harness: FC = () => {
   const { login } = useAuth();
   const { setSelectedQueueId } = useQueue();
   const { addToast } = useUI();
-  const [failedTasks, setFailedTasks] = useState<any[]>([]);
+  const [failedTasks, setFailedTasks] = useState<FailedTaskDto[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [messageStatus, setMessageStatus] = useState('');
   const [messageAttempts, setMessageAttempts] = useState(0);
@@ -39,7 +39,7 @@ const Harness: React.FC = () => {
 
   const handleRetryTask = async (taskId: number) => {
     try {
-      const updated = await messageApiClient.retryFailedTask(taskId);
+      const _updated = await messageApiClient.retryFailedTask(taskId);
       addToast('Task queued for retry', 'success');
       // Reload failed tasks
       await loadFailedTasks();
@@ -90,7 +90,7 @@ const Harness: React.FC = () => {
       <button onClick={() => setSelectedQueueId('10')}>select-queue-10</button>
       <button onClick={() => loadFailedTasks()}>load-failed-tasks</button>
       
-      {failedTasks.map((task: any) => (
+      {failedTasks.map((task) => (
         <div key={task.id} data-testid={`task-${task.id}`}>
           <span>{task.id}: {task.status}</span>
           <button onClick={() => handleRetryTask(task.id)}>retry-task-{task.id}</button>
@@ -115,7 +115,7 @@ const Harness: React.FC = () => {
   );
 };
 
-const AppTree: React.FC = () => (
+const AppTree: FC = () => (
   <UIProvider>
     <AuthProvider>
       <ModalProvider>
@@ -194,7 +194,7 @@ describe('Message send/retry + Failed tasks + MSW integration', () => {
     });
 
     // Get the current count
-    const countBefore = screen.getByText(/failed-tasks-count:/i).textContent || '';
+    const _countBefore = screen.getByText(/failed-tasks-count:/i).textContent || '';
 
     // Click load button to refresh
     const loadButton = screen.getByRole('button', { name: /load-failed-tasks/i });

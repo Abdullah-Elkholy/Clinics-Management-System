@@ -22,7 +22,7 @@ interface StatsSectionProps {
   stats: StatCard[];
 }
 
-export default function StatsSection({ title, gradient, colorTheme, stats }: StatsSectionProps) {
+export default function StatsSection({ title: _title, gradient, colorTheme, stats }: StatsSectionProps) {
   // If colorTheme is provided, use it; otherwise fall back to gradient detection
   const theme = colorTheme || (() => {
     if (gradient?.includes('from-blue')) return 'blue';

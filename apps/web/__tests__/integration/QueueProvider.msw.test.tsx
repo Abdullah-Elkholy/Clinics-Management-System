@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect, type FC } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -6,7 +6,7 @@ import { UIProvider } from '@/contexts/UIContext';
 import { QueueProvider, useQueue } from '@/contexts/QueueContext';
 
 // Small harness component to login then select a queue and display counts
-const Harness: React.FC = () => {
+const Harness: FC = () => {
   const { login } = useAuth();
   const { setSelectedQueueId, messageTemplates, messageConditions, addMessageTemplate } = useQueue();
 
@@ -22,12 +22,12 @@ const Harness: React.FC = () => {
       <div>conditions-count: {messageConditions.length}</div>
       <button onClick={() => setSelectedQueueId('123')}>select-queue-123</button>
       <button onClick={() => setSelectedQueueId('456')}>select-queue-456</button>
-      <button onClick={() => addMessageTemplate({ title: 'New', content: 'Hi', queueId: '456', isActive: true, variables: [], createdBy: '', createdAt: new Date() })}>add-template</button>
+      <button onClick={() => addMessageTemplate({ title: 'New', content: 'Hi', queueId: '456', isDeleted: false, variables: [], createdBy: '', createdAt: new Date() })}>add-template</button>
     </div>
   );
 };
 
-const AppTree: React.FC = () => (
+const AppTree: FC = () => (
   <UIProvider>
     <AuthProvider>
       <QueueProvider>

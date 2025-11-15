@@ -1,7 +1,11 @@
+/* global RequestInit, HeadersInit */
 /**
  * Users API Client
  * Handles fetching user and moderator data from the backend
  */
+import logger from '@/utils/logger';
+import { UserRole } from '@/types/roles';
+import type { User } from '@/types/user';
 
 export interface UserDto {
   id: number;
@@ -32,10 +36,33 @@ export interface ListResponse<T> {
   pageSize: number;
 }
 
+type LegacyListResponse<T> = Partial<ListResponse<T>> & {
+  data?: T[];
+  total?: number;
+  page?: number;
+};
+
 export interface ApiError {
   message: string;
   statusCode: number;
 }
+
+const DEFAULT_ERROR_MESSAGE = 'API request failed';
+
+const extractErrorMessage = (payload: unknown, fallback = DEFAULT_ERROR_MESSAGE): string => {
+  if (typeof payload === 'string') {
+    return payload || fallback;
+  }
+
+  if (payload && typeof payload === 'object' && 'message' in payload) {
+    const message = (payload as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message || fallback;
+    }
+  }
+
+  return fallback;
+};
 
 // ============================================
 // API Client Configuration
@@ -81,7 +108,7 @@ async function fetchAPI<T>(
   });
 
   // Handle non-JSON responses
-  let data: any;
+  let data: unknown;
   const contentType = response.headers.get('content-type');
   if (contentType?.includes('application/json')) {
     data = await response.json();
@@ -90,17 +117,15 @@ async function fetchAPI<T>(
   }
 
   if (!response.ok) {
-    const errorMessage = data?.message || data || 'API request failed';
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.error('❌ API Error:', {
-        url: url,
-        status: response.status,
-        statusText: response.statusText,
-        message: errorMessage,
-        responseData: data,
-      });
-    }
+    const errorMessage = extractErrorMessage(data);
+
+    logger.error('❌ API Error:', {
+      url,
+      status: response.status,
+      statusText: response.statusText,
+      message: errorMessage,
+      responseData: data,
+    });
 
     throw {
       message: errorMessage,
@@ -109,6 +134,30 @@ async function fetchAPI<T>(
   }
 
   return data as T;
+}
+
+const emptyListResponse = <T>(pageNumber: number, pageSize: number): ListResponse<T> => ({
+  items: [],
+  totalCount: 0,
+  pageNumber,
+  pageSize,
+});
+
+function normalizeListResponse<T>(
+  payload: unknown,
+  defaults: { pageNumber: number; pageSize: number }
+): ListResponse<T> {
+  if (payload && typeof payload === 'object') {
+    const data = payload as LegacyListResponse<T>;
+    return {
+      items: data.items ?? data.data ?? [],
+      totalCount: data.totalCount ?? data.total ?? (data.items ?? data.data)?.length ?? 0,
+      pageNumber: data.pageNumber ?? data.page ?? defaults.pageNumber,
+      pageSize: data.pageSize ?? defaults.pageSize,
+    };
+  }
+
+  return emptyListResponse<T>(defaults.pageNumber, defaults.pageSize);
 }
 
 // ============================================
@@ -199,13 +248,11 @@ export async function updateUser(
   userId: number,
   data: Partial<UserDto>
 ): Promise<UserDto> {
-  if (process.env.NODE_ENV === 'development') {
-    console.log('📤 usersApiClient.updateUser sending:', {
-      userId: userId,
-      data: data,
-      url: `/users/${userId}`,
-    });
-  }
+  logger.debug('📤 usersApiClient.updateUser sending:', {
+    userId,
+    data,
+    url: `/users/${userId}`,
+  });
 
   try {
     const result: UserDto = await fetchAPI(`/users/${userId}`, {
@@ -213,19 +260,15 @@ export async function updateUser(
       body: JSON.stringify(data),
     });
 
-    if (process.env.NODE_ENV === 'development') {
-      console.log('✅ usersApiClient.updateUser received:', result);
-    }
+    logger.debug('✅ usersApiClient.updateUser received:', result);
 
     return result;
   } catch (error) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error('❌ usersApiClient.updateUser error:', {
-        error: error,
-        userId: userId,
-        payload: data,
-      });
-    }
+    logger.error('❌ usersApiClient.updateUser error:', {
+      error,
+      userId,
+      payload: data,
+    });
     throw error;
   }
 }
@@ -254,20 +297,9 @@ export async function getTrashUsers(options?: {
   params.append('pageSize', pageSize.toString());
 
   const queryString = params.toString();
-  const response = await fetchAPI(`/users/trash?${queryString}`);
-  
-  // Backend returns { success: true, data: users, total, page, pageSize }
-  // We need to transform it to ListResponse format
-  if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
-    return {
-      items: (response as any).data || [],
-      totalCount: (response as any).total || 0,
-      pageNumber: (response as any).page || page,
-      pageSize: (response as any).pageSize || pageSize,
-    };
-  }
-  
-  return response;
+  const response = await fetchAPI<LegacyListResponse<UserDto>>(`/users/trash?${queryString}`);
+
+  return normalizeListResponse<UserDto>(response, { pageNumber: page, pageSize });
 }
 
 /**
@@ -285,20 +317,9 @@ export async function getArchivedUsers(options?: {
   params.append('pageSize', pageSize.toString());
 
   const queryString = params.toString();
-  const response = await fetchAPI(`/users/archived?${queryString}`);
-  
-  // Backend returns { success: true, data: users, total, page, pageSize }
-  // We need to transform it to ListResponse format
-  if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
-    return {
-      items: (response as any).data || [],
-      totalCount: (response as any).total || 0,
-      pageNumber: (response as any).page || page,
-      pageSize: (response as any).pageSize || pageSize,
-    };
-  }
-  
-  return response;
+  const response = await fetchAPI<LegacyListResponse<UserDto>>(`/users/archived?${queryString}`);
+
+  return normalizeListResponse<UserDto>(response, { pageNumber: page, pageSize });
 }
 
 /**
@@ -315,19 +336,36 @@ export async function restoreUser(userId: number): Promise<UserDto> {
  * Convert UserDto to frontend User model
  * Maps backend numerator moderatorId to frontend semantic field assignedModerator
  */
-export function userDtoToModel(dto: UserDto): any {
+const mapRoleToEnum = (role: UserDto['role']): UserRole => {
+  switch (role) {
+    case 'primary_admin':
+      return UserRole.PrimaryAdmin;
+    case 'secondary_admin':
+      return UserRole.SecondaryAdmin;
+    case 'moderator':
+      return UserRole.Moderator;
+    case 'user':
+      return UserRole.User;
+    default:
+      return UserRole.User;
+  }
+};
+
+export function userDtoToModel(dto: UserDto): User {
+  const createdAt = dto.createdAt ? new Date(dto.createdAt) : new Date();
+  const updatedAt = dto.updatedAt ? new Date(dto.updatedAt) : createdAt;
+
   return {
     id: dto.id.toString(),
+    username: dto.username,
     firstName: dto.firstName,
     lastName: dto.lastName,
-    username: dto.username,
-    role: dto.role,
+    role: mapRoleToEnum(dto.role),
     isActive: dto.isActive,
-    createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
-    updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
+    assignedModerator: dto.moderatorId ? dto.moderatorId.toString() : undefined,
+    createdAt,
+    updatedAt,
     lastLogin: dto.lastLogin ? new Date(dto.lastLogin) : undefined,
-    moderatorId: dto.moderatorId, // keep for reference; use assignedModerator in frontend logic
-    assignedModerator: dto.moderatorId ? dto.moderatorId.toString() : undefined, // canonical field for filtering
   };
 }
 

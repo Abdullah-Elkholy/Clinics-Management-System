@@ -37,7 +37,7 @@ export default function ModeratorsPanel() {
 
   const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'users' | 'quota'>('overview');
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showEditForm, setShowEditForm] = useState(false);
+  const [_showEditForm, setShowEditForm] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -49,7 +49,7 @@ export default function ModeratorsPanel() {
     queuesQuota: 10,
   });
 
-  const [editFormData, setEditFormData] = useState<UpdateModeratorRequest>({});
+  const [editFormData, _setEditFormData] = useState<UpdateModeratorRequest>({});
   const [userFormData, setUserFormData] = useState<AddUserToModeratorRequest>({
     firstName: '',
     lastName: '',
@@ -394,11 +394,11 @@ export default function ModeratorsPanel() {
                       </p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
-                      !(moderator.isDeleted ?? false)
+                      moderator.isActive
                         ? 'bg-blue-100 text-blue-800' 
                         : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {!(moderator.isDeleted ?? false) ? 'نشط' : 'معطل'}
+                      {moderator.isActive ? 'نشط' : 'معطل'}
                     </span>
                   </div>
 

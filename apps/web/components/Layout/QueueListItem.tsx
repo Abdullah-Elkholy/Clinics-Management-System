@@ -37,8 +37,7 @@ export function QueueListItem({
     onDelete?.(id);
   };
 
-  // Icon-only mode when collapsed
-  const isIconOnly = isCollapsed;
+  // Icon-only mode when collapsed (computed inline via isCollapsed)
 
   return (
     <div

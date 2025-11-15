@@ -13,6 +13,7 @@ import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import TrashTab from '@/components/TrashTab';
 import { TabNavigation } from '@/components/Common/TabNavigation';
+import logger from '@/utils/logger';
 
 interface Tab {
   id: string;
@@ -57,7 +58,7 @@ export default function PatientsManagementView() {
         setTrashPageNumber(page);
       } catch (error: any) {
         setTrashError(error?.message || 'Failed to load trash patients');
-        console.error('Error loading trash patients:', error);
+        logger.error('Error loading trash patients:', error);
       } finally {
         setIsLoadingTrash(false);
       }
@@ -81,7 +82,7 @@ export default function PatientsManagementView() {
         setArchivedPageNumber(page);
       } catch (error: any) {
         setArchivedError(error?.message || 'Failed to load archived patients');
-        console.error('Error loading archived patients:', error);
+        logger.error('Error loading archived patients:', error);
       } finally {
         setIsLoadingArchived(false);
       }

@@ -13,6 +13,7 @@ export interface MessageTemplate {
   variables: string[];         // list of variables in template
   condition?: MessageCondition; // associated condition (determines template role: DEFAULT/UNCONDITIONED/active)
   priority?: number;           // order when multiple templates available
+  isActive?: boolean;          // whether template currently active/usable (UI flag)
   
   // Metadata
   createdAt: Date;

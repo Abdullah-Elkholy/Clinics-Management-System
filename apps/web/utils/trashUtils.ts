@@ -7,6 +7,12 @@
 
 import { ApiError } from '@/services/api/messageApiClient';
 
+type RestoreErrorMetadata = Record<string, unknown> & {
+  availableQuota?: number;
+  requiredQuota?: number;
+  expiryDate?: string;
+};
+
 /**
  * Error types for restore operations
  */
@@ -26,13 +32,35 @@ export interface RestoreError {
   type: RestoreErrorType;
   message: string;
   statusCode: number;
-  metadata?: {
-    availableQuota?: number;
-    requiredQuota?: number;
-    expiryDate?: string;
-    [key: string]: any;
-  };
+  metadata?: RestoreErrorMetadata;
 }
+
+type ApiErrorLike = ApiError & { metadata?: RestoreErrorMetadata };
+
+const FALLBACK_ERROR: ApiErrorLike = {
+  message: 'An unexpected error occurred.',
+  statusCode: 0,
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isRestoreMetadata = (metadata: unknown): metadata is RestoreErrorMetadata =>
+  isRecord(metadata);
+
+const normalizeApiError = (error: unknown): ApiErrorLike => {
+  if (!isRecord(error)) {
+    return FALLBACK_ERROR;
+  }
+
+  const message = typeof error.message === 'string' && error.message.trim().length > 0
+    ? error.message
+    : FALLBACK_ERROR.message;
+  const statusCode = typeof error.statusCode === 'number' ? error.statusCode : FALLBACK_ERROR.statusCode;
+  const metadata = isRestoreMetadata(error.metadata) ? error.metadata : undefined;
+
+  return { message, statusCode, metadata };
+};
 
 /**
  * Parse API error into RestoreError
@@ -46,27 +74,28 @@ export function parseRestoreError(error: unknown): RestoreError {
     };
   }
 
-  const apiError = error as any;
-  const statusCode = apiError?.statusCode || 0;
-  let message = apiError?.message || 'An unexpected error occurred.';
+  const apiError = normalizeApiError(error);
+  const { statusCode, message } = apiError;
 
   // Parse error code from message or headers
   let errorType = RestoreErrorType.UNKNOWN;
 
   if (message.includes('restore_window_expired')) {
     errorType = RestoreErrorType.RESTORE_WINDOW_EXPIRED;
-  } else if (message.includes('quota_insufficient') || statusCode === 409) {
+  } else if (message.includes('quota_insufficient')) {
     errorType = RestoreErrorType.QUOTA_INSUFFICIENT;
   } else if (statusCode === 404) {
     errorType = RestoreErrorType.NOT_FOUND;
   } else if (statusCode === 403) {
     errorType = RestoreErrorType.PERMISSION_DENIED;
   } else if (statusCode === 409) {
-    errorType = RestoreErrorType.CONFLICT;
+    errorType = message.includes('quota')
+      ? RestoreErrorType.QUOTA_INSUFFICIENT
+      : RestoreErrorType.CONFLICT;
   }
 
   // Extract metadata if available
-  const metadata = apiError?.metadata;
+  const metadata = apiError.metadata;
 
   return {
     type: errorType,

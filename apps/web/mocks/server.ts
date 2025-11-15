@@ -8,7 +8,6 @@
  * This intercepts fetch requests during tests and returns predictable responses.
  */
 
-// @ts-nocheck - Disable type checking for deferred MSW integration
 import { setupServer } from 'msw/node';
 import { handlers } from './handlers';
 

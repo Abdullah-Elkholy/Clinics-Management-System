@@ -17,6 +17,8 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
 import { formatLocalDate } from '@/utils/dateTimeUtils';
+import logger from '@/utils/logger';
+import type { MessageCondition } from '@/types/messageCondition';
 // Mock data removed - using API data instead
 
 /**
@@ -62,12 +64,12 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function MessagesPanel() {
-  const { selectedQueueId, queues, messageTemplates, refreshQueueData } = useQueue();
+  const { selectedQueueId: _selectedQueueId, queues, messageTemplates, refreshQueueData } = useQueue();
   const { user } = useAuth();
   const { addToast } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
-  const { select } = useSelectDialog();
+  const { select: _select } = useSelectDialog();
 
   /**
    * Role-based rendering:
@@ -78,17 +80,13 @@ export default function MessagesPanel() {
   const isAdminView = user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin);
   const isUserView = user && user.role === UserRole.User;
 
-  if (isAdminView || isUserView) {
-    return <ModeratorMessagesOverview />;
-  }
-
   // State for search, filtering, sorting
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedQueues, setExpandedQueues] = useState<Set<string | number>>(new Set());
-  const [selectedConditionFilter, setSelectedConditionFilter] = useState<string | null>(null);
-  const [highlightedConditionType, setHighlightedConditionType] = useState<string | null>(null);
+  const [_selectedConditionFilter, _setSelectedConditionFilter] = useState<string | null>(null);
+  const [highlightedConditionType, _setHighlightedConditionType] = useState<string | null>(null);
   const [userQuota, setUserQuota] = useState<MyQuotaDto | null>(null);
-  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+  const [_isLoadingQuota, setIsLoadingQuota] = useState(false);
 
   /**
    * Load user's quota from API on component mount
@@ -175,14 +173,14 @@ export default function MessagesPanel() {
    */
   const checkConditionIntersections = (queueId: string) => {
     // Get all conditions from message templates for this queue
-    const queueConditions: any[] = messageTemplates
+    const queueConditions: MessageCondition[] = messageTemplates
       .filter((t) => t.queueId === String(queueId) && t.condition && t.condition.operator && t.condition.operator !== 'DEFAULT' && t.condition.operator !== 'UNCONDITIONED')
       .map((t) => t.condition)
-      .filter((c): c is any => c !== null && c !== undefined);
+      .filter((c): c is MessageCondition => c !== null && c !== undefined);
 
     if (queueConditions.length < 2) return [];
 
-    const intersections: Array<{ cond1: any; cond2: any; message: string }> = [];
+    const intersections: Array<{ cond1: MessageCondition; cond2: MessageCondition; message: string }> = [];
 
     for (let i = 0; i < queueConditions.length; i++) {
       for (let j = i + 1; j < queueConditions.length; j++) {
@@ -228,7 +226,7 @@ export default function MessagesPanel() {
    * Get range representation of a condition
    * Note: All values must be >= 1 (0 and negative values are invalid)
    */
-  const getConditionRange = (cond: any): { min: number; max: number } | null => {
+  const getConditionRange = (cond: MessageCondition): { min: number; max: number } | null => {
     switch (cond.operator) {
       case 'EQUAL':
         if (cond.value === undefined || cond.value <= 0) return null;
@@ -250,7 +248,7 @@ export default function MessagesPanel() {
   /**
    * Check if two conditions overlap/intersect
    */
-  const conditionsOverlap = (cond1: any, cond2: any): boolean => {
+  const conditionsOverlap = (cond1: MessageCondition, cond2: MessageCondition): boolean => {
     const range1 = getConditionRange(cond1);
     const range2 = getConditionRange(cond2);
     
@@ -263,7 +261,7 @@ export default function MessagesPanel() {
   /**
    * Get human-readable condition text
    */
-  const getConditionText = (cond: any): string => {
+  const getConditionText = (cond: MessageCondition): string => {
     const operatorMap: Record<string, string> = {
       'EQUAL': 'يساوي',
       'GREATER': 'أكثر من',
@@ -316,6 +314,10 @@ export default function MessagesPanel() {
       },
     ];
   }, [userQuota]);
+
+  if (isAdminView || isUserView) {
+    return <ModeratorMessagesOverview />;
+  }
 
   return (
     <PanelWrapper>
@@ -487,7 +489,7 @@ export default function MessagesPanel() {
                                     (t.content && t.content.toLowerCase().includes(searchLower))
                                   );
                                 })
-                                .sort((a, b) => {
+                                .sort((_a, _b) => {
                                   return 0;
                                 })
                                 .map((template) => {
@@ -501,7 +503,7 @@ export default function MessagesPanel() {
                                   <tr key={template.id} className={`border-b border-gray-200 transition-colors ${
                                     hasConflict 
                                       ? 'bg-red-100 hover:bg-red-150 border-l-4 border-l-red-600' 
-                                      : highlightedConditionType && condition && (condition as any).operator === highlightedConditionType
+                                      : highlightedConditionType && condition && condition.operator === highlightedConditionType
                                         ? 'bg-yellow-100 hover:bg-yellow-150 border-l-4 border-l-yellow-500'
                                         : 'hover:bg-blue-50'
                                   }`}>
@@ -529,18 +531,18 @@ export default function MessagesPanel() {
                                               </span>
                                             )}
                                             <span className="text-sm font-semibold text-blue-600">
-                                              {(condition as any).operator === 'EQUAL' && 'يساوي'}
-                                              {(condition as any).operator === 'GREATER' && 'أكثر من'}
-                                              {(condition as any).operator === 'LESS' && 'أقل من'}
-                                              {(condition as any).operator === 'RANGE' && 'نطاق'}
+                                              {condition.operator === 'EQUAL' && 'يساوي'}
+                                              {condition.operator === 'GREATER' && 'أكثر من'}
+                                              {condition.operator === 'LESS' && 'أقل من'}
+                                              {condition.operator === 'RANGE' && 'نطاق'}
                                             </span>
-                                            {(condition as any).operator === 'RANGE' ? (
+                                            {condition.operator === 'RANGE' ? (
                                               <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
-                                                {(condition as any).minValue} - {(condition as any).maxValue}
+                                                {condition.minValue} - {condition.maxValue}
                                               </span>
                                             ) : (
                                               <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
-                                                {(condition as any).value}
+                                                {condition.value}
                                               </span>
                                             )}
                                           </div>
@@ -582,32 +584,35 @@ export default function MessagesPanel() {
                                           تحرير
                                         </button>
                                         <button
-                                          onClick={async () => {
-                                            // Check if template has DEFAULT condition and handle appropriately
-                                            const confirmed = await confirm(createDeleteConfirmation('القالب: ' + template.title));
-                                            if (confirmed) {
-                                              try {
-                                                const templateIdNum = Number(template.id);
-                                                if (!isNaN(templateIdNum)) {
-                                                  await messageApiClient.deleteTemplate(templateIdNum);
-                                                  addToast('تم حذف القالب: ' + template.title, 'success');
-                                                  
-                                                  // Refetch queue data to reflect changes
-                                                  if (typeof refreshQueueData === 'function' && queue.id) {
-                                                    await refreshQueueData(String(queue.id));
-                                                  }
-                                                  
-                                                  // Trigger a custom event to notify other components to refetch
-                                                  setTimeout(() => {
-                                                    window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-                                                  }, 100);
-                                                } else {
-                                                  addToast('معرّف القالب غير صالح', 'error');
-                                                }
-                                              } catch (error) {
-                                                console.error('Failed to delete template:', error);
-                                                addToast('فشل حذف القالب', 'error');
+                                          onClick={async (e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            
+                                            try {
+                                              const confirmOptions = createDeleteConfirmation('القالب: ' + template.title);
+                                              const confirmed = await confirm(confirmOptions);
+                                              if (!confirmed) return;
+                                              
+                                              const templateIdNum = Number(template.id);
+                                              if (isNaN(templateIdNum)) {
+                                                addToast('معرّف القالب غير صالح', 'error');
+                                                return;
                                               }
+
+                                              await messageApiClient.deleteTemplate(templateIdNum);
+                                              
+                                              // Refetch queue data to reflect changes
+                                              if (typeof refreshQueueData === 'function' && queue.id) {
+                                                await refreshQueueData(String(queue.id));
+                                              }
+                                              
+                                              // Notify other components
+                                              window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+                                              
+                                              addToast('تم حذف القالب: ' + template.title, 'success');
+                                            } catch (error: any) {
+                                              const errorMsg = error?.message || error?.error || 'فشل حذف القالب';
+                                              addToast(errorMsg, 'error');
                                             }
                                           }}
                                           className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors"

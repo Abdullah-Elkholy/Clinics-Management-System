@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React from 'react';
 
 interface ConfirmationModalProps {
   isOpen: boolean;

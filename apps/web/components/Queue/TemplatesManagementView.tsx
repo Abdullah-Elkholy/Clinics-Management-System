@@ -13,6 +13,7 @@ import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import TrashTab from '@/components/TrashTab';
 import { TabNavigation } from '@/components/Common/TabNavigation';
+import logger from '@/utils/logger';
 
 interface Tab {
   id: string;
@@ -48,7 +49,7 @@ export default function TemplatesManagementView() {
       setIsLoadingTrash(true);
       setTrashError('');
       try {
-        const response = await messageApiClient.getTrashTemplates(Number(selectedQueueId), {
+        const response = await messageApiClient.getTrashTemplates({
           pageNumber: page,
           pageSize,
         });
@@ -57,7 +58,7 @@ export default function TemplatesManagementView() {
         setTrashPageNumber(page);
       } catch (error: any) {
         setTrashError(error?.message || 'Failed to load trash templates');
-        console.error('Error loading trash templates:', error);
+        logger.error('Error loading trash templates:', error);
       } finally {
         setIsLoadingTrash(false);
       }
@@ -81,7 +82,7 @@ export default function TemplatesManagementView() {
         setArchivedPageNumber(page);
       } catch (error: any) {
         setArchivedError(error?.message || 'Failed to load archived templates');
-        console.error('Error loading archived templates:', error);
+        logger.error('Error loading archived templates:', error);
       } finally {
         setIsLoadingArchived(false);
       }

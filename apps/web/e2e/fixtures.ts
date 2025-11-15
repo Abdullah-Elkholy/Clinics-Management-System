@@ -4,6 +4,7 @@
  */
 
 import { test as base, expect, Page } from '@playwright/test';
+import logger from '@/utils/logger';
 
 export interface TestFixtures {
   authenticatedPage: Page;
@@ -11,23 +12,23 @@ export interface TestFixtures {
 }
 
 export const test = base.extend<TestFixtures>({
-  authenticatedPage: async ({ page }, use) => {
+  authenticatedPage: async ({ page }, provideAuthenticatedPage) => {
     // Navigate to login and wait for full page load
     await page.goto('/login', { waitUntil: 'networkidle' });
     
-    console.log(`[E2E] Navigated to login page. URL: ${page.url()}`);
+    logger.info(`[E2E] Navigated to login page. URL: ${page.url()}`);
 
     // Wait for login form inputs to be visible with longer timeout
     try {
       await page.waitForSelector('input[type="text"]', { timeout: 15000 });
       await page.waitForSelector('input[type="password"]', { timeout: 15000 });
     } catch (e) {
-      console.error('[E2E] Failed to find login inputs. Dumping page content...');
-      console.error(await page.content());
+      logger.error('[E2E] Failed to find login inputs. Dumping page content...');
+      logger.error(await page.content());
       throw e;
     }
 
-    console.log('[E2E] Login form inputs found, filling credentials');
+    logger.info('[E2E] Login form inputs found, filling credentials');
 
     // Fill login form using input type selectors (more robust than Arabic placeholders)
     const textInputs = await page.locator('input[type="text"]').all();
@@ -36,7 +37,7 @@ export const test = base.extend<TestFixtures>({
     if (textInputs.length >= 1 && passwordInputs.length >= 1) {
       await textInputs[0].fill('testadmin');
       await passwordInputs[0].fill('TestPassword123!');
-      console.log('[E2E] Credentials filled');
+      logger.info('[E2E] Credentials filled');
     } else {
       throw new Error(`Expected text and password inputs, found text:${textInputs.length} password:${passwordInputs.length}`);
     }
@@ -48,7 +49,7 @@ export const test = base.extend<TestFixtures>({
       throw new Error('Login submit button not found');
     }
 
-    console.log('[E2E] Clicking login submit button');
+    logger.info('[E2E] Clicking login submit button');
 
     // Click submit and wait for navigation or page content change
     await submitButton.click();
@@ -56,9 +57,9 @@ export const test = base.extend<TestFixtures>({
     // Wait for either navigation away from login or for main app content
     try {
       await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 10000 });
-      console.log('[E2E] Successfully navigated away from login page');
+      logger.info('[E2E] Successfully navigated away from login page');
     } catch {
-      console.warn(`[E2E] Still on login page after authentication. URL: ${page.url()}`);
+      logger.warn(`[E2E] Still on login page after authentication. URL: ${page.url()}`);
       // Don't throw - some tests intentionally test auth persistence
     }
 
@@ -67,10 +68,10 @@ export const test = base.extend<TestFixtures>({
       // Network might not become idle, that's ok
     });
 
-    console.log(`[E2E] Authenticated page ready. Final URL: ${page.url()}`);
+    logger.info(`[E2E] Authenticated page ready. Final URL: ${page.url()}`);
 
     // Provide authenticated page to test
-    await use(page);
+    await provideAuthenticatedPage(page);
   },
 });
 
@@ -115,7 +116,7 @@ export const E2EActions = {
     // If redirected to login, auth was lost - this is often a test environment issue
     // Log the redirect but don't fail immediately - frontend team will need to investigate
     if (currentUrl.includes('/login')) {
-      console.warn(`Navigation to ${path} redirected to /login - auth may not be persisting in test environment`);
+      logger.warn(`Navigation to ${path} redirected to /login - auth may not be persisting in test environment`);
     }
   },
 
@@ -133,7 +134,7 @@ export const E2EActions = {
       if (!body) {
         throw new Error('No body content found on page');
       }
-      console.warn('Header/nav not found, but body is visible');
+      logger.warn('Header/nav not found, but body is visible');
     }
   },
 
@@ -142,9 +143,9 @@ export const E2EActions = {
    * @deprecated - Requires full UI implementation (Phase 2)
    */
   async createQueue(
-    page: Page,
-    name: string,
-    moderatorId?: string,
+    _page: Page,
+    _name: string,
+    _moderatorId?: string,
   ) {
     throw new Error('createQueue not implemented - UI not yet built. Phase 2 task.');
   },
@@ -154,10 +155,10 @@ export const E2EActions = {
    * @deprecated - Requires full UI implementation (Phase 2)
    */
   async createTemplate(
-    page: Page,
-    name: string,
-    queueId: string,
-    conditions?: Array<{ operator: string; value?: string; min?: number; max?: number }>
+    _page: Page,
+    _name: string,
+    _queueId: string,
+    _conditions?: Array<{ operator: string; value?: string; min?: number; max?: number }>
   ) {
     throw new Error('createTemplate not implemented - UI not yet built. Phase 2 task.');
   },
@@ -167,10 +168,10 @@ export const E2EActions = {
    * @deprecated - Requires full UI implementation (Phase 2)
    */
   async createPatient(
-    page: Page,
-    name: string,
-    email: string,
-    conditions?: Record<string, string>
+    _page: Page,
+    _name: string,
+    _email: string,
+    _conditions?: Record<string, string>
   ) {
     throw new Error('createPatient not implemented - UI not yet built. Phase 2 task.');
   },
@@ -179,7 +180,7 @@ export const E2EActions = {
    * Placeholder for future: Expand patient row
    * @deprecated - Requires full UI implementation (Phase 2)
    */
-  async expandPatientRow(page: Page, patientName: string) {
+  async expandPatientRow(_page: Page, _patientName: string) {
     throw new Error('expandPatientRow not implemented - UI not yet built. Phase 2 task.');
   },
 
@@ -187,7 +188,7 @@ export const E2EActions = {
    * Placeholder for future: Validate operator overlay
    * @deprecated - Requires full UI implementation (Phase 2)
    */
-  async validateOperatorOverlay(page: Page, operatorType: string) {
+  async validateOperatorOverlay(_page: Page, _operatorType: string) {
     throw new Error('validateOperatorOverlay not implemented - UI not yet built. Phase 2 task.');
   },
 
@@ -195,7 +196,7 @@ export const E2EActions = {
    * Placeholder for future: Toast verification
    * @deprecated - Requires full UI implementation (Phase 2)
    */
-  async expectToast(page: Page, message: string, type: 'success' | 'error' | 'info' = 'success') {
+  async expectToast(_page: Page, _message: string, _type: 'success' | 'error' | 'info' = 'success') {
     throw new Error('expectToast not implemented - UI not yet built. Phase 2 task.');
   },
 };

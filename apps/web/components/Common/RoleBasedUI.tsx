@@ -9,7 +9,13 @@
 
 import React, { ReactNode } from 'react';
 import { UserRole } from '@/types/roles';
-import { hasAnyRole, hasRoleOrHigher } from '@/utils/roleBasedUI';
+import {
+  hasAnyRole,
+  hasRoleOrHigher,
+  getRoleNameAr,
+  getRoleColor,
+  getRoleIcon,
+} from '@/utils/roleBasedUI';
 
 /**
  * Props for role-based components
@@ -76,18 +82,22 @@ interface RoleSwitchProps {
 }
 
 export function RoleSwitch({ userRole, children }: RoleSwitchProps) {
-  return <>{React.Children.toArray(children).find((child: any) => {
-    if (!child) return false;
+  return <>{React.Children.toArray(children).find((child) => {
+    const element = child as React.ReactElement<{ role?: UserRole }>;
+    if (!element) return false;
     
     // Check if it's a RoleCase
-    if (child.type === RoleCase) {
-      return child.props.role === userRole;
+    if (element.type === RoleCase) {
+      return element.props.role === userRole;
     }
     
     // Check if it's a RoleDefault (always matches if no RoleCase matched)
-    if (child.type === RoleDefault) {
+    if (element.type === RoleDefault) {
       const hasMatchingCase = React.Children.toArray(children).some(
-        (sibling: any) => sibling?.type === RoleCase && sibling.props.role === userRole
+        (sibling) => {
+          const siblingElement = sibling as React.ReactElement<{ role?: UserRole }>;
+          return siblingElement?.type === RoleCase && siblingElement.props.role === userRole;
+        }
       );
       return !hasMatchingCase;
     }
@@ -181,7 +191,6 @@ interface RoleBadgeProps {
 export function RoleBadge({ role, size = 'md', showIcon = true }: RoleBadgeProps) {
   if (!role) return null;
 
-  const { getRoleNameAr, getRoleColor, getRoleIcon } = require('@/utils/roleBasedUI');
   const roleColor = getRoleColor(role);
   const roleIcon = getRoleIcon(role);
   const roleName = getRoleNameAr(role);
@@ -213,7 +222,6 @@ interface RoleIndicatorProps {
 export function RoleIndicator({ userRole }: RoleIndicatorProps) {
   if (!userRole) return null;
 
-  const { getRoleNameAr, getRoleIcon } = require('@/utils/roleBasedUI');
   const roleName = getRoleNameAr(userRole);
   const roleIcon = getRoleIcon(userRole);
 

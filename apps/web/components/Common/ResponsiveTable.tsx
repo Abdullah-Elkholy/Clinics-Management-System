@@ -6,26 +6,26 @@
 
 import React, { useState } from 'react';
 
-interface Column {
+interface Column<T> {
   key: string;
   label: string;
   width?: string;
-  render?: (value: any, row: any) => React.ReactNode;
+  render?: (value: unknown, row: T) => React.ReactNode;
   mobile?: boolean; // Show on mobile
 }
 
-interface ResponsiveTableProps {
-  columns: Column[];
-  data: any[];
-  keyField: string;
-  onRowClick?: (row: any) => void;
-  rowActions?: (row: any) => React.ReactNode;
+interface ResponsiveTableProps<T> {
+  columns: Column<T>[];
+  data: T[];
+  keyField: keyof T; // Field used as unique key
+  onRowClick?: (row: T) => void;
+  rowActions?: (row: T) => React.ReactNode;
   emptyMessage?: string;
   loading?: boolean;
   className?: string;
 }
 
-export function ResponsiveTable({
+export function ResponsiveTable<T extends Record<string, unknown>>({
   columns,
   data,
   keyField,
@@ -34,7 +34,7 @@ export function ResponsiveTable({
   emptyMessage = 'لا توجد بيانات',
   loading = false,
   className = '',
-}: ResponsiveTableProps) {
+}: ResponsiveTableProps<T>) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const toggleRowExpand = (key: string) => {
@@ -84,36 +84,40 @@ export function ResponsiveTable({
           </tr>
         </thead>
         <tbody>
-          {data.map((row) => (
+          {data.map((row) => {
+            const rowKey = String(row[keyField]);
+            return (
             <tr
-              key={row[keyField]}
+              key={rowKey}
               onClick={() => onRowClick?.(row)}
               className={`
                 border-b border-gray-200 hover:bg-blue-50 transition-all duration-200
                 ${onRowClick ? 'cursor-pointer' : ''}
               `}
             >
-              {columns.map((col) => (
+              {columns.map((col) => {
+                const cellValue = row[col.key];
+                return (
                 <td key={col.key} className="px-4 py-3 text-gray-800">
                   {col.render
-                    ? col.render(row[col.key], row)
-                    : row[col.key]}
+                    ? col.render(cellValue, row)
+                    : (cellValue as React.ReactNode) ?? ''}
                 </td>
-              ))}
+              );})}
               {rowActions && (
                 <td className="px-4 py-3 text-right">
                   {rowActions(row)}
                 </td>
               )}
             </tr>
-          ))}
+          );})}
         </tbody>
       </table>
 
       {/* Mobile Card View */}
       <div className="md:hidden space-y-3">
         {data.map((row) => {
-          const rowKey = row[keyField];
+          const rowKey = String(row[keyField]);
           const isExpanded = expandedRows.has(rowKey);
 
           return (
@@ -131,16 +135,18 @@ export function ResponsiveTable({
                     {columns
                       .filter((c) => c.mobile !== false)
                       .slice(0, 2)
-                      .map((col) => (
+                      .map((col) => {
+                        const value = row[col.key];
+                        return (
                         <div key={col.key} className="text-sm">
                           <span className="font-medium text-gray-600">{col.label}:</span>
                           <span className="text-gray-800 mr-2">
                             {col.render
-                              ? col.render(row[col.key], row)
-                              : row[col.key]}
+                              ? col.render(value, row)
+                              : (value as React.ReactNode) ?? ''}
                           </span>
                         </div>
-                      ))}
+                      );})}
                   </div>
                   <i
                     className={`
@@ -154,16 +160,18 @@ export function ResponsiveTable({
               {/* Card Details (Expanded) */}
               {isExpanded && (
                 <div className="border-t border-gray-200 bg-gray-50 p-4 space-y-2">
-                  {columns.map((col) => (
+                  {columns.map((col) => {
+                    const value = row[col.key];
+                    return (
                     <div key={col.key} className="text-sm">
                       <span className="font-medium text-gray-600">{col.label}:</span>
                       <span className="text-gray-800 mr-2">
                         {col.render
-                          ? col.render(row[col.key], row)
-                          : row[col.key]}
+                          ? col.render(value, row)
+                          : (value as React.ReactNode) ?? ''}
                       </span>
                     </div>
-                  ))}
+                  );})}
                 </div>
               )}
 

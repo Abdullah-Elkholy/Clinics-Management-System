@@ -25,6 +25,20 @@ type ConditionRow = {
   updatedAt?: string;
 };
 
+type FailedTaskRow = {
+  id: number;
+  messageId: number;
+  queueId: number;
+  queueName: string;
+  patientPhone: string;
+  messageContent: string;
+  attempts: number;
+  errorMessage?: string;
+  status: string;
+  createdAt: string;
+  lastAttemptAt?: string;
+};
+
 type QueueRow = {
   id: number;
   doctorName: string;
@@ -101,7 +115,7 @@ const createDb = () => ({
       createdAt: nowIso(),
       lastAttemptAt: nowIso(),
     },
-  ] as any[],
+  ] as FailedTaskRow[],
   nextFailedTaskId: 503,
   queues: [
     {
@@ -344,7 +358,7 @@ export const handlers = [
   // Get a single failed task
   rest.get('http://localhost:5000/api/failed-tasks/:id', async (req, res, ctx) => {
     const id = parseInt(req.params.id as string);
-    const task = db.failedTasks.find((t: any) => t.id === id);
+    const task = db.failedTasks.find((t: FailedTaskRow) => t.id === id);
     if (!task) {
       return res(ctx.status(404), ctx.json({ message: 'Not found' }));
     }
@@ -354,7 +368,7 @@ export const handlers = [
   // Retry a failed task
   rest.post('http://localhost:5000/api/failed-tasks/:id/retry', async (req, res, ctx) => {
     const id = parseInt(req.params.id as string);
-    const taskIndex = db.failedTasks.findIndex((t: any) => t.id === id);
+    const taskIndex = db.failedTasks.findIndex((t: FailedTaskRow) => t.id === id);
     if (taskIndex < 0) {
       return res(ctx.status(404), ctx.json({ message: 'Task not found' }));
     }
@@ -373,7 +387,7 @@ export const handlers = [
   // Dismiss a failed task
   rest.post('http://localhost:5000/api/failed-tasks/:id/dismiss', async (req, res, ctx) => {
     const id = parseInt(req.params.id as string);
-    const taskIndex = db.failedTasks.findIndex((t: any) => t.id === id);
+    const taskIndex = db.failedTasks.findIndex((t: FailedTaskRow) => t.id === id);
     if (taskIndex < 0) {
       return res(ctx.status(404), ctx.json({ message: 'Task not found' }));
     }
@@ -418,3 +432,11 @@ export const handlers = [
 export const defaultFallbackHandler = rest.all('*', async (_req, res, ctx) => {
   return res(ctx.status(200), ctx.json({ success: true, data: {} }));
 });
+
+/**
+ * Reset in-memory mock data to initial state between tests
+ */
+export function resetMockData() {
+  // Reinitialize the in-memory database to its default seeded state
+  resetDb();
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { useModeratorQuota } from '@/hooks/useModeratorQuota';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
@@ -25,6 +25,9 @@ import { usersApiClient } from '@/services/api/usersApiClient';
 import queuesApiClient from '@/services/api/queuesApiClient';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import logger from '@/utils/logger';
+
+const TRASH_PAGE_SIZE = 10;
 
 /**
  * UserManagementPanel - Manage moderators and their users
@@ -96,14 +99,126 @@ export default function UserManagementPanel() {
     }
   }, [currentUser?.id, currentUser?.role]); // Only depend on id and role, not the entire user object
 
-  // Listen for user data updates and refresh when accountSettings tab is active
+  // Quota management state
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const [showMessagesQuotaModal, setShowMessagesQuotaModal] = useState(false);
+  const [showQueuesQuotaModal, setShowQueuesQuotaModal] = useState(false);
+  const [selectedQuota, setSelectedQuota] = useState<ModeratorQuota | null>(null);
+  const [selectedModeratorForQuota, setSelectedModeratorForQuota] = useState<User | null>(null);
+  const [quotaSaving, setQuotaSaving] = useState(false);
+
+  // Trash tab state
+  const [trashItems, setTrashItems] = useState<any[]>([]);
+  const [isLoadingTrash, setIsLoadingTrash] = useState(false);
+  const [trashError, setTrashError] = useState<string>('');
+  const [trashPageNumber, setTrashPageNumber] = useState(1);
+  const [trashTotalCount, setTrashTotalCount] = useState(0);
+  
+  // Trash state for queues, templates, and patients
+  const [trashQueues, setTrashQueues] = useState<any[]>([]);
+  const [isLoadingTrashQueues, setIsLoadingTrashQueues] = useState(false);
+  const [trashQueuesError, setTrashQueuesError] = useState<string>('');
+  const [trashQueuesPageNumber, setTrashQueuesPageNumber] = useState(1);
+  const [trashQueuesTotalCount, setTrashQueuesTotalCount] = useState(0);
+  
+  const [trashTemplates, setTrashTemplates] = useState<any[]>([]);
+  const [isLoadingTrashTemplates, setIsLoadingTrashTemplates] = useState(false);
+  const [trashTemplatesError, setTrashTemplatesError] = useState<string>('');
+  const [trashTemplatesPageNumber, setTrashTemplatesPageNumber] = useState(1);
+  const [trashTemplatesTotalCount, setTrashTemplatesTotalCount] = useState(0);
+  
+  const [trashPatients, setTrashPatients] = useState<any[]>([]);
+  const [isLoadingTrashPatients, setIsLoadingTrashPatients] = useState(false);
+  const [trashPatientsError, setTrashPatientsError] = useState<string>('');
+  const [trashPatientsPageNumber, setTrashPatientsPageNumber] = useState(1);
+  const [trashPatientsTotalCount, setTrashPatientsTotalCount] = useState(0);
+  const [_archivedItems, _setArchivedItems] = useState<any[]>([]);
+  const [_isLoadingArchived, _setIsLoadingArchived] = useState(false);
+  const [_archivedError, _setArchivedError] = useState<string>('');
+  const [_archivedPageNumber, _setArchivedPageNumber] = useState(1);
+  const [_archivedTotalCount, _setArchivedTotalCount] = useState(0);
+
+  const loadTrashUsers = useCallback(async (page: number) => {
+    setIsLoadingTrash(true);
+    setTrashError('');
+    try {
+      const response = await usersApiClient.getTrashUsers({
+        pageNumber: page,
+        pageSize: TRASH_PAGE_SIZE,
+      });
+      setTrashItems(response.items);
+      setTrashTotalCount(response.totalCount);
+      setTrashPageNumber(page);
+    } catch (error: any) {
+      setTrashError(error?.message || 'فشل تحميل المستخدمين المحذوفين');
+      logger.error('Error loading trash users:', error);
+    } finally {
+      setIsLoadingTrash(false);
+    }
+  }, []);
+
+  const loadTrashQueues = useCallback(async (page: number) => {
+    setIsLoadingTrashQueues(true);
+    setTrashQueuesError('');
+    try {
+      const response = await queuesApiClient.getTrashQueues({
+        pageNumber: page,
+        pageSize: TRASH_PAGE_SIZE,
+      });
+      setTrashQueues(response.items);
+      setTrashQueuesTotalCount(response.totalCount);
+      setTrashQueuesPageNumber(page);
+    } catch (error: any) {
+      setTrashQueuesError(error?.message || 'فشل تحميل الطوابير المحذوفة');
+      logger.error('Error loading trash queues:', error);
+    } finally {
+      setIsLoadingTrashQueues(false);
+    }
+  }, []);
+
+  const loadTrashTemplates = useCallback(async (page: number) => {
+    setIsLoadingTrashTemplates(true);
+    setTrashTemplatesError('');
+    try {
+      const response = await messageApiClient.getTrashTemplates({
+        pageNumber: page,
+        pageSize: TRASH_PAGE_SIZE,
+      });
+      setTrashTemplates(response.items);
+      setTrashTemplatesTotalCount(response.totalCount);
+      setTrashTemplatesPageNumber(page);
+    } catch (error: any) {
+      setTrashTemplatesError(error?.message || 'فشل تحميل القوالب المحذوفة');
+      logger.error('Error loading trash templates:', error);
+    } finally {
+      setIsLoadingTrashTemplates(false);
+    }
+  }, []);
+
+  const loadTrashPatients = useCallback(async (page: number) => {
+    setIsLoadingTrashPatients(true);
+    setTrashPatientsError('');
+    try {
+      // Placeholder: implement actual patients trash retrieval when API supports it
+      setTrashPatients([]);
+      setTrashPatientsTotalCount(0);
+      setTrashPatientsPageNumber(page);
+    } catch (error: any) {
+      setTrashPatientsError(error?.message || 'فشل تحميل المرضى المحذوفين');
+      logger.error('Error loading trash patients:', error);
+    } finally {
+      setIsLoadingTrashPatients(false);
+    }
+  }, []);
+
+  // Listen for user/quota/trash updates after all state is defined
   useEffect(() => {
     const handleUserDataUpdate = async () => {
       // Always refetch users list to update moderators panel, secondary admins panel, etc.
       try {
         await actions.fetchUsers();
       } catch (error) {
-        console.error('Failed to refetch users after update:', error);
+        logger.error('Failed to refetch users after update:', error);
       }
       
       // Refresh user data in AuthContext when user data is updated (for accountSettings tab)
@@ -169,46 +284,16 @@ export default function UserManagementPanel() {
       window.removeEventListener('patientDataUpdated', handleTrashUpdate);
       clearInterval(interval);
     };
-  }, [activeTab, refreshUser, actions, trashPageNumber, loadTrashUsers, loadTrashQueues, loadTrashTemplates, loadTrashPatients]);
-  
-  // Quota management state
-  const [showQuotaModal, setShowQuotaModal] = useState(false);
-  const [showMessagesQuotaModal, setShowMessagesQuotaModal] = useState(false);
-  const [showQueuesQuotaModal, setShowQueuesQuotaModal] = useState(false);
-  const [selectedQuota, setSelectedQuota] = useState<ModeratorQuota | null>(null);
-  const [selectedModeratorForQuota, setSelectedModeratorForQuota] = useState<User | null>(null);
-  const [quotaSaving, setQuotaSaving] = useState(false);
-
-  // Trash tab state
-  const [trashItems, setTrashItems] = useState<any[]>([]);
-  const [isLoadingTrash, setIsLoadingTrash] = useState(false);
-  const [trashError, setTrashError] = useState<string>('');
-  const [trashPageNumber, setTrashPageNumber] = useState(1);
-  const [trashTotalCount, setTrashTotalCount] = useState(0);
-  
-  // Trash state for queues, templates, and patients
-  const [trashQueues, setTrashQueues] = useState<any[]>([]);
-  const [isLoadingTrashQueues, setIsLoadingTrashQueues] = useState(false);
-  const [trashQueuesError, setTrashQueuesError] = useState<string>('');
-  const [trashQueuesPageNumber, setTrashQueuesPageNumber] = useState(1);
-  const [trashQueuesTotalCount, setTrashQueuesTotalCount] = useState(0);
-  
-  const [trashTemplates, setTrashTemplates] = useState<any[]>([]);
-  const [isLoadingTrashTemplates, setIsLoadingTrashTemplates] = useState(false);
-  const [trashTemplatesError, setTrashTemplatesError] = useState<string>('');
-  const [trashTemplatesPageNumber, setTrashTemplatesPageNumber] = useState(1);
-  const [trashTemplatesTotalCount, setTrashTemplatesTotalCount] = useState(0);
-  
-  const [trashPatients, setTrashPatients] = useState<any[]>([]);
-  const [isLoadingTrashPatients, setIsLoadingTrashPatients] = useState(false);
-  const [trashPatientsError, setTrashPatientsError] = useState<string>('');
-  const [trashPatientsPageNumber, setTrashPatientsPageNumber] = useState(1);
-  const [trashPatientsTotalCount, setTrashPatientsTotalCount] = useState(0);
-  const [archivedItems, setArchivedItems] = useState<any[]>([]);
-  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
-  const [archivedError, setArchivedError] = useState<string>('');
-  const [archivedPageNumber, setArchivedPageNumber] = useState(1);
-  const [archivedTotalCount, setArchivedTotalCount] = useState(0);
+  }, [
+    activeTab,
+    refreshUser,
+    actions,
+    trashPageNumber,
+    loadTrashUsers,
+    loadTrashQueues,
+    loadTrashTemplates,
+    loadTrashPatients,
+  ]);
 
   // Listen for trash updates (after state declarations)
   useEffect(() => {
@@ -232,8 +317,17 @@ export default function UserManagementPanel() {
       window.removeEventListener('templateDataUpdated', handleTrashUpdate);
       window.removeEventListener('patientDataUpdated', handleTrashUpdate);
     };
-  }, [activeTab, trashPageNumber, trashQueuesPageNumber, trashTemplatesPageNumber, trashPatientsPageNumber]);
-  const trashPageSize = 10;
+  }, [
+    activeTab,
+    trashPageNumber,
+    trashQueuesPageNumber,
+    trashTemplatesPageNumber,
+    trashPatientsPageNumber,
+    loadTrashUsers,
+    loadTrashQueues,
+    loadTrashTemplates,
+    loadTrashPatients,
+  ]);
 
   // Export logs to CSV
   const handleExportLogs = async () => {
@@ -276,7 +370,7 @@ export default function UserManagementPanel() {
   // Fetch users on mount
   useEffect(() => {
     actions.fetchUsers();
-  }, []);
+  }, [actions]);
 
   // Get all moderators
   const getModerators = (): User[] => {
@@ -470,103 +564,7 @@ export default function UserManagementPanel() {
     }
   };
 
-  // Load trash users
-  const loadTrashUsers = async (page: number) => {
-    setIsLoadingTrash(true);
-    setTrashError('');
-    try {
-      const response = await usersApiClient.getTrashUsers({
-        pageNumber: page,
-        pageSize: trashPageSize,
-      });
-      setTrashItems(response.items);
-      setTrashTotalCount(response.totalCount);
-      setTrashPageNumber(page);
-    } catch (error: any) {
-      setTrashError(error?.message || 'فشل تحميل المستخدمين المحذوفين');
-      console.error('Error loading trash users:', error);
-    } finally {
-      setIsLoadingTrash(false);
-    }
-  };
-
-  // Load archived users
-  const loadArchivedUsers = async (page: number) => {
-    setIsLoadingArchived(true);
-    setArchivedError('');
-    try {
-      const response = await usersApiClient.getArchivedUsers({
-        pageNumber: page,
-        pageSize: trashPageSize,
-      });
-      setArchivedItems(response.items);
-      setArchivedTotalCount(response.totalCount);
-      setArchivedPageNumber(page);
-    } catch (error: any) {
-      setArchivedError(error?.message || 'فشل تحميل المستخدمين المؤرشفين');
-      console.error('Error loading archived users:', error);
-    } finally {
-      setIsLoadingArchived(false);
-    }
-  };
-
-  // Load trash queues
-  const loadTrashQueues = async (page: number) => {
-    setIsLoadingTrashQueues(true);
-    setTrashQueuesError('');
-    try {
-      const response = await queuesApiClient.getTrashQueues({
-        pageNumber: page,
-        pageSize: trashPageSize,
-      });
-      setTrashQueues(response.items);
-      setTrashQueuesTotalCount(response.totalCount);
-      setTrashQueuesPageNumber(page);
-    } catch (error: any) {
-      setTrashQueuesError(error?.message || 'فشل تحميل الطوابير المحذوفة');
-      console.error('Error loading trash queues:', error);
-    } finally {
-      setIsLoadingTrashQueues(false);
-    }
-  };
-
-  // Load trash templates
-  const loadTrashTemplates = async (page: number) => {
-    setIsLoadingTrashTemplates(true);
-    setTrashTemplatesError('');
-    try {
-      const response = await messageApiClient.getTrashTemplates({
-        pageNumber: page,
-        pageSize: trashPageSize,
-      });
-      setTrashTemplates(response.items);
-      setTrashTemplatesTotalCount(response.totalCount);
-      setTrashTemplatesPageNumber(page);
-    } catch (error: any) {
-      setTrashTemplatesError(error?.message || 'فشل تحميل القوالب المحذوفة');
-      console.error('Error loading trash templates:', error);
-    } finally {
-      setIsLoadingTrashTemplates(false);
-    }
-  };
-
-  // Load trash patients (requires queueId, so we'll load for all queues)
-  const loadTrashPatients = async (page: number) => {
-    setIsLoadingTrashPatients(true);
-    setTrashPatientsError('');
-    try {
-      // Note: Patients trash requires queueId, so this is a placeholder
-      // In a real implementation, you'd need to fetch for each queue or have a global endpoint
-      setTrashPatients([]);
-      setTrashPatientsTotalCount(0);
-      setTrashPatientsPageNumber(page);
-    } catch (error: any) {
-      setTrashPatientsError(error?.message || 'فشل تحميل المرضى المحذوفين');
-      console.error('Error loading trash patients:', error);
-    } finally {
-      setIsLoadingTrashPatients(false);
-    }
-  };
+  // Load trash metadata helpers created above
 
   // Handle restore user
   const handleRestoreUser = async (userId: string | number) => {
@@ -615,7 +613,7 @@ export default function UserManagementPanel() {
       loadTrashTemplates(1);
       loadTrashPatients(1);
     }
-  }, [activeTab]);
+  }, [activeTab, loadTrashUsers, loadTrashQueues, loadTrashTemplates, loadTrashPatients]);
 
   // Note: Archived users are handled separately in UsersManagementView component
   // This panel only handles trash (restorable within 30 days)
@@ -2079,7 +2077,7 @@ export default function UserManagementPanel() {
                 isError={!!trashError}
                 errorMessage={trashError}
                 pageNumber={trashPageNumber}
-                pageSize={trashPageSize}
+                pageSize={TRASH_PAGE_SIZE}
                 totalCount={trashTotalCount}
                 onPageChange={loadTrashUsers}
                 onRestore={handleRestoreUser}
@@ -2101,7 +2099,7 @@ export default function UserManagementPanel() {
                 isError={!!trashQueuesError}
                 errorMessage={trashQueuesError}
                 pageNumber={trashQueuesPageNumber}
-                pageSize={trashPageSize}
+                pageSize={TRASH_PAGE_SIZE}
                 totalCount={trashQueuesTotalCount}
                 onPageChange={loadTrashQueues}
                 onRestore={handleRestoreQueue}
@@ -2123,7 +2121,7 @@ export default function UserManagementPanel() {
                 isError={!!trashTemplatesError}
                 errorMessage={trashTemplatesError}
                 pageNumber={trashTemplatesPageNumber}
-                pageSize={trashPageSize}
+                pageSize={TRASH_PAGE_SIZE}
                 totalCount={trashTemplatesTotalCount}
                 onPageChange={loadTrashTemplates}
                 onRestore={handleRestoreTemplate}
@@ -2146,7 +2144,7 @@ export default function UserManagementPanel() {
                   isError={!!trashPatientsError}
                   errorMessage={trashPatientsError}
                   pageNumber={trashPatientsPageNumber}
-                  pageSize={trashPageSize}
+                  pageSize={TRASH_PAGE_SIZE}
                   totalCount={trashPatientsTotalCount}
                   onPageChange={loadTrashPatients}
                   onRestore={async (id) => {

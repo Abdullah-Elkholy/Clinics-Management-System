@@ -17,9 +17,10 @@ import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
+import logger from '@/utils/logger';
 
 export default function QueueDashboard() {
-  const { selectedQueueId, queues, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData } = useQueue();
+  const { selectedQueueId, queues, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData, refreshQueues } = useQueue();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { addToast } = useUI();
@@ -217,13 +218,18 @@ export default function QueueDashboard() {
       }
       
       await queuesApiClient.updateQueue(queueIdNum, {
+        doctorName: queue.doctorName,
         currentPosition: parseInt(currentCQP, 10),
       });
       
       setIsEditingCQP(false);
       addToast('تم تحديث الموضع الحالي بنجاح', 'success');
       
-      // Refetch queue data
+      // Refetch queue metadata to update currentPosition immediately
+      if (typeof refreshQueues === 'function') {
+        await refreshQueues();
+      }
+      // Refetch templates/conditions
       if (typeof refreshQueueData === 'function') {
         await refreshQueueData(selectedQueueId);
       }
@@ -231,7 +237,7 @@ export default function QueueDashboard() {
     } catch (err: any) {
       addToast(err?.message || 'فشل تحديث الموضع الحالي', 'error');
     }
-  }, [currentCQP, addToast, queue, selectedQueueId, refreshQueueData]);
+  }, [currentCQP, addToast, queue, selectedQueueId, refreshQueueData, refreshQueues]);
 
   /**
    * Handle CQP Cancel - memoized
@@ -271,13 +277,18 @@ export default function QueueDashboard() {
       }
       
       await queuesApiClient.updateQueue(queueIdNum, {
+        doctorName: queue.doctorName,
         estimatedWaitMinutes: parseInt(currentETS, 10),
       });
       
       setIsEditingETS(false);
       addToast('تم تحديث الوقت المقدر بنجاح', 'success');
       
-      // Refetch queue data
+      // Refetch queue metadata to update estimatedWaitMinutes immediately
+      if (typeof refreshQueues === 'function') {
+        await refreshQueues();
+      }
+      // Refetch templates/conditions
       if (typeof refreshQueueData === 'function') {
         await refreshQueueData(selectedQueueId);
       }
@@ -285,7 +296,7 @@ export default function QueueDashboard() {
     } catch (err: any) {
       addToast(err?.message || 'فشل تحديث الوقت المقدر', 'error');
     }
-  }, [currentETS, addToast, queue, selectedQueueId, refreshQueueData]);
+  }, [currentETS, addToast, queue, selectedQueueId, refreshQueueData, refreshQueues]);
 
   /**
    * Handle ETS Cancel - memoized
@@ -544,7 +555,7 @@ export default function QueueDashboard() {
               onClick={() =>
                 openModal('editPatient', {
                   patient,
-                  onSave: (updated: any) => {
+                  onSave: (_updated: any) => {
                     // Patient updates now handled through API
                     // QueueContext will auto-refresh on next load
                   },
@@ -568,7 +579,7 @@ export default function QueueDashboard() {
                       await refreshPatients(selectedQueueId);
                     }
                   } catch (error) {
-                    console.error('Error deleting patient:', error);
+                    logger.error('Error deleting patient:', error);
                     addToast('فشل حذف المريض', 'error');
                   }
                 }
@@ -734,7 +745,7 @@ export default function QueueDashboard() {
                       deletedCount++;
                     }
                   } catch (error) {
-                    console.error(`Failed to delete patient ${patientId}:`, error);
+                    logger.error(`Failed to delete patient ${patientId}:`, error);
                   }
                 }
                 
@@ -755,7 +766,7 @@ export default function QueueDashboard() {
                   addToast('فشل حذف المرضى', 'error');
                 }
               } catch (error) {
-                console.error('Error during bulk delete:', error);
+                logger.error('Error during bulk delete:', error);
                 addToast('حدث خطأ أثناء حذف المرضى', 'error');
               }
             }

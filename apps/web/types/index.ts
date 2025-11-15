@@ -45,6 +45,8 @@ export interface Queue {
   doctorName: string;
   moderatorId: string;         // GUID: references moderator user ID
   isActive?: boolean;
+  currentPosition?: number;    // Current position pointer (CQP)
+  estimatedWaitMinutes?: number; // Estimated time per session (ETS)
   // Soft-delete fields (30-day trash window)
   isDeleted?: boolean;
   deletedAt?: string;

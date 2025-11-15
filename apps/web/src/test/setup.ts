@@ -3,41 +3,54 @@
  * Initializes React Testing Library, mocks external dependencies (toast, file APIs, router)
  * and polyfills for jsdom environment.
  */
+/* eslint-disable no-console */
 
 import '@testing-library/jest-dom';
-import React from 'react';
 // Polyfill fetch in Jest (jsdom)
 import 'whatwg-fetch';
+import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'util';
 import { server, resetMswDb } from './msw/server';
 
-// Polyfill TextEncoder/TextDecoder for Node test environment (JWT decoding, etc.)
-try {
-  // @ts-ignore
-  if (typeof TextDecoder === 'undefined') {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { TextDecoder } = require('util');
-    (global as any).TextDecoder = TextDecoder;
-  }
-  // @ts-ignore
-  if (typeof TextEncoder === 'undefined') {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { TextEncoder } = require('util');
-    (global as any).TextEncoder = TextEncoder;
-  }
-} catch {
-  // noop – best-effort polyfill
+type FileCtor = new (
+  fileBits?: BlobPart[],
+  fileName?: string,
+  options?: FilePropertyBag
+) => File;
+
+type GlobalWithPolyfills = typeof globalThis & {
+  TextDecoder?: typeof NodeTextDecoder;
+  TextEncoder?: typeof NodeTextEncoder;
+  File?: FileCtor;
+};
+
+const globalWithPolyfills = globalThis as GlobalWithPolyfills;
+
+if (typeof globalWithPolyfills.TextDecoder === 'undefined') {
+  globalWithPolyfills.TextDecoder = NodeTextDecoder;
 }
+
+if (typeof globalWithPolyfills.TextEncoder === 'undefined') {
+  globalWithPolyfills.TextEncoder = NodeTextEncoder;
+}
+
+type ToastPromiseMessages = {
+  loading?: unknown;
+  success?: unknown;
+  error?: unknown;
+};
+
+const createToastApi = () => ({
+  success: jest.fn((message: unknown) => message),
+  error: jest.fn((message: unknown) => message),
+  loading: jest.fn((message: unknown) => message),
+  promise: jest.fn((promise: Promise<unknown>, _msgs?: ToastPromiseMessages) => promise),
+  custom: jest.fn(),
+});
 
 // Mock react-hot-toast
 jest.mock('react-hot-toast', () => ({
   __esModule: true,
-  default: {
-    success: jest.fn((message: string) => message),
-    error: jest.fn((message: string) => message),
-    loading: jest.fn((message: string) => message),
-    promise: jest.fn((promise: Promise<any>, msgs: any) => promise),
-    custom: jest.fn(),
-  },
+  default: createToastApi(),
   Toaster: () => null,
   useToaster: () => ({
     toasts: [],
@@ -48,13 +61,7 @@ jest.mock('react-hot-toast', () => ({
       updateHeight: jest.fn(),
     },
   }),
-  toast: {
-    success: jest.fn((message: string) => message),
-    error: jest.fn((message: string) => message),
-    loading: jest.fn((message: string) => message),
-    promise: jest.fn((promise: Promise<any>, msgs: any) => promise),
-    custom: jest.fn(),
-  },
+  toast: createToastApi(),
 }));
 
 // Mock Next.js router
@@ -85,16 +92,79 @@ jest.mock('next/navigation', () => ({
   useSearchParams: jest.fn(() => new URLSearchParams()),
 }));
 
-// Mock File API for CSV import tests
-global.File = jest.fn((parts, filename, options) => ({
-  name: filename,
-  size: parts.reduce((acc: number, part: any) => acc + (part?.length || 0), 0),
-  type: options?.type || '',
-  slice: jest.fn(),
-  stream: jest.fn(),
-  text: jest.fn(async () => parts.join('')),
-  arrayBuffer: jest.fn(async () => new ArrayBuffer(0)),
-})) as any;
+const computeMockFileSize = (parts: BlobPart[]): number =>
+  parts.reduce((acc, part) => {
+    if (typeof part === 'string') {
+      return acc + part.length;
+    }
+
+    if (part instanceof ArrayBuffer) {
+      return acc + part.byteLength;
+    }
+
+    if (ArrayBuffer.isView(part)) {
+      return acc + part.byteLength;
+    }
+
+    if (typeof Blob !== 'undefined' && part instanceof Blob) {
+      return acc + part.size;
+    }
+
+    return acc;
+  }, 0);
+
+if (typeof globalWithPolyfills.File === 'undefined') {
+  if (typeof Blob !== 'undefined') {
+    class MockFile extends Blob {
+      readonly lastModified: number;
+      readonly name: string;
+      readonly webkitRelativePath = '';
+
+      constructor(parts: BlobPart[] = [], filename = 'mock-file', options: FilePropertyBag = {}) {
+        super(parts, options);
+        this.name = filename;
+        this.lastModified = options.lastModified ?? Date.now();
+      }
+    }
+
+    globalWithPolyfills.File = MockFile as unknown as FileCtor;
+  } else {
+    const MockFileFallback = function (
+      this: unknown,
+      parts: BlobPart[] = [],
+      filename = 'mock-file',
+      options: FilePropertyBag = {}
+    ): File {
+      const content = parts
+        .map((part) => (typeof part === 'string' ? part : String(part)))
+        .join('');
+
+      const fileLike = {
+        name: filename,
+        size: computeMockFileSize(parts),
+        type: options.type ?? '',
+        lastModified: options.lastModified ?? Date.now(),
+        webkitRelativePath: '',
+        slice: jest.fn<Blob, []>(() => ({}) as Blob),
+        stream: jest.fn<ReadableStream<Uint8Array>, []>(
+          () =>
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.close();
+              },
+            })
+        ),
+        text: jest.fn<Promise<string>, []>(async () => content),
+        arrayBuffer: jest.fn<Promise<ArrayBuffer>, []>(async () => new ArrayBuffer(0)),
+        [Symbol.toStringTag]: 'File',
+      };
+
+      return fileLike as unknown as File;
+    };
+
+    globalWithPolyfills.File = MockFileFallback as unknown as FileCtor;
+  }
+}
 
 // Start MSW for network interception in tests
 beforeAll(() => {
@@ -130,7 +200,7 @@ const originalError = console.error;
 const originalWarn = console.warn;
 
 beforeAll(() => {
-  console.error = jest.fn((...args: any[]) => {
+  console.error = jest.fn((...args: unknown[]) => {
     // Suppress known non-critical React warnings
     if (
       typeof args[0] === 'string' &&
@@ -140,10 +210,10 @@ beforeAll(() => {
     ) {
       return;
     }
-    originalError(...args);
+    originalError(...(args as Parameters<typeof originalError>));
   });
 
-  console.warn = jest.fn((...args: any[]) => {
+  console.warn = jest.fn((...args: unknown[]) => {
     if (
       typeof args[0] === 'string' &&
       (args[0].includes('componentWillReceiveProps') ||
@@ -152,7 +222,7 @@ beforeAll(() => {
     ) {
       return;
     }
-    originalWarn(...args);
+    originalWarn(...(args as Parameters<typeof originalWarn>));
   });
 });
 

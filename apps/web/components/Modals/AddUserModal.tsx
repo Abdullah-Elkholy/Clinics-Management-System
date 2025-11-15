@@ -1,12 +1,12 @@
 'use client';
 
+import React, { useState, useMemo, useEffect } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, validateUsername, ValidationError } from '@/utils/validation';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { UserRole } from '@/types/roles';
 import Modal from './Modal';
-import { useState, useMemo, useEffect } from 'react';
 
 interface AddUserModalProps {
   onUserAdded?: () => void;

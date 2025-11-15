@@ -4,12 +4,12 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validatePhone, ValidationError, validateCountryCode, MAX_PHONE_DIGITS } from '@/utils/validation';
-import { COUNTRY_CODES } from '@/constants';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import Modal from './Modal';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
 import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import logger from '@/utils/logger';
 
 interface PatientField {
   name: string;
@@ -36,26 +36,6 @@ export default function AddPatientModal() {
   const isOpen = openModals.has('addPatient');
   const modalData = getModalData('addPatient');
   const queueId = modalData?.queueId || selectedQueueId;
-
-  const validatePatient = (index: number, patient: PatientField): ValidationError => {
-    const patientErrors: ValidationError = {};
-    
-    // Name validation
-    const nameError = validateName(patient.name, 'اسم المريض');
-    if (nameError) patientErrors.name = nameError;
-    
-    // Phone validation
-    const phoneError = validatePhone(patient.phone);
-    if (phoneError) patientErrors.phone = phoneError;
-    
-    // Validate custom country code if 'OTHER' is selected
-    if (patient.countryCode === 'OTHER') {
-      const customCodeError = validateCountryCode(patient.customCountryCode || '', true);
-      if (customCodeError) patientErrors.customCountryCode = customCodeError;
-    }
-    
-    return patientErrors;
-  };
 
   // Validate only a specific field
   const validateField = (index: number, fieldName: string, patient: PatientField): string | undefined => {
@@ -147,7 +127,7 @@ export default function AddPatientModal() {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     // Validate all patients - check that each patient has all required fields filled
@@ -241,7 +221,7 @@ export default function AddPatientModal() {
           });
           addedCount++;
         } catch (err) {
-          console.error(`Failed to add patient: ${p.name}`, err);
+          logger.error(`Failed to add patient: ${p.name}`, err);
         }
       }
       
@@ -268,7 +248,7 @@ export default function AddPatientModal() {
         window.dispatchEvent(new CustomEvent('patientDataUpdated'));
       }, 100);
     } catch (error) {
-      console.error('Failed to add patients:', error);
+      logger.error('Failed to add patients:', error);
       addToast('حدث خطأ أثناء إضافة المرضى', 'error');
     } finally {
       setIsLoading(false);
@@ -293,7 +273,10 @@ export default function AddPatientModal() {
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-sm text-blue-700 flex items-center gap-2">
             <i className="fas fa-info-circle flex-shrink-0"></i>
-            <span>يمكنك إضافة حتى <strong>50 مريض</strong> في مرة واحدة. أملأ البيانات وانقر "إضافة المرضى"</span>
+            <span>
+              يمكنك إضافة حتى <strong>50 مريض</strong> في مرة واحدة. أملأ البيانات وانقر
+              &nbsp;&quot;إضافة المرضى&quot;
+            </span>
           </p>
         </div>
 

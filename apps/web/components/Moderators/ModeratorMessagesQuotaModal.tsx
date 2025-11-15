@@ -74,7 +74,7 @@ export default function ModeratorMessagesQuotaModal({
 
       // For 'add' mode, we need to pass the delta (input value), not the final calculated limit
       // Only update messagesQuota, keep queuesQuota unchanged
-      let quotaToSave: Partial<ModeratorQuota> = {
+      const quotaToSave: Partial<ModeratorQuota> = {
         messagesQuota: { ...formData.messagesQuota },
         queuesQuota: { ...quota.queuesQuota }, // Keep original queues quota
       };

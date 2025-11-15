@@ -4,12 +4,12 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 // Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
-import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
+import logger from '@/utils/logger';
 
 interface Session {
   id: string;
@@ -62,7 +62,7 @@ export default function CompletedTasksPanel() {
         // Dispatch event to notify other components
         window.dispatchEvent(new CustomEvent('completedTasksDataUpdated'));
       } catch (error) {
-        console.error('Failed to refetch completed tasks:', error);
+        logger.error('Failed to refetch completed tasks:', error);
       }
     };
 

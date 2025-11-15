@@ -63,15 +63,17 @@ function getAuthToken(): string | null {
 /**
  * Make authenticated fetch request
  */
+type RequestOptions = { headers?: Record<string, string>; method?: string; body?: BodyInit | null };
+
 async function fetchAPI<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestOptions = {}
 ): Promise<T> {
   const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getAuthToken();
 
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
@@ -86,7 +88,7 @@ async function fetchAPI<T>(
   });
 
   // Handle non-JSON responses
-  let data: any;
+  let data: unknown;
   const contentType = response.headers.get('content-type');
   if (contentType?.includes('application/json')) {
     data = await response.json();
@@ -216,7 +218,7 @@ export async function getTrashQueues(options?: {
   params2.append('pageSize', pageSize.toString());
   const queryString2 = params2.toString();
   const response = await fetchAPI(`/queues/trash?${queryString2}`);
-  
+
   if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
     return {
       items: (response as any).data || [],
@@ -225,7 +227,12 @@ export async function getTrashQueues(options?: {
       pageSize: (response as any).pageSize || pageSize,
     };
   }
-  return response;
+  return {
+    items: [],
+    totalCount: 0,
+    pageNumber: page,
+    pageSize,
+  };
 }
 
 /**
