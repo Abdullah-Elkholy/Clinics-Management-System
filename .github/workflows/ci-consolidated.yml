@@ -53,7 +53,7 @@ jobs:
       shell: pwsh
       run: |
         choco install sql-server-express -y --no-progress
-        choco install mssql-tools -y --no-progress || Write-Host "mssql-tools may already be installed"
+        choco install sqlserver-cmdlineutils -y --no-progress
 
     - name: Start SQL Server service and configure SA
       shell: pwsh
