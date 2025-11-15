@@ -18,15 +18,19 @@ namespace Clinics.IntegrationTests.Common
     /// Shared database fixture for integration tests.
     /// Ensures database is seeded ONCE per test collection, not per test class.
     /// Prevents infinite seeding loops and database bloat.
+    /// In CI (SQL Server): Uses existing database without deletion/recreation.
+    /// Locally (in-memory): Creates and seeds fresh database.
     /// </summary>
     public class DatabaseFixture : IAsyncLifetime
     {
         private readonly CustomWebApplicationFactory<Program> _factory;
         private bool _isInitialized = false;
+        private readonly bool _useSqlServer;
 
         public DatabaseFixture()
         {
             _factory = new CustomWebApplicationFactory<Program>();
+            _useSqlServer = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection"));
         }
 
         public CustomWebApplicationFactory<Program> Factory => _factory;
@@ -36,15 +40,25 @@ namespace Clinics.IntegrationTests.Common
             if (_isInitialized)
                 return;
 
-            // Seed database ONCE
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var logger = scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>();
 
-            // Clear any existing data to ensure clean state
-            await db.Database.EnsureDeletedAsync();
-            await db.Database.EnsureCreatedAsync();
+            if (_useSqlServer)
+            {
+                // CI environment: Database already exists with migrations applied
+                // Just verify we can connect
+                await db.Database.CanConnectAsync();
+            }
+            else
+            {
+                // Local development: Use in-memory database
+                // Clear any existing data to ensure clean state
+                await db.Database.EnsureDeletedAsync();
+                await db.Database.EnsureCreatedAsync();
+            }
 
+            // Seed database ONCE (idempotent - skips if already seeded)
             var seeder = new DbSeeder(db, logger);
             await seeder.SeedAsync();
 
@@ -53,10 +67,13 @@ namespace Clinics.IntegrationTests.Common
 
         public async Task DisposeAsync()
         {
-            // Clean up
-            using var scope = _factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            // Only clean up in-memory database (don't touch SQL Server in CI)
+            if (!_useSqlServer)
+            {
+                using var scope = _factory.Services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+            }
         }
     }
 
