@@ -66,10 +66,7 @@ jobs:
           Start-Sleep -Seconds 5
         }
         $pwd = $env:SA_PASSWORD
-        $alterSql = @"
-    ALTER LOGIN [sa] WITH PASSWORD = N'$pwd';
-    ALTER LOGIN [sa] ENABLE;
-    "@
+        $alterSql = "ALTER LOGIN [sa] WITH PASSWORD = N'$pwd'; ALTER LOGIN [sa] ENABLE;"
         sqlcmd -S .\SQLEXPRESS -E -Q $alterSql
 
     - name: Create integration test DB
