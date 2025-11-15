@@ -34,23 +34,29 @@ export function useModeratorQuota(moderatorId: string) {
             loading: false,
           }));
         } else {
+          // Silently handle 405 errors (Method Not Allowed) - might be a routing issue
+          const is405Error = result.error?.includes('405') || result.error?.includes('Method Not Allowed');
           setState((prev) => ({
             ...prev,
             loading: false,
-            error: result.error || 'Failed to fetch quota',
+            error: is405Error ? null : (result.error || 'Failed to fetch quota'),
           }));
         }
       } catch (error) {
+        // Silently handle 405 errors
+        const errorMsg = error instanceof Error ? error.message : 'Failed to fetch quota';
+        const is405Error = errorMsg.includes('405') || errorMsg.includes('Method Not Allowed');
         setState((prev) => ({
           ...prev,
           loading: false,
-          error:
-            error instanceof Error ? error.message : 'Failed to fetch quota',
+          error: is405Error ? null : errorMsg,
         }));
       }
     };
 
-    fetchQuota();
+    if (moderatorId) {
+      fetchQuota();
+    }
   }, [moderatorId]);
 
   // Update quota

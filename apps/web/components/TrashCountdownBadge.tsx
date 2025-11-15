@@ -7,6 +7,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { formatLocalDate } from '@/utils/dateTimeUtils';
 
 interface TrashCountdownBadgeProps {
   deletedAt: string;          // ISO 8601 timestamp of deletion
@@ -52,11 +53,11 @@ export const TrashCountdownBadge: React.FC<TrashCountdownBadgeProps> = ({
     badgeClass = badgeClass.replace('px-3 py-1 text-sm', 'px-2 py-0.5 text-xs');
   }
 
-  const label = showLabel ? ' days remaining' : '';
-  const text = isExpired ? 'Expired' : `${daysRemaining}${label}`;
+  const label = showLabel ? ' يوم متبقي' : '';
+  const text = isExpired ? 'انتهت المدة' : `${daysRemaining}${label}`;
 
   return (
-    <span className={badgeClass} title={`Expires on ${new Date(deletedAt).toLocaleDateString()}`}>
+    <span className={badgeClass} title={`تنتهي في ${formatLocalDate(deletedAt)}`}>
       {text}
     </span>
   );

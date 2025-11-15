@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 // Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
+import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 
 interface Session {
   id: string;
@@ -44,7 +45,42 @@ const COMPLETED_TASKS_GUIDE_ITEMS = [
 export default function CompletedTasksPanel() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
-  const [sessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+
+  /**
+   * Listen for data updates and refetch
+   */
+  useEffect(() => {
+    const handleDataUpdate = async () => {
+      // Refetch completed tasks when data is updated
+      try {
+        // TODO: Implement API call when endpoint is ready
+        // For now, trigger a re-render to show updated state
+        // In the future, call: await messageApiClient.getCompletedTasks()
+        setSessions((prev) => [...prev]);
+        
+        // Dispatch event to notify other components
+        window.dispatchEvent(new CustomEvent('completedTasksDataUpdated'));
+      } catch (error) {
+        console.error('Failed to refetch completed tasks:', error);
+      }
+    };
+
+    // Listen to all relevant update events
+    window.addEventListener('patientDataUpdated', handleDataUpdate);
+    window.addEventListener('queueDataUpdated', handleDataUpdate);
+    window.addEventListener('templateDataUpdated', handleDataUpdate);
+    window.addEventListener('messageDataUpdated', handleDataUpdate);
+    window.addEventListener('conditionDataUpdated', handleDataUpdate);
+
+    return () => {
+      window.removeEventListener('patientDataUpdated', handleDataUpdate);
+      window.removeEventListener('queueDataUpdated', handleDataUpdate);
+      window.removeEventListener('templateDataUpdated', handleDataUpdate);
+      window.removeEventListener('messageDataUpdated', handleDataUpdate);
+      window.removeEventListener('conditionDataUpdated', handleDataUpdate);
+    };
+  }, []);
 
   /**
    * Toggle session expand - memoized
@@ -98,7 +134,7 @@ export default function CompletedTasksPanel() {
   const renderPatientRow = useCallback((patient: Patient) => ({
     id: patient.id,
     name: patient.name,
-    phone: `${patient.countryCode || '+966'} ${patient.phone}`,
+    phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
     message: (
       <div
         className={`text-sm text-gray-700 ${

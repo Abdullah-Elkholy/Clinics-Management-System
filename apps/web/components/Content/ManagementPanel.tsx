@@ -16,6 +16,19 @@ export default function ManagementPanel() {
     actions.fetchUsers();
   }, []);
 
+  // Refetch users when data is updated
+  useEffect(() => {
+    const handleUserDataUpdate = async () => {
+      await actions.fetchUsers();
+    };
+
+    window.addEventListener('userDataUpdated', handleUserDataUpdate);
+
+    return () => {
+      window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+    };
+  }, [actions]);
+
   // Memoize stats calculations to prevent unnecessary re-renders
   const stats = useMemo(() => {
     const moderators = state.users.filter((u) => u.role === UserRole.Moderator);

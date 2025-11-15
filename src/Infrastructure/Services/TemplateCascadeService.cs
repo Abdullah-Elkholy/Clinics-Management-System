@@ -54,11 +54,17 @@ namespace Clinics.Infrastructure.Services
         {
             return await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
+                // Unify datetime for this bulk operation
+                var deletionTimestamp = DateTime.UtcNow;
+
                 var templateRepo = _unitOfWork.Repository<MessageTemplate>();
                 var conditionRepo = _unitOfWork.Repository<MessageCondition>();
 
                 // Block deletion if template has DEFAULT condition and no replacement provided
-                var templateCondition = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == template.Id && !c.IsDeleted);
+                // Load template's condition via navigation property
+                var templateCondition = template.Condition != null && !template.Condition.IsDeleted 
+                    ? new[] { template.Condition } 
+                    : Array.Empty<MessageCondition>();
                 if (templateCondition.Any(c => c.Operator == "DEFAULT") && !replacementTemplateId.HasValue)
                 {
                     return (false, "Cannot delete the default template without specifying a replacement template.");
@@ -70,7 +76,10 @@ namespace Clinics.Infrastructure.Services
                     var replacementTemplate = await templateRepo.GetAsync(replacementTemplateId.Value);
                     if (replacementTemplate != null && replacementTemplate.QueueId == template.QueueId)
                     {
-                        var replacementCondition = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == replacementTemplate.Id && !c.IsDeleted);
+                        // Load replacement template's condition via navigation property
+                        var replacementCondition = replacementTemplate.Condition != null && !replacementTemplate.Condition.IsDeleted 
+                            ? new[] { replacementTemplate.Condition } 
+                            : Array.Empty<MessageCondition>();
                         if (replacementCondition.Any())
                         {
                             var cond = replacementCondition.First();
@@ -78,19 +87,25 @@ namespace Clinics.Infrastructure.Services
                             cond.Value = null;
                             cond.MinValue = null;
                             cond.MaxValue = null;
+                            cond.UpdatedAt = deletionTimestamp;
                             await conditionRepo.UpdateAsync(cond);
                         }
                         else
                         {
+                            // Create new condition
                             var newCond = new MessageCondition
                             {
-                                TemplateId = replacementTemplate.Id,
                                 QueueId = template.QueueId,
                                 Operator = "DEFAULT",
-                                CreatedAt = DateTime.UtcNow,
-                                UpdatedAt = DateTime.UtcNow
+                                CreatedAt = deletionTimestamp,
+                                UpdatedAt = deletionTimestamp
                             };
                             await conditionRepo.AddAsync(newCond);
+                            await _unitOfWork.SaveChangesAsync(); // Save to get condition ID
+                            
+                            // Update replacement template with MessageConditionId
+                            replacementTemplate.MessageConditionId = newCond.Id;
+                            await templateRepo.UpdateAsync(replacementTemplate);
                         }
 
                         // Audit log for toggle default
@@ -104,11 +119,12 @@ namespace Clinics.Infrastructure.Services
                     }
                 }
 
-                // Soft-delete all conditions for this template
-                var conditions = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == template.Id, includeDeleted: false);
-                foreach (var condition in conditions)
+                // Soft-delete condition for this template (one-to-one relationship)
+                var condition = template.Condition;
+                var conditions = condition != null && !condition.IsDeleted ? new[] { condition } : Array.Empty<MessageCondition>();
+                foreach (var cond in conditions)
                 {
-                    await conditionRepo.SoftDeleteAsync(condition, deletedBy);
+                    await conditionRepo.SoftDeleteAsync(cond, deletedBy);
                 }
 
                 // Soft-delete the template itself
@@ -124,8 +140,8 @@ namespace Clinics.Infrastructure.Services
                     template.Id,
                     deletedBy,
                     new { template.Id, template.QueueId, HasDefaultCondition = templateCondition.Any(c => c.Operator == "DEFAULT") },
-                    $"Template soft-deleted with {conditions.Count} conditions",
-                    new { ConditionsCascaded = conditions.Count, ReplacementTemplateId = replacementTemplateId });
+                    $"Template soft-deleted with {conditions.Length} conditions",
+                    new { ConditionsCascaded = conditions.Length, ReplacementTemplateId = replacementTemplateId });
 
                 return (true, null);
             });
@@ -144,12 +160,13 @@ namespace Clinics.Infrastructure.Services
                 await _unitOfWork.SaveChangesAsync();
 
                 // Audit log
+                var templateId = condition.Template?.Id;
                 await _auditService.LogAsync(
                     AuditAction.SoftDelete,
                     nameof(MessageCondition),
                     condition.Id,
                     deletedBy,
-                    new { condition.Id, condition.TemplateId },
+                    new { condition.Id, TemplateId = templateId },
                     "Condition soft-deleted");
 
                 return true;
@@ -183,12 +200,13 @@ namespace Clinics.Infrastructure.Services
                 // Restore the template
                 await templateRepo.RestoreAsync(template);
 
-                // Restore soft-deleted conditions for this template
+                // Restore soft-deleted condition for this template (one-to-one relationship)
                 var conditionRepo = _unitOfWork.Repository<MessageCondition>();
-                var conditions = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == template.Id, includeDeleted: true);
-                foreach (var condition in conditions.Where(c => c.IsDeleted))
+                var condition = template.Condition;
+                var conditions = condition != null && condition.IsDeleted ? new[] { condition } : Array.Empty<MessageCondition>();
+                foreach (var cond in conditions)
                 {
-                    await conditionRepo.RestoreAsync(condition);
+                    await conditionRepo.RestoreAsync(cond);
                 }
 
                 // Save changes

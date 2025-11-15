@@ -12,26 +12,6 @@ namespace Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "AuditLogs",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Action = table.Column<int>(type: "int", nullable: false),
-                    EntityType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    EntityId = table.Column<int>(type: "int", nullable: false),
-                    ActorUserId = table.Column<int>(type: "int", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
-                    Changes = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Notes = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
-                    Metadata = table.Column<string>(type: "nvarchar(max)", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AuditLogs", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "Sessions",
                 columns: table => new
                 {
@@ -60,13 +40,13 @@ namespace Infrastructure.Migrations
                     LastName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     Role = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     ModeratorId = table.Column<int>(type: "int", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DeletedBy = table.Column<int>(type: "int", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    CreatedBy = table.Column<int>(type: "int", nullable: true),
-                    UpdatedBy = table.Column<int>(type: "int", nullable: true)
+                    UpdatedBy = table.Column<int>(type: "int", nullable: true),
+                    LastLogin = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeletedBy = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -98,6 +78,32 @@ namespace Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "AuditLogs",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Action = table.Column<int>(type: "int", nullable: false),
+                    EntityType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    EntityId = table.Column<int>(type: "int", nullable: false),
+                    ActorUserId = table.Column<int>(type: "int", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    Changes = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Notes = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    Metadata = table.Column<string>(type: "nvarchar(max)", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AuditLogs", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AuditLogs_Users_ActorUserId",
+                        column: x => x.ActorUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "ModeratorSettings",
                 columns: table => new
                 {
@@ -117,7 +123,7 @@ namespace Infrastructure.Migrations
                         column: x => x.ModeratorUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -130,13 +136,13 @@ namespace Infrastructure.Migrations
                     CreatedBy = table.Column<int>(type: "int", nullable: false),
                     ModeratorId = table.Column<int>(type: "int", nullable: false),
                     CurrentPosition = table.Column<int>(type: "int", nullable: false),
-                    EstimatedWaitMinutes = table.Column<int>(type: "int", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DeletedBy = table.Column<int>(type: "int", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    EstimatedWaitMinutes = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    UpdatedBy = table.Column<int>(type: "int", nullable: true)
+                    UpdatedBy = table.Column<int>(type: "int", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeletedBy = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -160,7 +166,13 @@ namespace Infrastructure.Migrations
                     ConsumedMessages = table.Column<int>(type: "int", nullable: false),
                     QueuesQuota = table.Column<int>(type: "int", nullable: false),
                     ConsumedQueues = table.Column<int>(type: "int", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()")
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedBy = table.Column<int>(type: "int", nullable: true),
+                    UpdatedBy = table.Column<int>(type: "int", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeletedBy = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -170,7 +182,37 @@ namespace Infrastructure.Migrations
                         column: x => x.ModeratorUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "MessageConditions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    QueueId = table.Column<int>(type: "int", nullable: false),
+                    Operator = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    Value = table.Column<int>(type: "int", nullable: true),
+                    MinValue = table.Column<int>(type: "int", nullable: true),
+                    MaxValue = table.Column<int>(type: "int", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedBy = table.Column<int>(type: "int", nullable: true),
+                    UpdatedBy = table.Column<int>(type: "int", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeletedBy = table.Column<int>(type: "int", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_MessageConditions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_MessageConditions_Queues_QueueId",
+                        column: x => x.QueueId,
+                        principalTable: "Queues",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -195,44 +237,6 @@ namespace Infrastructure.Migrations
                         column: x => x.QueueId,
                         principalTable: "Queues",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "MessageTemplates",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Title = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Content = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: false),
-                    CreatedBy = table.Column<int>(type: "int", nullable: false),
-                    ModeratorId = table.Column<int>(type: "int", nullable: true),
-                    QueueId = table.Column<int>(type: "int", nullable: true),
-                    IsShared = table.Column<bool>(type: "bit", nullable: false),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false),
-                    IsDefault = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DeletedBy = table.Column<int>(type: "int", nullable: true),
-                    CreatedBy2 = table.Column<int>(type: "int", nullable: true),
-                    UpdatedBy = table.Column<int>(type: "int", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_MessageTemplates", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_MessageTemplates_Queues_QueueId",
-                        column: x => x.QueueId,
-                        principalTable: "Queues",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_MessageTemplates_Users_ModeratorId",
-                        column: x => x.ModeratorId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -245,15 +249,16 @@ namespace Infrastructure.Migrations
                     QueueId = table.Column<int>(type: "int", nullable: false),
                     FullName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     PhoneNumber = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    CountryCode = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false, defaultValue: "+20"),
                     Position = table.Column<int>(type: "int", nullable: false),
                     Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    IsDeleted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DeletedBy = table.Column<int>(type: "int", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedBy = table.Column<int>(type: "int", nullable: true),
-                    UpdatedBy = table.Column<int>(type: "int", nullable: true)
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    UpdatedBy = table.Column<int>(type: "int", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeletedBy = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -263,43 +268,49 @@ namespace Infrastructure.Migrations
                         column: x => x.QueueId,
                         principalTable: "Queues",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
-                name: "MessageConditions",
+                name: "MessageTemplates",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    TemplateId = table.Column<int>(type: "int", nullable: true),
+                    Title = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Content = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: false),
+                    CreatedBy = table.Column<int>(type: "int", nullable: false),
+                    ModeratorId = table.Column<int>(type: "int", nullable: false),
                     QueueId = table.Column<int>(type: "int", nullable: false),
-                    Operator = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    Value = table.Column<int>(type: "int", nullable: true),
-                    MinValue = table.Column<int>(type: "int", nullable: true),
-                    MaxValue = table.Column<int>(type: "int", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
+                    MessageConditionId = table.Column<int>(type: "int", nullable: false),
+                    UpdatedBy = table.Column<int>(type: "int", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
                     DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DeletedBy = table.Column<int>(type: "int", nullable: true),
-                    CreatedBy = table.Column<int>(type: "int", nullable: true),
-                    UpdatedBy = table.Column<int>(type: "int", nullable: true)
+                    DeletedBy = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_MessageConditions", x => x.Id);
+                    table.PrimaryKey("PK_MessageTemplates", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_MessageConditions_MessageTemplates_TemplateId",
-                        column: x => x.TemplateId,
-                        principalTable: "MessageTemplates",
-                        principalColumn: "Id");
+                        name: "FK_MessageTemplates_MessageConditions_MessageConditionId",
+                        column: x => x.MessageConditionId,
+                        principalTable: "MessageConditions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_MessageConditions_Queues_QueueId",
+                        name: "FK_MessageTemplates_Queues_QueueId",
                         column: x => x.QueueId,
                         principalTable: "Queues",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_MessageTemplates_Users_ModeratorId",
+                        column: x => x.ModeratorId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -325,11 +336,11 @@ namespace Infrastructure.Migrations
                     SentAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    IsDeleted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DeletedBy = table.Column<int>(type: "int", nullable: true),
                     CreatedBy = table.Column<int>(type: "int", nullable: true),
-                    UpdatedBy = table.Column<int>(type: "int", nullable: true)
+                    UpdatedBy = table.Column<int>(type: "int", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeletedBy = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -343,7 +354,8 @@ namespace Infrastructure.Migrations
                         name: "FK_Messages_Queues_QueueId",
                         column: x => x.QueueId,
                         principalTable: "Queues",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_Messages_Users_ModeratorId",
                         column: x => x.ModeratorId,
@@ -384,10 +396,10 @@ namespace Infrastructure.Migrations
                         name: "FK_FailedTasks_Queues_QueueId",
                         column: x => x.QueueId,
                         principalTable: "Queues",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
-            // Create indexes
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_Action",
                 table: "AuditLogs",
@@ -429,16 +441,11 @@ namespace Infrastructure.Migrations
                 column: "RetryCount");
 
             migrationBuilder.CreateIndex(
-                name: "IX_MessageConditions_QueueId",
+                name: "IX_MessageConditions_QueueId_Operator",
                 table: "MessageConditions",
-                column: "QueueId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_MessageConditions_TemplateId",
-                table: "MessageConditions",
-                column: "TemplateId",
+                columns: new[] { "QueueId", "Operator" },
                 unique: true,
-                filter: "[TemplateId] IS NOT NULL");
+                filter: "[Operator] = 'DEFAULT'");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Messages_ModeratorId",
@@ -476,6 +483,12 @@ namespace Infrastructure.Migrations
                 column: "CreatedBy");
 
             migrationBuilder.CreateIndex(
+                name: "IX_MessageTemplates_MessageConditionId",
+                table: "MessageTemplates",
+                column: "MessageConditionId",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_MessageTemplates_ModeratorId",
                 table: "MessageTemplates",
                 column: "ModeratorId");
@@ -509,7 +522,8 @@ namespace Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Quotas_ModeratorUserId",
                 table: "Quotas",
-                column: "ModeratorUserId");
+                column: "ModeratorUserId",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_ModeratorId",
@@ -522,166 +536,124 @@ namespace Infrastructure.Migrations
                 column: "Username",
                 unique: true);
 
-            // ============================================
-            // Seed Initial Data with IF NOT EXISTS checks
-            // ============================================
-            
-            // Seed Admin Users with pre-hashed passwords
+            // =============================
+            // Seed baseline data (idempotent)
+            // =============================
             migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'admin')
-                BEGIN
-                    INSERT INTO [Users] ([Username], [FirstName], [LastName], [PasswordHash], [Role], [ModeratorId], [IsDeleted], [CreatedAt])
-                    VALUES (N'admin', N'المدير', N'الأساسي', N'AQAAAAIAAYagAAAAEFis02t8W90rJ6Pkqw6wwD45hx6QI2ArKLqW8tl77SnIidCWW43DLldUP2G1BhxkXw==', N'primary_admin', NULL, 0, SYSUTCDATETIME())
-                END
-            ");
+IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'admin')
+BEGIN
+    INSERT INTO [Users] ([Username], [PasswordHash], [FirstName], [LastName], [Role], [ModeratorId], [CreatedAt], [IsDeleted])
+    VALUES (N'admin', N'AQAAAAIAAYagAAAAEFis02t8W90rJ6Pkqw6wwD45hx6QI2ArKLqW8tl77SnIidCWW43DLldUP2G1BhxkXw==', N'Admin', N'One', N'primary_admin', NULL, SYSUTCDATETIME(), 0)
+END
 
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'admin2')
-                BEGIN
-                    INSERT INTO [Users] ([Username], [FirstName], [LastName], [PasswordHash], [Role], [ModeratorId], [IsDeleted], [CreatedAt])
-                    VALUES (N'admin2', N'Admin', N'Two', N'AQAAAAIAAYagAAAAEFmtEKOGKA5/ficlHNopu3+fZ1ly0ocuBAvJgl59wxjRQgGSFDlPgKNa+KR2a8vpTA==', N'secondary_admin', NULL, 0, SYSUTCDATETIME())
-                END
-            ");
+IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'admin2')
+BEGIN
+    INSERT INTO [Users] ([Username], [PasswordHash], [FirstName], [LastName], [Role], [ModeratorId], [CreatedAt], [IsDeleted])
+    VALUES (N'admin2', N'AQAAAAIAAYagAAAAEFmtEKOGKA5/ficlHNopu3+fZ1ly0ocuBAvJgl59wxjRQgGSFDlPgKNa+KR2a8vpTA==', N'Admin', N'Two', N'secondary_admin', NULL, SYSUTCDATETIME(), 0)
+END
 
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'mod1')
-                BEGIN
-                    INSERT INTO [Users] ([Username], [FirstName], [LastName], [PasswordHash], [Role], [ModeratorId], [IsDeleted], [CreatedAt])
-                    VALUES (N'mod1', N'Mod', N'One', N'AQAAAAIAAYagAAAAED2rs9SjaX3pu2CTEnn+zQ7BZmyYeHWYnD6QLOnwpthfMlk96bElhUhm7ElTbIDKlQ==', N'moderator', NULL, 0, SYSUTCDATETIME())
-                END
-            ");
+IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'mod1')
+BEGIN
+    INSERT INTO [Users] ([Username], [PasswordHash], [FirstName], [LastName], [Role], [ModeratorId], [CreatedAt], [IsDeleted])
+    VALUES (N'mod1', N'AQAAAAIAAYagAAAAED2rs9SjaX3pu2CTEnn+zQ7BZmyYeHWYnD6QLOnwpthfMlk96bElhUhm7ElTbIDKlQ==', N'د.', N'أحمد', N'moderator', NULL, SYSUTCDATETIME(), 0)
+END
 
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'user1')
-                BEGIN
-                    INSERT INTO [Users] ([Username], [FirstName], [LastName], [PasswordHash], [Role], [ModeratorId], [IsDeleted], [CreatedAt])
-                    VALUES (N'user1', N'User', N'One', N'AQAAAAIAAYagAAAAEAl24nxVIY22QRB5OdNaWSlDWAVFL0NJRq5VxIpS2ReFYDg3Vh1KbnJbsNOnQPC/kw==', N'user', 3, 0, SYSUTCDATETIME())
-                END
-            ");
+IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [Username] = N'user1')
+BEGIN
+    DECLARE @ModId INT = (SELECT TOP(1) [Id] FROM [Users] WHERE [Username] = N'mod1');
+    INSERT INTO [Users] ([Username], [PasswordHash], [FirstName], [LastName], [Role], [ModeratorId], [CreatedAt], [IsDeleted])
+    VALUES (N'user1', N'AQAAAAIAAYagAAAAEAl24nxVIY22QRB5OdNaWSlDWAVFL0NJRq5VxIpS2ReFYDg3Vh1KbnJbsNOnQPC/kw==', N'User', N'One', N'user', @ModId, SYSUTCDATETIME(), 0)
+END
 
-            // Seed sample Queues
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد')
-                BEGIN
-                    INSERT INTO [Queues] ([DoctorName], [CreatedBy], [ModeratorId], [CurrentPosition], [EstimatedWaitMinutes], [IsDeleted], [CreatedAt])
-                    VALUES (N'د. أحمد محمد', N'عيادة الصباح', 3, 3, 1, 15, SYSUTCDATETIME())
-                END
-            ");
+-- Quotas for moderator mod1
+IF NOT EXISTS (SELECT 1 FROM [Quotas] q JOIN [Users] u ON u.Id = q.ModeratorUserId WHERE u.Username = N'mod1')
+BEGIN
+    DECLARE @Mid INT = (SELECT TOP(1) [Id] FROM [Users] WHERE [Username] = N'mod1');
+    INSERT INTO [Quotas] ([ModeratorUserId], [MessagesQuota], [ConsumedMessages], [QueuesQuota], [ConsumedQueues], [UpdatedAt], [CreatedAt], [IsDeleted])
+    VALUES (@Mid, 2147483647, 0, 2147483647, 0, SYSUTCDATETIME(), SYSUTCDATETIME(), 0)
+END
 
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'د. فاطمة علي')
-                BEGIN
-                    INSERT INTO [Queues] ([DoctorName], [CreatedBy], [ModeratorId], [CurrentPosition], [EstimatedWaitMinutes], [IsDeleted], [CreatedAt])
-                    VALUES (N'د. فاطمة علي', N'عيادة الأطفال', 3, 3, 2, 20, SYSUTCDATETIME())
-                END
-            ");
+-- Queue for mod1
+IF NOT EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'عيادة د. أحمد')
+BEGIN
+    DECLARE @M INT = (SELECT TOP(1) [Id] FROM [Users] WHERE [Username] = N'mod1');
+    DECLARE @AdminId INT = (SELECT TOP(1) [Id] FROM [Users] WHERE [Username] = N'admin');
+    INSERT INTO [Queues] ([DoctorName], [CreatedBy], [ModeratorId], [CurrentPosition], [EstimatedWaitMinutes], [CreatedAt], [IsDeleted])
+    VALUES (N'عيادة د. أحمد', @AdminId, @M, 1, 15, SYSUTCDATETIME(), 0)
+END
 
-            // Seed sample Patients
-            migrationBuilder.Sql(@"
-                IF EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد') 
-                   AND NOT EXISTS (SELECT 1 FROM [Patients] WHERE [QueueId] = (SELECT [Id] FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد') AND [Position] = 1)
-                BEGIN
-                    DECLARE @QueueId INT = (SELECT [Id] FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد')
-                    INSERT INTO [Patients] ([QueueId], [FullName], [PhoneNumber], [Position], [Status], [IsDeleted], [CreatedAt])
-                    VALUES (@QueueId, N'أحمد محمد', N'+966500000001', 1, N'waiting', 0, SYSUTCDATETIME())
-                END
-            ");
+-- Patients for that queue (with CountryCode)
+IF EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'عيادة د. أحمد')
+BEGIN
+    DECLARE @Q INT = (SELECT TOP(1) [Id] FROM [Queues] WHERE [DoctorName] = N'عيادة د. أحمد');
+    IF NOT EXISTS (SELECT 1 FROM [Patients] WHERE [QueueId] = @Q AND [Position] = 1)
+    INSERT INTO [Patients] ([QueueId], [FullName], [PhoneNumber], [CountryCode], [Position], [Status], [CreatedAt], [IsDeleted])
+    VALUES (@Q, N'محمد علي', N'+2001012345678', N'+20', 1, N'waiting', SYSUTCDATETIME(), 0);
+END
 
-            migrationBuilder.Sql(@"
-                IF EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد') 
-                   AND NOT EXISTS (SELECT 1 FROM [Patients] WHERE [QueueId] = (SELECT [Id] FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد') AND [Position] = 2)
-                BEGIN
-                    DECLARE @QueueId INT = (SELECT [Id] FROM [Queues] WHERE [DoctorName] = N'د. أحمد محمد')
-                    INSERT INTO [Patients] ([QueueId], [FullName], [PhoneNumber], [Position], [Status], [IsDeleted], [CreatedAt])
-                    VALUES (@QueueId, N'فاطمة علي', N'+966500000002', 2, N'waiting', 0, SYSUTCDATETIME())
-                END
-            ");
-
-            // Seed ModeratorSettings
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [ModeratorSettings] WHERE [ModeratorUserId] = 3)
-                BEGIN
-                    INSERT INTO [ModeratorSettings] ([ModeratorUserId], [WhatsAppPhoneNumber], [IsActive])
-                    VALUES (3, N'+966501234567', 1)
-                END
-            ");
-
-            // Seed Quota
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [Quotas] WHERE [ModeratorUserId] = 3)
-                BEGIN
-                    INSERT INTO [Quotas] ([ModeratorUserId], [MessagesQuota], [ConsumedMessages], [QueuesQuota], [ConsumedQueues])
-                    VALUES (3, 1000, 0, 50, 2)
-                END
-            ");
-
-            // Seed Message Templates
-            migrationBuilder.Sql(@"
-                IF NOT EXISTS (SELECT 1 FROM [MessageTemplates] WHERE [Title] = N'Welcome')
-                BEGIN
-                    INSERT INTO [MessageTemplates] ([Title], [Content], [CreatedBy], [IsShared], [IsActive], [IsDeleted], [CreatedAt])
-                    VALUES (N'Welcome', N'مرحبا بك في عيادتنا', 1, 1, 1, 0, SYSUTCDATETIME())
-                END
+-- Create template with condition (new relationship: condition first, then template with MessageConditionId)
+IF EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] = N'عيادة د. أحمد')
+BEGIN
+    DECLARE @QM INT = (SELECT TOP(1) [ModeratorId] FROM [Queues] WHERE [DoctorName] = N'عيادة د. أحمد');
+    DECLARE @QID INT = (SELECT TOP(1) [Id] FROM [Queues] WHERE [DoctorName] = N'عيادة د. أحمد');
+    
+    IF NOT EXISTS (SELECT 1 FROM [MessageTemplates] WHERE [Title] = N'Welcome' AND [QueueId] = @QID)
+    BEGIN
+        -- Step 1: Create condition first
+        DECLARE @CondId INT;
+        INSERT INTO [MessageConditions] ([QueueId], [Operator], [CreatedAt], [IsDeleted])
+        VALUES (@QID, N'DEFAULT', SYSUTCDATETIME(), 0);
+        SET @CondId = SCOPE_IDENTITY();
+        
+        -- Step 2: Create template with MessageConditionId
+        INSERT INTO [MessageTemplates] ([Title], [Content], [CreatedBy], [ModeratorId], [QueueId], [MessageConditionId], [CreatedAt], [IsDeleted])
+        VALUES (N'Welcome', N'مرحباً {PN}، رقمك {CQP}', @QM, @QM, @QID, @CondId, SYSUTCDATETIME(), 0);
+    END
+END
             ");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // Delete seed data before dropping tables - with IF EXISTS checks
-            migrationBuilder.Sql(@"
-                IF EXISTS (SELECT 1 FROM [MessageTemplates] WHERE [Title] = N'Welcome')
-                BEGIN
-                    DELETE FROM [MessageTemplates] WHERE [Title] = N'Welcome'
-                END
-            ");
+            migrationBuilder.DropTable(
+                name: "AuditLogs");
 
-            migrationBuilder.Sql(@"
-                IF EXISTS (SELECT 1 FROM [Quotas] WHERE [ModeratorUserId] = 3)
-                BEGIN
-                    DELETE FROM [Quotas] WHERE [ModeratorUserId] = 3
-                END
-            ");
+            migrationBuilder.DropTable(
+                name: "FailedTasks");
 
-            migrationBuilder.Sql(@"
-                IF EXISTS (SELECT 1 FROM [ModeratorSettings] WHERE [ModeratorUserId] = 3)
-                BEGIN
-                    DELETE FROM [ModeratorSettings] WHERE [ModeratorUserId] = 3
-                END
-            ");
+            migrationBuilder.DropTable(
+                name: "MessageSessions");
 
-            migrationBuilder.Sql(@"
-                DELETE FROM [Patients] WHERE [FullName] IN (N'أحمد محمد', N'فاطمة علي')
-            ");
+            migrationBuilder.DropTable(
+                name: "ModeratorSettings");
 
-            migrationBuilder.Sql(@"
-                IF EXISTS (SELECT 1 FROM [Queues] WHERE [DoctorName] IN (N'د. أحمد محمد', N'د. فاطمة علي'))
-                BEGIN
-                    DELETE FROM [Queues] WHERE [DoctorName] IN (N'د. أحمد محمد', N'د. فاطمة علي')
-                END
-            ");
+            migrationBuilder.DropTable(
+                name: "Quotas");
 
-            migrationBuilder.Sql(@"
-                IF EXISTS (SELECT 1 FROM [Users] WHERE [Username] IN (N'admin', N'admin2', N'mod1', N'user1'))
-                BEGIN
-                    DELETE FROM [Users] WHERE [Username] IN (N'admin', N'admin2', N'mod1', N'user1')
-                END
-            ");
+            migrationBuilder.DropTable(
+                name: "Sessions");
 
-            // Drop all tables in reverse dependency order
-            migrationBuilder.DropTable(name: "FailedTasks");
-            migrationBuilder.DropTable(name: "MessageConditions");
-            migrationBuilder.DropTable(name: "MessageSessions");
-            migrationBuilder.DropTable(name: "ModeratorSettings");
-            migrationBuilder.DropTable(name: "Quotas");
-            migrationBuilder.DropTable(name: "Sessions");
-            migrationBuilder.DropTable(name: "WhatsAppSessions");
-            migrationBuilder.DropTable(name: "Messages");
-            migrationBuilder.DropTable(name: "Patients");
-            migrationBuilder.DropTable(name: "MessageTemplates");
-            migrationBuilder.DropTable(name: "Queues");
-            migrationBuilder.DropTable(name: "AuditLogs");
-            migrationBuilder.DropTable(name: "Users");
+            migrationBuilder.DropTable(
+                name: "WhatsAppSessions");
+
+            migrationBuilder.DropTable(
+                name: "Messages");
+
+            migrationBuilder.DropTable(
+                name: "Patients");
+
+            migrationBuilder.DropTable(
+                name: "MessageTemplates");
+
+            migrationBuilder.DropTable(
+                name: "MessageConditions");
+
+            migrationBuilder.DropTable(
+                name: "Queues");
+
+            migrationBuilder.DropTable(
+                name: "Users");
         }
     }
 }

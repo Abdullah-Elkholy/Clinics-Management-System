@@ -58,19 +58,25 @@ public class QueueCascadeService : IQueueCascadeService
 
     public async Task<(bool Success, string ErrorMessage)> SoftDeleteQueueAsync(int queueId, int deletedByUserId)
     {
+        // Wrap in transaction for atomicity
+        await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
+            // Unify datetime for this bulk operation
+            var deletionTimestamp = DateTime.UtcNow;
+
             var queue = await _db.Queues
                 .FirstOrDefaultAsync(q => q.Id == queueId && !q.IsDeleted);
 
             if (queue == null)
             {
+                await transaction.RollbackAsync();
                 return (false, "Queue not found");
             }
 
             // Mark queue as deleted
             queue.IsDeleted = true;
-            queue.DeletedAt = DateTime.UtcNow;
+            queue.DeletedAt = deletionTimestamp;
             queue.DeletedBy = deletedByUserId;
 
             // Soft-delete all related patients
@@ -80,42 +86,42 @@ public class QueueCascadeService : IQueueCascadeService
             foreach (var patient in patients)
             {
                 patient.IsDeleted = true;
-                patient.DeletedAt = DateTime.UtcNow;
+                patient.DeletedAt = deletionTimestamp;
                 patient.DeletedBy = deletedByUserId;
             }
 
-            // Soft-delete all related templates
+            // Soft-delete all related templates and their conditions (one-to-one relationship)
             var templates = await _db.MessageTemplates
                 .Where(t => t.QueueId == queueId && !t.IsDeleted)
+                .Include(t => t.Condition)
                 .ToListAsync();
             foreach (var template in templates)
             {
                 template.IsDeleted = true;
-                template.DeletedAt = DateTime.UtcNow;
+                template.DeletedAt = deletionTimestamp;
                 template.DeletedBy = deletedByUserId;
-            }
 
-            // Soft-delete all related conditions
-            var conditions = await _db.Set<MessageCondition>()
-                .Where(c => c.QueueId == queueId && !c.IsDeleted)
-                .ToListAsync();
-            foreach (var condition in conditions)
-            {
-                condition.IsDeleted = true;
-                condition.DeletedAt = DateTime.UtcNow;
-                condition.DeletedBy = deletedByUserId;
+                // Soft-delete the template's condition (one-to-one relationship)
+                if (template.Condition != null && !template.Condition.IsDeleted)
+                {
+                    template.Condition.IsDeleted = true;
+                    template.Condition.DeletedAt = deletionTimestamp;
+                    template.Condition.DeletedBy = deletedByUserId;
+                }
             }
 
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             _logger.LogInformation(
                 "Queue {QueueId} soft-deleted by user {UserId} at {Timestamp}",
-                queueId, deletedByUserId, DateTime.UtcNow);
+                queueId, deletedByUserId, deletionTimestamp);
 
             return (true, "");
         }
         catch (Exception ex)
         {
+            await transaction.RollbackAsync();
             _logger.LogError(ex, "Error soft-deleting queue {QueueId}", queueId);
             return (false, "An error occurred while deleting the queue");
         }
@@ -153,7 +159,27 @@ public class QueueCascadeService : IQueueCascadeService
             await using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                // TODO: Check quota before restoring
+                // Check quota before restoring
+                // Queue quota is based on active (!IsDeleted) queues count
+                var activeQueuesCount = await _db.Queues
+                    .CountAsync(q => q.ModeratorId == queue.ModeratorId && !q.IsDeleted);
+                
+                var quota = await _db.Quotas
+                    .FirstOrDefaultAsync(q => q.ModeratorUserId == queue.ModeratorId);
+                
+                // If quota exists and restoring would exceed limit, block the restore
+                if (quota != null)
+                {
+                    // After restore, active count will be +1
+                    if (activeQueuesCount + 1 > quota.QueuesQuota)
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning(
+                            "Restore blocked for queue {QueueId}: would exceed quota. Active: {Active}, Limit: {Limit}",
+                            queueId, activeQueuesCount, quota.QueuesQuota);
+                        return (false, "quota_exceeded");
+                    }
+                }
 
                 // Restore queue
                 queue.IsDeleted = false;
@@ -177,18 +203,19 @@ public class QueueCascadeService : IQueueCascadeService
                     .Where(t => t.QueueId == queueId && t.IsDeleted && t.DeletedAt.HasValue && t.DeletedAt >= deletedAtValue)
                     .ToListAsync();
 
-                // Optimize: preload all conditions for restored templates in a single query to avoid N+1 pattern
-                var templateIds = templates.Select(t => t.Id).ToList();
-                var allConditions = templateIds.Count > 0
+                // Optimize: preload all conditions for restored templates using MessageConditionId
+                var messageConditionIds = templates.Where(t => t.MessageConditionId > 0).Select(t => t.MessageConditionId).ToList();
+                var allConditions = messageConditionIds.Count > 0
                     ? await _db.Set<MessageCondition>()
-                        .Where(c => templateIds.Contains(c.TemplateId)
+                        .Where(c => messageConditionIds.Contains(c.Id)
                             && c.IsDeleted
                             && c.DeletedAt.HasValue
                             && c.DeletedAt >= deletedAtValue)
                         .ToListAsync()
                     : new List<MessageCondition>();
 
-                var conditionsByTemplate = allConditions.GroupBy(c => c.TemplateId).ToDictionary(g => g.Key, g => g.ToList());
+                // Create dictionary mapping MessageConditionId to condition
+                var conditionsByMessageConditionId = allConditions.ToDictionary(c => c.Id);
 
                 foreach (var template in templates)
                 {
@@ -196,15 +223,12 @@ public class QueueCascadeService : IQueueCascadeService
                     template.DeletedAt = null;
                     template.DeletedBy = null;
 
-                    // Restore related conditions from preloaded data (no additional DB queries)
-                    if (conditionsByTemplate.TryGetValue(template.Id, out var conditions))
+                    // Restore related condition from preloaded data (one-to-one relationship)
+                    if (template.MessageConditionId > 0 && conditionsByMessageConditionId.TryGetValue(template.MessageConditionId, out var condition))
                     {
-                        foreach (var condition in conditions)
-                        {
-                            condition.IsDeleted = false;
-                            condition.DeletedAt = null;
-                            condition.DeletedBy = null;
-                        }
+                        condition.IsDeleted = false;
+                        condition.DeletedAt = null;
+                        condition.DeletedBy = null;
                     }
                 }
 
@@ -262,28 +286,56 @@ public class QueueCascadeService : IQueueCascadeService
 
     public async Task<int> PermanentlyDeleteArchivedQueuesAsync()
     {
-        var archivedQueues = await _db.Queues
-            .Where(q => q.IsDeleted && q.DeletedAt.HasValue && (DateTime.UtcNow - q.DeletedAt.Value).TotalDays > TTL_DAYS)
-            .ToListAsync();
-
-        foreach (var queue in archivedQueues)
+        // Wrap in transaction for atomicity
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
         {
-            // Also delete related records
-            var patients = await _db.Patients
-                .Where(p => p.QueueId == queue.Id)
-                .ToListAsync();
-            _db.Patients.RemoveRange(patients);
+            // Unify datetime for this bulk operation
+            var operationTimestamp = DateTime.UtcNow;
 
-            var templates = await _db.MessageTemplates
-                .Where(t => t.QueueId == queue.Id)
+            var archivedQueues = await _db.Queues
+                .Where(q => q.IsDeleted && q.DeletedAt.HasValue && (operationTimestamp - q.DeletedAt.Value).TotalDays > TTL_DAYS)
                 .ToListAsync();
-            _db.MessageTemplates.RemoveRange(templates);
 
-            _db.Queues.Remove(queue);
+            foreach (var queue in archivedQueues)
+            {
+                // Also delete related records
+                var patients = await _db.Patients
+                    .Where(p => p.QueueId == queue.Id)
+                    .ToListAsync();
+                _db.Patients.RemoveRange(patients);
+
+                // Delete templates and their conditions
+                var templates = await _db.MessageTemplates
+                    .Where(t => t.QueueId == queue.Id)
+                    .Include(t => t.Condition)
+                    .ToListAsync();
+                
+                foreach (var template in templates)
+                {
+                    // Delete condition first (one-to-one relationship)
+                    if (template.Condition != null)
+                    {
+                        _db.Set<MessageCondition>().Remove(template.Condition);
+                    }
+                }
+                
+                _db.MessageTemplates.RemoveRange(templates);
+
+                _db.Queues.Remove(queue);
+            }
+
+            int deleted = await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            
+            _logger.LogInformation("Permanently deleted {Count} archived queues at {Timestamp}", deleted, operationTimestamp);
+            return deleted;
         }
-
-        int deleted = await _db.SaveChangesAsync();
-        _logger.LogInformation("Permanently deleted {Count} archived queues", deleted);
-        return deleted;
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error permanently deleting archived queues");
+            throw;
+        }
     }
 }

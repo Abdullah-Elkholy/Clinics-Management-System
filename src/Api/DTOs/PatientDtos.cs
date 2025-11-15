@@ -16,9 +16,22 @@ namespace Clinics.Api.DTOs
 
     // PhoneExtension removed: phone numbers now treated as a single E.164 value.
 
+        /// <summary>
+        /// Country code for the phone number (e.g., "+20", "+966")
+        /// </summary>
+        public string? CountryCode { get; set; }
+
         public int Position { get; set; }
 
         public string Status { get; set; } = "waiting";
+        
+        public DateTime CreatedAt { get; set; }
+        
+        public DateTime? UpdatedAt { get; set; }
+        
+        public int? CreatedBy { get; set; }
+        
+        public int? UpdatedBy { get; set; }
     }
 
     /// <summary>
@@ -41,6 +54,12 @@ namespace Clinics.Api.DTOs
     // PhoneExtension removed from create request.
 
         /// <summary>
+        /// Optional country code (e.g., "+20", "+966"). If not provided, will be extracted from PhoneNumber.
+        /// </summary>
+        [StringLength(10)]
+        public string? CountryCode { get; set; }
+
+        /// <summary>
         /// Optional desired position in queue. If not provided or 0, appends to end.
         /// If provided, patient is inserted at that position and existing patients shift +1.
         /// </summary>
@@ -60,6 +79,12 @@ namespace Clinics.Api.DTOs
         public string? PhoneNumber { get; set; }
 
     // PhoneExtension removed from update request.
+
+        /// <summary>
+        /// Optional country code (e.g., "+20", "+966"). If not provided, will be extracted from PhoneNumber.
+        /// </summary>
+        [StringLength(10)]
+        public string? CountryCode { get; set; }
 
         [StringLength(20)]
         public string? Status { get; set; }

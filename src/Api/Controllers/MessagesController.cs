@@ -59,45 +59,60 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, errors = new[] { new { code = "TemplateNotFound", message = "القالب غير موجود" } } });
                 }
 
-                var patients = await _db.Patients
-                    .Where(p => req.PatientIds.Contains(p.Id))
-                    .ToListAsync();
-                
-                var messages = new List<Message>();
-
-                foreach (var p in patients)
+                // Wrap in transaction for atomicity
+                await using var transaction = await _db.Database.BeginTransactionAsync();
+                try
                 {
-                    var content = req.OverrideContent ?? template.Content;
-                    var msg = new Message
-                    {
-                        PatientId = p.Id,
-                        TemplateId = template.Id,
-                        QueueId = p.QueueId,
-                        SenderUserId = userId,
-                        ModeratorId = template.ModeratorId,  // Set moderator from template (or get from context)
-                        Channel = req.Channel ?? "whatsapp",
-                        RecipientPhone = p.PhoneNumber,
-                        Content = content,
-                        Status = "queued",
-                        Attempts = 0,  // Initialize attempts counter
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    messages.Add(msg);
-                }
+                    // Unify datetime for this bulk operation
+                    var creationTimestamp = DateTime.UtcNow;
 
-                if (messages.Count > 0)
-                {
-                    await _db.Messages.AddRangeAsync(messages);
-                    await _db.SaveChangesAsync();
-
-                    // Consume quota after successful queueing
-                    await _quotaService.ConsumeMessagesQuotaAsync(userId, messages.Count);
+                    var patients = await _db.Patients
+                        .Where(p => req.PatientIds.Contains(p.Id))
+                        .ToListAsync();
                     
-                    _logger.LogInformation("User {UserId} queued {Count} messages, consumed quota", 
-                        userId, messages.Count);
-                }
+                    var messages = new List<Message>();
 
-                return Ok(new { success = true, queued = messages.Count });
+                    foreach (var p in patients)
+                    {
+                        var content = req.OverrideContent ?? template.Content;
+                        var msg = new Message
+                        {
+                            PatientId = p.Id,
+                            TemplateId = template.Id,
+                            QueueId = p.QueueId,
+                            SenderUserId = userId,
+                            ModeratorId = template.ModeratorId,  // Set moderator from template (or get from context)
+                            Channel = req.Channel ?? "whatsapp",
+                            RecipientPhone = p.PhoneNumber,
+                            Content = content,
+                            Status = "queued",
+                            Attempts = 0,  // Initialize attempts counter
+                            CreatedAt = creationTimestamp
+                        };
+                        messages.Add(msg);
+                    }
+
+                    if (messages.Count > 0)
+                    {
+                        await _db.Messages.AddRangeAsync(messages);
+                        await _db.SaveChangesAsync();
+                        await transaction.CommitAsync();
+
+                        // Consume quota after successful queueing
+                        await _quotaService.ConsumeMessagesQuotaAsync(userId, messages.Count);
+                        
+                        _logger.LogInformation("User {UserId} queued {Count} messages, consumed quota", 
+                            userId, messages.Count);
+                    }
+
+                    return Ok(new { success = true, queued = messages.Count });
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Error queueing messages");
+                    throw;
+                }
             }
             catch (InvalidOperationException ex)
             {

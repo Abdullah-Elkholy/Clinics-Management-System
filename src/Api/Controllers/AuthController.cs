@@ -105,6 +105,10 @@ namespace Clinics.Api.Controllers
 
                 if (!valid) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
+                // Update last login timestamp
+                user.LastLogin = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+
                 // Use Role property directly (now stores the role name string)
                 var token = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FirstName, user.LastName);
                 // create refresh token and set cookie

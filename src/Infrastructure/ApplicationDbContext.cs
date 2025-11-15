@@ -33,7 +33,32 @@ namespace Clinics.Infrastructure
                 .HasOne(p => p.Queue)
                 .WithMany()
                 .HasForeignKey(p => p.QueueId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<MessageTemplate>()
+                .HasOne(t => t.Queue)
+                .WithMany()
+                .HasForeignKey(t => t.QueueId)
+                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Message>()
+                .HasOne(m => m.Queue)
+                .WithMany()
+                .HasForeignKey(m => m.QueueId)
+                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<FailedTask>()
+                .HasOne(f => f.Queue)
+                .WithMany()
+                .HasForeignKey(f => f.QueueId)
+                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Quota>()
+                .HasOne(q => q.Moderator)
+                .WithMany()
+                .HasForeignKey(q => q.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<MessageSession>()
+                .HasOne(s => s.Queue)
+                .WithMany()
+                .HasForeignKey(s => s.QueueId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<Queue>()
                 .HasOne(q => q.Moderator)
@@ -80,7 +105,26 @@ namespace Clinics.Infrastructure
                 .HasOne(m => m.Moderator)
                 .WithMany()
                 .HasForeignKey(m => m.ModeratorUserId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
+            // MessageCondition: One-to-one required relationship with MessageTemplate
+            // MessageTemplate owns the relationship (has MessageConditionId foreign key)
+            modelBuilder.Entity<MessageTemplate>()
+                .HasOne(t => t.Condition)
+                .WithOne(mc => mc.Template)
+                .HasForeignKey<MessageTemplate>(t => t.MessageConditionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+            
+            // Ensure MessageConditionId is unique (one condition per template)
+            modelBuilder.Entity<MessageTemplate>()
+                .HasIndex(t => t.MessageConditionId)
+                .IsUnique();
+            
+            modelBuilder.Entity<MessageCondition>()
+                .HasOne(mc => mc.Queue)
+                .WithMany()
+                .HasForeignKey(mc => mc.QueueId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<ModeratorSettings>().HasIndex(m => m.ModeratorUserId).IsUnique();
 
@@ -93,6 +137,9 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<MessageSession>().Property(s => s.StartTime).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<ModeratorSettings>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<ModeratorSettings>().Property(m => m.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            
+            // Patient CountryCode default value
+            modelBuilder.Entity<Patient>().Property(p => p.CountryCode).HasDefaultValue("+20");
 
             // AuditLog configuration
             modelBuilder.Entity<AuditLog>().HasIndex(a => new { a.EntityType, a.EntityId });

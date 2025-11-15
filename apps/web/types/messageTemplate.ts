@@ -11,7 +11,6 @@ export interface MessageTemplate {
   title: string;               // template name (e.g., "Welcome Message")
   content: string;             // template text with placeholders
   variables: string[];         // list of variables in template
-  isActive: boolean;           // whether template is in use
   condition?: MessageCondition; // associated condition (determines template role: DEFAULT/UNCONDITIONED/active)
   priority?: number;           // order when multiple templates available
   

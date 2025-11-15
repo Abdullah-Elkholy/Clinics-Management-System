@@ -2,6 +2,7 @@
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { validateName, validateUsername, ValidationError } from '@/utils/validation';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { User } from '@/services/userManagementService';
@@ -13,8 +14,9 @@ interface EditAccountModalProps {
 }
 
 export default function EditAccountModal({ selectedUser }: EditAccountModalProps) {
-  const { openModals, closeModal } = useModal();
+  const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { user: currentUser, refreshUser } = useAuth();
   const [, actions] = useUserManagement();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -39,27 +41,38 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
   });
 
   const isOpen = openModals.has('editAccount');
+  const modalData = getModalData('editAccount');
+  
+  // Use modal data if available, fallback to prop for backward compatibility
+  const userToEdit = modalData?.user || selectedUser;
 
-  // Load selected user data when modal opens
+  // Load user data when modal opens - use currentUser from AuthContext as primary source
   useEffect(() => {
-    if (isOpen && selectedUser) {
-      setFirstName(selectedUser.firstName);
-      setLastName(selectedUser.lastName || '');
-      setUsername(selectedUser.username);
+    if (!isOpen) return;
+    
+    // Use currentUser from AuthContext (most reliable and always fresh after refreshUser call)
+    // Fallback to userToEdit if currentUser is not available
+    const user = currentUser || userToEdit;
+    
+    if (user) {
+      // Set form fields with user data
+      setFirstName(user.firstName || '');
+      setLastName(user.lastName || '');
+      setUsername(user.username || '');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setInitialValues({
-        firstName: selectedUser.firstName,
-        lastName: selectedUser.lastName || '',
-        username: selectedUser.username,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        username: user.username || '',
       });
       setTouched(false);
       setErrors({});
       setIsChangingPassword(false);
       setGeneratedPassword(null);
     }
-  }, [isOpen, selectedUser]);
+  }, [isOpen, currentUser?.id, currentUser?.firstName, currentUser?.lastName, currentUser?.username, userToEdit?.id, userToEdit?.firstName, userToEdit?.lastName, userToEdit?.username]);
 
   // Generate random password
   const generateRandomPassword = () => {
@@ -113,6 +126,9 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
         newErrors.newPassword = 'يرجى إدخال كلمة المرور الجديدة';
       } else if (newPassword.length < 6) {
         newErrors.newPassword = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+      } else if (currentPassword && newPassword === currentPassword) {
+        // Validate that new password is different from current password
+        newErrors.newPassword = 'كلمة المرور الجديدة يجب أن تكون مختلفة عن كلمة المرور الحالية';
       }
 
       if (newPassword !== confirmPassword) {
@@ -159,7 +175,7 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       return;
     }
 
-    if (!selectedUser) {
+    if (!userToEdit) {
       addToast('لم يتم تحديد مستخدم', 'error');
       return;
     }
@@ -194,24 +210,60 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
         return;
       }
 
-      const success = await actions.updateUser(selectedUser.id, updatePayload);
-      
-      if (success) {
-        addToast('تم تحديث بيانات الحساب بنجاح', 'success');
-        setFirstName('');
-        setLastName('');
-        setUsername('');
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-        setErrors({});
-        setTouched(false);
-        setIsChangingPassword(false);
-        setGeneratedPassword(null);
-        closeModal('editAccount');
+      // Debug logging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📤 Sending update payload:', {
+          userId: userToEdit.id,
+          payload: updatePayload,
+        });
       }
+
+      const success = await actions.updateUser(userToEdit.id, updatePayload);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Update response success:', success);
+      }
+      
+      if (!success) {
+        addToast('فشل تحديث البيانات', 'error');
+        return;
+      }
+
+      addToast('تم تحديث بيانات الحساب بنجاح', 'success');
+      
+      // Mark that editAccount was open so AccountInfoModal and tabs can refetch
+      sessionStorage.setItem('editAccountWasOpen', 'true');
+      
+      // Refresh user data in AuthContext so all components see updated data
+      // Wait for refresh to complete before closing modal and dispatching event
+      await refreshUser();
+      
+      // Clear form fields after successful update
+      setFirstName('');
+      setLastName('');
+      setUsername('');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setErrors({});
+      setTouched(false);
+      setIsChangingPassword(false);
+      setGeneratedPassword(null);
+      
+      closeModal('editAccount');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure refreshUser has updated the context
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('userDataUpdated'));
+      }, 100);
     } catch (err) {
-      addToast('حدث خطأ أثناء تحديث البيانات', 'error');
+      const errorMsg = err instanceof Error ? err.message : 'خطأ غير معروف';
+      addToast(`حدث خطأ: ${errorMsg}`, 'error');
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Update error:', err);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -272,10 +324,12 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
           {/* Name Fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="editAccount-firstName" className="block text-sm font-medium text-gray-700 mb-1">
                 الاسم الأول *
               </label>
               <input
+                id="editAccount-firstName"
+                name="firstName"
                 type="text"
                 value={firstName ?? ''}
                 onChange={(e) => handleFieldChange('firstName', e.target.value)}
@@ -291,10 +345,12 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="editAccount-lastName" className="block text-sm font-medium text-gray-700 mb-1">
                 الاسم الأخير
               </label>
               <input
+                id="editAccount-lastName"
+                name="lastName"
                 type="text"
                 value={lastName ?? ''}
                 onChange={(e) => handleFieldChange('lastName', e.target.value)}
@@ -312,10 +368,12 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
 
           {/* Username Field */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="editAccount-username" className="block text-sm font-medium text-gray-700 mb-1">
               اسم المستخدم *
             </label>
             <input
+              id="editAccount-username"
+              name="username"
               type="text"
               value={username ?? ''}
               onChange={(e) => handleFieldChange('username', e.target.value)}
@@ -373,11 +431,13 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
               <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
                 {/* Current Password */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="editAccount-currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
                     كلمة المرور الحالية
                   </label>
                   <div className="relative">
                     <input
+                      id="editAccount-currentPassword"
+                      name="currentPassword"
                       type={showCurrentPassword ? 'text' : 'password'}
                       value={currentPassword ?? ''}
                       onChange={(e) => handleFieldChange('currentPassword', e.target.value)}
@@ -436,11 +496,13 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
                 {/* New Password & Confirm Password Side-by-Side */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="editAccount-newPassword" className="block text-sm font-medium text-gray-700 mb-1">
                       كلمة المرور الجديدة
                     </label>
                     <div className="relative">
                       <input
+                        id="editAccount-newPassword"
+                        name="newPassword"
                         type={showNewPassword ? 'text' : 'password'}
                         value={newPassword ?? ''}
                         onChange={(e) => handleFieldChange('newPassword', e.target.value)}
@@ -464,11 +526,13 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="editAccount-confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
                       تأكيد كلمة المرور الجديدة
                     </label>
                     <div className="relative">
                       <input
+                        id="editAccount-confirmPassword"
+                        name="confirmPassword"
                         type={showConfirmPassword ? 'text' : 'password'}
                         value={confirmPassword ?? ''}
                         onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}

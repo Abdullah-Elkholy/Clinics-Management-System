@@ -49,6 +49,9 @@ namespace Clinics.Infrastructure.Services
         {
             return await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
+                // Unify datetime for this bulk operation
+                var deletionTimestamp = DateTime.UtcNow;
+
                 // Soft-delete all patients in the queue
                 var patientRepo = _unitOfWork.Repository<Patient>();
                 var patients = await patientRepo.GetByPredicateAsync(p => p.QueueId == queue.Id, includeDeleted: false);
@@ -64,11 +67,11 @@ namespace Clinics.Infrastructure.Services
                 {
                     await templateRepo.SoftDeleteAsync(template, deletedBy);
 
-                    // Soft-delete all conditions for this template
-                    var conditionRepo = _unitOfWork.Repository<MessageCondition>();
-                    var conditions = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == template.Id, includeDeleted: false);
-                    foreach (var condition in conditions)
+                    // Soft-delete condition for this template (one-to-one relationship)
+                    var condition = template.Condition;
+                    if (condition != null && !condition.IsDeleted)
                     {
+                        var conditionRepo = _unitOfWork.Repository<MessageCondition>();
                         await conditionRepo.SoftDeleteAsync(condition, deletedBy);
                     }
                 }
@@ -163,11 +166,11 @@ namespace Clinics.Infrastructure.Services
                 {
                     await templateRepo.RestoreAsync(template);
 
-                    // Restore conditions for soft-deleted templates
-                    var conditionRepo = _unitOfWork.Repository<MessageCondition>();
-                    var conditions = await conditionRepo.GetByPredicateAsync(c => c.TemplateId == template.Id, includeDeleted: true);
-                    foreach (var condition in conditions.Where(c => c.IsDeleted))
+                    // Restore condition for soft-deleted template (one-to-one relationship)
+                    var condition = template.Condition;
+                    if (condition != null && condition.IsDeleted)
                     {
+                        var conditionRepo = _unitOfWork.Repository<MessageCondition>();
                         await conditionRepo.RestoreAsync(condition);
                     }
                 }

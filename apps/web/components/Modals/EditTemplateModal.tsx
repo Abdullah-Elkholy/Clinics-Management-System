@@ -7,6 +7,8 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+import { messageApiClient, type TemplateDto } from '@/services/api/messageApiClient';
+import { templateDtoToModel } from '@/services/api/adapters';
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
 import { useState, useEffect } from 'react';
@@ -15,7 +17,7 @@ import { useState, useEffect } from 'react';
 export default function EditTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { selectedQueueId, updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions } = useQueue();
+  const { selectedQueueId, updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions, refreshQueueData } = useQueue();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
@@ -37,21 +39,65 @@ export default function EditTemplateModal() {
   const templateId = modalData?.templateId as string | undefined;
 
   const MAX_CONTENT_LENGTH = 1000;
+  const [freshTemplateData, setFreshTemplateData] = useState<any>(null);
 
-  // Load template data when modal opens
+  // Fetch fresh template data when modal opens
   useEffect(() => {
-    if (isOpen && templateId) {
-      const template = messageTemplates.find((t) => t.id === templateId);
-      if (template) {
-        setCurrentTemplate(template);
-        setTitle(template.title);
-        setContent(template.content);
-        // Find the condition for this template to get its condition ID
-        const templateCondition = messageConditions.find((c) => c.templateId === template.id);
-        setSelectedConditionId(templateCondition?.id || null);
+    if (!isOpen || !templateId) return;
+    
+    const fetchFreshTemplateData = async () => {
+      try {
+        const templateIdNum = Number(templateId);
+        if (!isNaN(templateIdNum)) {
+          const freshTemplateDto: TemplateDto = await messageApiClient.getTemplate(templateIdNum);
+          if (freshTemplateDto) {
+            // Convert backend DTO to frontend format
+            const freshTemplate = templateDtoToModel(freshTemplateDto, templateId);
+            setFreshTemplateData(freshTemplate);
+          }
+        }
+      } catch (err) {
+        // If fresh data fetch fails, fall back to existing data
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to fetch fresh template data:', err);
+        }
+        setFreshTemplateData(null);
       }
+    };
+    
+    // Always refetch when modal opens to ensure fresh data
+    fetchFreshTemplateData();
+  }, [isOpen, templateId]);
+
+  // Get fresh template data - prioritize freshTemplateData, then messageTemplates array, then null
+  const freshTemplate = freshTemplateData 
+    || (templateId 
+      ? messageTemplates.find((t) => t.id === templateId)
+      : null);
+
+  // Load template data when modal opens - use fresh data
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    if (freshTemplate) {
+      setCurrentTemplate(freshTemplate);
+      setTitle(freshTemplate.title || '');
+      setContent(freshTemplate.content || '');
+      // Find the condition for this template to get its condition ID
+      const templateCondition = messageConditions.find((c) => c.templateId === freshTemplate.id);
+      setSelectedConditionId(templateCondition?.id || null);
+      
+      // Set condition operator and values from the condition
+      if (templateCondition) {
+        setSelectedOperator(templateCondition.operator as any || null);
+        setSelectedValue(templateCondition.value);
+        setSelectedMinValue(templateCondition.minValue);
+        setSelectedMaxValue(templateCondition.maxValue);
+      }
+      setErrors({});
+      setTouched(false);
     }
-  }, [isOpen, templateId, messageTemplates, messageConditions]);
+  }, [isOpen, freshTemplate?.id, freshTemplate?.title, freshTemplate?.content, messageConditions]);
 
   // Handle condition selection
   const handleConditionChange = (conditionId: string | null) => {
@@ -193,58 +239,91 @@ export default function EditTemplateModal() {
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length > 0) {
+      // Don't set isLoading to true if validation fails
+      return;
+    }
+
+    // Validate template exists before setting isLoading
+    if (!currentTemplate) {
+      addToast('لم يتم تحديد قالب', 'error');
+      return;
+    }
+
+    // Validate queue ID
+    const queueIdNum = Number(currentTemplate.queueId);
+    if (isNaN(queueIdNum)) {
+      addToast('معرّف الطابور غير صالح', 'error');
+      return;
+    }
+
+    // Parse template ID as number (backend ID)
+    const templateBackendId = Number(currentTemplate.id);
+    if (isNaN(templateBackendId)) {
+      addToast('معرّف القالب غير صالح', 'error');
       return;
     }
 
     try {
       setIsLoading(true);
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Call API to update template
+      await messageApiClient.updateTemplate(templateBackendId, {
+        title,
+        content,
+      });
 
-      let conditionIdToUse: string | undefined = undefined;
-
-      // If an operator is selected, handle the condition with the data
-      if (selectedOperator && selectedOperator !== 'DEFAULT') {
-        // Store the condition data with actual values from ConditionSection
-        const conditionDescription = 
-          selectedOperator === 'RANGE' 
-            ? `${selectedMinValue} - ${selectedMaxValue}`
-            : `${selectedValue}`;
-        
-        addToast(`تم تحديث الشرط: ${selectedOperator} ${conditionDescription}`, 'success');
-        
-        // Use existing condition ID or generate new one
-        if (currentTemplate?.conditionId && !currentTemplate.conditionId.startsWith('DEFAULT_')) {
-          conditionIdToUse = currentTemplate.conditionId;
-        } else {
-          conditionIdToUse = `cond_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Update condition if operator or values changed
+      const templateCondition = messageConditions.find((c) => c.templateId === currentTemplate.id);
+      if (templateCondition && selectedOperator) {
+        const conditionIdNum = Number(templateCondition.id);
+        if (!isNaN(conditionIdNum)) {
+          await messageApiClient.updateCondition(conditionIdNum, {
+            operator: selectedOperator,
+            value: (selectedOperator === 'EQUAL' || selectedOperator === 'GREATER' || selectedOperator === 'LESS') 
+              ? selectedValue 
+              : undefined,
+            minValue: selectedOperator === 'RANGE' ? selectedMinValue : undefined,
+            maxValue: selectedOperator === 'RANGE' ? selectedMaxValue : undefined,
+          });
         }
-      } else if (selectedOperator === 'DEFAULT') {
-        // For DEFAULT, use a special condition ID
-        conditionIdToUse = `DEFAULT_Q${currentTemplate?.queueId}`;
       }
 
-      // Update template through context
-      if (currentTemplate) {
+      addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
+      
+      // Refetch queue data to ensure UI is in sync with backend
+      // Wait for refetch to complete before closing modal and dispatching event
+      if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
+        await refreshQueueData(String(currentTemplate.queueId));
+      } else {
+        // Fallback: update local state if refreshQueueData is not available
+        // Note: updatedAt will be set by backend, but we provide default for test mocks
         updateMessageTemplate(currentTemplate.id, {
           title,
           content,
-          updatedAt: new Date(),
+          updatedAt: new Date(), // Will be populated from backend response after API call
         });
-        
-        addToast('تم تحديث قالب الرسالة بنجاح', 'success');
-        setTitle('');
-        setContent('');
-        setErrors({});
-        setSelectedConditionId(null);
-        setSelectedOperator(null);
-        setSelectedValue(undefined);
-        setSelectedMinValue(undefined);
-        setSelectedMaxValue(undefined);
-        setCurrentTemplate(null);
-        closeModal('editTemplate');
       }
+      
+      // Clear form fields after successful update
+      setTitle('');
+      setContent('');
+      setErrors({});
+      setTouched(false);
+      setSelectedConditionId(null);
+      setSelectedOperator(null);
+      setSelectedValue(undefined);
+      setSelectedMinValue(undefined);
+      setSelectedMaxValue(undefined);
+      setCurrentTemplate(null);
+      setFreshTemplateData(null);
+      
+      closeModal('editTemplate');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure refreshQueueData has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+      }, 100);
     } catch (error) {
       addToast('حدث خطأ أثناء تحديث القالب', 'error');
     } finally {
@@ -266,6 +345,14 @@ export default function EditTemplateModal() {
         setContent('');
         setErrors({});
         setTouched(false);
+        setIsLoading(false);
+        setSelectedConditionId(null);
+        setSelectedOperator(null);
+        setSelectedValue(undefined);
+        setSelectedMinValue(undefined);
+        setSelectedMaxValue(undefined);
+        setCurrentTemplate(null);
+        setFreshTemplateData(null);
       }}
       title="تحرير قالب رسالة"
       size="lg"
@@ -280,10 +367,12 @@ export default function EditTemplateModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="editTemplate-title" className="block text-sm font-medium text-gray-700 mb-2">
             عنوان القالب *
           </label>
           <input
+            id="editTemplate-title"
+            name="title"
             type="text"
             value={title ?? ''}
             onChange={(e) => handleFieldChange('title', e.target.value)}
@@ -305,10 +394,12 @@ export default function EditTemplateModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="editTemplate-content" className="block text-sm font-medium text-gray-700 mb-2">
             محتوى الرسالة *
           </label>
           <textarea
+            id="editTemplate-content"
+            name="content"
             value={content ?? ''}
             onChange={(e) => handleFieldChange('content', e.target.value)}
             onBlur={() => handleFieldBlur('content')}
@@ -429,7 +520,7 @@ export default function EditTemplateModal() {
         <div className="flex gap-3 pt-4 border-t">
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || hasValidationErrors}
             className="flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
@@ -451,6 +542,15 @@ export default function EditTemplateModal() {
               setTitle('');
               setContent('');
               setErrors({});
+              setTouched(false);
+              setIsLoading(false);
+              setSelectedConditionId(null);
+              setSelectedOperator(null);
+              setSelectedValue(undefined);
+              setSelectedMinValue(undefined);
+              setSelectedMaxValue(undefined);
+              setCurrentTemplate(null);
+              setFreshTemplateData(null);
             }}
             disabled={isLoading}
             className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

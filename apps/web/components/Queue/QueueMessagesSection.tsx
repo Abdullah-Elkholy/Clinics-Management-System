@@ -24,8 +24,9 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
-  const activeTemplates = templates.filter((t) => t.isActive);
-  const inactiveTemplates = templates.filter((t) => !t.isActive);
+  // Filter by isDeleted only (isActive removed)
+  const activeTemplates = templates.filter((t) => !t.isDeleted);
+  const inactiveTemplates: any[] = []; // No inactive templates - using isDeleted only
 
   if (templates.length === 0) {
     return (
@@ -162,7 +163,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
         <div className="flex-1">
           <h5 className="font-semibold text-gray-800">{template.title}</h5>
         </div>
-        {template.isActive && (
+        {!template.isDeleted && (
           <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
             مفعلة
           </span>

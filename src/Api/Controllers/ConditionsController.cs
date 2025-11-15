@@ -48,9 +48,10 @@ namespace Clinics.Api.Controllers
             if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
                 return Forbid();
 
-            // Get all conditions for this queue
+            // Get all conditions for this queue with their templates
             var conditions = await _context.Set<MessageCondition>()
                 .Where(c => c.QueueId == queueId)
+                .Include(c => c.Template)
                 .OrderBy(c => c.CreatedAt)
                 .ToListAsync();
 
@@ -75,7 +76,7 @@ namespace Clinics.Api.Controllers
             dtos.AddRange(conditions.Select(c => new ConditionDto
             {
                 Id = c.Id,
-                TemplateId = c.TemplateId,
+                TemplateId = c.Template?.Id, // Get template ID from navigation property
                 QueueId = c.QueueId,
                 Operator = c.Operator,
                 Value = c.Value,
@@ -102,6 +103,7 @@ namespace Clinics.Api.Controllers
         public async Task<ActionResult<ConditionDto>> GetConditionById(int id)
         {
             var condition = await _context.Set<MessageCondition>()
+                .Include(c => c.Template)
                 .FirstOrDefaultAsync(c => c.Id == id);
 
             if (condition == null)
@@ -121,7 +123,7 @@ namespace Clinics.Api.Controllers
             var dto = new ConditionDto
             {
                 Id = condition.Id,
-                TemplateId = condition.TemplateId,
+                TemplateId = condition.Template?.Id, // Get template ID from navigation property
                 QueueId = condition.QueueId,
                 Operator = condition.Operator,
                 Value = condition.Value,
@@ -153,8 +155,9 @@ namespace Clinics.Api.Controllers
                 return BadRequest(new { message = "Template not found in this queue" });
 
             // Reject if template already has an active condition (one-to-one rule enforced below)
-            var existingCondition = await _context.Set<MessageCondition>()
-                .FirstOrDefaultAsync(c => c.TemplateId == request.TemplateId);
+            // Load template with its condition
+            await _context.Entry(template).Reference(t => t.Condition).LoadAsync();
+            var existingCondition = template.Condition;
 
             if (existingCondition != null && existingCondition.Operator != "UNCONDITIONED" && existingCondition.Operator != "DEFAULT")
                 return BadRequest(new { message = "Template already has an active condition. Update or delete the existing condition first." });
@@ -199,10 +202,9 @@ namespace Clinics.Api.Controllers
             {
                 try
                 {
-                    // Create condition
+                    // Create condition first
                     var condition = new MessageCondition
                     {
-                        TemplateId = request.TemplateId,
                         QueueId = request.QueueId,
                         Operator = request.Operator.ToUpper(),
                         Value = request.Value,
@@ -213,7 +215,10 @@ namespace Clinics.Api.Controllers
                     };
 
                     _context.Set<MessageCondition>().Add(condition);
+                    await _context.SaveChangesAsync(); // Save to get condition ID
                     
+                    // Update template with MessageConditionId
+                    template.MessageConditionId = condition.Id;
                     template.UpdatedAt = DateTime.UtcNow;
                     _context.Set<MessageTemplate>().Update(template);
 
@@ -223,7 +228,7 @@ namespace Clinics.Api.Controllers
                     var dto = new ConditionDto
                     {
                         Id = condition.Id,
-                        TemplateId = condition.TemplateId,
+                        TemplateId = template.Id, // Template ID from template entity
                         QueueId = condition.QueueId,
                         Operator = condition.Operator,
                         Value = condition.Value,
@@ -332,9 +337,9 @@ namespace Clinics.Api.Controllers
                         // Update condition
                         _context.Set<MessageCondition>().Update(condition);
 
-                        // Update template
+                        // Get template via MessageConditionId
                         var template = await _context.Set<MessageTemplate>()
-                            .FirstOrDefaultAsync(t => t.Id == condition.TemplateId);
+                            .FirstOrDefaultAsync(t => t.MessageConditionId == condition.Id);
 
                         if (template != null)
                         {
@@ -359,10 +364,14 @@ namespace Clinics.Api.Controllers
                 await _context.SaveChangesAsync();
             }
 
+            // Get template via MessageConditionId for DTO
+            var templateForDto = await _context.Set<MessageTemplate>()
+                .FirstOrDefaultAsync(t => t.MessageConditionId == condition.Id);
+
             var dto = new ConditionDto
             {
                 Id = condition.Id,
-                TemplateId = condition.TemplateId,
+                TemplateId = templateForDto?.Id, // Get template ID from template entity
                 QueueId = condition.QueueId,
                 Operator = condition.Operator,
                 Value = condition.Value,
@@ -408,9 +417,9 @@ namespace Clinics.Api.Controllers
                     // Delete condition
                     _context.Set<MessageCondition>().Remove(condition);
 
-                    // Update template
+                    // Get template via MessageConditionId
                     var template = await _context.Set<MessageTemplate>()
-                        .FirstOrDefaultAsync(t => t.Id == condition.TemplateId);
+                        .FirstOrDefaultAsync(t => t.MessageConditionId == condition.Id);
 
                     if (template != null)
                     {

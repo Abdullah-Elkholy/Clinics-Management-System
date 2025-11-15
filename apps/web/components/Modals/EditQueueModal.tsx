@@ -4,21 +4,70 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { validateName, ValidationError } from '@/utils/validation';
-import { queuesApiClient } from '@/services/api/queuesApiClient';
+import { queuesApiClient, type QueueDto } from '@/services/api/queuesApiClient';
+import { queueDtoToModel } from '@/services/api/adapters';
 import Modal from './Modal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function EditQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { updateQueue } = useQueue();
+  const { queues, updateQueue, refreshQueues } = useQueue();
   const [doctorName, setDoctorName] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [freshQueueData, setFreshQueueData] = useState<any>(null);
 
   const isOpen = openModals.has('editQueue');
   const data = getModalData('editQueue');
+  const queue = data?.queue;
+  
+  // Fetch fresh queue data when modal opens
+  useEffect(() => {
+    if (!isOpen || !queue?.id) return;
+    
+    const fetchFreshQueueData = async () => {
+      try {
+        const queueIdNum = Number(queue.id);
+        if (!isNaN(queueIdNum)) {
+          const freshQueueDto: QueueDto = await queuesApiClient.getQueue(queueIdNum);
+          if (freshQueueDto) {
+            // Convert backend DTO to frontend format
+            const freshQueue = queueDtoToModel(freshQueueDto);
+            setFreshQueueData(freshQueue);
+          }
+        }
+      } catch (err) {
+        // If fresh data fetch fails, fall back to existing data
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to fetch fresh queue data:', err);
+        }
+        setFreshQueueData(null);
+      }
+    };
+    
+    // Always refetch when modal opens to ensure fresh data
+    fetchFreshQueueData();
+  }, [isOpen, queue?.id]);
+  
+  // Get fresh queue data - prioritize freshQueueData, then queues array, then props
+  const freshQueue = freshQueueData 
+    || (queue?.id 
+      ? queues.find(q => q.id === queue.id) || queue
+      : queue);
+  
+  // Initialize field with existing data when modal opens
+  // Get fresh queue data
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    if (freshQueue?.doctorName) {
+      setDoctorName(freshQueue.doctorName);
+      setErrors({});
+      setTouched(false);
+    }
+  }, [isOpen, freshQueue?.id, freshQueue?.doctorName]); // Depend on queue ID and doctorName to re-init when data updates
 
   const validateField = (value: string) => {
     const error = validateName(value, 'اسم الطبيب');
@@ -47,6 +96,12 @@ export default function EditQueueModal() {
     e.preventDefault();
     setTouched(true);
     
+    if (!queue?.id) {
+      addToast('خطأ: معرّف الطابور غير صالح', 'error');
+      console.error('Queue ID is missing or invalid:', queue);
+      return;
+    }
+    
     const error = validateName(doctorName, 'اسم الطبيب');
     
     if (error) {
@@ -58,22 +113,55 @@ export default function EditQueueModal() {
       setIsLoading(true);
       
       // Make API call to update queue
-      await queuesApiClient.updateQueue(Number(data?.queueId), {
+      await queuesApiClient.updateQueue(queue.id, {
         doctorName: doctorName.trim(),
       });
 
-      // Update local state after successful API call
-      updateQueue(data?.queueId, {
-        doctorName: doctorName.trim(),
-      });
+      // Update local context state for backward-compatibility with existing consumers/tests
+      if (queue?.id) {
+        updateQueue(String(queue.id), { doctorName: doctorName.trim() });
+      }
 
       addToast('تم تحديث اسم الطبيب بنجاح', 'success');
+      
+      // If refresh is available, also refetch from backend to ensure server truth
+      // Wait for refetch to complete before closing modal and dispatching event
+      if (typeof refreshQueues === 'function') {
+        await refreshQueues();
+      }
+
+      // Clear form fields after successful update
       setDoctorName('');
       setErrors({});
+      setTouched(false);
+      
       closeModal('editQueue');
+      
+      // Trigger a custom event to notify other components to refetch
+      // Dispatch after a small delay to ensure refreshQueues has updated the state
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('queueDataUpdated'));
+      }, 100);
     } catch (err) {
-      console.error('Failed to update queue:', err);
-      addToast('حدث خطأ أثناء تحديث الطابور', 'error');
+      // Extract validation errors from response
+      let errorMessage = 'حدث خطأ غير معروف';
+      const errorObj = (err as any)?.response?.data || (err as any)?.data || err;
+      
+      if (errorObj?.errors && typeof errorObj.errors === 'object') {
+        // Format validation errors: {"id": ["The value 'NaN' is not valid."]}
+        const errorEntries = Object.entries(errorObj.errors);
+        const formattedErrors = errorEntries
+          .map(([field, messages]: [string, any]) => 
+            Array.isArray(messages) ? messages[0] : String(messages)
+          )
+          .join('; ');
+        errorMessage = formattedErrors || errorObj.title || errorMessage;
+      } else {
+        errorMessage = queuesApiClient.formatApiError?.(err) || (err as any)?.message || errorMessage;
+      }
+      
+      console.error('Failed to update queue:', { error: err, parsed: errorMessage });
+      addToast(`حدث خطأ أثناء تحديث الطابور: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -95,8 +183,10 @@ export default function EditQueueModal() {
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">اسم الطبيب *</label>
+          <label htmlFor="editQueue-doctorName" className="block text-sm font-medium text-gray-700 mb-2">اسم الطبيب *</label>
           <input
+            id="editQueue-doctorName"
+            name="doctorName"
             type="text"
             value={doctorName ?? ''}
             onChange={(e) => handleFieldChange(e.target.value)}

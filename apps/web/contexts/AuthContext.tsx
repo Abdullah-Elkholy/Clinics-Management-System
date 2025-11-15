@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useCallback, useRef } from 
 import { useUI } from './UIContext';
 import type { User, AuthState } from '../types';
 import { UserRole } from '@/types/roles';
-import { login as loginApi, logout as logoutApi } from '@/services/api/authApiClient';
+import { login as loginApi, logout as logoutApi, getCurrentUser } from '@/services/api/authApiClient';
 
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
@@ -13,6 +13,7 @@ const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
 interface AuthContextType extends AuthState {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -212,19 +213,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         const err = error as any;
 
-        // Rich error log to avoid {} empty object in console
-        try {
-          console.error(`Login error (attempt ${attemptNumber + 1}/${RETRY_DELAYS.length + 1}):`, {
-            raw: err,
-            type: typeof err,
-            keys: err ? Object.keys(err) : [],
-            name: err?.name,
-            message: err?.message,
-            statusCode: err?.statusCode,
-            stack: err?.stack,
-            details: err?.details,
-          });
-        } catch {}
+        // Rich error log to avoid {} empty object in console (development only)
+        if (process.env.NODE_ENV === 'development') {
+          try {
+            console.error(`Login error (attempt ${attemptNumber + 1}/${RETRY_DELAYS.length + 1}):`, {
+              raw: err,
+              type: typeof err,
+              keys: err ? Object.keys(err) : [],
+              name: err?.name,
+              message: err?.message,
+              statusCode: err?.statusCode,
+              stack: err?.stack,
+              details: err?.details,
+            });
+          } catch {}
+        }
 
         // Determine if this is retryable
         const isRetryable = typeof err?.statusCode !== 'number' || err.statusCode >= 500;
@@ -295,8 +298,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  /**
+   * Refresh current user data from backend
+   * Updates the user in AuthContext with fresh data from API
+   */
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await getCurrentUser();
+      // getCurrentUser returns { success: true, data: { Id, Username, FirstName, LastName, Role, RoleDisplayName } }
+      const freshUserData = response?.data || response;
+      if (freshUserData) {
+        // Update user data while preserving authentication state
+        setAuthState((prev) => {
+          if (!prev.user) return prev; // Don't update if not authenticated
+          
+          return {
+            ...prev,
+            user: {
+              ...prev.user,
+              firstName: freshUserData.FirstName || freshUserData.firstName || prev.user.firstName,
+              lastName: freshUserData.LastName || freshUserData.lastName || prev.user.lastName,
+              username: freshUserData.Username || freshUserData.username || prev.user.username,
+              // Preserve other fields that might not be in getCurrentUser response
+            },
+          };
+        });
+      }
+    } catch (err) {
+      // Silently fail - user data will refresh on next page reload
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to refresh user data:', err);
+      }
+    }
+  }, []); // No dependencies - uses functional setState to access current state
+
   return (
-    <AuthContext.Provider value={{ ...authState, login, logout }}>
+    <AuthContext.Provider value={{ ...authState, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

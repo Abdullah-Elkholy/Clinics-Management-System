@@ -38,6 +38,39 @@ jobs:
     
     - name: Build
       run: dotnet build -c Debug --no-restore
+
+    - name: Start SQL Server (Docker)
+      run: |
+        docker pull mcr.microsoft.com/mssql/server:2022-latest
+        docker run -e "ACCEPT_EULA=Y" -e "SA_PASSWORD=Your_password123" -p 1433:1433 -d --name sql1 mcr.microsoft.com/mssql/server:2022-latest
+
+    - name: Wait for SQL Server
+      shell: pwsh
+      run: |
+        $retries = 30
+        $delay = 5
+        $ok = $false
+        for ($i=0; $i -lt $retries; $i++) {
+          try {
+            Add-Type -AssemblyName System.Data
+            $cn = New-Object System.Data.SqlClient.SqlConnection "Server=127.0.0.1,1433;User Id=sa;Password=Your_password123;TrustServerCertificate=True;"
+            $cn.Open(); $cn.Close(); $ok = $true; break
+          } catch { Start-Sleep -Seconds $delay }
+        }
+        if (-not $ok) { throw 'SQL Server not ready' }
+
+    - name: Apply EF migrations
+      shell: pwsh
+      env:
+        ConnectionStrings__DefaultConnection: Server=127.0.0.1,1433;Database=ClinicsDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;
+      run: |
+        dotnet tool restore 2>$null | Out-Null
+        dotnet ef database update --project src/Infrastructure/Infrastructure.csproj --startup-project src/Api/Clinics.Api.csproj
+
+    - name: Verify seed data
+      shell: pwsh
+      run: |
+        ./scripts/VerifySeed.ps1 -ConnectionString "Server=127.0.0.1,1433;Database=ClinicsDb;User Id=sa;Password=Your_password123;TrustServerCertificate=True;"
     
     # Gating run: only tests that must pass
     - name: Run Unit & Integration Tests (Gating - Must Pass)

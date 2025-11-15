@@ -12,6 +12,9 @@ namespace Clinics.Api.DTOs
         // optional: who created this queue (client may pass current user id)
         public int? CreatedBy { get; set; }
 
+        // optional: target moderator id (admins can create queues for a specific moderator)
+        public int? ModeratorId { get; set; }
+
         // optional estimated wait in minutes - must be non-negative
         [Range(0, int.MaxValue, ErrorMessage = "EstimatedWaitMinutes must be non-negative")]
         public int? EstimatedWaitMinutes { get; set; }

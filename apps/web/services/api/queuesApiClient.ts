@@ -21,9 +21,13 @@ export interface QueuePatientDto {
   firstName: string;
   lastName: string;
   phoneNumber: string;
+  countryCode?: string;
   position: number;
   status: 'waiting' | 'in_service' | 'completed' | 'cancelled';
   createdAt: string;
+  updatedAt?: string;
+  createdBy?: number;
+  updatedBy?: number;
 }
 
 export interface ListResponse<T> {
@@ -91,8 +95,23 @@ async function fetchAPI<T>(
   }
 
   if (!response.ok) {
+    // Try to extract meaningful error messages from various backend shapes
+    let message: string | undefined;
+    if (typeof data === 'string') {
+      message = data;
+    } else if (data && typeof data === 'object') {
+      const obj = data as any;
+      if (obj.message) message = obj.message;
+      else if (obj.error) message = obj.error;
+      else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
+      // Include dev details if available
+      if (obj.details && typeof obj.details === 'string') {
+        message = message ? `${message}: ${obj.details}` : obj.details;
+      }
+    }
+
     throw {
-      message: data?.message || 'API request failed',
+      message: message || 'API request failed',
       statusCode: response.status,
     } as ApiError;
   }
@@ -190,7 +209,23 @@ export async function getTrashQueues(options?: {
   }
 
   const queryString = params.toString();
-  return fetchAPI(`/queues/trash/list${queryString ? `?${queryString}` : ''}`);
+  const page = options?.pageNumber || 1;
+  const pageSize = options?.pageSize || 10;
+  const params2 = new URLSearchParams();
+  params2.append('page', page.toString());
+  params2.append('pageSize', pageSize.toString());
+  const queryString2 = params2.toString();
+  const response = await fetchAPI(`/queues/trash?${queryString2}`);
+  
+  if (response && typeof response === 'object' && 'data' in response && 'total' in response) {
+    return {
+      items: (response as any).data || [],
+      totalCount: (response as any).total || 0,
+      pageNumber: (response as any).page || page,
+      pageSize: (response as any).pageSize || pageSize,
+    };
+  }
+  return response;
 }
 
 /**

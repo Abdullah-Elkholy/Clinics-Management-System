@@ -114,8 +114,14 @@ namespace Clinics.Api.Services
 
         public async Task<bool> TemplateHasConditionAsync(int templateId)
         {
-            return await _context.Set<MessageCondition>()
-                .AnyAsync(c => c.TemplateId == templateId);
+            // Query through MessageTemplate using MessageConditionId
+            var template = await _context.Set<MessageTemplate>()
+                .FirstOrDefaultAsync(t => t.Id == templateId);
+            if (template == null) return false;
+            
+            // Load condition and check if it exists
+            await _context.Entry(template).Reference(t => t.Condition).LoadAsync();
+            return template.Condition != null;
         }
 
         public async Task<bool> IsDefaultAlreadyUsedAsync(int queueId, int? excludeConditionId = null)

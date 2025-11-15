@@ -227,7 +227,7 @@ namespace ClinicsManagementService.Services
                         else
                         {
                             _notifier.Notify($"⚠️ Unexpected iconType: {iconType}");
-                            var path = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                            var path = $"Screenshots/unexpected_icon_{iconType}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
                             await TakeScreenshotAsync(browserSession, path);
                             _notifier.Notify($"Screenshot taken: {path}");
                         }

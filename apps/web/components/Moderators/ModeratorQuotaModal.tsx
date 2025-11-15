@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { ModeratorQuota, User } from '@/types/user';
+import { formatLocalDate } from '@/utils/dateTimeUtils';
 
 interface ModeratorQuotaModalProps {
   quota: ModeratorQuota;
@@ -305,7 +306,7 @@ export default function ModeratorQuotaModal({
                   <span className="text-gray-600 font-medium text-xs">آخر دخول:</span>
                   <p className="text-gray-900 font-semibold text-xs">
                     {moderatorData.lastLogin 
-                      ? new Date(moderatorData.lastLogin).toLocaleDateString('ar-SA') 
+                      ? formatLocalDate(moderatorData.lastLogin)
                       : 'لم يدخل بعد'}
                   </p>
                 </div>

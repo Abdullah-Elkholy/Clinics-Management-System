@@ -8,7 +8,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 // Polyfill fetch in Jest (jsdom)
 import 'whatwg-fetch';
-import { server } from './msw/server';
+import { server, resetMswDb } from './msw/server';
 
 // Polyfill TextEncoder/TextDecoder for Node test environment (JWT decoding, etc.)
 try {
@@ -103,6 +103,8 @@ beforeAll(() => {
 
 afterEach(() => {
   server.resetHandlers();
+  // Also reset in-memory MSW DB to initial state to avoid cross-test leakage
+  resetMswDb();
 });
 
 afterAll(() => {

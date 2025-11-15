@@ -26,6 +26,13 @@ namespace Clinics.Api.Services
         /// <param name="phoneNumber">Phone number to validate</param>
         /// <returns>True if has country code, false otherwise</returns>
         bool HasCountryCode(string? phoneNumber);
+
+        /// <summary>
+        /// Extract country code from a phone number.
+        /// </summary>
+        /// <param name="phoneNumber">Phone number in E.164 format (e.g., +201234567890)</param>
+        /// <returns>Country code with + prefix (e.g., "+20") or null if not found</returns>
+        string? ExtractCountryCode(string? phoneNumber);
     }
 
     public class PhoneNormalizationService : IPhoneNormalizationService
@@ -91,6 +98,38 @@ namespace Clinics.Api.Services
         public bool HasCountryCode(string? phoneNumber)
         {
             return !string.IsNullOrWhiteSpace(phoneNumber) && phoneNumber.StartsWith("+");
+        }
+
+        /// <summary>
+        /// Extract country code from a phone number.
+        /// </summary>
+        public string? ExtractCountryCode(string? phoneNumber)
+        {
+            if (string.IsNullOrWhiteSpace(phoneNumber))
+                return null;
+
+            // Clean formatting characters
+            var cleaned = Regex.Replace(phoneNumber, @"[\s\-\(\)\[\]\{\}\.\/]", "");
+
+            if (string.IsNullOrEmpty(cleaned))
+                return null;
+
+            // Add + if missing
+            if (!cleaned.StartsWith("+"))
+            {
+                if (!char.IsDigit(cleaned[0]))
+                    return null;
+                cleaned = "+" + cleaned;
+            }
+
+            // Extract country code (1-3 digits after +)
+            var match = Regex.Match(cleaned, @"^\+(\d{1,3})");
+            if (match.Success)
+            {
+                return "+" + match.Groups[1].Value;
+            }
+
+            return null;
         }
     }
 }

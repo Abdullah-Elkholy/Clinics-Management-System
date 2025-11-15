@@ -58,8 +58,13 @@ namespace Clinics.Api.Controllers
                         Id = p.Id,
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
+                        CountryCode = p.CountryCode,
                         Position = p.Position,
-                        Status = p.Status
+                        Status = p.Status,
+                        CreatedAt = p.CreatedAt,
+                        UpdatedAt = p.UpdatedAt,
+                        CreatedBy = p.CreatedBy,
+                        UpdatedBy = p.UpdatedBy
                     })
                     .ToListAsync();
 
@@ -97,8 +102,13 @@ namespace Clinics.Api.Controllers
                         Id = p.Id,
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
+                        CountryCode = p.CountryCode,
                         Position = p.Position,
-                        Status = p.Status
+                        Status = p.Status,
+                        CreatedAt = p.CreatedAt,
+                        UpdatedAt = p.UpdatedAt,
+                        CreatedBy = p.CreatedBy,
+                        UpdatedBy = p.UpdatedBy
                     })
                     .FirstOrDefaultAsync();
 
@@ -164,14 +174,32 @@ namespace Clinics.Api.Controllers
                         return BadRequest(new { success = false, error = "Invalid phone number format" });
                     }
 
+                    // Extract country code from normalized phone number
+                    var countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? req.PhoneNumber);
+
+                    // Get current user ID for audit
+                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                        ?? User.FindFirst("nameid")?.Value
+                        ?? User.FindFirst("sub")?.Value
+                        ?? User.FindFirst("userId")?.Value
+                        ?? User.FindFirst("id")?.Value
+                        ?? User.FindFirst("Id")?.Value;
+                    int? createdBy = null;
+                    if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
+                    {
+                        createdBy = userId;
+                    }
+
                     // No shift needed: new patients always inserted at end (maxPos + 1)
                     var patient = new Patient
                     {
                         QueueId = req.QueueId,
                         FullName = req.FullName,
                         PhoneNumber = normalizedPhone ?? req.PhoneNumber,
+                        CountryCode = countryCode,
                         Position = insertPos,
-                        Status = "waiting"
+                        Status = "waiting",
+                        CreatedBy = createdBy
                     };
 
                     _db.Patients.Add(patient);
@@ -182,8 +210,13 @@ namespace Clinics.Api.Controllers
                         Id = patient.Id,
                         FullName = patient.FullName,
                         PhoneNumber = patient.PhoneNumber,
+                        CountryCode = patient.CountryCode,
                         Position = patient.Position,
-                        Status = patient.Status
+                        Status = patient.Status,
+                        CreatedAt = patient.CreatedAt,
+                        UpdatedAt = patient.UpdatedAt,
+                        CreatedBy = createdBy,
+                        UpdatedBy = patient.UpdatedBy
                     };
 
                     return CreatedAtAction(nameof(GetByQueue), new { queueId = req.QueueId }, new { success = true, data = dto });
@@ -263,10 +296,31 @@ namespace Clinics.Api.Controllers
                         return BadRequest(new { success = false, error = "Invalid phone number format" });
                     }
                     patient.PhoneNumber = normalizedPhone ?? req.PhoneNumber;
+                    
+                    // Extract and update country code from normalized phone number
+                    var countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? req.PhoneNumber);
+                    patient.CountryCode = countryCode;
                 }
 
                 if (!string.IsNullOrEmpty(req.Status))
                     patient.Status = req.Status;
+
+                // Get current user ID for audit
+                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("nameid")?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value
+                    ?? User.FindFirst("id")?.Value
+                    ?? User.FindFirst("Id")?.Value;
+                int? updatedBy = null;
+                if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
+                {
+                    updatedBy = userId;
+                }
+
+                // Set UpdatedAt and UpdatedBy for audit trail
+                patient.UpdatedAt = DateTime.UtcNow;
+                patient.UpdatedBy = updatedBy;
 
                 await _db.SaveChangesAsync();
 
@@ -275,8 +329,13 @@ namespace Clinics.Api.Controllers
                     Id = patient.Id,
                     FullName = patient.FullName,
                     PhoneNumber = patient.PhoneNumber,
+                    CountryCode = patient.CountryCode,
                     Position = patient.Position,
-                    Status = patient.Status
+                    Status = patient.Status,
+                        CreatedAt = patient.CreatedAt,
+                        UpdatedAt = patient.UpdatedAt,
+                        CreatedBy = patient.CreatedBy,
+                        UpdatedBy = patient.UpdatedBy
                 };
 
                 return Ok(dto);

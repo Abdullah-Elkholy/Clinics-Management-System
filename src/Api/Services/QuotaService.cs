@@ -114,6 +114,9 @@ public class QuotaService
 
     /// <summary>
     /// Consume messages quota for user/moderator
+    /// Note: Quota is consumed when messages are queued (upfront), not when sent.
+    /// This prevents exceeding quota. ConsumedMessages tracks the total number of 
+    /// messages queued/sent, regardless of their IsDeleted status.
     /// </summary>
     public async Task<bool> ConsumeMessagesQuotaAsync(int userId, int count)
     {
@@ -194,6 +197,40 @@ public class QuotaService
             // Admins - no quota restrictions
             return true;
         }
+    }
+
+    /// <summary>
+    /// Consume queue quota directly for a specific moderator.
+    /// Useful for admin flows where the acting user is not the moderator but
+    /// wants to consume from a moderator's quota.
+    /// </summary>
+    public async Task<bool> ConsumeQueueQuotaForModeratorAsync(int moderatorId)
+    {
+        var quota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
+
+        if (quota == null)
+        {
+            // Create default quota for this moderator if missing
+            quota = new Quota
+            {
+                ModeratorUserId = moderatorId,
+                MessagesQuota = 0,
+                ConsumedMessages = 0,
+                QueuesQuota = 0,
+                ConsumedQueues = 0,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _context.Quotas.Add(quota);
+        }
+
+        if (quota.RemainingQueues <= 0)
+            return false;
+
+        quota.ConsumedQueues++;
+        quota.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return true;
     }
 
     /// <summary>

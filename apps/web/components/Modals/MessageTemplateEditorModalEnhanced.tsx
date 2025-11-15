@@ -1,5 +1,7 @@
 'use client';
 
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { MessageTemplate } from '@/types/messageTemplate';
 
@@ -307,10 +309,12 @@ export default function MessageTemplateEditorModal({
 
           {/* Title Field */}
           <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
+            <label htmlFor="templateEditor-title" className="block text-sm font-semibold text-gray-900 mb-2">
               العنوان <span className="text-red-600">*</span>
             </label>
             <input
+              id="templateEditor-title"
+              name="title"
               type="text"
               value={formData.title || ''}
               onChange={(e) => handleFieldChange('title', e.target.value)}
@@ -323,7 +327,7 @@ export default function MessageTemplateEditorModal({
           {/* Content Field with Advanced Variables */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-semibold text-gray-900">
+              <label htmlFor="templateEditor-content" className="block text-sm font-semibold text-gray-900">
                 محتوى الرسالة <span className="text-red-600">*</span>
               </label>
               <button
@@ -384,6 +388,8 @@ export default function MessageTemplateEditorModal({
 
             {/* Text Area */}
             <textarea
+              id="templateEditor-content"
+              name="content"
               value={formData.content || ''}
               onChange={(e) => handleFieldChange('content', e.target.value)}
               placeholder="مثال: مرحباً {PN}, ترتيبك {PQP} والموضع الحالي {CQP}"
@@ -466,8 +472,10 @@ export default function MessageTemplateEditorModal({
           {/* Priority and Status */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">الأولوية</label>
+              <label htmlFor="templateEditor-priority" className="block text-sm font-semibold text-gray-900 mb-2">الأولوية</label>
               <input
+                id="templateEditor-priority"
+                name="priority"
                 type="number"
                 min="0"
                 max="100"
@@ -523,7 +531,7 @@ export default function MessageTemplateEditorModal({
                       <p className="text-xs font-semibold text-gray-900">{version.title}</p>
                       <p className="text-xs text-gray-600 mt-1 line-clamp-1">{version.content}</p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {new Date(version.createdAt).toLocaleString('ar-EG')}
+                        {formatLocalDateTime(version.createdAt)}
                       </p>
                     </button>
                   ))}

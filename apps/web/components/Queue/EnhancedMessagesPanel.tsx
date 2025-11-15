@@ -23,7 +23,7 @@ interface MessageTemplate {
   content: string;
   category?: string;
   queueId?: string;
-  isActive: boolean;
+  isDeleted?: boolean;
   createdAt?: Date;
 }
 
@@ -59,15 +59,13 @@ const EnhancedMessagesPanel: React.FC<EnhancedMessagesPanelProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
+  // Filter by isDeleted only (isActive removed)
   const activeTemplates = useMemo(
-    () => templates.filter((t) => t.isActive),
+    () => templates.filter((t) => !t.isDeleted),
     [templates]
   );
 
-  const inactiveTemplates = useMemo(
-    () => templates.filter((t) => !t.isActive),
-    [templates]
-  );
+  const inactiveTemplates: MessageTemplate[] = []; // No inactive templates - using isDeleted only
 
   const handleAddTemplate = useCallback(() => {
     openModal('addTemplate', {
@@ -242,10 +240,10 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
             )}
           </div>
         </div>
-        {template.isActive && (
+        {!template.isDeleted && (
           <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-medium flex-shrink-0 ml-2">
             <i className="fas fa-check-circle ml-1"></i>
-            مفعلة
+            نشط
           </span>
         )}
       </div>

@@ -127,8 +127,8 @@ export default function ManageConditionsModal() {
   const isOpen = openModals.has('manageConditions');
   const data = getModalData('manageConditions') as ModalData | undefined;
 
-  // Get queue info
-  const queueId = data?.queueId;
+  // Get queue info - use data.queueId if available, otherwise use selectedQueueId from context
+  const queueId = data?.queueId || selectedQueueId;
   const queue = queues.find(q => q.id === queueId);
 
   // Filter templates for this queue
@@ -238,6 +238,18 @@ export default function ManageConditionsModal() {
       });
 
       addToast('تم تحديث الشرط بنجاح', 'success');
+      
+      // Refresh queue data to get updated state from backend
+      const targetQueueId = queueId || selectedQueueId;
+      if (targetQueueId) {
+        await refreshQueueData(targetQueueId);
+        // Trigger custom events to notify other components to refetch
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+          window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
+        }, 100);
+      }
+      
       setEditingTemplateId(null);
       setFormErrors({});
     } catch (err: any) {
@@ -272,15 +284,21 @@ export default function ManageConditionsModal() {
       addToast('تم تحديد هذا القالب كافتراضي', 'success');
       
       // Refresh queue data to get updated state from backend
-      if (selectedQueueId) {
-        await refreshQueueData(selectedQueueId);
+      const targetQueueId = queueId || selectedQueueId;
+      if (targetQueueId) {
+        await refreshQueueData(targetQueueId);
+        // Trigger custom events to notify other components to refetch
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+          window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
+        }, 100);
       }
     } catch (err: any) {
       addToast(err?.message || 'حدث خطأ أثناء تحديد القالب الافتراضي', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [selectedQueueId, refreshQueueData, addToast]);
+  }, [queueId, selectedQueueId, refreshQueueData, addToast]);
 
   const handleToggleCondition = useCallback(async (template: MessageTemplate) => {
     const condition = templateConditionMap.get(template.id);
@@ -311,8 +329,14 @@ export default function ManageConditionsModal() {
         addToast('تم تحويل الشرط إلى بدون شرط بنجاح', 'success');
         
         // Refresh to get unconditioned state
-        if (selectedQueueId) {
-          await refreshQueueData(selectedQueueId);
+        const targetQueueId = queueId || selectedQueueId;
+        if (targetQueueId) {
+          await refreshQueueData(targetQueueId);
+          // Trigger custom events to notify other components to refetch
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+            window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
+          }, 100);
         }
       } catch (err: any) {
         addToast(err?.message || 'حدث خطأ أثناء إزالة الشرط', 'error');
@@ -320,7 +344,7 @@ export default function ManageConditionsModal() {
         setIsLoading(false);
       }
     }
-  }, [templateConditionMap, updateMessageCondition, selectedQueueId, refreshQueueData, addToast]);
+  }, [queueId, templateConditionMap, updateMessageCondition, selectedQueueId, refreshQueueData, addToast]);
 
   const handleCancel = useCallback(() => {
     setEditingTemplateId(null);
@@ -336,11 +360,12 @@ export default function ManageConditionsModal() {
   // Close modal and refresh data
   const handleClose = useCallback(async () => {
     // Refresh queue data before closing to ensure UI is in sync
-    if (selectedQueueId) {
-      await refreshQueueData(selectedQueueId);
+    const targetQueueId = queueId || selectedQueueId;
+    if (targetQueueId) {
+      await refreshQueueData(targetQueueId);
     }
     closeModal('manageConditions');
-  }, [selectedQueueId, refreshQueueData, closeModal]);
+  }, [queueId, selectedQueueId, refreshQueueData, closeModal]);
 
   // Detect overlapping active conditions
   const activeConditions = useMemo(

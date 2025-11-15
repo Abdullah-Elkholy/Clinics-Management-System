@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ModeratorQuota, User } from '@/types/user';
 
 interface ModeratorMessagesQuotaModalProps {
@@ -36,6 +36,17 @@ export default function ModeratorMessagesQuotaModal({
   const [mode, setMode] = useState<QuotaMode>('set');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [inputValue, setInputValue] = useState<string>(''); // Store raw input for 'add' mode
+
+  // Reset form data when modal opens or quota changes
+  useEffect(() => {
+    if (isOpen && quota) {
+      setFormData(quota);
+      setMode('set');
+      setError(null);
+      setInputValue(''); // Reset input value
+    }
+  }, [isOpen, quota]);
 
   if (!isOpen) return null;
 
@@ -61,7 +72,30 @@ export default function ModeratorMessagesQuotaModal({
         return;
       }
 
-      await onSave(formData);
+      // For 'add' mode, we need to pass the delta (input value), not the final calculated limit
+      // Only update messagesQuota, keep queuesQuota unchanged
+      let quotaToSave: Partial<ModeratorQuota> = {
+        messagesQuota: { ...formData.messagesQuota },
+        queuesQuota: { ...quota.queuesQuota }, // Keep original queues quota
+      };
+      
+      if (mode === 'add' && inputValue !== '' && quota.messagesQuota.limit !== -1) {
+        // Calculate delta from input value
+        const delta = parseInt(inputValue, 10) || 0;
+        quotaToSave.messagesQuota = {
+          ...formData.messagesQuota,
+          limit: delta, // Pass delta for 'add' mode
+        };
+      } else if (mode === 'set') {
+        // For 'set' mode, use the calculated limit from formData
+        quotaToSave.messagesQuota = {
+          ...formData.messagesQuota,
+        };
+      }
+      
+      // Pass mode information via a custom property
+      const quotaWithMode = { ...quotaToSave, _mode: mode } as any;
+      await onSave(quotaWithMode as ModeratorQuota);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'فشل حفظ الحصة');
@@ -71,19 +105,20 @@ export default function ModeratorMessagesQuotaModal({
   };
 
   const handleLimitChange = (value: string) => {
-    const inputValue = value === '' ? -1 : parseInt(value, 10) || -1;
+    setInputValue(value); // Store raw input
+    const parsedValue = value === '' ? -1 : parseInt(value, 10) || -1;
     const currentLimit = quota.messagesQuota.limit;
 
     if (mode === 'add' && currentLimit === -1) {
       return;
     }
 
-    let newLimit = inputValue;
-    if (mode === 'add' && inputValue !== -1) {
+    let newLimit = parsedValue;
+    if (mode === 'add' && parsedValue !== -1) {
       if (currentLimit === -1) {
         newLimit = -1;
       } else {
-        newLimit = currentLimit + inputValue;
+        newLimit = currentLimit + parsedValue;
       }
     }
 
@@ -164,7 +199,7 @@ export default function ModeratorMessagesQuotaModal({
           <div className="flex gap-2 items-end">
             <input
               type="number"
-              value={formData.messagesQuota.limit === -1 ? '' : formData.messagesQuota.limit}
+              value={mode === 'add' ? inputValue : (formData.messagesQuota.limit === -1 ? '' : String(formData.messagesQuota.limit))}
               onChange={(e) => handleLimitChange(e.target.value)}
               disabled={saving || isLoading || (mode === 'add' && wasUnlimited)}
               placeholder={mode === 'add' ? 'أدخل الكمية المراد إضافتها (اتركه فارغاً لغير محدود)' : 'أدخل الحد الجديد (اتركه فارغاً لغير محدود)'}

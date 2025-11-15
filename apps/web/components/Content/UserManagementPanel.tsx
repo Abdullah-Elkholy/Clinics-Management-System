@@ -20,6 +20,11 @@ import ModeratorQuotaModal from '@/components/Moderators/ModeratorQuotaModal';
 import ModeratorMessagesQuotaModal from '@/components/Moderators/ModeratorMessagesQuotaModal';
 import ModeratorQueuesQuotaModal from '@/components/Moderators/ModeratorQueuesQuotaModal';
 import moderatorQuotaService from '@/services/moderatorQuotaService';
+import TrashTab from '@/components/TrashTab';
+import { usersApiClient } from '@/services/api/usersApiClient';
+import queuesApiClient from '@/services/api/queuesApiClient';
+import { messageApiClient } from '@/services/api/messageApiClient';
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 /**
  * UserManagementPanel - Manage moderators and their users
@@ -30,14 +35,14 @@ import moderatorQuotaService from '@/services/moderatorQuotaService';
  * - Collapsible sections per moderator
  */
 export default function UserManagementPanel() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, refreshUser } = useAuth();
   const { permissions, roleInfo } = useRoleBasedUI();
   const [state, actions] = useUserManagement();
   const { openModal } = useModal();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs'>('moderators');
+  const [activeTab, setActiveTab] = useState<'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash'>('moderators');
   const [expandedModerators, setExpandedModerators] = useState<Set<string>>(new Set());
   const [expandedSecondaryAdmins, setExpandedSecondaryAdmins] = useState<Set<string>>(new Set());
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
@@ -47,32 +52,124 @@ export default function UserManagementPanel() {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [selectedModerator, setSelectedModerator] = useState<string | null>(null);
   
+  // Helper function to change tab and persist to sessionStorage
+  const handleTabChange = (tab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash') => {
+    setActiveTab(tab);
+    sessionStorage.setItem('userManagementActiveTab', tab);
+  };
+  
   // Sync when selectedRole changes (no console logging)
   useEffect(() => {
     // placeholder effect for any side-effects if needed later
   }, [selectedRole]);
 
-  // Set default tab based on user role
+  // Set default tab based on user role (only on initial load, not when user data updates)
   useEffect(() => {
+    // Only set default tab if no tab has been explicitly set by user interaction
+    // This prevents resetting the tab when currentUser updates after editing
+    const savedTab = sessionStorage.getItem('userManagementActiveTab');
+    if (savedTab && ['moderators', 'myUsers', 'secondaryAdmins', 'whatsappAuth', 'quota', 'accountSettings', 'logs', 'trash'].includes(savedTab)) {
+      setActiveTab(savedTab as any);
+      return;
+    }
+    
     if (currentUser) {
+      let defaultTab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash' = 'moderators';
       switch (currentUser.role) {
         case UserRole.PrimaryAdmin:
-          setActiveTab('moderators');
+          defaultTab = 'moderators';
           break;
         case UserRole.SecondaryAdmin:
-          setActiveTab('moderators');
+          defaultTab = 'moderators';
           break;
         case UserRole.Moderator:
-          setActiveTab('myUsers');
+          defaultTab = 'myUsers';
           break;
         case UserRole.User:
-          setActiveTab('accountSettings');
+          defaultTab = 'accountSettings';
           break;
         default:
-          setActiveTab('accountSettings');
+          defaultTab = 'accountSettings';
       }
+      setActiveTab(defaultTab);
+      sessionStorage.setItem('userManagementActiveTab', defaultTab);
     }
-  }, [currentUser]);
+  }, [currentUser?.id, currentUser?.role]); // Only depend on id and role, not the entire user object
+
+  // Listen for user data updates and refresh when accountSettings tab is active
+  useEffect(() => {
+    const handleUserDataUpdate = async () => {
+      // Always refetch users list to update moderators panel, secondary admins panel, etc.
+      try {
+        await actions.fetchUsers();
+      } catch (error) {
+        console.error('Failed to refetch users after update:', error);
+      }
+      
+      // Refresh user data in AuthContext when user data is updated (for accountSettings tab)
+      if (activeTab === 'accountSettings') {
+        await refreshUser();
+      }
+    };
+
+    // Listen for custom event from EditAccountModal, AddUserModal, EditUserModal
+    window.addEventListener('userDataUpdated', handleUserDataUpdate);
+    
+    // Also check sessionStorage for editAccountWasOpen flag
+    const checkForEdit = async () => {
+      const editAccountWasOpen = sessionStorage.getItem('editAccountWasOpen');
+      if (editAccountWasOpen === 'true' && activeTab === 'accountSettings') {
+        await refreshUser();
+        sessionStorage.removeItem('editAccountWasOpen');
+      }
+    };
+    
+    // Check immediately
+    checkForEdit();
+    
+    // Poll for changes (since storage events don't fire in same window)
+    const interval = setInterval(() => {
+      if (activeTab === 'accountSettings') {
+        checkForEdit();
+      }
+    }, 500);
+
+    // Listen for quota updates
+    const handleQuotaUpdate = async () => {
+      if (activeTab === 'quota' || activeTab === 'moderators') {
+        // Refetch users to get updated quota data
+        await actions.fetchUsers();
+      }
+    };
+    window.addEventListener('quotaDataUpdated', handleQuotaUpdate);
+    
+    // Listen for trash updates
+    const handleTrashUpdate = async () => {
+      if (activeTab === 'trash') {
+        // Refetch trash data when items are restored or deleted
+        if (trashPageNumber === 1) {
+          await loadTrashUsers(1);
+          await loadTrashQueues(1);
+          await loadTrashTemplates(1);
+          await loadTrashPatients(1);
+        }
+      }
+    };
+    window.addEventListener('userDataUpdated', handleTrashUpdate);
+    window.addEventListener('queueDataUpdated', handleTrashUpdate);
+    window.addEventListener('templateDataUpdated', handleTrashUpdate);
+    window.addEventListener('patientDataUpdated', handleTrashUpdate);
+
+    return () => {
+      window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+      window.removeEventListener('quotaDataUpdated', handleQuotaUpdate);
+      window.removeEventListener('userDataUpdated', handleTrashUpdate);
+      window.removeEventListener('queueDataUpdated', handleTrashUpdate);
+      window.removeEventListener('templateDataUpdated', handleTrashUpdate);
+      window.removeEventListener('patientDataUpdated', handleTrashUpdate);
+      clearInterval(interval);
+    };
+  }, [activeTab, refreshUser, actions, trashPageNumber, loadTrashUsers, loadTrashQueues, loadTrashTemplates, loadTrashPatients]);
   
   // Quota management state
   const [showQuotaModal, setShowQuotaModal] = useState(false);
@@ -81,6 +178,62 @@ export default function UserManagementPanel() {
   const [selectedQuota, setSelectedQuota] = useState<ModeratorQuota | null>(null);
   const [selectedModeratorForQuota, setSelectedModeratorForQuota] = useState<User | null>(null);
   const [quotaSaving, setQuotaSaving] = useState(false);
+
+  // Trash tab state
+  const [trashItems, setTrashItems] = useState<any[]>([]);
+  const [isLoadingTrash, setIsLoadingTrash] = useState(false);
+  const [trashError, setTrashError] = useState<string>('');
+  const [trashPageNumber, setTrashPageNumber] = useState(1);
+  const [trashTotalCount, setTrashTotalCount] = useState(0);
+  
+  // Trash state for queues, templates, and patients
+  const [trashQueues, setTrashQueues] = useState<any[]>([]);
+  const [isLoadingTrashQueues, setIsLoadingTrashQueues] = useState(false);
+  const [trashQueuesError, setTrashQueuesError] = useState<string>('');
+  const [trashQueuesPageNumber, setTrashQueuesPageNumber] = useState(1);
+  const [trashQueuesTotalCount, setTrashQueuesTotalCount] = useState(0);
+  
+  const [trashTemplates, setTrashTemplates] = useState<any[]>([]);
+  const [isLoadingTrashTemplates, setIsLoadingTrashTemplates] = useState(false);
+  const [trashTemplatesError, setTrashTemplatesError] = useState<string>('');
+  const [trashTemplatesPageNumber, setTrashTemplatesPageNumber] = useState(1);
+  const [trashTemplatesTotalCount, setTrashTemplatesTotalCount] = useState(0);
+  
+  const [trashPatients, setTrashPatients] = useState<any[]>([]);
+  const [isLoadingTrashPatients, setIsLoadingTrashPatients] = useState(false);
+  const [trashPatientsError, setTrashPatientsError] = useState<string>('');
+  const [trashPatientsPageNumber, setTrashPatientsPageNumber] = useState(1);
+  const [trashPatientsTotalCount, setTrashPatientsTotalCount] = useState(0);
+  const [archivedItems, setArchivedItems] = useState<any[]>([]);
+  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
+  const [archivedError, setArchivedError] = useState<string>('');
+  const [archivedPageNumber, setArchivedPageNumber] = useState(1);
+  const [archivedTotalCount, setArchivedTotalCount] = useState(0);
+
+  // Listen for trash updates (after state declarations)
+  useEffect(() => {
+    const handleTrashUpdate = async () => {
+      if (activeTab === 'trash') {
+        await loadTrashUsers(trashPageNumber);
+        await loadTrashQueues(trashQueuesPageNumber);
+        await loadTrashTemplates(trashTemplatesPageNumber);
+        await loadTrashPatients(trashPatientsPageNumber);
+      }
+    };
+    
+    window.addEventListener('userDataUpdated', handleTrashUpdate);
+    window.addEventListener('queueDataUpdated', handleTrashUpdate);
+    window.addEventListener('templateDataUpdated', handleTrashUpdate);
+    window.addEventListener('patientDataUpdated', handleTrashUpdate);
+
+    return () => {
+      window.removeEventListener('userDataUpdated', handleTrashUpdate);
+      window.removeEventListener('queueDataUpdated', handleTrashUpdate);
+      window.removeEventListener('templateDataUpdated', handleTrashUpdate);
+      window.removeEventListener('patientDataUpdated', handleTrashUpdate);
+    };
+  }, [activeTab, trashPageNumber, trashQueuesPageNumber, trashTemplatesPageNumber, trashPatientsPageNumber]);
+  const trashPageSize = 10;
 
   // Export logs to CSV
   const handleExportLogs = async () => {
@@ -195,8 +348,7 @@ export default function UserManagementPanel() {
   };
 
   const handleEditUser = (user: User) => {
-    setSelectedUser(user);
-    openModal('editUser');
+    openModal('editUser', { user });
   };
 
   const handleDeleteUser = async (user: User) => {
@@ -212,8 +364,7 @@ export default function UserManagementPanel() {
   };
 
   const handleEditModerator = (moderator: User) => {
-    setSelectedUser(moderator);
-    openModal('editUser');
+    openModal('editUser', { user: moderator });
   };
 
   const handleDeleteModerator = async (moderator: User) => {
@@ -238,33 +389,77 @@ export default function UserManagementPanel() {
   // Handle opening messages quota editor
   const handleEditMessagesQuota = async (moderator: User, quota: ModeratorQuota) => {
     setSelectedModeratorForQuota(moderator);
-    setSelectedQuota(quota);
+    
+    // Fetch fresh quota data from API
+    try {
+      const quotaResult = await moderatorQuotaService.getQuota(moderator.id);
+      if (quotaResult.success && quotaResult.data) {
+        setSelectedQuota(quotaResult.data);
+      } else {
+        // Fallback to provided quota if fetch fails
+        setSelectedQuota(quota);
+      }
+    } catch (error) {
+      // Fallback to provided quota on error
+      setSelectedQuota(quota);
+    }
+    
     setShowMessagesQuotaModal(true);
   };
 
   // Handle opening queues quota editor
   const handleEditQueuesQuota = async (moderator: User, quota: ModeratorQuota) => {
     setSelectedModeratorForQuota(moderator);
-    setSelectedQuota(quota);
+    
+    // Fetch fresh quota data from API
+    try {
+      const quotaResult = await moderatorQuotaService.getQuota(moderator.id);
+      if (quotaResult.success && quotaResult.data) {
+        setSelectedQuota(quotaResult.data);
+      } else {
+        // Fallback to provided quota if fetch fails
+        setSelectedQuota(quota);
+      }
+    } catch (error) {
+      // Fallback to provided quota on error
+      setSelectedQuota(quota);
+    }
+    
     setShowQueuesQuotaModal(true);
   };
 
   // Handle saving quota
-  const handleSaveQuota = async (updatedQuota: ModeratorQuota) => {
+  const handleSaveQuota = async (updatedQuota: ModeratorQuota & { _mode?: 'set' | 'add' }) => {
     if (!selectedModeratorForQuota) return;
 
     setQuotaSaving(true);
     try {
+      // Extract mode from quota object (passed by modals)
+      const mode = (updatedQuota as any)._mode || 'set';
+      
+      // Remove mode from quota object before passing to service
+      const { _mode, ...quotaWithoutMode } = updatedQuota as any;
+      
       const result = await moderatorQuotaService.updateQuota(
         selectedModeratorForQuota.id,
-        updatedQuota
+        quotaWithoutMode as ModeratorQuota,
+        mode
       );
       if (result.success) {
         const fullName = selectedModeratorForQuota.lastName ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : selectedModeratorForQuota.firstName;
         addToast(`تم تحديث حصة ${fullName} بنجاح`, 'success');
+        // Close all quota modals
         setShowQuotaModal(false);
+        setShowMessagesQuotaModal(false);
+        setShowQueuesQuotaModal(false);
         setSelectedModeratorForQuota(null);
         setSelectedQuota(null);
+        // Refresh users to get updated quota data
+        await actions.fetchUsers();
+        // Trigger event to notify other components
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
+        }, 100);
       } else {
         addToast('فشل تحديث الحصة', 'error');
       }
@@ -275,15 +470,162 @@ export default function UserManagementPanel() {
     }
   };
 
-  const formatDate = (date?: Date) => {
+  // Load trash users
+  const loadTrashUsers = async (page: number) => {
+    setIsLoadingTrash(true);
+    setTrashError('');
+    try {
+      const response = await usersApiClient.getTrashUsers({
+        pageNumber: page,
+        pageSize: trashPageSize,
+      });
+      setTrashItems(response.items);
+      setTrashTotalCount(response.totalCount);
+      setTrashPageNumber(page);
+    } catch (error: any) {
+      setTrashError(error?.message || 'فشل تحميل المستخدمين المحذوفين');
+      console.error('Error loading trash users:', error);
+    } finally {
+      setIsLoadingTrash(false);
+    }
+  };
+
+  // Load archived users
+  const loadArchivedUsers = async (page: number) => {
+    setIsLoadingArchived(true);
+    setArchivedError('');
+    try {
+      const response = await usersApiClient.getArchivedUsers({
+        pageNumber: page,
+        pageSize: trashPageSize,
+      });
+      setArchivedItems(response.items);
+      setArchivedTotalCount(response.totalCount);
+      setArchivedPageNumber(page);
+    } catch (error: any) {
+      setArchivedError(error?.message || 'فشل تحميل المستخدمين المؤرشفين');
+      console.error('Error loading archived users:', error);
+    } finally {
+      setIsLoadingArchived(false);
+    }
+  };
+
+  // Load trash queues
+  const loadTrashQueues = async (page: number) => {
+    setIsLoadingTrashQueues(true);
+    setTrashQueuesError('');
+    try {
+      const response = await queuesApiClient.getTrashQueues({
+        pageNumber: page,
+        pageSize: trashPageSize,
+      });
+      setTrashQueues(response.items);
+      setTrashQueuesTotalCount(response.totalCount);
+      setTrashQueuesPageNumber(page);
+    } catch (error: any) {
+      setTrashQueuesError(error?.message || 'فشل تحميل الطوابير المحذوفة');
+      console.error('Error loading trash queues:', error);
+    } finally {
+      setIsLoadingTrashQueues(false);
+    }
+  };
+
+  // Load trash templates
+  const loadTrashTemplates = async (page: number) => {
+    setIsLoadingTrashTemplates(true);
+    setTrashTemplatesError('');
+    try {
+      const response = await messageApiClient.getTrashTemplates({
+        pageNumber: page,
+        pageSize: trashPageSize,
+      });
+      setTrashTemplates(response.items);
+      setTrashTemplatesTotalCount(response.totalCount);
+      setTrashTemplatesPageNumber(page);
+    } catch (error: any) {
+      setTrashTemplatesError(error?.message || 'فشل تحميل القوالب المحذوفة');
+      console.error('Error loading trash templates:', error);
+    } finally {
+      setIsLoadingTrashTemplates(false);
+    }
+  };
+
+  // Load trash patients (requires queueId, so we'll load for all queues)
+  const loadTrashPatients = async (page: number) => {
+    setIsLoadingTrashPatients(true);
+    setTrashPatientsError('');
+    try {
+      // Note: Patients trash requires queueId, so this is a placeholder
+      // In a real implementation, you'd need to fetch for each queue or have a global endpoint
+      setTrashPatients([]);
+      setTrashPatientsTotalCount(0);
+      setTrashPatientsPageNumber(page);
+    } catch (error: any) {
+      setTrashPatientsError(error?.message || 'فشل تحميل المرضى المحذوفين');
+      console.error('Error loading trash patients:', error);
+    } finally {
+      setIsLoadingTrashPatients(false);
+    }
+  };
+
+  // Handle restore user
+  const handleRestoreUser = async (userId: string | number) => {
+    try {
+      await usersApiClient.restoreUser(Number(userId));
+      addToast('تم استعادة المستخدم بنجاح', 'success');
+      // Reload trash list
+      await loadTrashUsers(trashPageNumber);
+      // Refresh users list
+      await actions.fetchUsers();
+    } catch (error: any) {
+      addToast(error?.message || 'فشل استعادة المستخدم', 'error');
+      throw error;
+    }
+  };
+
+  // Handle restore queue
+  const handleRestoreQueue = async (queueId: string | number) => {
+    try {
+      await queuesApiClient.restoreQueue(Number(queueId));
+      addToast('تم استعادة الطابور بنجاح', 'success');
+      await loadTrashQueues(trashQueuesPageNumber);
+      window.dispatchEvent(new CustomEvent('queueDataUpdated'));
+    } catch (error: any) {
+      addToast(error?.message || 'فشل استعادة الطابور', 'error');
+    }
+  };
+
+  // Handle restore template
+  const handleRestoreTemplate = async (templateId: string | number) => {
+    try {
+      await messageApiClient.restoreTemplate(Number(templateId));
+      addToast('تم استعادة القالب بنجاح', 'success');
+      await loadTrashTemplates(trashTemplatesPageNumber);
+      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+    } catch (error: any) {
+      addToast(error?.message || 'فشل استعادة القالب', 'error');
+    }
+  };
+
+  // Load trash when tab changes
+  useEffect(() => {
+    if (activeTab === 'trash') {
+      loadTrashUsers(1);
+      loadTrashQueues(1);
+      loadTrashTemplates(1);
+      loadTrashPatients(1);
+    }
+  }, [activeTab]);
+
+  // Note: Archived users are handled separately in UsersManagementView component
+  // This panel only handles trash (restorable within 30 days)
+
+  const formatDate = (date?: Date | string) => {
     if (!date) return 'لم يسجل دخول';
-    return new Date(date).toLocaleDateString('ar-SA', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(dateObj.getTime())) return 'لم يسجل دخول';
+    // Use Gregorian calendar format with Arabic month names
+    return formatLocalDateTime(dateObj);
   };
 
   // Pagination calculations
@@ -329,6 +671,7 @@ export default function UserManagementPanel() {
     indigo: 'border-indigo-600 text-indigo-600',
     blue: 'border-blue-600 text-blue-600',
     purple: 'border-purple-600 text-purple-600',
+    red: 'border-red-600 text-red-600',
   } as const;
 
   return (
@@ -347,7 +690,7 @@ export default function UserManagementPanel() {
           {/* Moderators Tab - Show for Primary & Secondary Admin */}
           {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
             <button
-              onClick={() => setActiveTab('moderators')}
+              onClick={() => handleTabChange('moderators')}
               className={`${TAB_BASE} ${
                 activeTab === 'moderators' ? TAB_ACTIVE.green : TAB_INACTIVE
               }`}
@@ -360,7 +703,7 @@ export default function UserManagementPanel() {
           {/* My Users Tab - Show for Moderators only */}
           {currentUser && currentUser.role === UserRole.Moderator && (
             <button
-              onClick={() => setActiveTab('myUsers')}
+              onClick={() => handleTabChange('myUsers')}
               className={`${TAB_BASE} ${
                 activeTab === 'myUsers' ? TAB_ACTIVE.green : TAB_INACTIVE
               }`}
@@ -373,7 +716,7 @@ export default function UserManagementPanel() {
           {/* Secondary Admins Tab - Show for Primary Admin only */}
           {currentUser && currentUser.role === UserRole.PrimaryAdmin && (
             <button
-              onClick={() => setActiveTab('secondaryAdmins')}
+              onClick={() => handleTabChange('secondaryAdmins')}
               className={`${TAB_BASE} ${
                 activeTab === 'secondaryAdmins' ? TAB_ACTIVE.orange : TAB_INACTIVE
               }`}
@@ -386,7 +729,7 @@ export default function UserManagementPanel() {
           {/* WhatsApp Auth Tab - Show for Moderators and Users */}
           {currentUser && (currentUser.role === UserRole.Moderator || currentUser.role === UserRole.User) && (
             <button
-              onClick={() => setActiveTab('whatsappAuth')}
+              onClick={() => handleTabChange('whatsappAuth')}
               className={`${TAB_BASE} ${
                 activeTab === 'whatsappAuth' ? TAB_ACTIVE.emerald : TAB_INACTIVE
               }`}
@@ -399,7 +742,7 @@ export default function UserManagementPanel() {
           {/* Quota Tab - Show for Moderators and Users */}
           {currentUser && (currentUser.role === UserRole.Moderator || currentUser.role === UserRole.User) && (
             <button
-              onClick={() => setActiveTab('quota')}
+              onClick={() => handleTabChange('quota')}
               className={`${TAB_BASE} ${
                 activeTab === 'quota' ? TAB_ACTIVE.indigo : TAB_INACTIVE
               }`}
@@ -411,7 +754,7 @@ export default function UserManagementPanel() {
 
           {/* Account Settings Tab - Show for all */}
           <button
-            onClick={() => setActiveTab('accountSettings')}
+            onClick={() => handleTabChange('accountSettings')}
             className={`${TAB_BASE} ${
               activeTab === 'accountSettings' ? TAB_ACTIVE.blue : TAB_INACTIVE
             }`}
@@ -423,13 +766,26 @@ export default function UserManagementPanel() {
           {/* Logs Tab - Show for Admins and Moderators */}
           {currentUser && currentUser.role !== UserRole.User && (
             <button
-              onClick={() => setActiveTab('logs')}
+              onClick={() => handleTabChange('logs')}
               className={`${TAB_BASE} ${
                 activeTab === 'logs' ? TAB_ACTIVE.purple : TAB_INACTIVE
               }`}
             >
               <i className="fas fa-history"></i>
               السجلات
+            </button>
+          )}
+
+          {/* Trash Tab - Show for Admins and Moderators */}
+          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin || currentUser.role === UserRole.Moderator) && (
+            <button
+              onClick={() => handleTabChange('trash')}
+              className={`${TAB_BASE} ${
+                activeTab === 'trash' ? TAB_ACTIVE.red : TAB_INACTIVE
+              }`}
+            >
+              <i className="fas fa-trash"></i>
+              المهملات {trashTotalCount > 0 && `(${trashTotalCount})`}
             </button>
           )}
         </div>
@@ -554,13 +910,23 @@ export default function UserManagementPanel() {
                           <div>
                             <span className="text-gray-600 font-medium text-xs block mb-1">تاريخ الإنشاء</span>
                             <p className="text-gray-900 font-semibold text-xs">
-                              {moderator.createdAt ? new Date(moderator.createdAt).toLocaleString('en-US') : 'لم يحدد'}
+                              {(() => {
+                                if (!moderator.createdAt) return 'لم يحدد';
+                                const date = moderator.createdAt instanceof Date ? moderator.createdAt : new Date(moderator.createdAt);
+                                if (isNaN(date.getTime())) return 'لم يحدد';
+                                return formatLocalDateTime(date);
+                              })()}
                             </p>
                           </div>
                           <div>
                             <span className="text-gray-600 font-medium text-xs block mb-1">آخر دخول</span>
                             <p className="text-gray-900 font-semibold text-xs">
-                              {moderator.lastLogin ? new Date(moderator.lastLogin).toLocaleString('en-US') : 'لم يدخل بعد'}
+                              {(() => {
+                                if (!moderator.lastLogin) return 'لم يدخل بعد';
+                                const date = moderator.lastLogin instanceof Date ? moderator.lastLogin : new Date(moderator.lastLogin);
+                                if (isNaN(date.getTime())) return 'لم يدخل بعد';
+                                return formatLocalDateTime(date);
+                              })()}
                             </p>
                           </div>
                         </div>
@@ -570,7 +936,15 @@ export default function UserManagementPanel() {
                       <div className="px-6 py-4 border-b border-gray-200">
                         <ModeratorQuotaDisplay
                           moderatorId={moderator.id}
-                          quota={moderator.role === 'moderator' && 'quota' in moderator ? (moderator as any).quota as ModeratorQuota : undefined}
+                          quota={(() => {
+                            // Try to get quota from moderator object
+                            if (moderator.role === 'moderator' && 'quota' in moderator) {
+                              return (moderator as any).quota as ModeratorQuota;
+                            }
+                            // If quota not found, return undefined - ModeratorQuotaDisplay will use defaults
+                            // The quota should be loaded via useModeratorQuota hook or fetched separately
+                            return undefined;
+                          })()}
                           onEditMessages={(quota) => handleEditMessagesQuota(moderator, quota)}
                           onEditQueues={(quota) => handleEditQueuesQuota(moderator, quota)}
                         />
@@ -770,9 +1144,9 @@ export default function UserManagementPanel() {
                           </div>
                           <div className="flex justify-between items-center">
                             <span className="text-sm text-gray-600">الحالة:</span>
-                            <span className={`inline-flex items-center gap-2 ${admin.isActive ? 'text-green-600' : 'text-red-600'}`}>
-                              <i className={`fas ${admin.isActive ? 'fa-check-circle' : 'fa-times-circle'}`}></i>
-                              {admin.isActive ? 'نشط' : 'غير نشط'}
+                            <span className={`inline-flex items-center gap-2 ${!(admin.isDeleted ?? false) ? 'text-green-600' : 'text-red-600'}`}>
+                              <i className={`fas ${!(admin.isDeleted ?? false) ? 'fa-check-circle' : 'fa-times-circle'}`}></i>
+                              {!(admin.isDeleted ?? false) ? 'نشط' : 'غير نشط'}
                             </span>
                           </div>
                         </div>
@@ -817,8 +1191,7 @@ export default function UserManagementPanel() {
                 <button
                   onClick={() => {
                     if (currentUser) {
-                      setSelectedUser(currentUser);
-                      openModal('editAccount');
+                      openModal('editAccount', { user: currentUser });
                     } else {
                       addToast('لم يتم العثور على بيانات المستخدم', 'error');
                     }
@@ -1331,9 +1704,6 @@ export default function UserManagementPanel() {
                           اسم المستخدم
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          المعرف
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           الحالة
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1360,18 +1730,15 @@ export default function UserManagementPanel() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {user.username}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {user.id}
-                          </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                                user.isActive
+                                !(user.isDeleted ?? false)
                                   ? 'bg-green-100 text-green-800'
                                   : 'bg-red-100 text-red-800'
                               }`}
                             >
-                              {user.isActive ? 'نشط' : 'غير نشط'}
+                              {!(user.isDeleted ?? false) ? 'نشط' : 'غير نشط'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
@@ -1489,7 +1856,7 @@ export default function UserManagementPanel() {
 
         {/* Quota Section - For Moderators and Users */}
         {activeTab === 'quota' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
-          <div className="space-y-6">
+          <div className="space-y-6 p-6">
             {/* Quota Header */}
             <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
@@ -1685,15 +2052,119 @@ export default function UserManagementPanel() {
         </div>
       )}
 
-      {/* Modals */}
-      <EditUserModal selectedUser={selectedUser} />
-      <EditAccountModal selectedUser={selectedUser} />
-      <AddUserModal 
-        onUserAdded={() => actions.fetchUsers()} 
-        role={selectedRole}
-        moderatorId={selectedModerator}
-        onClose={() => setSelectedRole(null)}
-      />
+        {/* Trash Tab */}
+        {activeTab === 'trash' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
+          <div className="space-y-6 p-4 sm:p-6">
+            {/* Trash Header */}
+            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-red-900 flex items-center gap-2">
+                <i className="fas fa-trash"></i>
+                المهملات
+              </h3>
+              <p className="text-sm text-red-700 mt-2">
+                يمكنك استعادة العناصر المحذوفة خلال 30 يوم من تاريخ الحذف. المهملات تحتوي على المستخدمين والطوابير والقوالب والمرضى المحذوفين.
+              </p>
+            </div>
+
+            {/* Trash Tab Content - Users */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <i className="fas fa-users text-blue-600"></i>
+                المستخدمون المحذوفون
+              </h4>
+              <TrashTab
+                entityType="user"
+                items={trashItems}
+                isLoading={isLoadingTrash}
+                isError={!!trashError}
+                errorMessage={trashError}
+                pageNumber={trashPageNumber}
+                pageSize={trashPageSize}
+                totalCount={trashTotalCount}
+                onPageChange={loadTrashUsers}
+                onRestore={handleRestoreUser}
+                adminOnly={false}
+                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+              />
+            </div>
+
+            {/* Trash Tab Content - Queues */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <i className="fas fa-layer-group text-purple-600"></i>
+                الطوابير المحذوفة
+              </h4>
+              <TrashTab
+                entityType="queue"
+                items={trashQueues.map(q => ({ ...q, name: q.doctorName, id: q.id }))}
+                isLoading={isLoadingTrashQueues}
+                isError={!!trashQueuesError}
+                errorMessage={trashQueuesError}
+                pageNumber={trashQueuesPageNumber}
+                pageSize={trashPageSize}
+                totalCount={trashQueuesTotalCount}
+                onPageChange={loadTrashQueues}
+                onRestore={handleRestoreQueue}
+                adminOnly={false}
+                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+              />
+            </div>
+
+            {/* Trash Tab Content - Templates */}
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <i className="fas fa-file-alt text-green-600"></i>
+                القوالب المحذوفة
+              </h4>
+              <TrashTab
+                entityType="template"
+                items={trashTemplates.map(t => ({ ...t, name: t.title, id: t.id }))}
+                isLoading={isLoadingTrashTemplates}
+                isError={!!trashTemplatesError}
+                errorMessage={trashTemplatesError}
+                pageNumber={trashTemplatesPageNumber}
+                pageSize={trashPageSize}
+                totalCount={trashTemplatesTotalCount}
+                onPageChange={loadTrashTemplates}
+                onRestore={handleRestoreTemplate}
+                adminOnly={false}
+                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+              />
+            </div>
+
+            {/* Trash Tab Content - Patients */}
+            {trashPatientsTotalCount > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <i className="fas fa-user-injured text-orange-600"></i>
+                  المرضى المحذوفون
+                </h4>
+                <TrashTab
+                  entityType="patient"
+                  items={trashPatients.map(p => ({ ...p, name: p.fullName || p.name, id: p.id }))}
+                  isLoading={isLoadingTrashPatients}
+                  isError={!!trashPatientsError}
+                  errorMessage={trashPatientsError}
+                  pageNumber={trashPatientsPageNumber}
+                  pageSize={trashPageSize}
+                  totalCount={trashPatientsTotalCount}
+                  onPageChange={loadTrashPatients}
+                  onRestore={async (id) => {
+                    // Placeholder - implement when patient restore endpoint is available
+                    addToast('استعادة المرضى قيد التطوير', 'info');
+                  }}
+                  adminOnly={false}
+                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Modals */}
+      <EditUserModal selectedUser={null} />
+      <EditAccountModal selectedUser={null} />
+      {/* AddUserModal is rendered in MainApp.tsx to avoid duplicate IDs */}
       <ModeratorQuotaModal
         isOpen={showQuotaModal}
         quota={selectedQuota || {

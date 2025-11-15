@@ -16,6 +16,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
+import { formatLocalDate } from '@/utils/dateTimeUtils';
 // Mock data removed - using API data instead
 
 /**
@@ -61,7 +62,7 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function MessagesPanel() {
-  const { selectedQueueId, queues, messageTemplates } = useQueue();
+  const { selectedQueueId, queues, messageTemplates, refreshQueueData } = useQueue();
   const { user } = useAuth();
   const { addToast } = useUI();
   const { openModal } = useModal();
@@ -109,6 +110,42 @@ export default function MessagesPanel() {
     loadQuota();
   }, []);
 
+  /**
+   * Listen for data updates and refetch queue data
+   */
+  useEffect(() => {
+    const handleDataUpdate = async () => {
+      // Refetch data for all queues to ensure consistency
+      if (queues.length > 0 && typeof refreshQueueData === 'function') {
+        for (const queue of queues) {
+          await refreshQueueData(String(queue.id));
+        }
+      }
+      // Refetch quota
+      try {
+        const quota = await messageApiClient.getMyQuota();
+        setUserQuota(quota);
+      } catch (err) {
+        // Silently fail quota refetch
+      }
+    };
+
+    // Listen to all relevant update events
+    window.addEventListener('templateDataUpdated', handleDataUpdate);
+    window.addEventListener('patientDataUpdated', handleDataUpdate);
+    window.addEventListener('queueDataUpdated', handleDataUpdate);
+    window.addEventListener('conditionDataUpdated', handleDataUpdate);
+    window.addEventListener('messageDataUpdated', handleDataUpdate);
+
+    return () => {
+      window.removeEventListener('templateDataUpdated', handleDataUpdate);
+      window.removeEventListener('patientDataUpdated', handleDataUpdate);
+      window.removeEventListener('queueDataUpdated', handleDataUpdate);
+      window.removeEventListener('conditionDataUpdated', handleDataUpdate);
+      window.removeEventListener('messageDataUpdated', handleDataUpdate);
+    };
+  }, [queues, refreshQueueData]);
+
   // Toggle queue expansion
   const toggleQueueExpanded = useCallback((queueId: string | number) => {
     setExpandedQueues((prev) => {
@@ -137,7 +174,11 @@ export default function MessagesPanel() {
    * Check for condition intersections in a queue
    */
   const checkConditionIntersections = (queueId: string) => {
-    const queueConditions: any[] = [];
+    // Get all conditions from message templates for this queue
+    const queueConditions: any[] = messageTemplates
+      .filter((t) => t.queueId === String(queueId) && t.condition && t.condition.operator && t.condition.operator !== 'DEFAULT' && t.condition.operator !== 'UNCONDITIONED')
+      .map((t) => t.condition)
+      .filter((c): c is any => c !== null && c !== undefined);
 
     if (queueConditions.length < 2) return [];
 
@@ -432,6 +473,7 @@ export default function MessagesPanel() {
                                 <th className="px-4 py-2 text-right">الشرط المطبق</th>
                                 <th className="px-4 py-2 text-right">انشئ بواسطة</th>
                                 <th className="px-4 py-2 text-right">آخر تحديث</th>
+                                <th className="px-4 py-2 text-right">الحالة</th>
                                 <th className="px-4 py-2 text-right">الإجراءات</th>
                               </tr>
                             </thead>
@@ -512,7 +554,17 @@ export default function MessagesPanel() {
                                     </td>
                                     <td className="px-4 py-2">
                                       <span className="text-sm text-gray-700">
-                                        {template.updatedAt ? new Date(template.updatedAt).toLocaleDateString('ar-EG') : '-'}
+                                        {template.updatedAt ? formatLocalDate(template.updatedAt) : '-'}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2">
+                                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                                        !template.isDeleted 
+                                          ? 'bg-green-100 text-green-800' 
+                                          : 'bg-red-100 text-red-800'
+                                      }`}>
+                                        <i className={`fas ${!template.isDeleted ? 'fa-check-circle' : 'fa-times-circle'}`}></i>
+                                        {!template.isDeleted ? 'نشط' : 'معطل'}
                                       </span>
                                     </td>
                                     <td className="px-4 py-2">
@@ -531,11 +583,31 @@ export default function MessagesPanel() {
                                         </button>
                                         <button
                                           onClick={async () => {
-                                            // TODO: Implement operator-driven delete logic
                                             // Check if template has DEFAULT condition and handle appropriately
                                             const confirmed = await confirm(createDeleteConfirmation('القالب: ' + template.title));
                                             if (confirmed) {
-                                              addToast('تم حذف القالب: ' + template.title, 'success');
+                                              try {
+                                                const templateIdNum = Number(template.id);
+                                                if (!isNaN(templateIdNum)) {
+                                                  await messageApiClient.deleteTemplate(templateIdNum);
+                                                  addToast('تم حذف القالب: ' + template.title, 'success');
+                                                  
+                                                  // Refetch queue data to reflect changes
+                                                  if (typeof refreshQueueData === 'function' && queue.id) {
+                                                    await refreshQueueData(String(queue.id));
+                                                  }
+                                                  
+                                                  // Trigger a custom event to notify other components to refetch
+                                                  setTimeout(() => {
+                                                    window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+                                                  }, 100);
+                                                } else {
+                                                  addToast('معرّف القالب غير صالح', 'error');
+                                                }
+                                              } catch (error) {
+                                                console.error('Failed to delete template:', error);
+                                                addToast('فشل حذف القالب', 'error');
+                                              }
                                             }
                                           }}
                                           className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors"

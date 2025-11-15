@@ -7,6 +7,8 @@ import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { validateNumber } from '@/utils/validation';
 import { createDeleteConfirmation, createBulkDeleteConfirmation } from '@/utils/confirmationHelpers';
+import { patientsApiClient } from '@/services/api/patientsApiClient';
+import queuesApiClient from '@/services/api/queuesApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
@@ -14,27 +16,67 @@ import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
+import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 
 export default function QueueDashboard() {
-  const { selectedQueueId, queues, messageTemplates, messageConditions, patients } = useQueue();
+  const { selectedQueueId, queues, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData } = useQueue();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { addToast } = useUI();
   
-  const [currentCQP, setCurrentCQP] = useState('3');
-  const [originalCQP, setOriginalCQP] = useState('3');
+  const queue = queues.find((q) => q.id === selectedQueueId);
+  
+  // Initialize CQP and ETS from queue data
+  const [currentCQP, setCurrentCQP] = useState(() => queue?.currentPosition?.toString() || '1');
+  const [originalCQP, setOriginalCQP] = useState(() => queue?.currentPosition?.toString() || '1');
   const [isEditingCQP, setIsEditingCQP] = useState(false);
   
-  const [currentETS, setCurrentETS] = useState('15');
-  const [originalETS, setOriginalETS] = useState('15');
+  const [currentETS, setCurrentETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
+  const [originalETS, setOriginalETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
   const [isEditingETS, setIsEditingETS] = useState(false);
+  
+  // Update CQP and ETS when queue data changes
+  useEffect(() => {
+    if (queue) {
+      setCurrentCQP(queue.currentPosition?.toString() || '1');
+      setOriginalCQP(queue.currentPosition?.toString() || '1');
+      setCurrentETS(queue.estimatedWaitMinutes?.toString() || '15');
+      setOriginalETS(queue.estimatedWaitMinutes?.toString() || '15');
+    }
+  }, [queue?.currentPosition, queue?.estimatedWaitMinutes, queue?.id]);
   
   const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingQueueValue, setEditingQueueValue] = useState('');
   const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
-  
-  const queue = queues.find((q) => q.id === selectedQueueId);
+
+  /**
+   * Listen for data updates and refetch
+   */
+  useEffect(() => {
+    const handleDataUpdate = async () => {
+      if (selectedQueueId) {
+        if (typeof refreshPatients === 'function') {
+          await refreshPatients();
+        }
+        if (typeof refreshQueueData === 'function') {
+          await refreshQueueData(selectedQueueId);
+        }
+      }
+    };
+
+    window.addEventListener('patientDataUpdated', handleDataUpdate);
+    window.addEventListener('queueDataUpdated', handleDataUpdate);
+    window.addEventListener('templateDataUpdated', handleDataUpdate);
+    window.addEventListener('conditionDataUpdated', handleDataUpdate);
+
+    return () => {
+      window.removeEventListener('patientDataUpdated', handleDataUpdate);
+      window.removeEventListener('queueDataUpdated', handleDataUpdate);
+      window.removeEventListener('templateDataUpdated', handleDataUpdate);
+      window.removeEventListener('conditionDataUpdated', handleDataUpdate);
+    };
+  }, [selectedQueueId, refreshPatients, refreshQueueData]);
 
   // Compute guide items dynamically based on queue and default template
   const guideItems = useMemo(() => {
@@ -156,17 +198,40 @@ export default function QueueDashboard() {
   /**
    * Handle CQP Save - memoized
    */
-  const handleSaveCQP = useCallback(() => {
+  const handleSaveCQP = useCallback(async () => {
     const error = validateNumber(currentCQP, 'الموضع الحالي', 1, 1000);
     if (error) {
       addToast(error, 'error');
       return;
     }
-    if (currentCQP.trim()) {
+    if (!queue || !selectedQueueId) {
+      addToast('الطابور غير محدد', 'error');
+      return;
+    }
+    
+    try {
+      const queueIdNum = Number(selectedQueueId);
+      if (isNaN(queueIdNum)) {
+        addToast('معرف الطابور غير صالح', 'error');
+        return;
+      }
+      
+      await queuesApiClient.updateQueue(queueIdNum, {
+        currentPosition: parseInt(currentCQP, 10),
+      });
+      
       setIsEditingCQP(false);
       addToast('تم تحديث الموضع الحالي بنجاح', 'success');
+      
+      // Refetch queue data
+      if (typeof refreshQueueData === 'function') {
+        await refreshQueueData(selectedQueueId);
+      }
+      window.dispatchEvent(new CustomEvent('queueDataUpdated'));
+    } catch (err: any) {
+      addToast(err?.message || 'فشل تحديث الموضع الحالي', 'error');
     }
-  }, [currentCQP, addToast]);
+  }, [currentCQP, addToast, queue, selectedQueueId, refreshQueueData]);
 
   /**
    * Handle CQP Cancel - memoized
@@ -187,17 +252,40 @@ export default function QueueDashboard() {
   /**
    * Handle ETS Save - memoized
    */
-  const handleSaveETS = useCallback(() => {
+  const handleSaveETS = useCallback(async () => {
     const error = validateNumber(currentETS, 'الوقت المقدر', 1, 600);
     if (error) {
       addToast(error, 'error');
       return;
     }
-    if (currentETS.trim()) {
+    if (!queue || !selectedQueueId) {
+      addToast('الطابور غير محدد', 'error');
+      return;
+    }
+    
+    try {
+      const queueIdNum = Number(selectedQueueId);
+      if (isNaN(queueIdNum)) {
+        addToast('معرف الطابور غير صالح', 'error');
+        return;
+      }
+      
+      await queuesApiClient.updateQueue(queueIdNum, {
+        estimatedWaitMinutes: parseInt(currentETS, 10),
+      });
+      
       setIsEditingETS(false);
       addToast('تم تحديث الوقت المقدر بنجاح', 'success');
+      
+      // Refetch queue data
+      if (typeof refreshQueueData === 'function') {
+        await refreshQueueData(selectedQueueId);
+      }
+      window.dispatchEvent(new CustomEvent('queueDataUpdated'));
+    } catch (err: any) {
+      addToast(err?.message || 'فشل تحديث الوقت المقدر', 'error');
     }
-  }, [currentETS, addToast]);
+  }, [currentETS, addToast, queue, selectedQueueId, refreshQueueData]);
 
   /**
    * Handle ETS Cancel - memoized
@@ -335,16 +423,35 @@ export default function QueueDashboard() {
 
   /**
    * Save queue edit - memoized
-   * NOTE: Position changes now handled through API via patientsApiClient
+   * Updates patient position via API
    */
-  const saveQueueEdit = useCallback((patientId: string) => {
+  const saveQueueEdit = useCallback(async (patientId: string) => {
     const newPosition = parseInt(editingQueueValue, 10);
-    if (!isNaN(newPosition) && newPosition > 0) {
-      // TODO: Implement backend call to update patient position
-      // For now, just close the edit mode and let the API refresh
-      setEditingQueueId(null);
+    if (isNaN(newPosition) || newPosition < 1) {
+      addToast('الترتيب يجب أن يكون رقم موجب', 'error');
+      return;
     }
-  }, [editingQueueValue]);
+    
+    try {
+      const patientIdNum = Number(patientId);
+      if (isNaN(patientIdNum)) {
+        addToast('معرف المريض غير صالح', 'error');
+        return;
+      }
+      
+      await patientsApiClient.updatePatientPosition(patientIdNum, newPosition);
+      setEditingQueueId(null);
+      addToast('تم تحديث ترتيب الانتظار بنجاح', 'success');
+      
+      // Refetch patients
+      if (typeof refreshPatients === 'function') {
+        await refreshPatients();
+      }
+      window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+    } catch (err: any) {
+      addToast(err?.message || 'فشل تحديث ترتيب الانتظار', 'error');
+    }
+  }, [editingQueueValue, addToast, refreshPatients]);
 
   /**
    * Cancel queue edit - memoized
@@ -419,7 +526,7 @@ export default function QueueDashboard() {
             </div>
           ),
         name: patient.name,
-        phone: `${patient.countryCode} ${patient.phone}`,
+        phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
         actions: (
           <div className="flex gap-2 justify-start">
             <button
@@ -452,9 +559,18 @@ export default function QueueDashboard() {
               onClick={async () => {
                 const confirmed = await confirm(createDeleteConfirmation(patient.name));
                 if (confirmed) {
-                  // Patient deletion now handled through API
-                  // QueueContext will auto-refresh on next load
-                  setSelectedPatients((prev) => prev.filter((id) => id !== patient.id));
+                  try {
+                    const patientId = Number(patient.id);
+                    await patientsApiClient.deletePatient(patientId);
+                    addToast('تم حذف المريض بنجاح', 'success');
+                    // Refresh patients list from API
+                    if (selectedQueueId) {
+                      await refreshPatients(selectedQueueId);
+                    }
+                  } catch (error) {
+                    console.error('Error deleting patient:', error);
+                    addToast('فشل حذف المريض', 'error');
+                  }
                 }
               }}
               title="حذف"
@@ -608,10 +724,40 @@ export default function QueueDashboard() {
             }
             const confirmed = await confirm(createBulkDeleteConfirmation(selectedPatients.length, 'مريض'));
             if (confirmed) {
-              // Bulk deletion now handled through API
-              // QueueContext will auto-refresh on next load
-              setSelectedPatients([]);
-              addToast(`تم حذف ${selectedPatients.length} مريض`, 'success');
+              try {
+                let deletedCount = 0;
+                for (const patientId of selectedPatients) {
+                  try {
+                    const patientIdNum = Number(patientId);
+                    if (!isNaN(patientIdNum)) {
+                      await patientsApiClient.deletePatient(patientIdNum);
+                      deletedCount++;
+                    }
+                  } catch (error) {
+                    console.error(`Failed to delete patient ${patientId}:`, error);
+                  }
+                }
+                
+                if (deletedCount > 0) {
+                  addToast(`تم حذف ${deletedCount} مريض بنجاح`, 'success');
+                  setSelectedPatients([]);
+                  
+                  // Refresh patients list from API
+                  if (selectedQueueId) {
+                    await refreshPatients(selectedQueueId);
+                  }
+                  
+                  // Trigger a custom event to notify other components to refetch
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+                  }, 100);
+                } else {
+                  addToast('فشل حذف المرضى', 'error');
+                }
+              } catch (error) {
+                console.error('Error during bulk delete:', error);
+                addToast('حدث خطأ أثناء حذف المرضى', 'error');
+              }
             }
           }}
           className="bg-red-600 text-white p-4 rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse"
@@ -645,6 +791,7 @@ export default function QueueDashboard() {
               patients: patients, // All patients
               conditions: messageConditions,
               messageTemplate: defaultTemplate?.content || 'مرحباً بك {PN}',
+              defaultTemplateId: defaultTemplate?.id,
             });
           }}
           className="bg-green-600 text-white p-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-2 space-x-reverse"

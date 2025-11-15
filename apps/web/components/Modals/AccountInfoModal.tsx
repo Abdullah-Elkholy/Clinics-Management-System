@@ -4,11 +4,16 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, ValidationError } from '@/utils/validation';
 import Modal from './Modal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getCurrentUser } from '@/services/api/authApiClient';
 
 export default function AccountInfoModal() {
-  const { openModals, closeModal } = useModal();
+  const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { user: currentUser } = useAuth();
+  const [freshUserData, setFreshUserData] = useState<any>(null);
+  
   const [showPassword, setShowPassword] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -21,6 +26,111 @@ export default function AccountInfoModal() {
   const [touched, setTouched] = useState(false);
 
   const isOpen = openModals.has('accountInfo');
+  const modalData = getModalData('accountInfo');
+  
+  // Use modal data if available, fallback to fresh user data or current user from auth context
+  const userToEdit = modalData?.user || freshUserData || currentUser;
+  
+  // Fetch fresh user data when modal opens or when editAccount modal closes
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const data = await getCurrentUser();
+        setFreshUserData(data);
+      } catch (err) {
+        // If fresh data fetch fails, fall back to currentUser from auth
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to fetch fresh user data:', err);
+        }
+        setFreshUserData(null);
+      }
+    };
+    
+    if (isOpen) {
+      // Always refetch when modal opens to ensure fresh data
+      fetchUserData();
+    }
+  }, [isOpen]);
+  
+  // Also refetch when editAccount modal closes (listen for modal state changes)
+  useEffect(() => {
+    const checkForEdit = () => {
+      const editAccountWasOpen = sessionStorage.getItem('editAccountWasOpen');
+      if (editAccountWasOpen === 'true') {
+        // EditAccount modal was open - refetch user data
+        const fetchUserData = async () => {
+          try {
+            const data = await getCurrentUser();
+            setFreshUserData(data);
+          } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Failed to fetch fresh user data after edit:', err);
+            }
+          }
+        };
+        fetchUserData();
+        sessionStorage.removeItem('editAccountWasOpen');
+      }
+    };
+    
+    // Listen for custom event from EditAccountModal
+    const handleUserDataUpdate = () => {
+      if (isOpen) {
+        const fetchUserData = async () => {
+          try {
+            const data = await getCurrentUser();
+            setFreshUserData(data);
+          } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Failed to fetch fresh user data after edit:', err);
+            }
+          }
+        };
+        fetchUserData();
+      }
+    };
+    
+    window.addEventListener('userDataUpdated', handleUserDataUpdate);
+    
+    // Check immediately
+    checkForEdit();
+    
+    // Also listen for storage events (in case editAccount closes while accountInfo is open)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'editAccountWasOpen' && e.newValue === 'true' && isOpen) {
+        checkForEdit();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also poll for changes (since storage events don't fire in same window)
+    const interval = setInterval(() => {
+      if (isOpen) {
+        checkForEdit();
+      }
+    }, 500);
+    
+    return () => {
+      window.removeEventListener('userDataUpdated', handleUserDataUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, [isOpen]);
+  
+  // Initialize form with user data on modal open
+  useEffect(() => {
+    if (isOpen && userToEdit) {
+      setFirstName(userToEdit.firstName || '');
+      setLastName(userToEdit.lastName || '');
+      setUsername(userToEdit.username || '');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setErrors({});
+      setTouched(false);
+    }
+  }, [isOpen, userToEdit?.id, userToEdit?.username]);
 
   const validateFields = () => {
     const newErrors: ValidationError = {};
@@ -136,8 +246,10 @@ export default function AccountInfoModal() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
+            <label htmlFor="accountInfo-firstName" className="block text-sm font-medium text-gray-700 mb-2">الاسم الأول *</label>
             <input
+              id="accountInfo-firstName"
+              name="firstName"
               type="text"
               value={firstName ?? ''}
               onChange={(e) => handleFieldChange('firstName', e.target.value)}
@@ -158,8 +270,10 @@ export default function AccountInfoModal() {
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
+            <label htmlFor="accountInfo-lastName" className="block text-sm font-medium text-gray-700 mb-2">الاسم الأخير</label>
             <input
+              id="accountInfo-lastName"
+              name="lastName"
               type="text"
               value={lastName ?? ''}
               onChange={(e) => handleFieldChange('lastName', e.target.value)}
@@ -182,8 +296,10 @@ export default function AccountInfoModal() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
+          <label htmlFor="accountInfo-username" className="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم *</label>
           <input
+            id="accountInfo-username"
+            name="username"
             type="text"
             value={username ?? ''}
             onChange={(e) => handleFieldChange('username', e.target.value)}
@@ -218,8 +334,10 @@ export default function AccountInfoModal() {
           {showPassword && (
             <div className="mt-3 space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الحالية</label>
+                <label htmlFor="accountInfo-currentPassword" className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الحالية</label>
                 <input
+                  id="accountInfo-currentPassword"
+                  name="currentPassword"
                   type="password"
                   value={currentPassword ?? ''}
                   onChange={(e) => handleFieldChange('currentPassword', e.target.value)}
@@ -240,8 +358,10 @@ export default function AccountInfoModal() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الجديدة</label>
+                <label htmlFor="accountInfo-newPassword" className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الجديدة</label>
                 <input
+                  id="accountInfo-newPassword"
+                  name="newPassword"
                   type="password"
                   value={newPassword ?? ''}
                   onChange={(e) => handleFieldChange('newPassword', e.target.value)}
@@ -262,8 +382,10 @@ export default function AccountInfoModal() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">إعادة كتابة كلمة المرور الجديدة</label>
+                <label htmlFor="accountInfo-confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">إعادة كتابة كلمة المرور الجديدة</label>
                 <input
+                  id="accountInfo-confirmPassword"
+                  name="confirmPassword"
                   type="password"
                   value={confirmPassword ?? ''}
                   onChange={(e) => handleFieldChange('confirmPassword', e.target.value)}
