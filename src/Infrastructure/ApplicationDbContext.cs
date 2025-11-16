@@ -108,6 +108,7 @@ namespace Clinics.Infrastructure
                 .OnDelete(DeleteBehavior.Restrict);
             // MessageCondition: One-to-one required relationship with MessageTemplate
             // MessageTemplate owns the relationship (has MessageConditionId foreign key)
+            // MessageCondition also has TemplateId foreign key for reverse lookup (maintained manually)
             modelBuilder.Entity<MessageTemplate>()
                 .HasOne(t => t.Condition)
                 .WithOne(mc => mc.Template)
@@ -118,6 +119,21 @@ namespace Clinics.Infrastructure
             // Ensure MessageConditionId is unique (one condition per template)
             modelBuilder.Entity<MessageTemplate>()
                 .HasIndex(t => t.MessageConditionId)
+                .IsUnique();
+            
+            // Configure MessageCondition.TemplateId as a foreign key for reverse lookup
+            // This is maintained alongside the one-to-one relationship for easier queries
+            // Note: This creates a bidirectional FK relationship - both FKs must be kept in sync
+            modelBuilder.Entity<MessageCondition>()
+                .HasOne<MessageTemplate>()
+                .WithMany()
+                .HasForeignKey(mc => mc.TemplateId)
+                .OnDelete(DeleteBehavior.Restrict) // Prevent template deletion if condition exists
+                .IsRequired();
+            
+            // Ensure TemplateId is unique (one condition per template via this FK)
+            modelBuilder.Entity<MessageCondition>()
+                .HasIndex(mc => mc.TemplateId)
                 .IsUnique();
             
             modelBuilder.Entity<MessageCondition>()

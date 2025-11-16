@@ -159,8 +159,8 @@ namespace Clinics.Infrastructure.Services
                 // Save changes
                 await _unitOfWork.SaveChangesAsync();
 
-                // Audit log
-                var templateId = condition.Template?.Id;
+                // Audit log - use TemplateId foreign key directly (no navigation needed)
+                var templateId = condition.TemplateId;
                 await _auditService.LogAsync(
                     AuditAction.SoftDelete,
                     nameof(MessageCondition),

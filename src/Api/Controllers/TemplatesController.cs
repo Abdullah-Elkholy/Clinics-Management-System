@@ -267,9 +267,27 @@ namespace Clinics.Api.Controllers
                     }
                 }
 
-                // Step 2: Create the condition first (one-to-one required relationship)
+                // Step 2: Create the template first (need template ID for condition.TemplateId)
+                var template = new MessageTemplate
+                {
+                    Title = req.Title,
+                    Content = req.Content,
+                    CreatedBy = userId,
+                    UpdatedBy = userId, // Set UpdatedBy on creation as well
+                    ModeratorId = queue.ModeratorId,
+                    QueueId = req.QueueId,
+                    MessageConditionId = 0, // Temporary, will be updated after condition creation
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _db.MessageTemplates.Add(template);
+                await _db.SaveChangesAsync(); // Save to get the template ID
+
+                // Step 3: Create the condition with TemplateId foreign key (one-to-one required relationship)
                 var condition = new MessageCondition
                 {
+                    TemplateId = template.Id, // Set foreign key to template
                     QueueId = req.QueueId,
                     Operator = conditionOperator,
                     Value = conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS" 
@@ -277,6 +295,8 @@ namespace Clinics.Api.Controllers
                         : null,
                     MinValue = conditionOperator == "RANGE" ? req.ConditionMinValue : null,
                     MaxValue = conditionOperator == "RANGE" ? req.ConditionMaxValue : null,
+                    CreatedBy = userId,
+                    UpdatedBy = userId,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -284,20 +304,10 @@ namespace Clinics.Api.Controllers
                 _db.Set<MessageCondition>().Add(condition);
                 await _db.SaveChangesAsync(); // Save to get the condition ID
 
-                // Step 3: Create the template with MessageConditionId foreign key
-                var template = new MessageTemplate
-                {
-                    Title = req.Title,
-                    Content = req.Content,
-                    CreatedBy = userId,
-                    ModeratorId = queue.ModeratorId,
-                    QueueId = req.QueueId,
-                    MessageConditionId = condition.Id, // Set foreign key to condition
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _db.MessageTemplates.Add(template);
+                // Step 4: Update template with MessageConditionId (maintain bidirectional relationship)
+                template.MessageConditionId = condition.Id;
+                template.UpdatedAt = DateTime.UtcNow;
+                _db.MessageTemplates.Update(template);
                 await _db.SaveChangesAsync();
 
                 // Commit transaction
@@ -516,9 +526,10 @@ namespace Clinics.Api.Controllers
                         }
                         else
                         {
-                            // Create new condition
+                            // Create new condition with TemplateId foreign key
                             condition = new MessageCondition
                             {
+                                TemplateId = template.Id, // Set foreign key to template
                                 QueueId = template.QueueId,
                                 Operator = "DEFAULT",
                                 CreatedAt = operationTimestamp,
@@ -529,7 +540,7 @@ namespace Clinics.Api.Controllers
                             _db.Set<MessageCondition>().Add(condition);
                             await _db.SaveChangesAsync(); // Save to get condition ID
                             
-                            // Update template with MessageConditionId
+                            // Update template with MessageConditionId (maintain bidirectional relationship)
                             template.MessageConditionId = condition.Id;
                         }
 

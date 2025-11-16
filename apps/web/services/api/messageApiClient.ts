@@ -139,10 +139,21 @@ const extractErrorMessage = (payload: unknown, fallback = DEFAULT_ERROR_MESSAGE)
     return payload || fallback;
   }
 
-  if (payload && typeof payload === 'object' && 'message' in payload) {
-    const message = (payload as { message?: unknown }).message;
-    if (typeof message === 'string') {
-      return message || fallback;
+  if (payload && typeof payload === 'object') {
+    // Check for 'error' field first (used by backend for BadRequest responses)
+    if ('error' in payload) {
+      const error = (payload as { error?: unknown }).error;
+      if (typeof error === 'string') {
+        return error || fallback;
+      }
+    }
+    
+    // Check for 'message' field (used by backend for other responses)
+    if ('message' in payload) {
+      const message = (payload as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        return message || fallback;
+      }
     }
   }
 

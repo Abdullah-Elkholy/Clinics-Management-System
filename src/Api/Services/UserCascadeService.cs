@@ -22,7 +22,7 @@ public interface IUserCascadeService
     /// <summary>
     /// Restore a previously soft-deleted user
     /// </summary>
-    Task<(bool Success, string ErrorMessage)> RestoreUserAsync(int userId);
+    Task<(bool Success, string ErrorMessage)> RestoreUserAsync(int userId, int? restoredBy = null);
 
     /// <summary>
     /// Get soft-deleted users (trash)
@@ -84,7 +84,7 @@ public class UserCascadeService : IUserCascadeService
         }
     }
 
-    public async Task<(bool Success, string ErrorMessage)> RestoreUserAsync(int userId)
+    public async Task<(bool Success, string ErrorMessage)> RestoreUserAsync(int userId, int? restoredBy = null)
     {
         try
         {
@@ -108,10 +108,17 @@ public class UserCascadeService : IUserCascadeService
                 return (false, "restore_window_expired");
             }
 
-            // Restore user
+            // Capture operation snapshot timestamp to ensure consistency
+            var operationTimestamp = DateTime.UtcNow;
+
+            // Restore user with snapshot timestamp and audit fields
             user.IsDeleted = false;
             user.DeletedAt = null;
             user.DeletedBy = null;
+            user.RestoredAt = operationTimestamp;
+            user.RestoredBy = restoredBy;
+            user.UpdatedAt = operationTimestamp;
+            user.UpdatedBy = restoredBy;
 
             await _db.SaveChangesAsync();
 

@@ -51,7 +51,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 var patients = await _db.Patients
-                    .Where(p => p.QueueId == queueId)
+                    .Where(p => p.QueueId == queueId && !p.IsDeleted)
                     .OrderBy(p => p.Position)
                     .Select(p => new PatientDto
                     {
@@ -177,18 +177,8 @@ namespace Clinics.Api.Controllers
                     // Extract country code from normalized phone number
                     var countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? req.PhoneNumber);
 
-                    // Get current user ID for audit
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                        ?? User.FindFirst("nameid")?.Value
-                        ?? User.FindFirst("sub")?.Value
-                        ?? User.FindFirst("userId")?.Value
-                        ?? User.FindFirst("id")?.Value
-                        ?? User.FindFirst("Id")?.Value;
-                    int? createdBy = null;
-                    if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-                    {
-                        createdBy = userId;
-                    }
+                    // Get current user ID for audit using IUserContext
+                    var userId = _userContext.GetUserId();
 
                     // No shift needed: new patients always inserted at end (maxPos + 1)
                     var patient = new Patient
@@ -199,7 +189,7 @@ namespace Clinics.Api.Controllers
                         CountryCode = countryCode,
                         Position = insertPos,
                         Status = "waiting",
-                        CreatedBy = createdBy
+                        CreatedBy = userId
                     };
 
                     _db.Patients.Add(patient);
@@ -215,7 +205,7 @@ namespace Clinics.Api.Controllers
                         Status = patient.Status,
                         CreatedAt = patient.CreatedAt,
                         UpdatedAt = patient.UpdatedAt,
-                        CreatedBy = createdBy,
+                        CreatedBy = patient.CreatedBy,
                         UpdatedBy = patient.UpdatedBy
                     };
 
@@ -305,22 +295,12 @@ namespace Clinics.Api.Controllers
                 if (!string.IsNullOrEmpty(req.Status))
                     patient.Status = req.Status;
 
-                // Get current user ID for audit
-                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                    ?? User.FindFirst("nameid")?.Value
-                    ?? User.FindFirst("sub")?.Value
-                    ?? User.FindFirst("userId")?.Value
-                    ?? User.FindFirst("id")?.Value
-                    ?? User.FindFirst("Id")?.Value;
-                int? updatedBy = null;
-                if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-                {
-                    updatedBy = userId;
-                }
+                // Get current user ID for audit using IUserContext
+                var userId = _userContext.GetUserId();
 
                 // Set UpdatedAt and UpdatedBy for audit trail
                 patient.UpdatedAt = DateTime.UtcNow;
-                patient.UpdatedBy = updatedBy;
+                patient.UpdatedBy = userId;
 
                 await _db.SaveChangesAsync();
 

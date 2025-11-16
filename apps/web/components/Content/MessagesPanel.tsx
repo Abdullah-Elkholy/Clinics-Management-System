@@ -172,9 +172,9 @@ export default function MessagesPanel() {
    * Check for condition intersections in a queue
    */
   const checkConditionIntersections = (queueId: string) => {
-    // Get all conditions from message templates for this queue
+    // Get all conditions from message templates for this queue (exclude only DEFAULT as it's a sentinel, but include UNCONDITIONED)
     const queueConditions: MessageCondition[] = messageTemplates
-      .filter((t) => t.queueId === String(queueId) && t.condition && t.condition.operator && t.condition.operator !== 'DEFAULT' && t.condition.operator !== 'UNCONDITIONED')
+      .filter((t) => t.queueId === String(queueId) && t.condition && t.condition.operator && t.condition.operator !== 'DEFAULT')
       .map((t) => t.condition)
       .filter((c): c is MessageCondition => c !== null && c !== undefined);
 
@@ -604,6 +604,14 @@ export default function MessagesPanel() {
                                               // Refetch queue data to reflect changes
                                               if (typeof refreshQueueData === 'function' && queue.id) {
                                                 await refreshQueueData(String(queue.id));
+                                              }
+                                              
+                                              // Refresh quota to update PanelHeader stats
+                                              try {
+                                                const quota = await messageApiClient.getMyQuota();
+                                                setUserQuota(quota);
+                                              } catch (err) {
+                                                // Silently fail quota refetch
                                               }
                                               
                                               // Notify other components

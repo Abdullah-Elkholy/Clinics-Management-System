@@ -32,7 +32,7 @@ namespace Clinics.Api.Controllers
         /// <summary>
     /// GET /api/conditions?queueId=1
     /// Get all conditions for a specific queue.
-    /// Response includes synthetic "بدون شرط" (no condition) item (operator = DEFAULT) as the first entry for UI convenience.
+    /// Returns only real conditions from the database (no synthetic items).
         /// </summary>
         [HttpGet]
         public async Task<ActionResult<ListResponse<ConditionDto>>> GetConditionsByQueue([FromQuery] int queueId)
@@ -48,35 +48,18 @@ namespace Clinics.Api.Controllers
             if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
                 return Forbid();
 
-            // Get all conditions for this queue with their templates
+            // Get all conditions for this queue (no need to Include Template - we use TemplateId FK directly)
             var conditions = await _context.Set<MessageCondition>()
                 .Where(c => c.QueueId == queueId)
-                .Include(c => c.Template)
                 .OrderBy(c => c.CreatedAt)
                 .ToListAsync();
 
-            var dtos = new List<ConditionDto>();
-            
-            // Add synthetic "بدون شرط" (no condition) item first.
-            // Use operator = DEFAULT consistently as the sentinel for "no condition" everywhere.
-            dtos.Add(new ConditionDto
-            {
-                Id = 0, // Sentinel value indicating synthetic item (not persisted)
-                TemplateId = null,
-                QueueId = queueId,
-                Operator = "DEFAULT", // Sentinel operator
-                Value = null,
-                MinValue = null,
-                MaxValue = null,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = null
-            });
-
-            // Add actual conditions from database
-            dtos.AddRange(conditions.Select(c => new ConditionDto
+            // Map only real conditions from database (exclude synthetic items)
+            // Use TemplateId foreign key directly (faster than loading navigation property)
+            var dtos = conditions.Select(c => new ConditionDto
             {
                 Id = c.Id,
-                TemplateId = c.Template?.Id, // Get template ID from navigation property
+                TemplateId = c.TemplateId, // Use foreign key directly - no navigation needed
                 QueueId = c.QueueId,
                 Operator = c.Operator,
                 Value = c.Value,
@@ -84,7 +67,7 @@ namespace Clinics.Api.Controllers
                 MaxValue = c.MaxValue,
                 CreatedAt = c.CreatedAt,
                 UpdatedAt = c.UpdatedAt
-            }));
+            }).ToList();
 
             return Ok(new ListResponse<ConditionDto>
             {
@@ -103,7 +86,6 @@ namespace Clinics.Api.Controllers
         public async Task<ActionResult<ConditionDto>> GetConditionById(int id)
         {
             var condition = await _context.Set<MessageCondition>()
-                .Include(c => c.Template)
                 .FirstOrDefaultAsync(c => c.Id == id);
 
             if (condition == null)
@@ -120,18 +102,18 @@ namespace Clinics.Api.Controllers
             if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
                 return Forbid();
 
-            var dto = new ConditionDto
-            {
-                Id = condition.Id,
-                TemplateId = condition.Template?.Id, // Get template ID from navigation property
-                QueueId = condition.QueueId,
-                Operator = condition.Operator,
-                Value = condition.Value,
-                MinValue = condition.MinValue,
-                MaxValue = condition.MaxValue,
-                CreatedAt = condition.CreatedAt,
-                UpdatedAt = condition.UpdatedAt
-            };
+                var dto = new ConditionDto
+                {
+                    Id = condition.Id,
+                    TemplateId = condition.TemplateId, // Use foreign key directly
+                    QueueId = condition.QueueId,
+                    Operator = condition.Operator,
+                    Value = condition.Value,
+                    MinValue = condition.MinValue,
+                    MaxValue = condition.MaxValue,
+                    CreatedAt = condition.CreatedAt,
+                    UpdatedAt = condition.UpdatedAt
+                };
 
             return Ok(dto);
         }
@@ -202,14 +184,20 @@ namespace Clinics.Api.Controllers
             {
                 try
                 {
-                    // Create condition first
+                    // Get current user ID for audit
+                    var userId = _userContext.GetUserId();
+
+                    // Create condition first with TemplateId foreign key
                     var condition = new MessageCondition
                     {
+                        TemplateId = template.Id, // Set foreign key to template
                         QueueId = request.QueueId,
                         Operator = request.Operator.ToUpper(),
                         Value = request.Value,
                         MinValue = request.MinValue,
                         MaxValue = request.MaxValue,
+                        CreatedBy = userId,
+                        UpdatedBy = userId,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     };
@@ -217,9 +205,10 @@ namespace Clinics.Api.Controllers
                     _context.Set<MessageCondition>().Add(condition);
                     await _context.SaveChangesAsync(); // Save to get condition ID
                     
-                    // Update template with MessageConditionId
+                    // Update template with MessageConditionId (maintain bidirectional relationship)
                     template.MessageConditionId = condition.Id;
                     template.UpdatedAt = DateTime.UtcNow;
+                    template.UpdatedBy = userId; // Set UpdatedBy for template
                     _context.Set<MessageTemplate>().Update(template);
 
                     await _context.SaveChangesAsync();
@@ -320,7 +309,10 @@ namespace Clinics.Api.Controllers
             if (request.MaxValue.HasValue)
                 condition.MaxValue = request.MaxValue;
 
+            // Get current user ID for audit
+            var userId = _userContext.GetUserId();
             condition.UpdatedAt = DateTime.UtcNow;
+            condition.UpdatedBy = userId;
 
             // Detect if state should change: transitioning between sentinel DEFAULT and any active operator
             // Only update template.UpdatedAt if the state transition is meaningful
@@ -337,13 +329,14 @@ namespace Clinics.Api.Controllers
                         // Update condition
                         _context.Set<MessageCondition>().Update(condition);
 
-                        // Get template via MessageConditionId
+                        // Get template directly using TemplateId foreign key (no reverse lookup needed)
                         var template = await _context.Set<MessageTemplate>()
-                            .FirstOrDefaultAsync(t => t.MessageConditionId == condition.Id);
+                            .FirstOrDefaultAsync(t => t.Id == condition.TemplateId);
 
                         if (template != null)
                         {
                             template.UpdatedAt = DateTime.UtcNow;
+                            template.UpdatedBy = userId; // Set UpdatedBy for template
                             _context.Set<MessageTemplate>().Update(template);
                         }
 
@@ -364,14 +357,11 @@ namespace Clinics.Api.Controllers
                 await _context.SaveChangesAsync();
             }
 
-            // Get template via MessageConditionId for DTO
-            var templateForDto = await _context.Set<MessageTemplate>()
-                .FirstOrDefaultAsync(t => t.MessageConditionId == condition.Id);
-
+            // Use TemplateId foreign key directly (no need to query template)
             var dto = new ConditionDto
             {
                 Id = condition.Id,
-                TemplateId = templateForDto?.Id, // Get template ID from template entity
+                TemplateId = condition.TemplateId, // Use foreign key directly
                 QueueId = condition.QueueId,
                 Operator = condition.Operator,
                 Value = condition.Value,
@@ -417,9 +407,9 @@ namespace Clinics.Api.Controllers
                     // Delete condition
                     _context.Set<MessageCondition>().Remove(condition);
 
-                    // Get template via MessageConditionId
+                    // Get template directly using TemplateId foreign key (no reverse lookup needed)
                     var template = await _context.Set<MessageTemplate>()
-                        .FirstOrDefaultAsync(t => t.MessageConditionId == condition.Id);
+                        .FirstOrDefaultAsync(t => t.Id == condition.TemplateId);
 
                     if (template != null)
                     {

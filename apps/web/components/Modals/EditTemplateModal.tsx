@@ -85,6 +85,7 @@ export default function EditTemplateModal() {
       setTitle(freshTemplate.title || '');
       setContent(freshTemplate.content || '');
 
+      // Find condition from messageConditions array
       const templateConditionForTemplate =
         messageConditions.find((condition) => condition.templateId === freshTemplate.id) ??
         freshTemplate.condition ??
@@ -115,6 +116,7 @@ export default function EditTemplateModal() {
 
   const templateCondition = useMemo(() => {
     if (!currentTemplate) return null;
+    // Find condition from messageConditions array
     return (
       messageConditions.find((condition) => condition.templateId === currentTemplate.id) ??
       currentTemplate.condition ??
@@ -329,47 +331,52 @@ export default function EditTemplateModal() {
         content,
       });
 
-      // Call API to update condition if it exists, otherwise create a new one
-      if (templateCondition) {
-        const conditionIdNum = Number(templateCondition.id);
-        if (!isNaN(conditionIdNum)) {
-          await messageApiClient.updateCondition(conditionIdNum, {
-            operator: conditionOperator,
-            value: normalizedValue,
-            minValue: normalizedMinValue,
-            maxValue: normalizedMaxValue,
-          });
-        }
-      } else {
-        await messageApiClient.createCondition({
-          templateId: templateBackendId,
-          queueId: queueIdNum,
-          operator: conditionOperator,
-          value: normalizedValue,
-          minValue: normalizedMinValue,
-          maxValue: normalizedMaxValue,
-        });
-      }
-
-      // Handle DEFAULT operator separately with proper error handling
+      // Handle DEFAULT operator separately - setTemplateAsDefault handles condition creation/update
       if (conditionOperator === 'DEFAULT') {
         try {
           await messageApiClient.setTemplateAsDefault(templateBackendId);
+          // After successfully setting as default, refetch queue data
+          if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
+            await refreshQueueData(String(currentTemplate.queueId));
+          }
         } catch (defaultError: any) {
           logger.error('Failed to set template as default:', defaultError);
           addToast(defaultError?.message || 'فشل تعيين القالب كافتراضي', 'error');
           setIsLoading(false);
           return;
         }
+      } else {
+        // For non-DEFAULT operators, update or create condition normally
+        if (templateCondition) {
+          const conditionIdNum = Number(templateCondition.id);
+          if (!isNaN(conditionIdNum)) {
+            await messageApiClient.updateCondition(conditionIdNum, {
+              operator: conditionOperator,
+              value: normalizedValue,
+              minValue: normalizedMinValue,
+              maxValue: normalizedMaxValue,
+            });
+          }
+        } else {
+          await messageApiClient.createCondition({
+            templateId: templateBackendId,
+            queueId: queueIdNum,
+            operator: conditionOperator,
+            value: normalizedValue,
+            minValue: normalizedMinValue,
+            maxValue: normalizedMaxValue,
+          });
+        }
+        
+        // Refetch queue data to ensure UI is in sync with backend
+        // Wait for refetch to complete before closing modal and dispatching event
+        if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
+          await refreshQueueData(String(currentTemplate.queueId));
+        }
       }
 
-      addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
-      
-      // Refetch queue data to ensure UI is in sync with backend
-      // Wait for refetch to complete before closing modal and dispatching event
-      if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
-        await refreshQueueData(String(currentTemplate.queueId));
-      } else {
+      // Only proceed with fallback state update if DEFAULT was not handled above
+      if (conditionOperator !== 'DEFAULT') {
         // Fallback: update local state if refreshQueueData is not available
         // Note: updatedAt will be set by backend, but we provide default for test mocks
         updateMessageTemplate(currentTemplate.id, {
@@ -405,6 +412,7 @@ export default function EditTemplateModal() {
           });
         }
       }
+
       // Clear form fields after successful update
       setTitle('');
       setContent('');
@@ -419,6 +427,9 @@ export default function EditTemplateModal() {
       setShowDefaultWarning(false);
       setHasConfirmedDefaultOverride(false);
 
+      addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
+
+      // Close modal before dispatching events to ensure UI updates
       closeModal('editTemplate');
       
       // Trigger custom events to notify other components to refetch
@@ -431,6 +442,7 @@ export default function EditTemplateModal() {
       logger.error('Failed to update template:', error);
       addToast('حدث خطأ أثناء تحديث القالب', 'error');
     } finally {
+      // Always reset loading state, even if an error occurred
       setIsLoading(false);
     }
   };

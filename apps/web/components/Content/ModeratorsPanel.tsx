@@ -108,6 +108,8 @@ export default function ModeratorsPanel() {
           messagesQuota: 1000,
           queuesQuota: 10,
         });
+        // Dispatch event to refresh PanelHeader stats
+        window.dispatchEvent(new CustomEvent('userDataUpdated'));
       } else {
         setState((prev) => ({
           ...prev,
@@ -134,6 +136,8 @@ export default function ModeratorsPanel() {
         await fetchModerators();
         setShowEditForm(false);
         setState((prev) => ({ ...prev, selectedModerator: null }));
+        // Dispatch event to refresh PanelHeader stats
+        window.dispatchEvent(new CustomEvent('userDataUpdated'));
       } else {
         setState((prev) => ({
           ...prev,
@@ -156,6 +160,12 @@ export default function ModeratorsPanel() {
       const response = await moderatorsService.deleteModerator(moderatorId);
       if (response.success) {
         await fetchModerators();
+        // Refresh sidebar queues (moderator's queues are now deleted)
+        // Note: refreshQueues might not be available in this component, so we dispatch events
+        // Dispatch events to refresh PanelHeader stats, sidebar queues, and moderators list
+        window.dispatchEvent(new CustomEvent('userDataUpdated'));
+        window.dispatchEvent(new CustomEvent('queueDataUpdated'));
+        window.dispatchEvent(new CustomEvent('moderatorDataUpdated'));
       } else {
         setState((prev) => ({
           ...prev,
@@ -192,6 +202,8 @@ export default function ModeratorsPanel() {
           lastName: '',
           username: '',
         });
+        // Dispatch event to refresh PanelHeader stats
+        window.dispatchEvent(new CustomEvent('userDataUpdated'));
       } else {
         setState((prev) => ({
           ...prev,

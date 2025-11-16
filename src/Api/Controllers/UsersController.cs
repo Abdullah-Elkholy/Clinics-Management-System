@@ -447,6 +447,19 @@ namespace Clinics.Api.Controllers
 
                 var query = _ttlQueries.QueryTrash(30).AsQueryable();
 
+                // Exclude users whose moderator is deleted (cascade delete scenario)
+                // Users deleted as part of moderator deletion should not appear in trash
+                // We exclude users where their moderator is also deleted (regardless of timestamp)
+                // This ensures only the moderator appears in trash, not its managed users
+                // Also, only show users with UserRole = "User" (not moderators, admins, etc.)
+                query = query.Where(u => 
+                    u.Role == "User" &&
+                    (u.ModeratorId == null || 
+                    !_db.Users.IgnoreQueryFilters().Any(m => 
+                        m.Id == u.ModeratorId.Value && 
+                        m.Role == "moderator" &&
+                        m.IsDeleted)));
+
                 // Moderators see only their managed users
                 if (!isAdmin && moderatorId.HasValue)
                 {

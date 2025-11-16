@@ -403,6 +403,15 @@ namespace Clinics.Api.Controllers
 
                 var query = _ttlQueries.QueryTrash(30).AsQueryable();
 
+                // Exclude queues whose moderator is deleted (cascade delete scenario)
+                // Queues deleted as part of moderator deletion should not appear in trash
+                // This ensures only the moderator appears in trash, not its queues
+                query = query.Where(q => 
+                    !_db.Users.IgnoreQueryFilters().Any(m => 
+                        m.Id == q.ModeratorId && 
+                        m.Role == "moderator" &&
+                        m.IsDeleted));
+
                 // Non-admin users see only their own queues
                 if (user.Role != "primary_admin" && user.Role != "secondary_admin")
                 {

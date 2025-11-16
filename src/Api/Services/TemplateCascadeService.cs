@@ -119,9 +119,10 @@ public class TemplateCascadeService : ITemplateCascadeService
                     }
                     else
                     {
-                        // Create new condition
+                        // Create new condition with TemplateId foreign key
                         replacementCondition = new MessageCondition
                         {
+                            TemplateId = replacement.Id, // Set foreign key to replacement template
                             QueueId = template.QueueId,
                             Operator = "DEFAULT",
                             CreatedAt = deletionTimestamp,
@@ -130,7 +131,7 @@ public class TemplateCascadeService : ITemplateCascadeService
                         _db.Set<MessageCondition>().Add(replacementCondition);
                         await _db.SaveChangesAsync(); // Save to get condition ID
                         
-                        // Update replacement template with MessageConditionId
+                        // Update replacement template with MessageConditionId (maintain bidirectional relationship)
                         replacement.MessageConditionId = replacementCondition.Id;
                     }
                 }
@@ -238,11 +239,8 @@ public class TemplateCascadeService : ITemplateCascadeService
                         templateCondition.MaxValue = null;
                         templateCondition.UpdatedAt = operationTimestamp;
                         templateCondition.UpdatedBy = restoredBy;
-                        // Get the template ID that owns this default condition
-                        var defaultTemplateId = await _db.MessageTemplates
-                            .Where(t => t.MessageConditionId == currentDefaultCondition.Id)
-                            .Select(t => t.Id)
-                            .FirstOrDefaultAsync();
+                        // Get the template ID directly using TemplateId foreign key (no reverse lookup needed)
+                        var defaultTemplateId = currentDefaultCondition.TemplateId;
                         _logger.LogInformation(
                             "Template {TemplateId} restored with UNCONDITIONED operator since template {DefaultId} is already default for queue {QueueId}",
                             template.Id, defaultTemplateId, template.QueueId);

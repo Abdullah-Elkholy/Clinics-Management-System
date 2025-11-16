@@ -43,14 +43,19 @@ interface ModalData {
 
 /**
  * Get display status for a template based on operator type
+ * Uses real condition data from messageConditions array (via templateConditionMap)
  */
-function getTemplateStatus(template: MessageTemplate): {
+function getTemplateStatus(
+  template: MessageTemplate,
+  condition: MessageCondition | undefined
+): {
   label: string;
   color: string;
   icon: string;
   description: string;
 } {
-  const operator = template.condition?.operator;
+  // Prefer condition from messageConditions array, fallback to template.condition
+  const operator = condition?.operator || template.condition?.operator;
   
   if (operator === 'DEFAULT') {
     return {
@@ -76,12 +81,12 @@ function getTemplateStatus(template: MessageTemplate): {
       description: `قالب له شرط مخصص (${operator})`,
     };
   }
-  // Default fallback
+  // Default fallback - no condition found
   return {
-    label: 'خطأ',
-    color: 'bg-red-100 text-red-800 border-red-300',
-    icon: 'fa-exclamation-triangle',
-    description: 'حالة غير صحيحة (قالب افتراضي مع شرط)',
+    label: 'بدون شرط',
+    color: 'bg-gray-100 text-gray-800 border-gray-300',
+    icon: 'fa-ban',
+    description: 'قالب بدون شرط (لم يتم العثور على شرط)',
   };
 }
 
@@ -188,6 +193,7 @@ export default function ManageConditionsModal() {
   }, [formData]);
 
   const handleEditCondition = useCallback((template: MessageTemplate) => {
+    // Get condition from messageConditions array (real data)
     const condition = templateConditionMap.get(template.id);
     if (condition) {
       setEditingTemplateId(template.id);
@@ -196,6 +202,16 @@ export default function ManageConditionsModal() {
         value: condition.value,
         minValue: condition.minValue,
         maxValue: condition.maxValue,
+      });
+      setFormErrors({});
+    } else {
+      // If no condition found, initialize with default values
+      setEditingTemplateId(template.id);
+      setFormData({
+        operator: 'EQUAL' as any,
+        value: undefined,
+        minValue: undefined,
+        maxValue: undefined,
       });
       setFormErrors({});
     }
@@ -215,32 +231,54 @@ export default function ManageConditionsModal() {
       const template = queueTemplates.find(t => t.id === editingTemplateId);
       if (!template) throw new Error('لم يتم العثور على القالب');
 
+      // Get condition from messageConditions array (real data)
       const condition = templateConditionMap.get(template.id);
-      if (!condition) throw new Error('لم يتم العثور على الشرط');
+      
+      const targetQueueId = queueId || selectedQueueId;
+      if (!targetQueueId) throw new Error('معرف الطابور غير متوفر');
 
-      const conditionBackendId = Number(condition.id);
-      if (isNaN(conditionBackendId)) throw new Error('معرف الشرط غير صالح');
+      if (condition && condition.id && condition.templateId) {
+        // Update existing condition
+        const conditionBackendId = Number(condition.id);
+        if (isNaN(conditionBackendId)) throw new Error('معرف الشرط غير صالح');
 
-      // Update condition
-      await messageApiClient.updateCondition(conditionBackendId, {
-        operator: formData.operator as string,
-        value: formData.value,
-        minValue: formData.minValue,
-        maxValue: formData.maxValue,
-      });
+        await messageApiClient.updateCondition(conditionBackendId, {
+          operator: formData.operator as string,
+          value: formData.value,
+          minValue: formData.minValue,
+          maxValue: formData.maxValue,
+        });
 
-      // Update local state
-      updateMessageCondition(condition.id, {
-        operator: formData.operator as any,
-        value: formData.value,
-        minValue: formData.minValue,
-        maxValue: formData.maxValue,
-      });
+        // Update local state
+        updateMessageCondition(condition.id, {
+          operator: formData.operator as any,
+          value: formData.value,
+          minValue: formData.minValue,
+          maxValue: formData.maxValue,
+        });
 
-      addToast('تم تحديث الشرط بنجاح', 'success');
+        addToast('تم تحديث الشرط بنجاح', 'success');
+      } else {
+        // Create new condition (shouldn't happen normally, but handle it)
+        const templateBackendId = Number(template.id);
+        const queueIdNum = Number(targetQueueId);
+        
+        if (isNaN(templateBackendId)) throw new Error('معرف القالب غير صالح');
+        if (isNaN(queueIdNum)) throw new Error('معرف الطابور غير صالح');
+
+        await messageApiClient.createCondition({
+          templateId: templateBackendId,
+          queueId: queueIdNum,
+          operator: formData.operator as string,
+          value: formData.value,
+          minValue: formData.minValue,
+          maxValue: formData.maxValue,
+        });
+
+        addToast('تم إنشاء الشرط بنجاح', 'success');
+      }
       
       // Refresh queue data to get updated state from backend
-      const targetQueueId = queueId || selectedQueueId;
       if (targetQueueId) {
         await refreshQueueData(targetQueueId);
         // Trigger custom events to notify other components to refetch
@@ -265,10 +303,17 @@ export default function ManageConditionsModal() {
     templateConditionMap,
     updateMessageCondition,
     addToast,
+    queueId,
+    selectedQueueId,
+    refreshQueueData,
   ]);
 
   const handleSetAsDefault = useCallback(async (template: MessageTemplate) => {
-    if (template.condition?.operator === 'DEFAULT') {
+    // Check real condition data from messageConditions array
+    const condition = templateConditionMap.get(template.id);
+    const operator = condition?.operator || template.condition?.operator;
+    
+    if (operator === 'DEFAULT') {
       addToast('هذا القالب محدد بالفعل كافتراضي', 'info');
       return;
     }
@@ -301,10 +346,13 @@ export default function ManageConditionsModal() {
   }, [queueId, selectedQueueId, refreshQueueData, addToast]);
 
   const handleToggleCondition = useCallback(async (template: MessageTemplate) => {
+    // Get condition from messageConditions array (real data)
     const condition = templateConditionMap.get(template.id);
     if (!condition) return;
 
-    if (template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator)) {
+    // Use real condition data from messageConditions array
+    // Only toggle to UNCONDITIONED if it's currently an active condition (not already UNCONDITIONED or DEFAULT)
+    if (condition.operator && !['DEFAULT', 'UNCONDITIONED'].includes(condition.operator)) {
       // Convert active to placeholder
       try {
         setIsLoading(true);
@@ -367,11 +415,14 @@ export default function ManageConditionsModal() {
     closeModal('manageConditions');
   }, [queueId, selectedQueueId, refreshQueueData, closeModal]);
 
-  // Detect overlapping active conditions
+  // Detect overlapping active conditions using TemplateId FK directly
   const activeConditions = useMemo(
     () => messageConditions.filter(c => {
-      const template = queueTemplates.find(t => t.id === c.templateId);
-      return template && template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator);
+      // Use TemplateId FK directly to verify template exists and condition is not DEFAULT
+      const template = c.templateId ? queueTemplates.find(t => t.id === c.templateId) : undefined;
+      // Include UNCONDITIONED in display (exclude only DEFAULT as it's a sentinel)
+      // Use condition's operator directly from messageConditions (backed by TemplateId FK)
+      return template && c.operator && c.operator !== 'DEFAULT';
     }),
     [messageConditions, queueTemplates]
   );
@@ -401,8 +452,10 @@ export default function ManageConditionsModal() {
         <div className="flex-1 overflow-y-auto space-y-3">
           {queueTemplates.length > 0 ? (
             queueTemplates.map((template) => {
+              // Get condition from messageConditions array (real data)
               const condition = templateConditionMap.get(template.id);
-              const status = getTemplateStatus(template);
+              // Use real condition data for status
+              const status = getTemplateStatus(template, condition);
               const isEditing = editingTemplateId === template.id;
 
               return (
@@ -535,17 +588,17 @@ export default function ManageConditionsModal() {
                           </span>
                         </div>
 
-                        {/* Condition Display (for active conditions) */}
-                        {template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator) && condition && (
+                        {/* Condition Display (for all non-DEFAULT conditions, including UNCONDITIONED) - Use real condition data */}
+                        {condition && condition.operator && condition.operator !== 'DEFAULT' && (
                           <p className="text-xs bg-white bg-opacity-60 px-2 py-1.5 rounded border border-opacity-50">
                             <span className="font-semibold">الشرط: </span>
                             {getConditionDisplayText(condition)}
                           </p>
                         )}
 
-                        {/* Action Buttons */}
+                        {/* Action Buttons - Use real condition data */}
                         <div className="flex gap-2 pt-2">
-                          {template.condition?.operator !== 'DEFAULT' && (
+                          {condition?.operator !== 'DEFAULT' && (
                             <button
                               onClick={() => handleSetAsDefault(template)}
                               disabled={isLoading}
@@ -557,7 +610,7 @@ export default function ManageConditionsModal() {
                             </button>
                           )}
 
-                          {template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator) && (
+                          {condition && condition.operator && !['DEFAULT', 'UNCONDITIONED'].includes(condition.operator) && (
                             <button
                               onClick={() => handleToggleCondition(template)}
                               disabled={isLoading}
@@ -569,7 +622,7 @@ export default function ManageConditionsModal() {
                             </button>
                           )}
 
-                          {template.condition?.operator !== 'DEFAULT' && (
+                          {condition?.operator !== 'DEFAULT' && (
                             <button
                               onClick={() => handleEditCondition(template)}
                               disabled={isLoading}
@@ -577,7 +630,7 @@ export default function ManageConditionsModal() {
                               title="تعديل الشرط"
                             >
                               <i className="fas fa-edit"></i>
-                              {template.condition?.operator && !['DEFAULT', 'UNCONDITIONED'].includes(template.condition.operator) ? 'تعديل' : 'إضافة شرط'}
+                              {condition && condition.operator && !['DEFAULT', 'UNCONDITIONED'].includes(condition.operator) ? 'تعديل' : 'إضافة شرط'}
                             </button>
                           )}
                         </div>
