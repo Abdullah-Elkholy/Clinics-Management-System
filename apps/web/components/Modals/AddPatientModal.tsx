@@ -435,8 +435,8 @@ export default function AddPatientModal() {
                             type="text"
                             value={patient.customCountryCode || ''}
                             onChange={(e) => {
-                              // Limit to 4 characters for country code format (+XXX)
-                              const value = e.target.value;
+                              // Limit to 4 characters for country code format (+XXX) and validate no spaces
+                              const value = e.target.value.replace(/\s/g, '');
                               if (value.length <= 4) {
                                 updatePatient(index, 'customCountryCode', value);
                               }
@@ -460,9 +460,15 @@ export default function AddPatientModal() {
                           name={`patient-${index}-phone`}
                           type="tel"
                           value={patient.phone}
-                          onChange={(e) => updatePatient(index, 'phone', e.target.value)}
+                          onChange={(e) => {
+                            // Validate no spaces
+                            const value = e.target.value.replace(/\s/g, '');
+                            updatePatient(index, 'phone', value);
+                          }}
                           onBlur={() => handleFieldBlur(index, 'phone')}
-                          placeholder="01012345678"
+                          placeholder={patient.countryCode && patient.countryCode !== 'OTHER' 
+                            ? require('@/utils/phoneUtils').getPhonePlaceholder(patient.countryCode)
+                            : '123456789'}
                           disabled={isLoading}
                           maxLength={MAX_PHONE_DIGITS}
                           inputMode="numeric"
@@ -493,12 +499,15 @@ export default function AddPatientModal() {
                     </div>
                   </div>
 
-                  {/* Custom Country Code Info */}
+                  {/* Custom Country Code Info / OTHER Disclaimer */}
                   {patient.countryCode === 'OTHER' && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
-                      <p className="text-xs text-blue-700 mb-1">
-                        <i className="fas fa-info-circle ml-1"></i>
-                        <strong>الصيغة:</strong> + متبوعة بـ 1-4 أرقام (مثال: +44 أو +212)
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <p className="text-xs text-amber-800 mb-1">
+                        <i className="fas fa-exclamation-triangle ml-1"></i>
+                        <strong>تنبيه:</strong> عند اختيار "أخرى"، يرجى التأكد من إدخال رقم الهاتف بالتنسيق الصحيح لتجنب أخطاء الإرسال.
+                      </p>
+                      <p className="text-xs text-amber-700">
+                        <strong>الصيغة:</strong> + متبوعة بـ 1-4 أرقام (مثال: +44 أو +212). لا تستخدم مسافات في رقم الهاتف أو رمز الدولة.
                       </p>
                     </div>
                   )}

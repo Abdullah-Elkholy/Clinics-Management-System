@@ -72,56 +72,56 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     switch (entityType) {
       case 'queue':
         return [
-          { key: 'doctorName', label: 'Doctor Name' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'doctorName', label: 'اسم الطبيب' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'template':
         return [
-          { key: 'title', label: 'Template Name' },
-          { key: 'queueId', label: 'Queue ID' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'title', label: 'اسم القالب' },
+          { key: 'queueId', label: 'رقم الطابور' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'patient':
         return [
-          { key: 'name', label: 'Patient Name' },
-          { key: 'phone', label: 'Phone' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'name', label: 'اسم المريض' },
+          { key: 'phone', label: 'رقم الهاتف' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'user':
         return [
-          { key: 'username', label: 'Username' },
-          { key: 'firstName', label: 'First Name' },
-          { key: 'role', label: 'Role' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'username', label: 'اسم المستخدم' },
+          { key: 'firstName', label: 'الاسم الأول' },
+          { key: 'role', label: 'الدور' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'condition':
         return [
-          { key: 'name', label: 'Condition Name' },
-          { key: 'operator', label: 'Operator' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'name', label: 'اسم الشرط' },
+          { key: 'operator', label: 'العامل' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
@@ -186,7 +186,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   if (adminOnly && !isAdmin) {
     return (
       <div className="p-6 text-center text-gray-500">
-        <p>Only administrators can view archived items.</p>
+        <p>فقط المسؤولون يمكنهم عرض العناصر المؤرشفة.</p>
       </div>
     );
   }
@@ -198,7 +198,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
         <div className="inline-block">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
-        <p className="mt-2 text-gray-600">Loading...</p>
+        <p className="mt-2 text-gray-600">جاري التحميل...</p>
       </div>
     );
   }
@@ -207,7 +207,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   if (isError) {
     return (
       <div className="p-6 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-800 font-medium">Error loading trash items</p>
+        <p className="text-red-800 font-medium">فشل تحميل العناصر المحذوفة</p>
         {errorMessage && <p className="text-red-700 text-sm mt-1">{errorMessage}</p>}
       </div>
     );
@@ -265,7 +265,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                   {col.label}
                 </th>
               ))}
-              <th className="px-4 py-3 text-right font-medium text-gray-700">Actions</th>
+              <th className="px-4 py-3 text-right font-medium text-gray-700">الإجراءات</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -294,7 +294,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                     ))}
                     <td className="px-4 py-3 text-right">
                       {adminOnly ? (
-                        <span className="text-xs text-gray-500">Archived</span>
+                        <span className="text-xs text-gray-500">مؤرشف</span>
                       ) : (
                         <button
                           onClick={() => handleRestore(item.id)}

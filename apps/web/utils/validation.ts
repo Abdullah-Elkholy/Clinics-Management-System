@@ -312,7 +312,9 @@ export const validateCountryCode = (code: string, allowCustom: boolean = true): 
     return 'كود الدولة مطلوب';
   }
   
-  const trimmedCode = code.trim();
+  // Handle spaces in country code (remove them for validation)
+  // This ensures validation works correctly even if spaces are present
+  const trimmedCode = code.trim().replace(/\s/g, '');
   
   // Must start with +
   if (!trimmedCode.startsWith('+')) {

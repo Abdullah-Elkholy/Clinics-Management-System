@@ -170,10 +170,15 @@ namespace Clinics.Api.Controllers
                 await _db.SaveChangesAsync();
 
                 // Create moderator settings
+                // Handle spaces in WhatsApp phone number (remove them for consistency)
+                var whatsappPhoneCleaned = !string.IsNullOrWhiteSpace(req.WhatsAppPhoneNumber)
+                    ? req.WhatsAppPhoneNumber.Replace(" ", "")
+                    : req.WhatsAppPhoneNumber;
+                
                 var settings = new ModeratorSettings
                 {
                     ModeratorUserId = moderator.Id,
-                    WhatsAppPhoneNumber = req.WhatsAppPhoneNumber,
+                    WhatsAppPhoneNumber = whatsappPhoneCleaned,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -201,7 +206,7 @@ namespace Clinics.Api.Controllers
                     Username = moderator.Username,
                     FirstName = moderator.FirstName,
                     LastName = moderator.LastName,
-                    WhatsAppPhoneNumber = req.WhatsAppPhoneNumber,
+                    WhatsAppPhoneNumber = whatsappPhoneCleaned,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -246,7 +251,10 @@ namespace Clinics.Api.Controllers
                 if (settings != null)
                 {
                     if (!string.IsNullOrEmpty(req.WhatsAppPhoneNumber))
-                        settings.WhatsAppPhoneNumber = req.WhatsAppPhoneNumber;
+                    {
+                        // Handle spaces in WhatsApp phone number (remove them for consistency)
+                        settings.WhatsAppPhoneNumber = req.WhatsAppPhoneNumber.Replace(" ", "");
+                    }
 
                     if (req.IsActive.HasValue)
                         settings.IsActive = req.IsActive.Value;

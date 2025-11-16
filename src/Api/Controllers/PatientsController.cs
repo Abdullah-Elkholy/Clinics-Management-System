@@ -168,14 +168,37 @@ namespace Clinics.Api.Controllers
 
                 try
                 {
-                    // Normalize phone number only (extensions not supported)
-                    if (!_phoneNormalizationService.TryNormalize(req.PhoneNumber, out var normalizedPhone))
-                    {
-                        return BadRequest(new { success = false, error = "Invalid phone number format" });
-                    }
+                    // Handle spaces in phone number (remove them instead of rejecting)
+                    var phoneNumberCleaned = req.PhoneNumber?.Replace(" ", "") ?? string.Empty;
+                    
+                    // Handle spaces in country code (remove them instead of rejecting)
+                    var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
+                        ? req.CountryCode.Replace(" ", "") 
+                        : req.CountryCode;
 
-                    // Extract country code from normalized phone number
-                    var countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? req.PhoneNumber);
+                    // Normalize phone number with country-specific rules if country code provided
+                    string? normalizedPhone;
+                    string? countryCode;
+
+                    if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Use country-specific normalization
+                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
+                        }
+                        countryCode = countryCodeCleaned;
+                    }
+                    else
+                    {
+                        // Use generic normalization (for "OTHER" or no country code)
+                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
+                        }
+                        // Extract country code from normalized phone number
+                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
+                    }
 
                     // Get current user ID for audit using IUserContext
                     var userId = _userContext.GetUserId();
@@ -185,7 +208,7 @@ namespace Clinics.Api.Controllers
                     {
                         QueueId = req.QueueId,
                         FullName = req.FullName,
-                        PhoneNumber = normalizedPhone ?? req.PhoneNumber,
+                        PhoneNumber = normalizedPhone ?? phoneNumberCleaned,
                         CountryCode = countryCode,
                         Position = insertPos,
                         Status = "waiting",
@@ -280,15 +303,39 @@ namespace Clinics.Api.Controllers
 
                 if (!string.IsNullOrEmpty(req.PhoneNumber))
                 {
-                    // Normalize phone only (extensions not supported)
-                    if (!_phoneNormalizationService.TryNormalize(req.PhoneNumber, out var normalizedPhone))
-                    {
-                        return BadRequest(new { success = false, error = "Invalid phone number format" });
-                    }
-                    patient.PhoneNumber = normalizedPhone ?? req.PhoneNumber;
+                    // Handle spaces in phone number (remove them instead of rejecting)
+                    var phoneNumberCleaned = req.PhoneNumber.Replace(" ", "");
                     
-                    // Extract and update country code from normalized phone number
-                    var countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? req.PhoneNumber);
+                    // Handle spaces in country code (remove them instead of rejecting)
+                    var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
+                        ? req.CountryCode.Replace(" ", "") 
+                        : req.CountryCode;
+
+                    // Normalize phone number with country-specific rules if country code provided
+                    string? normalizedPhone;
+                    string? countryCode;
+
+                    if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Use country-specific normalization
+                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
+                        }
+                        countryCode = countryCodeCleaned;
+                    }
+                    else
+                    {
+                        // Use generic normalization (for "OTHER" or no country code)
+                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
+                        }
+                        // Extract country code from normalized phone number
+                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
+                    }
+
+                    patient.PhoneNumber = normalizedPhone ?? phoneNumberCleaned;
                     patient.CountryCode = countryCode;
                 }
 

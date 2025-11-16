@@ -45,13 +45,14 @@ export default function CountryCodeSelector({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         dir="rtl"
-        className={`${sizeClasses[size]} ${paddingRightBySize[size]} pl-2 text-right border-2 rounded-lg font-medium transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-offset-0 cursor-pointer ${
+        className={`${sizeClasses[size]} ${paddingRightBySize[size]} pl-2 text-right border-2 rounded-lg font-medium transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-offset-0 cursor-pointer max-h-60 overflow-y-auto ${
           hasError
             ? 'border-red-400 bg-red-50 text-red-900 focus:ring-red-500'
             : value === 'OTHER'
             ? 'border-blue-400 bg-blue-50 text-blue-900 focus:ring-blue-500'
             : 'border-gray-300 bg-white hover:border-blue-400 text-gray-700 focus:ring-blue-500 focus:border-blue-500'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        style={{ maxHeight: '15rem', overflowY: 'auto' }}
       >
         {showOptgroups ? (
           <>

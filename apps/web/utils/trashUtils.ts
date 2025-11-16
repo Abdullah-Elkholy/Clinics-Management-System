@@ -38,7 +38,7 @@ export interface RestoreError {
 type ApiErrorLike = ApiError & { metadata?: RestoreErrorMetadata };
 
 const FALLBACK_ERROR: ApiErrorLike = {
-  message: 'An unexpected error occurred.',
+  message: 'حدث خطأ غير متوقع.',
   statusCode: 0,
 };
 
@@ -69,7 +69,7 @@ export function parseRestoreError(error: unknown): RestoreError {
   if (error instanceof TypeError) {
     return {
       type: RestoreErrorType.UNKNOWN,
-      message: 'Network error. Please check your connection.',
+      message: 'خطأ في الاتصال. يرجى التحقق من الاتصال بالإنترنت.',
       statusCode: 0,
     };
   }
@@ -111,22 +111,22 @@ export function parseRestoreError(error: unknown): RestoreError {
 export function getRestoreErrorMessage(error: RestoreError): string {
   switch (error.type) {
     case RestoreErrorType.RESTORE_WINDOW_EXPIRED:
-      return 'This item has been deleted for too long (over 30 days) and can no longer be restored. It is permanently archived.';
+      return 'تم حذف هذا العنصر منذ وقت طويل (أكثر من 30 يومًا) ولا يمكن استعادته بعد الآن. تم أرشفته بشكل دائم.';
     
     case RestoreErrorType.QUOTA_INSUFFICIENT:
-      return `Cannot restore: insufficient quota. You need ${error.metadata?.requiredQuota || '?'} slots but only have ${error.metadata?.availableQuota || '?'} available.`;
+      return `لا يمكن الاستعادة: حصة غير كافية. تحتاج إلى ${error.metadata?.requiredQuota || '?'} أماكن ولكن لديك ${error.metadata?.availableQuota || '?'} متاحة فقط.`;
     
     case RestoreErrorType.NOT_FOUND:
-      return 'This item could not be found. It may have been permanently deleted.';
+      return 'لم يتم العثور على هذا العنصر. قد يكون قد تم حذفه بشكل دائم.';
     
     case RestoreErrorType.PERMISSION_DENIED:
-      return 'You do not have permission to restore this item.';
+      return 'ليس لديك صلاحية لاستعادة هذا العنصر.';
     
     case RestoreErrorType.CONFLICT:
-      return error.message || 'A conflict occurred while restoring. Please try again.';
+      return error.message || 'حدث تعارض أثناء الاستعادة. يرجى المحاولة مرة أخرى.';
     
     default:
-      return error.message || 'Failed to restore item. Please try again.';
+      return error.message || 'فشل استعادة العنصر. يرجى المحاولة مرة أخرى.';
   }
 }
 

@@ -16,6 +16,7 @@ WhatsApp message automation system for clinics with queue management, patient me
 - [🧪 Testing](#-testing)
 - [🔧 Development Guide](#-development-guide)
 - [❓ FAQ & Troubleshooting](#-faq--troubleshooting)
+- [📱 Phone Number Formatting & Validation](#-phone-number-formatting--validation)
 - [🔄 Latest Updates](#-latest-updates)
 
 ---
@@ -2579,6 +2580,89 @@ dotnet run --project ClinicsManagementService/WhatsAppMessagingService.csproj
 9. Test failed message retry (if any failures occur via Failed Tasks panel)
 
 See `apps/web/README.md` for frontend-specific instructions.
+
+---
+
+## 📱 Phone Number Formatting & Validation
+
+The system implements comprehensive country-specific phone number formatting with validation rules and space prevention.
+
+### Country-Specific Rules
+
+**Phone number validation uses digit ranges** for flexibility (e.g., Egypt: 9-11 digits instead of exactly 10):
+
+| Country | Code | Digit Range | Example | Placeholder |
+|---------|------|-------------|---------|-------------|
+| Egypt | +20 | 9-11 digits | +20 1018542431 | 1018542431 |
+| Saudi Arabia | +966 | 8-10 digits | +966 504858694 | 504858694 |
+| UAE | +971 | 8-10 digits | +971 501234567 | 501234567 |
+| UK | +44 | 9-11 digits | +44 7912345678 | 7912345678 |
+| US/Canada | +1 | 9-11 digits | +1 2025551234 | 2025551234 |
+
+**Supported Countries**: 80+ countries across Middle East, Europe, Americas, Asia, Africa, and Oceania.
+
+### Space Validation
+
+**Strict space prevention**:
+- ❌ Phone numbers **cannot contain spaces** (spaces removed in both frontend and backend)
+- ❌ Country codes **cannot contain spaces** (spaces removed in both frontend and backend)
+- ✅ Spaces are automatically removed on input change in frontend
+- ✅ Backend handles spaces by removing them automatically (not rejected)
+
+### Country Code Selector
+
+**Features**:
+- **Scrollable dropdown** with 80+ countries (max-height: 15rem)
+- **Grouped by regions** (Middle East, Europe, Americas, Asia, Africa, Oceania)
+- **Country-specific placeholders** (e.g., Egypt: "1018542431", Saudi: "504858694")
+- **Dynamic placeholder updates** based on selected country code
+- **"OTHER" option** with disclaimer for unsupported countries
+
+### "OTHER" Country Code Option
+
+When "OTHER" is selected:
+- **No country-specific validation** (uses generic 7-15 digit range)
+- **Warning disclaimer** displayed:
+  - "⚠️ **Warning**: When selecting 'OTHER', please ensure you enter the phone number in the correct format to avoid sending errors."
+  - "**Format**: + followed by 1-4 digits (e.g., +44 or +212). Do not use spaces in phone number or country code."
+- **Custom country code input** enabled (+XXX format)
+- **Space validation** still enforced
+
+### Backend Normalization
+
+**PhoneNormalizationService** (`src/Api/Services/PhoneNormalizationService.cs`):
+- `TryNormalize(phoneNumber, out normalized)`: Generic normalization (6-14 digits after country code)
+- `TryNormalizeWithCountryCode(phoneNumber, countryCode, out normalized)`: Country-specific normalization with digit ranges
+- `GetPlaceholder(countryCode)`: Returns country-specific placeholder
+- **Space handling**: Automatically removes spaces from phone numbers and country codes (not rejected)
+
+**Country-Specific Rules**:
+- 50+ country rules defined with `MinLength`, `MaxLength`, `RemoveLeadingZero`, and `Placeholder`
+- Default rule for unknown countries: 6-14 digits, removes leading zero
+
+### Frontend Utilities
+
+**phoneUtils.ts** (`apps/web/utils/phoneUtils.ts`):
+- `getPhonePlaceholder(countryCode)`: Returns country-specific placeholder
+- `validatePhoneByCountry(phone, countryCode)`: Validates phone number against country-specific rules
+- `formatPhoneForDisplay(phone, countryCode)`: Formats phone for display with space
+
+**Validation Rules**:
+- Space prevention (removed on input change)
+- Country-specific digit range validation
+- Generic validation for "OTHER" (7-15 digits)
+
+### Integration Points
+
+**PatientsController** (`src/Api/Controllers/PatientsController.cs`):
+- **Create Patient**: Validates spaces, uses country-specific normalization if country code provided
+- **Update Patient**: Same validation and normalization rules
+- **Error Messages**: Clear Arabic error messages for validation failures
+
+**Frontend Modals**:
+- `AddPatientModal.tsx`: Dynamic placeholders, space prevention, OTHER disclaimer
+- `EditPatientModal.tsx`: Same features as AddPatientModal
+- `CountryCodeSelector.tsx`: Scrollable dropdown, grouped regions, dynamic styling
 
 ---
 
