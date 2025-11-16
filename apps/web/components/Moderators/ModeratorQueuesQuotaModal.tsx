@@ -82,15 +82,25 @@ export default function ModeratorQueuesQuotaModal({
       if (mode === 'add' && inputValue !== '' && quota.queuesQuota.limit !== -1) {
         // Calculate delta from input value
         const delta = parseInt(inputValue, 10) || 0;
-        quotaToSave.queuesQuota = {
-          ...formData.queuesQuota,
-          limit: delta, // Pass delta for 'add' mode
-        };
+        if (delta > 0) {
+          quotaToSave.queuesQuota = {
+            ...formData.queuesQuota,
+            limit: delta, // Pass delta for 'add' mode
+          };
+        } else {
+          setError('يرجى إدخال قيمة صحيحة للإضافة');
+          setSaving(false);
+          return;
+        }
       } else if (mode === 'set') {
         // For 'set' mode, use the calculated limit from formData
         quotaToSave.queuesQuota = {
           ...formData.queuesQuota,
         };
+      } else if (mode === 'add' && inputValue === '') {
+        setError('يرجى إدخال قيمة للإضافة');
+        setSaving(false);
+        return;
       }
       
       // Pass mode information via a custom property
@@ -207,12 +217,22 @@ export default function ModeratorQueuesQuotaModal({
             />
             <select
               value={mode}
-              onChange={(e) => setMode(e.target.value as QuotaMode)}
+              onChange={(e) => {
+                const newMode = e.target.value as QuotaMode | 'unlimited';
+                if (newMode === 'unlimited') {
+                  setMode('set');
+                  setInputValue('');
+                  handleLimitChange(''); // Set to unlimited
+                } else {
+                  setMode(newMode);
+                }
+              }}
               disabled={saving || isLoading}
               className="px-2.5 py-1.5 rounded-lg border border-purple-300 text-purple-900 border-opacity-50 text-xs font-medium whitespace-nowrap focus:outline-none focus:ring-2 disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
               <option value="set">تعيين الحد</option>
               <option value="add">إضافة للحد الحالي</option>
+              <option value="unlimited">تعيين غير محدود</option>
             </select>
           </div>
 

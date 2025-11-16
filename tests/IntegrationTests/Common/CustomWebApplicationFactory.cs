@@ -19,7 +19,8 @@ namespace IntegrationTests.Common;
 /// <summary>
 /// Custom WebApplicationFactory for integration tests.
 /// Configures the test host to:
-/// - Use in-memory database for EF Core
+/// - Use SQL Server when ConnectionStrings__DefaultConnection env var is set (CI environment)
+/// - Use in-memory database for local development (when no connection string is provided)
 /// - Use Hangfire in-memory storage (not SQL Server)
 /// - Override JWT configuration with test key
 /// - Disable real external services
@@ -31,6 +32,9 @@ public class CustomWebApplicationFactory<TProgram> : WebApplicationFactory<TProg
     
     // Track if seeding has already happened for this factory instance
     private bool _seeded = false;
+    
+    // Check if we should use SQL Server (CI environment) or in-memory (local development)
+    private readonly string? _connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
     
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -51,12 +55,26 @@ public class CustomWebApplicationFactory<TProgram> : WebApplicationFactory<TProg
             foreach (var descriptor in hangfireDescriptors)
                 services.Remove(descriptor);
 
-            // Add test database context (in-memory) with unique name per factory
-            // Configure to suppress transaction warnings since in-memory DB doesn't support transactions
+            // Add test database context 
+            // Use SQL Server if connection string is provided (CI), otherwise use in-memory (local dev)
             services.AddDbContext<ApplicationDbContext>((sp, options) =>
             {
-                options.UseInMemoryDatabase(_dbName)
-                    .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning));
+                if (!string.IsNullOrEmpty(_connectionString))
+                {
+                    // CI environment: Use SQL Server with provided connection string
+                    options.UseSqlServer(_connectionString, sqlOptions => 
+                    {
+                        sqlOptions.CommandTimeout(60);
+                        sqlOptions.EnableRetryOnFailure(maxRetryCount: 3);
+                    });
+                }
+                else
+                {
+                    // Local development: Use in-memory database with unique name per factory
+                    // Configure to suppress transaction warnings since in-memory DB doesn't support transactions
+                    options.UseInMemoryDatabase(_dbName)
+                        .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning));
+                }
             });
 
             // Add Hangfire with in-memory storage
@@ -77,18 +95,28 @@ public class CustomWebApplicationFactory<TProgram> : WebApplicationFactory<TProg
         builder.ConfigureAppConfiguration((context, config) =>
         {
             // Override with test settings
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            var settings = new Dictionary<string, string?>
             {
                 ["ASPNETCORE_ENVIRONMENT"] = "Test",
                 ["Hangfire:StorageType"] = "Memory",
-            });
+            };
+            
+            // Pass through connection string if provided
+            if (!string.IsNullOrEmpty(_connectionString))
+            {
+                settings["ConnectionStrings:DefaultConnection"] = _connectionString;
+            }
+            
+            config.AddInMemoryCollection(settings);
         });
 
         base.ConfigureWebHost(builder);
     }
 
     /// <summary>
-    /// Seed test data into the in-memory database.
+    /// Seed test data into the database.
+    /// For in-memory database: Seeds data using DbSeeder.
+    /// For SQL Server (CI): Data is already seeded via migrations, so this is a no-op.
     /// This is idempotent - only seeds once per factory instance.
     /// Safe to call multiple times; subsequent calls are no-ops.
     /// </summary>
@@ -101,11 +129,17 @@ public class CustomWebApplicationFactory<TProgram> : WebApplicationFactory<TProg
         using (var scope = Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>();
             
-            // Seed test data using DbSeeder
-            var seeder = new DbSeeder(db, logger);
-            await seeder.SeedAsync();
+            // Only seed if using in-memory database
+            // When using SQL Server in CI, data is already seeded via migrations
+            if (string.IsNullOrEmpty(_connectionString))
+            {
+                var logger = scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>();
+                
+                // Seed test data using DbSeeder
+                var seeder = new DbSeeder(db, logger);
+                await seeder.SeedAsync();
+            }
             
             _seeded = true;
         }

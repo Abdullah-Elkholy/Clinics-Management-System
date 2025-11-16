@@ -22,7 +22,7 @@ public interface IPatientCascadeService
     /// <summary>
     /// Restore a previously soft-deleted patient
     /// </summary>
-    Task<(bool Success, string ErrorMessage)> RestorePatientAsync(int patientId);
+    Task<(bool Success, string ErrorMessage)> RestorePatientAsync(int patientId, int? restoredBy = null);
 
     /// <summary>
     /// Get soft-deleted patients for a queue (trash)
@@ -84,7 +84,7 @@ public class PatientCascadeService : IPatientCascadeService
         }
     }
 
-    public async Task<(bool Success, string ErrorMessage)> RestorePatientAsync(int patientId)
+    public async Task<(bool Success, string ErrorMessage)> RestorePatientAsync(int patientId, int? restoredBy = null)
     {
         try
         {
@@ -108,10 +108,17 @@ public class PatientCascadeService : IPatientCascadeService
                 return (false, "restore_window_expired");
             }
 
-            // Restore patient
+            // Capture operation snapshot timestamp to ensure consistency
+            var operationTimestamp = DateTime.UtcNow;
+
+            // Restore patient with snapshot timestamp and audit fields
             patient.IsDeleted = false;
             patient.DeletedAt = null;
             patient.DeletedBy = null;
+            patient.RestoredAt = operationTimestamp;
+            patient.RestoredBy = restoredBy;
+            patient.UpdatedAt = operationTimestamp;
+            patient.UpdatedBy = restoredBy;
 
             await _db.SaveChangesAsync();
 

@@ -267,9 +267,27 @@ namespace Clinics.Api.Controllers
                     }
                 }
 
-                // Step 2: Create the condition first (one-to-one required relationship)
+                // Step 2: Create the template first (need template ID for condition.TemplateId)
+                var template = new MessageTemplate
+                {
+                    Title = req.Title,
+                    Content = req.Content,
+                    CreatedBy = userId,
+                    UpdatedBy = userId, // Set UpdatedBy on creation as well
+                    ModeratorId = queue.ModeratorId,
+                    QueueId = req.QueueId,
+                    MessageConditionId = 0, // Temporary, will be updated after condition creation
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _db.MessageTemplates.Add(template);
+                await _db.SaveChangesAsync(); // Save to get the template ID
+
+                // Step 3: Create the condition with TemplateId foreign key (one-to-one required relationship)
                 var condition = new MessageCondition
                 {
+                    TemplateId = template.Id, // Set foreign key to template
                     QueueId = req.QueueId,
                     Operator = conditionOperator,
                     Value = conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS" 
@@ -277,6 +295,8 @@ namespace Clinics.Api.Controllers
                         : null,
                     MinValue = conditionOperator == "RANGE" ? req.ConditionMinValue : null,
                     MaxValue = conditionOperator == "RANGE" ? req.ConditionMaxValue : null,
+                    CreatedBy = userId,
+                    UpdatedBy = userId,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -284,20 +304,10 @@ namespace Clinics.Api.Controllers
                 _db.Set<MessageCondition>().Add(condition);
                 await _db.SaveChangesAsync(); // Save to get the condition ID
 
-                // Step 3: Create the template with MessageConditionId foreign key
-                var template = new MessageTemplate
-                {
-                    Title = req.Title,
-                    Content = req.Content,
-                    CreatedBy = userId,
-                    ModeratorId = queue.ModeratorId,
-                    QueueId = req.QueueId,
-                    MessageConditionId = condition.Id, // Set foreign key to condition
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _db.MessageTemplates.Add(template);
+                // Step 4: Update template with MessageConditionId (maintain bidirectional relationship)
+                template.MessageConditionId = condition.Id;
+                template.UpdatedAt = DateTime.UtcNow;
+                _db.MessageTemplates.Update(template);
                 await _db.SaveChangesAsync();
 
                 // Commit transaction
@@ -488,6 +498,9 @@ namespace Clinics.Api.Controllers
                             .Where(t => t.Condition != null)
                             .Select(t => t.Condition!)
                             .ToList();
+                        // Get current user ID for audit
+                        var userId = _userContext.GetUserId();
+
                         foreach (var other in otherConditions)
                         {
                             other.Operator = "UNCONDITIONED";
@@ -495,6 +508,7 @@ namespace Clinics.Api.Controllers
                             other.MinValue = null;
                             other.MaxValue = null;
                             other.UpdatedAt = operationTimestamp;
+                            other.UpdatedBy = userId;
                         }
 
                         // Get or create condition for this template with DEFAULT operator
@@ -507,26 +521,31 @@ namespace Clinics.Api.Controllers
                             condition.Value = null;
                             condition.MinValue = null;
                             condition.MaxValue = null;
-                            condition.UpdatedAt = DateTime.UtcNow;
+                            condition.UpdatedAt = operationTimestamp;
+                            condition.UpdatedBy = userId;
                         }
                         else
                         {
-                            // Create new condition
+                            // Create new condition with TemplateId foreign key
                             condition = new MessageCondition
                             {
+                                TemplateId = template.Id, // Set foreign key to template
                                 QueueId = template.QueueId,
                                 Operator = "DEFAULT",
-                                CreatedAt = DateTime.UtcNow,
-                                UpdatedAt = DateTime.UtcNow
+                                CreatedAt = operationTimestamp,
+                                UpdatedAt = operationTimestamp,
+                                CreatedBy = userId,
+                                UpdatedBy = userId
                             };
                             _db.Set<MessageCondition>().Add(condition);
                             await _db.SaveChangesAsync(); // Save to get condition ID
                             
-                            // Update template with MessageConditionId
+                            // Update template with MessageConditionId (maintain bidirectional relationship)
                             template.MessageConditionId = condition.Id;
                         }
 
-                        template.UpdatedAt = DateTime.UtcNow;
+                        template.UpdatedAt = operationTimestamp;
+                        template.UpdatedBy = userId;
 
                         await _db.SaveChangesAsync();
                         await transaction.CommitAsync();
@@ -582,12 +601,17 @@ namespace Clinics.Api.Controllers
                 var moderatorId = _userContext.GetModeratorId();
                 var isAdmin = _userContext.IsAdmin();
 
-                var query = _ttlQueries.QueryTrash(30).AsQueryable();
+                var query = _ttlQueries.QueryTrash(30)
+                    .Include(t => t.Queue) // Include Queue to check if it's deleted
+                    .AsQueryable();
 
                 if (!isAdmin && moderatorId.HasValue)
                 {
                     query = query.Where(t => t.ModeratorId == moderatorId.Value);
                 }
+
+                // Filter out templates that belong to deleted queues
+                query = query.Where(t => t.Queue == null || !t.Queue.IsDeleted);
 
                 var total = await query.CountAsync();
                 var templates = await query
@@ -684,7 +708,7 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, error = "Template is not in trash", statusCode = 400 });
 
                 // Attempt restore
-                var (success, errorMessage) = await _templateCascadeService.RestoreTemplateAsync(id);
+                var (success, errorMessage) = await _templateCascadeService.RestoreTemplateAsync(id, userId);
 
                 if (!success)
                 {

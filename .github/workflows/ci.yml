@@ -1,0 +1,31 @@
+# Sample content of the existing GitHub Actions workflow file
+
+name: CI
+
+on:
+  push:
+    branches:
+      - copilot/setup-integration-tests-db
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up database
+      env:
+        SA_PASSWORD: '${{ secrets.SA_PASSWORD }}'
+      run: |
+        sqlcmd -S localhost -U SA -P "$SA_PASSWORD" -Q "CREATE DATABASE IF NOT EXISTS TestDB"
+
+    - name: Set connection string
+      env:
+        ConnectionStrings__DefaultConnection: "Server=localhost;Database=TestDB;User Id=SA;Password=${{ secrets.SA_PASSWORD }};"
+      run: echo "Using connection string: $ConnectionStrings__DefaultConnection"
+
+    - name: Run tests
+      run: |
+        dotnet test 

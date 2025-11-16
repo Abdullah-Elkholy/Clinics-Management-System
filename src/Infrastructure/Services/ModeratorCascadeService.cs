@@ -139,11 +139,14 @@ namespace Clinics.Infrastructure.Services
 
             return await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
+                // Capture operation snapshot timestamp to ensure consistency across all transaction operations
+                var operationTimestamp = DateTime.UtcNow;
+
                 var userRepo = _unitOfWork.Repository<User>();
                 var quotaRepo = _unitOfWork.Repository<Quota>();
 
-                // Restore the moderator
-                await userRepo.RestoreAsync(moderator);
+                // Restore the moderator with snapshot timestamp
+                await userRepo.RestoreAsync(moderator, restoredBy, operationTimestamp);
 
                 // Restore moderator's quota
                 var moderatorQuota = await quotaRepo.GetByPredicateAsync(
@@ -151,16 +154,16 @@ namespace Clinics.Infrastructure.Services
                     includeDeleted: true);
                 foreach (var quota in moderatorQuota.Where(q => q.IsDeleted))
                 {
-                    await quotaRepo.RestoreAsync(quota);
+                    await quotaRepo.RestoreAsync(quota, restoredBy, operationTimestamp);
                 }
 
-                // Restore managed users
+                // Restore managed users with snapshot timestamp
                 var managedUsers = await userRepo.GetByPredicateAsync(
                     u => u.ModeratorId == moderator.Id, 
                     includeDeleted: true);
                 foreach (var managedUser in managedUsers.Where(u => u.IsDeleted))
                 {
-                    await userRepo.RestoreAsync(managedUser);
+                    await userRepo.RestoreAsync(managedUser, restoredBy, operationTimestamp);
 
                     // Restore managed user's quota
                     var managedUserQuota = await quotaRepo.GetByPredicateAsync(
@@ -168,7 +171,7 @@ namespace Clinics.Infrastructure.Services
                         includeDeleted: true);
                     foreach (var quota in managedUserQuota.Where(q => q.IsDeleted))
                     {
-                        await quotaRepo.RestoreAsync(quota);
+                        await quotaRepo.RestoreAsync(quota, restoredBy, operationTimestamp);
                     }
                 }
 

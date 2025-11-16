@@ -341,8 +341,8 @@ export default function EditPatientModal() {
                 type="text"
                 value={customCountryCode ?? ''}
                 onChange={(e) => {
-                  // Limit to 4 characters for country code format (+XXX)
-                  const value = e.target.value;
+                  // Limit to 4 characters for country code format (+XXX) and validate no spaces
+                  const value = e.target.value.replace(/\s/g, '');
                   if (value.length <= 4) {
                     handleFieldChange('customCountryCode', value);
                   }
@@ -366,9 +366,15 @@ export default function EditPatientModal() {
               name="phone"
               type="tel"
               value={phone ?? ''}
-              onChange={(e) => handleFieldChange('phone', e.target.value)}
+              onChange={(e) => {
+                // Validate no spaces
+                const value = e.target.value.replace(/\s/g, '');
+                handleFieldChange('phone', value);
+              }}
               onBlur={handleFieldBlur}
-              placeholder="أدخل رقم الهاتف"
+              placeholder={countryCode && countryCode !== 'OTHER' 
+                ? require('@/utils/phoneUtils').getPhonePlaceholder(countryCode)
+                : '123456789'}
               disabled={isLoading}
               maxLength={MAX_PHONE_DIGITS}
               inputMode="numeric"
@@ -397,6 +403,19 @@ export default function EditPatientModal() {
             </p>
           )}
         </div>
+
+        {/* OTHER Country Code Disclaimer */}
+        {countryCode === 'OTHER' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-xs text-amber-800 mb-1">
+              <i className="fas fa-exclamation-triangle ml-1"></i>
+              <strong>تنبيه:</strong> عند اختيار "أخرى"، يرجى التأكد من إدخال رقم الهاتف بالتنسيق الصحيح لتجنب أخطاء الإرسال.
+            </p>
+            <p className="text-xs text-amber-700">
+              <strong>الصيغة:</strong> + متبوعة بـ 1-4 أرقام (مثال: +44 أو +212). لا تستخدم مسافات في رقم الهاتف أو رمز الدولة.
+            </p>
+          </div>
+        )}
 
         <div className="flex gap-3 pt-4 border-t">
           <button

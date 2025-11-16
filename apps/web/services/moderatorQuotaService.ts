@@ -134,19 +134,23 @@ class ModeratorQuotaService {
           queuesLimit: updates.queuesQuota?.limit || 0,
         });
       } else {
-        // Build payload with only defined values that are >= 1
+        // Build payload with only defined values that are >= 1 or -1 (unlimited)
         const payload: { limit?: number; queuesLimit?: number } = {};
-        if (updates.messagesQuota?.limit !== undefined && updates.messagesQuota.limit >= 1) {
-          payload.limit = updates.messagesQuota.limit;
+        if (updates.messagesQuota?.limit !== undefined) {
+          if (updates.messagesQuota.limit === -1 || updates.messagesQuota.limit >= 1) {
+            payload.limit = updates.messagesQuota.limit;
+          }
         }
-        if (updates.queuesQuota?.limit !== undefined && updates.queuesQuota.limit >= 1) {
-          payload.queuesLimit = updates.queuesQuota.limit;
+        if (updates.queuesQuota?.limit !== undefined) {
+          if (updates.queuesQuota.limit === -1 || updates.queuesQuota.limit >= 1) {
+            payload.queuesLimit = updates.queuesQuota.limit;
+          }
         }
         
         if (Object.keys(payload).length === 0) {
           return {
             success: false,
-            error: 'الحد الأدنى يجب أن يكون 1 أو أكثر',
+            error: 'يرجى تحديد حد صالح (1 أو أكثر) أو غير محدود (-1)',
           };
         }
         

@@ -84,6 +84,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("Queues")]
@@ -130,6 +135,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("Patients")]
@@ -187,6 +197,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("MessageTemplates")]
@@ -270,6 +285,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("Messages")]
@@ -352,6 +372,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("FailedTasks")]
@@ -453,6 +478,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
 
@@ -596,6 +626,17 @@ namespace Clinics.Domain
         public int Id { get; set; }
 
         /// <summary>
+        /// Foreign key to the one-to-one REQUIRED relationship with MessageTemplate.
+        /// This facilitates finding template from condition without loading navigation property.
+        /// Every MessageCondition MUST belong to exactly one MessageTemplate.
+        /// 
+        /// Note: The relationship is owned by MessageTemplate (MessageTemplate.MessageConditionId -> MessageCondition.Id),
+        /// but this foreign key provides reverse lookup capability for easier queries.
+        /// </summary>
+        [Required]
+        public int TemplateId { get; set; }
+
+        /// <summary>
         /// Navigation property to the one-to-one REQUIRED relationship with MessageTemplate.
         /// 
         /// The relationship is now owned by MessageTemplate (MessageTemplate has MessageConditionId foreign key).
@@ -607,6 +648,7 @@ namespace Clinics.Domain
         ///   - UNCONDITIONED: No custom criteria; template selection is unconditioned ("بدون شرط").
         ///   - EQUAL/GREATER/LESS/RANGE: Active condition; template selected when patient field matches operator/values.
         /// </summary>
+        [ForeignKey(nameof(TemplateId))]
         public MessageTemplate? Template { get; set; }
 
         /// <summary>
@@ -673,6 +715,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     /// <summary>

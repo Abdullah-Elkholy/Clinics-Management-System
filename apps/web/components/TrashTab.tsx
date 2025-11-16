@@ -11,6 +11,7 @@ import TrashCountdownBadge from './TrashCountdownBadge';
 import { formatDeletionDate, getDaysRemainingInTrash, getRestoreErrorMessage, parseRestoreError } from '@/utils/trashUtils';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createRestoreConfirmation } from '@/utils/confirmationHelpers';
+import { formatArabicNumber } from '@/utils/numberUtils';
 
 type TrashItemPrimitive = string | number | boolean | null | undefined | Date;
 
@@ -71,56 +72,56 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     switch (entityType) {
       case 'queue':
         return [
-          { key: 'doctorName', label: 'Doctor Name' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'doctorName', label: 'اسم الطبيب' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'template':
         return [
-          { key: 'title', label: 'Template Name' },
-          { key: 'queueId', label: 'Queue ID' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'title', label: 'اسم القالب' },
+          { key: 'queueId', label: 'رقم الطابور' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'patient':
         return [
-          { key: 'name', label: 'Patient Name' },
-          { key: 'phone', label: 'Phone' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'name', label: 'اسم المريض' },
+          { key: 'phone', label: 'رقم الهاتف' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'user':
         return [
-          { key: 'username', label: 'Username' },
-          { key: 'firstName', label: 'First Name' },
-          { key: 'role', label: 'Role' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'username', label: 'اسم المستخدم' },
+          { key: 'firstName', label: 'الاسم الأول' },
+          { key: 'role', label: 'الدور' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
       case 'condition':
         return [
-          { key: 'name', label: 'Condition Name' },
-          { key: 'operator', label: 'Operator' },
-          { key: 'deletedAt', label: 'Deleted', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'name', label: 'اسم الشرط' },
+          { key: 'operator', label: 'العامل' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
           { 
             key: 'countdown', 
-            label: 'Time Remaining',
+            label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
         ];
@@ -140,7 +141,13 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     }
 
     if (value instanceof Date) {
-      return value.toISOString();
+      const { formatLocalDate } = require('@/utils/dateTimeUtils');
+      return formatLocalDate(value);
+    }
+
+    // Format numbers with Arabic-Indic numerals
+    if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)) && value.trim() !== '')) {
+      return formatArabicNumber(value);
     }
 
     return String(value);
@@ -179,7 +186,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   if (adminOnly && !isAdmin) {
     return (
       <div className="p-6 text-center text-gray-500">
-        <p>Only administrators can view archived items.</p>
+        <p>فقط المسؤولون يمكنهم عرض العناصر المؤرشفة.</p>
       </div>
     );
   }
@@ -191,7 +198,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
         <div className="inline-block">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
-        <p className="mt-2 text-gray-600">Loading...</p>
+        <p className="mt-2 text-gray-600">جاري التحميل...</p>
       </div>
     );
   }
@@ -200,7 +207,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   if (isError) {
     return (
       <div className="p-6 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-800 font-medium">Error loading trash items</p>
+        <p className="text-red-800 font-medium">فشل تحميل العناصر المحذوفة</p>
         {errorMessage && <p className="text-red-700 text-sm mt-1">{errorMessage}</p>}
       </div>
     );
@@ -258,7 +265,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                   {col.label}
                 </th>
               ))}
-              <th className="px-4 py-3 text-right font-medium text-gray-700">Actions</th>
+              <th className="px-4 py-3 text-right font-medium text-gray-700">الإجراءات</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -287,7 +294,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                     ))}
                     <td className="px-4 py-3 text-right">
                       {adminOnly ? (
-                        <span className="text-xs text-gray-500">Archived</span>
+                        <span className="text-xs text-gray-500">مؤرشف</span>
                       ) : (
                         <button
                           onClick={() => handleRestore(item.id)}
@@ -299,9 +306,9 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                               ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
                               : 'bg-gray-100 text-gray-500 cursor-not-allowed'
                           }`}
-                          title={canRestore ? 'Restore this item' : 'Item is no longer restorable (expired)'}
+                          title={canRestore ? 'استعادة هذا العنصر' : 'لم يعد من الممكن استعادة هذا العنصر (منتهي الصلاحية)'}
                         >
-                          {isRestoring ? 'Restoring...' : 'Restore'}
+                          {isRestoring ? 'جاري الاستعادة...' : 'استعادة'}
                         </button>
                       )}
                     </td>
@@ -324,8 +331,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-600">
-            Showing {(pageNumber - 1) * pageSize + 1} to{' '}
-            {Math.min(pageNumber * pageSize, totalCount)} of {totalCount} items
+            عرض {formatArabicNumber((pageNumber - 1) * pageSize + 1)} إلى{' '}
+            {formatArabicNumber(Math.min(pageNumber * pageSize, totalCount))} من {formatArabicNumber(totalCount)} عنصر
           </p>
           <div className="space-x-2">
             <button
@@ -333,14 +340,14 @@ export const TrashTab: React.FC<TrashTabProps> = ({
               disabled={pageNumber === 1}
               className="px-4 py-2 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
-              Previous
+              السابق
             </button>
             <button
               onClick={() => onPageChange(pageNumber + 1)}
               disabled={pageNumber >= totalPages}
               className="px-4 py-2 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
-              Next
+              التالي
             </button>
           </div>
         </div>

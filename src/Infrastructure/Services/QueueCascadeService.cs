@@ -138,6 +138,9 @@ namespace Clinics.Infrastructure.Services
 
             return await _unitOfWork.ExecuteInTransactionAsync(async () =>
             {
+                // Capture operation snapshot timestamp to ensure consistency across all transaction operations
+                var operationTimestamp = DateTime.UtcNow;
+
                 // Get queue and quota repositories
                 var quotaRepo = _unitOfWork.Repository<Quota>();
                 var queueRepo = _unitOfWork.Repository<Queue>();
@@ -156,29 +159,47 @@ namespace Clinics.Infrastructure.Services
                         quota.QueuesQuota - activeQueueCount.Count, 1);
                 }
 
-                // Restore the queue
-                await queueRepo.RestoreAsync(queue);
+                // Restore the queue with snapshot timestamp
+                await queueRepo.RestoreAsync(queue, restoredBy, operationTimestamp);
+
+                // Restore related patients
+                var patientRepo = _unitOfWork.Repository<Patient>();
+                var patients = await patientRepo.GetByPredicateAsync(p => p.QueueId == queue.Id, includeDeleted: true);
+                foreach (var patient in patients.Where(p => p.IsDeleted && p.DeletedAt.HasValue && p.DeletedAt >= queue.DeletedAt))
+                {
+                    await patientRepo.RestoreAsync(patient, restoredBy, operationTimestamp);
+                }
 
                 // Restore related templates and conditions
                 var templateRepo = _unitOfWork.Repository<MessageTemplate>();
                 var templates = await templateRepo.GetByPredicateAsync(t => t.QueueId == queue.Id, includeDeleted: true);
-                foreach (var template in templates.Where(t => t.IsDeleted))
+                foreach (var template in templates.Where(t => t.IsDeleted && t.DeletedAt.HasValue && t.DeletedAt >= queue.DeletedAt))
                 {
-                    await templateRepo.RestoreAsync(template);
+                    await templateRepo.RestoreAsync(template, restoredBy, operationTimestamp);
 
                     // Restore condition for soft-deleted template (one-to-one relationship)
                     var condition = template.Condition;
-                    if (condition != null && condition.IsDeleted)
+                    if (condition != null && condition.IsDeleted && condition.DeletedAt.HasValue && condition.DeletedAt >= queue.DeletedAt)
                     {
                         var conditionRepo = _unitOfWork.Repository<MessageCondition>();
-                        await conditionRepo.RestoreAsync(condition);
+                        await conditionRepo.RestoreAsync(condition, restoredBy, operationTimestamp);
                     }
+                }
+
+                // Restore related messages
+                var messageRepo = _unitOfWork.Repository<Message>();
+                var messages = await messageRepo.GetByPredicateAsync(m => m.QueueId == queue.Id, includeDeleted: true);
+                foreach (var message in messages.Where(m => m.IsDeleted && m.DeletedAt.HasValue && m.DeletedAt >= queue.DeletedAt))
+                {
+                    await messageRepo.RestoreAsync(message, restoredBy, operationTimestamp);
                 }
 
                 // Update quota consumed count (track current active count) - only if quota exists
                 if (quota != null)
                 {
                     quota.ConsumedQueues = activeQueueCount.Count + 1;
+                    quota.UpdatedAt = operationTimestamp;
+                    quota.UpdatedBy = restoredBy;
                     await quotaRepo.UpdateAsync(quota);
                 }
 

@@ -10,6 +10,8 @@ namespace Clinics.Domain
         bool IsDeleted { get; set; }
         DateTime? DeletedAt { get; set; }
         int? DeletedBy { get; set; }
+        DateTime? RestoredAt { get; set; }
+        int? RestoredBy { get; set; }
     }
 
     /// <summary>

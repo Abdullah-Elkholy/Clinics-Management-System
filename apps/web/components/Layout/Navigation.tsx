@@ -339,6 +339,7 @@ export default function Navigation() {
           {/* Admin view: group queues by moderator */}
           {isAdmin && (
             <div className="space-y-3 flex-1">
+              {/* Check if there are any moderators first */}
               {moderators.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center px-2">
                   <i className="fas fa-users-slash text-4xl text-gray-300 mb-3"></i>
@@ -421,7 +422,7 @@ export default function Navigation() {
                       {isExpanded && (
                         <div className="border-t border-gray-100 bg-gray-50 p-1 space-y-0.5 overflow-hidden min-w-0">
                           {mod.queues.length === 0 ? (
-                            <p className="text-xs text-gray-500 px-2 py-1">لا توجد طوابير</p>
+                            <p className="text-xs text-gray-500 px-2 py-1">لا توجد طوابير لهذا المشرف</p>
                           ) : (
                             mod.queues.map(q => (
                               <QueueListItem

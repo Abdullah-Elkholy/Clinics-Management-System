@@ -4,6 +4,7 @@ using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251116143751_restoreTrace")]
+    partial class restoreTrace
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -271,9 +274,6 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("RestoredBy")
                         .HasColumnType("int");
 
-                    b.Property<int>("TemplateId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -284,9 +284,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("TemplateId")
-                        .IsUnique();
 
                     b.HasIndex("QueueId", "Operator")
                         .IsUnique()
@@ -834,12 +831,6 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
                         .HasForeignKey("QueueId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clinics.Domain.MessageTemplate", null)
-                        .WithMany()
-                        .HasForeignKey("TemplateId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

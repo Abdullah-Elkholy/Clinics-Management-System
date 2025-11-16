@@ -159,8 +159,8 @@ namespace Clinics.Infrastructure.Services
                 // Save changes
                 await _unitOfWork.SaveChangesAsync();
 
-                // Audit log
-                var templateId = condition.Template?.Id;
+                // Audit log - use TemplateId foreign key directly (no navigation needed)
+                var templateId = condition.TemplateId;
                 await _auditService.LogAsync(
                     AuditAction.SoftDelete,
                     nameof(MessageCondition),
@@ -197,8 +197,11 @@ namespace Clinics.Infrastructure.Services
             {
                 var templateRepo = _unitOfWork.Repository<MessageTemplate>();
 
-                // Restore the template
-                await templateRepo.RestoreAsync(template);
+                // Capture operation snapshot timestamp to ensure consistency across all transaction operations
+                var operationTimestamp = DateTime.UtcNow;
+
+                // Restore the template with snapshot timestamp
+                await templateRepo.RestoreAsync(template, restoredBy, operationTimestamp);
 
                 // Restore soft-deleted condition for this template (one-to-one relationship)
                 var conditionRepo = _unitOfWork.Repository<MessageCondition>();
@@ -206,7 +209,7 @@ namespace Clinics.Infrastructure.Services
                 var conditions = condition != null && condition.IsDeleted ? new[] { condition } : Array.Empty<MessageCondition>();
                 foreach (var cond in conditions)
                 {
-                    await conditionRepo.RestoreAsync(cond);
+                    await conditionRepo.RestoreAsync(cond, restoredBy, operationTimestamp);
                 }
 
                 // Save changes

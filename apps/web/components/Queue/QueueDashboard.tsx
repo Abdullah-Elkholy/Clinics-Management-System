@@ -355,9 +355,13 @@ export default function QueueDashboard() {
   const detectQueueConflicts = useCallback(() => {
     if (!selectedQueueId) return [];
 
-    // Get conditions from context
+    // Get only active conditions from context (exclude DEFAULT as it's a sentinel, but include UNCONDITIONED)
     const queueConditions = messageConditions.filter(
-      (c) => c.queueId === selectedQueueId && !c.id?.startsWith('DEFAULT_')
+      (c) => 
+        c.queueId === selectedQueueId && 
+        c.operator !== 'DEFAULT' && 
+        ['UNCONDITIONED', 'EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
+        c.templateId
     );
 
     if (queueConditions.length < 2) return [];
@@ -376,17 +380,23 @@ export default function QueueDashboard() {
           getConditionRange(cond2) &&
           conditionsOverlap(cond1, cond2)
         ) {
+          // Get template names for better description
+          const template1 = messageTemplates.find((t) => t.id === cond1.templateId);
+          const template2 = messageTemplates.find((t) => t.id === cond2.templateId);
+          const template1Name = template1?.title || 'قالب غير معروف';
+          const template2Name = template2?.title || 'قالب غير معروف';
+          
           overlappingConditions.push({
             id1: cond1.id,
             id2: cond2.id,
-            description: `تقاطع: ${getConditionText(cond1)} و ${getConditionText(cond2)}`
+            description: `تقاطع: ${template1Name} (${getConditionText(cond1)}) و ${template2Name} (${getConditionText(cond2)})`
           });
         }
       }
     }
 
     return overlappingConditions;
-  }, [selectedQueueId, messageConditions]);
+  }, [selectedQueueId, messageConditions, messageTemplates]);
 
   /**
    * Get human-readable condition text
@@ -397,6 +407,8 @@ export default function QueueDashboard() {
       'GREATER': 'أكثر من',
       'LESS': 'أقل من',
       'RANGE': 'نطاق',
+      'UNCONDITIONED': 'بدون شرط', 
+      'DEFAULT': 'افتراضي',
     };
 
     const operatorText = operatorMap[cond.operator] || cond.operator;
@@ -446,7 +458,7 @@ export default function QueueDashboard() {
     try {
       const patientIdNum = Number(patientId);
       if (isNaN(patientIdNum)) {
-        addToast('معرف المريض غير صالح', 'error');
+        addToast('معرف المريض غير صالح. برجاء تحديث الصفحة وإعادة المحاولة', 'error');
         return;
       }
       
@@ -572,15 +584,34 @@ export default function QueueDashboard() {
                 if (confirmed) {
                   try {
                     const patientId = Number(patient.id);
+                    if (isNaN(patientId) || patientId <= 0) {
+                      logger.error('Invalid patient ID:', patient.id);
+                      addToast('معرّف المريض غير صالح', 'error');
+                      return;
+                    }
+                    
+                    logger.info('Deleting patient with ID:', patientId, 'from patient:', patient);
                     await patientsApiClient.deletePatient(patientId);
                     addToast('تم حذف المريض بنجاح', 'success');
                     // Refresh patients list from API
                     if (selectedQueueId) {
                       await refreshPatients(selectedQueueId);
                     }
-                  } catch (error) {
-                    logger.error('Error deleting patient:', error);
-                    addToast('فشل حذف المريض', 'error');
+                    // Dispatch event to refresh PanelHeader stats
+                    window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+                  } catch (error: any) {
+                    logger.error('Error deleting patient:', error, 'Patient ID:', patient.id);
+                    const errorMessage = error?.message || 'فشل حذف المريض';
+                    addToast(errorMessage, 'error');
+                    
+                    // Refresh patients list in case it's stale
+                    if (selectedQueueId) {
+                      try {
+                        await refreshPatients(selectedQueueId);
+                      } catch (refreshError) {
+                        logger.error('Error refreshing patients after delete failure:', refreshError);
+                      }
+                    }
                   }
                 }
               }}
@@ -791,7 +822,14 @@ export default function QueueDashboard() {
               return;
             }
 
-            const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
+            // Find default template using TemplateId foreign key directly
+            const defaultCondition = messageConditions.find(
+              (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT' && c.templateId
+            );
+            // Use TemplateId FK directly - no fallback needed since backend always returns templateId
+            const defaultTemplate = defaultCondition?.templateId
+              ? messageTemplates.find((t) => t.id === defaultCondition.templateId)
+              : undefined;
             openModal('messagePreview', {
               selectedPatients: patients.map(p => p.id), // Send to ALL patients
               selectedPatientCount: patients.length,
@@ -880,7 +918,16 @@ export default function QueueDashboard() {
             <div className="px-6 py-4 space-y-6">
               {/* Check if default template exists */}
               {(() => {
-                const defaultTemplate = messageTemplates.find((t) => t.condition?.operator === 'DEFAULT');
+                // Find default template using TemplateId foreign key directly
+                const defaultCondition = messageConditions.find(
+                  (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT' && c.templateId
+                );
+                
+                // Use TemplateId FK directly - no fallback needed since backend always returns templateId
+                const defaultTemplate = defaultCondition?.templateId
+                  ? messageTemplates.find((t) => t.id === defaultCondition.templateId)
+                  : undefined;
+                
                 const hasDefaultTemplate = !!defaultTemplate;
 
                 if (!hasDefaultTemplate) {
@@ -904,12 +951,26 @@ export default function QueueDashboard() {
                   );
                 }
 
-                // Show conditions if they exist - load from context
-                const queueConditions = messageConditions.filter((c) => c.queueId === selectedQueueId);
-                const hasConditions = queueConditions && queueConditions.length > 0;
+                // Filter active conditions for this queue (exclude DEFAULT as it's a sentinel, but include UNCONDITIONED)
+                const activeConditions = messageConditions.filter(
+                  (c) => 
+                    c.queueId === selectedQueueId && 
+                    c.operator !== 'DEFAULT' && 
+                    ['UNCONDITIONED', 'EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
+                    c.templateId
+                );
+                
+                const hasActiveConditions = activeConditions.length > 0;
 
                 // Get the actual default template text from messageTemplates
                 const defaultTemplateText = defaultTemplate?.content || '';
+                
+                // Find template name for each condition
+                const getTemplateNameForCondition = (condition: typeof activeConditions[0]) => {
+                  if (!condition.templateId) return 'شرط بدون عنوان';
+                  const template = messageTemplates.find((t) => t.id === condition.templateId);
+                  return template?.title || 'شرط بدون عنوان';
+                };
                 
                 return (
                   <div className="flex flex-col gap-6">
@@ -945,36 +1006,54 @@ export default function QueueDashboard() {
                       )}
                     </div>
                     
-                    {hasConditions && (
+                    {hasActiveConditions && (
                       <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
                         <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
                           <i className="fas fa-filter text-green-600"></i>
-                          الشروط المطبقة:
+                          الشروط المطبقة ({activeConditions.length}):
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
-                            {queueConditions.length}
+                            {activeConditions.length}
                           </span>
                         </h4>
                         <div className="space-y-2">
-                          {queueConditions.map((condition, idx) => (
-                            <div key={idx} className="flex items-start gap-3 bg-green-50 rounded-lg p-3 border border-green-100 hover:border-green-300 hover:bg-green-100 transition-colors">
-                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-300 text-green-900 text-xs font-bold flex-shrink-0">
-                                {idx + 1}
-                              </span>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-900">
-                                  {condition.name || 'شرط بدون عنوان'}
-                                </p>
-                                <p className="text-xs text-gray-700 mt-1">
-                                  {condition.operator === 'EQUAL' && `✓ يساوي: ${condition.value}`}
-                                  {condition.operator === 'GREATER' && `✓ أكبر من: ${condition.value}`}
-                                  {condition.operator === 'LESS' && `✓ أقل من: ${condition.value}`}
-                                  {(condition.operator as string) === 'RANGE' && `✓ نطاق: من ${(condition as any).minValue} إلى ${(condition as any).maxValue}`}
-                                  {(condition.operator as string) === 'DEFAULT' && `✓ قالب افتراضي`}
-                                </p>
+                          {activeConditions.map((condition, idx) => {
+                            const templateName = getTemplateNameForCondition(condition);
+                            const conditionText = 
+                              condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
+                              condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
+                              condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
+                              condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
+                              condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
+                              '';
+                            
+                            return (
+                              <div key={condition.id || idx} className="flex items-start gap-3 bg-green-50 rounded-lg p-3 border border-green-100 hover:border-green-300 hover:bg-green-100 transition-colors">
+                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-300 text-green-900 text-xs font-bold flex-shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-gray-900">
+                                    {templateName}
+                                  </p>
+                                  {conditionText && (
+                                    <p className="text-xs text-gray-700 mt-1">
+                                      {conditionText}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
+                      </div>
+                    )}
+                    
+                    {!hasActiveConditions && (
+                      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                        <p className="text-sm text-gray-600 text-center">
+                          <i className="fas fa-info-circle text-gray-400 ml-1"></i>
+                          لا توجد شروط نشطة. سيتم استخدام الرسالة الافتراضية لجميع المرضى.
+                        </p>
                       </div>
                     )}
                   </div>

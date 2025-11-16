@@ -17,7 +17,9 @@ namespace Clinics.Api.Validation
             if (value == null || string.IsNullOrWhiteSpace(value.ToString()))
                 return ValidationResult.Success; // Let [Required] handle null
 
-            var phoneNumber = value.ToString() ?? string.Empty;
+            // Handle spaces in phone number (remove them for validation)
+            // This ensures validation works correctly even if spaces are present
+            var phoneNumber = value.ToString()?.Replace(" ", "") ?? string.Empty;
 
             if (!phoneNumber.StartsWith("+"))
             {

@@ -51,7 +51,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 var patients = await _db.Patients
-                    .Where(p => p.QueueId == queueId)
+                    .Where(p => p.QueueId == queueId && !p.IsDeleted)
                     .OrderBy(p => p.Position)
                     .Select(p => new PatientDto
                     {
@@ -168,38 +168,51 @@ namespace Clinics.Api.Controllers
 
                 try
                 {
-                    // Normalize phone number only (extensions not supported)
-                    if (!_phoneNormalizationService.TryNormalize(req.PhoneNumber, out var normalizedPhone))
+                    // Handle spaces in phone number (remove them instead of rejecting)
+                    var phoneNumberCleaned = req.PhoneNumber?.Replace(" ", "") ?? string.Empty;
+                    
+                    // Handle spaces in country code (remove them instead of rejecting)
+                    var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
+                        ? req.CountryCode.Replace(" ", "") 
+                        : req.CountryCode;
+
+                    // Normalize phone number with country-specific rules if country code provided
+                    string? normalizedPhone;
+                    string? countryCode;
+
+                    if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
                     {
-                        return BadRequest(new { success = false, error = "Invalid phone number format" });
+                        // Use country-specific normalization
+                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
+                        }
+                        countryCode = countryCodeCleaned;
+                    }
+                    else
+                    {
+                        // Use generic normalization (for "OTHER" or no country code)
+                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
+                        }
+                        // Extract country code from normalized phone number
+                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
                     }
 
-                    // Extract country code from normalized phone number
-                    var countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? req.PhoneNumber);
-
-                    // Get current user ID for audit
-                    var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                        ?? User.FindFirst("nameid")?.Value
-                        ?? User.FindFirst("sub")?.Value
-                        ?? User.FindFirst("userId")?.Value
-                        ?? User.FindFirst("id")?.Value
-                        ?? User.FindFirst("Id")?.Value;
-                    int? createdBy = null;
-                    if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-                    {
-                        createdBy = userId;
-                    }
+                    // Get current user ID for audit using IUserContext
+                    var userId = _userContext.GetUserId();
 
                     // No shift needed: new patients always inserted at end (maxPos + 1)
                     var patient = new Patient
                     {
                         QueueId = req.QueueId,
                         FullName = req.FullName,
-                        PhoneNumber = normalizedPhone ?? req.PhoneNumber,
+                        PhoneNumber = normalizedPhone ?? phoneNumberCleaned,
                         CountryCode = countryCode,
                         Position = insertPos,
                         Status = "waiting",
-                        CreatedBy = createdBy
+                        CreatedBy = userId
                     };
 
                     _db.Patients.Add(patient);
@@ -215,7 +228,7 @@ namespace Clinics.Api.Controllers
                         Status = patient.Status,
                         CreatedAt = patient.CreatedAt,
                         UpdatedAt = patient.UpdatedAt,
-                        CreatedBy = createdBy,
+                        CreatedBy = patient.CreatedBy,
                         UpdatedBy = patient.UpdatedBy
                     };
 
@@ -290,37 +303,51 @@ namespace Clinics.Api.Controllers
 
                 if (!string.IsNullOrEmpty(req.PhoneNumber))
                 {
-                    // Normalize phone only (extensions not supported)
-                    if (!_phoneNormalizationService.TryNormalize(req.PhoneNumber, out var normalizedPhone))
-                    {
-                        return BadRequest(new { success = false, error = "Invalid phone number format" });
-                    }
-                    patient.PhoneNumber = normalizedPhone ?? req.PhoneNumber;
+                    // Handle spaces in phone number (remove them instead of rejecting)
+                    var phoneNumberCleaned = req.PhoneNumber.Replace(" ", "");
                     
-                    // Extract and update country code from normalized phone number
-                    var countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? req.PhoneNumber);
+                    // Handle spaces in country code (remove them instead of rejecting)
+                    var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
+                        ? req.CountryCode.Replace(" ", "") 
+                        : req.CountryCode;
+
+                    // Normalize phone number with country-specific rules if country code provided
+                    string? normalizedPhone;
+                    string? countryCode;
+
+                    if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Use country-specific normalization
+                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
+                        }
+                        countryCode = countryCodeCleaned;
+                    }
+                    else
+                    {
+                        // Use generic normalization (for "OTHER" or no country code)
+                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
+                        {
+                            return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
+                        }
+                        // Extract country code from normalized phone number
+                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
+                    }
+
+                    patient.PhoneNumber = normalizedPhone ?? phoneNumberCleaned;
                     patient.CountryCode = countryCode;
                 }
 
                 if (!string.IsNullOrEmpty(req.Status))
                     patient.Status = req.Status;
 
-                // Get current user ID for audit
-                var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                    ?? User.FindFirst("nameid")?.Value
-                    ?? User.FindFirst("sub")?.Value
-                    ?? User.FindFirst("userId")?.Value
-                    ?? User.FindFirst("id")?.Value
-                    ?? User.FindFirst("Id")?.Value;
-                int? updatedBy = null;
-                if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int userId))
-                {
-                    updatedBy = userId;
-                }
+                // Get current user ID for audit using IUserContext
+                var userId = _userContext.GetUserId();
 
                 // Set UpdatedAt and UpdatedBy for audit trail
                 patient.UpdatedAt = DateTime.UtcNow;
-                patient.UpdatedBy = updatedBy;
+                patient.UpdatedBy = userId;
 
                 await _db.SaveChangesAsync();
 
@@ -594,10 +621,18 @@ namespace Clinics.Api.Controllers
                     });
                 }
 
-                // Restore patient
+                // Get current user ID for audit
+                var userId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
+                var operationTimestamp = DateTime.UtcNow;
+
+                // Restore patient with snapshot timestamp and audit fields
                 patient.IsDeleted = false;
                 patient.DeletedAt = null;
                 patient.DeletedBy = null;
+                patient.RestoredAt = operationTimestamp;
+                patient.RestoredBy = userId;
+                patient.UpdatedAt = operationTimestamp;
+                patient.UpdatedBy = userId;
                 _db.Patients.Update(patient);
                 await _db.SaveChangesAsync();
 
