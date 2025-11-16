@@ -594,10 +594,18 @@ namespace Clinics.Api.Controllers
                     });
                 }
 
-                // Restore patient
+                // Get current user ID for audit
+                var userId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
+                var operationTimestamp = DateTime.UtcNow;
+
+                // Restore patient with snapshot timestamp and audit fields
                 patient.IsDeleted = false;
                 patient.DeletedAt = null;
                 patient.DeletedBy = null;
+                patient.RestoredAt = operationTimestamp;
+                patient.RestoredBy = userId;
+                patient.UpdatedAt = operationTimestamp;
+                patient.UpdatedBy = userId;
                 _db.Patients.Update(patient);
                 await _db.SaveChangesAsync();
 

@@ -153,7 +153,15 @@ export function isRestorable(deletedAt: string, ttlDays: number = 30): boolean {
 }
 
 /**
- * Format deletion date for display
+ * Convert Western digits (0-9) to Arabic-Indic numerals (٠-٩)
+ */
+function toArabicNumerals(str: string): string {
+  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return str.replace(/\d/g, (digit) => arabicNumerals[parseInt(digit)]);
+}
+
+/**
+ * Format deletion date for display (in Arabic)
  */
 export function formatDeletionDate(deletedAt: string): string {
   const date = new Date(deletedAt);
@@ -162,13 +170,15 @@ export function formatDeletionDate(deletedAt: string): string {
   const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
   
   if (daysDiff === 0) {
-    return 'Deleted today';
+    return 'تم الحذف اليوم';
   } else if (daysDiff === 1) {
-    return 'Deleted yesterday';
+    return 'تم الحذف أمس';
   } else if (daysDiff < 7) {
-    return `Deleted ${daysDiff} days ago`;
+    return `تم الحذف منذ ${toArabicNumerals(String(daysDiff))} ${daysDiff === 1 ? 'يوم' : 'أيام'}`;
   } else {
-    return date.toLocaleDateString();
+    // Use formatLocalDate from dateTimeUtils for full Arabic formatting
+    const { formatLocalDate } = require('@/utils/dateTimeUtils');
+    return formatLocalDate(date);
   }
 }
 

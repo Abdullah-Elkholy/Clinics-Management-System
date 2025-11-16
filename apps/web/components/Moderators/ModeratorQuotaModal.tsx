@@ -206,12 +206,21 @@ export default function ModeratorQuotaModal({
           />
           <select
             value={mode}
-            onChange={(e) => onModeChange(e.target.value as QuotaMode)}
+            onChange={(e) => {
+              const newMode = e.target.value as QuotaMode | 'unlimited';
+              if (newMode === 'unlimited') {
+                onModeChange('set');
+                onLimitChange(''); // Set to unlimited
+              } else {
+                onModeChange(newMode);
+              }
+            }}
             disabled={saving || isLoading}
             className={`px-2.5 py-1.5 rounded border ${textColor} border-opacity-50 text-xs font-medium whitespace-nowrap focus:outline-none focus:ring-2 disabled:bg-gray-100 disabled:cursor-not-allowed`}
           >
             <option value="set">تعيين الحد</option>
             <option value="add">إضافة للحد الحالي</option>
+            <option value="unlimited">تعيين غير محدود</option>
           </select>
         </div>
 

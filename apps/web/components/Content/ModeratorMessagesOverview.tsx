@@ -334,7 +334,18 @@ export default function ModeratorMessagesOverview() {
 
       {/* Main Content */}
       <div className="space-y-4 p-4">
-        {moderators.length === 0 ? (
+        {/* Check if there are any queues first, then check moderators */}
+        {queues.length === 0 && moderators.length === 0 ? (
+          <EmptyState
+            icon="fa-users"
+            title="لا يوجد مشرفين"
+            message="لم يتم العثور على أي مشرفين في النظام"
+            actionLabel="اذهب إلى لوحة التحكم"
+            onAction={() => {
+              window.location.href = '#/management';
+            }}
+          />
+        ) : moderators.length === 0 ? (
           <EmptyState
             icon="fa-users"
             title="لا يوجد مشرفين"

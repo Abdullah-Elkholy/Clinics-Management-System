@@ -9,6 +9,7 @@ import { UserRole } from '@/types/roles';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { User } from '@/services/userManagementService';
 import { ModeratorQuota } from '@/types/user';
 import { useRoleBasedUI } from '@/hooks/useRoleBasedUI';
@@ -44,6 +45,7 @@ export default function UserManagementPanel() {
   const { openModal } = useModal();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
+  const { refreshQueues } = useQueue();
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash'>('moderators');
   const [expandedModerators, setExpandedModerators] = useState<Set<string>>(new Set());
@@ -54,6 +56,7 @@ export default function UserManagementPanel() {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [selectedModerator, setSelectedModerator] = useState<string | null>(null);
+  const [expandedTrashSections, setExpandedTrashSections] = useState<Set<string>>(new Set(['users', 'queues', 'templates'])); // Default all expanded
   
   // Helper function to change tab and persist to sessionStorage
   const handleTabChange = (tab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash') => {
@@ -587,6 +590,10 @@ export default function UserManagementPanel() {
       await queuesApiClient.restoreQueue(Number(queueId));
       addToast('تم استعادة الطابور بنجاح', 'success');
       await loadTrashQueues(trashQueuesPageNumber);
+      // Refresh sidebar queues
+      if (refreshQueues) {
+        await refreshQueues();
+      }
       window.dispatchEvent(new CustomEvent('queueDataUpdated'));
     } catch (error: any) {
       addToast(error?.message || 'فشل استعادة الطابور', 'error');
@@ -2066,10 +2073,23 @@ export default function UserManagementPanel() {
 
             {/* Trash Tab Content - Users */}
             <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <i className="fas fa-users text-blue-600"></i>
-                المستخدمون المحذوفون
-              </h4>
+              <button
+                onClick={() => {
+                  setExpandedTrashSections(prev => {
+                    const next = new Set(prev);
+                    if (next.has('users')) next.delete('users'); else next.add('users');
+                    return next;
+                  });
+                }}
+                className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+              >
+                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                  <i className="fas fa-users text-blue-600"></i>
+                  المستخدمون المحذوفون
+                </h4>
+                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('users') ? 'rotate-180' : ''}`}></i>
+              </button>
+              {expandedTrashSections.has('users') && (
               <TrashTab
                 entityType="user"
                 items={trashItems}
@@ -2084,14 +2104,28 @@ export default function UserManagementPanel() {
                 adminOnly={false}
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
               />
+              )}
             </div>
 
             {/* Trash Tab Content - Queues */}
             <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <i className="fas fa-layer-group text-purple-600"></i>
-                الطوابير المحذوفة
-              </h4>
+              <button
+                onClick={() => {
+                  setExpandedTrashSections(prev => {
+                    const next = new Set(prev);
+                    if (next.has('queues')) next.delete('queues'); else next.add('queues');
+                    return next;
+                  });
+                }}
+                className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+              >
+                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                  <i className="fas fa-layer-group text-purple-600"></i>
+                  الطوابير المحذوفة
+                </h4>
+                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('queues') ? 'rotate-180' : ''}`}></i>
+              </button>
+              {expandedTrashSections.has('queues') && (
               <TrashTab
                 entityType="queue"
                 items={trashQueues.map(q => ({ ...q, name: q.doctorName, id: q.id }))}
@@ -2106,14 +2140,28 @@ export default function UserManagementPanel() {
                 adminOnly={false}
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
               />
+              )}
             </div>
 
             {/* Trash Tab Content - Templates */}
             <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <i className="fas fa-file-alt text-green-600"></i>
-                القوالب المحذوفة
-              </h4>
+              <button
+                onClick={() => {
+                  setExpandedTrashSections(prev => {
+                    const next = new Set(prev);
+                    if (next.has('templates')) next.delete('templates'); else next.add('templates');
+                    return next;
+                  });
+                }}
+                className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+              >
+                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                  <i className="fas fa-file-alt text-green-600"></i>
+                  القوالب المحذوفة
+                </h4>
+                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('templates') ? 'rotate-180' : ''}`}></i>
+              </button>
+              {expandedTrashSections.has('templates') && (
               <TrashTab
                 entityType="template"
                 items={trashTemplates.map(t => ({ ...t, name: t.title, id: t.id }))}
@@ -2128,6 +2176,7 @@ export default function UserManagementPanel() {
                 adminOnly={false}
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
               />
+              )}
             </div>
 
             {/* Trash Tab Content - Patients */}
@@ -2194,8 +2243,20 @@ export default function UserManagementPanel() {
         }}
         moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
         moderatorData={selectedModeratorForQuota}
-        onClose={() => {
+        onClose={async () => {
           setShowMessagesQuotaModal(false);
+          // Refresh quota data after modal closes
+          if (selectedModeratorForQuota) {
+            try {
+              const quotaResult = await moderatorQuotaService.getQuota(selectedModeratorForQuota.id);
+              if (quotaResult.success && quotaResult.data) {
+                // Update quota in the moderator list
+                await actions.fetchUsers();
+              }
+            } catch (error) {
+              logger.error('Failed to refresh quota after update:', error);
+            }
+          }
           setSelectedModeratorForQuota(null);
           setSelectedQuota(null);
         }}
@@ -2214,8 +2275,20 @@ export default function UserManagementPanel() {
         }}
         moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
         moderatorData={selectedModeratorForQuota}
-        onClose={() => {
+        onClose={async () => {
           setShowQueuesQuotaModal(false);
+          // Refresh quota data after modal closes
+          if (selectedModeratorForQuota) {
+            try {
+              const quotaResult = await moderatorQuotaService.getQuota(selectedModeratorForQuota.id);
+              if (quotaResult.success && quotaResult.data) {
+                // Update quota in the moderator list
+                await actions.fetchUsers();
+              }
+            } catch (error) {
+              logger.error('Failed to refresh quota after update:', error);
+            }
+          }
           setSelectedModeratorForQuota(null);
           setSelectedQuota(null);
         }}

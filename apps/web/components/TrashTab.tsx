@@ -11,6 +11,7 @@ import TrashCountdownBadge from './TrashCountdownBadge';
 import { formatDeletionDate, getDaysRemainingInTrash, getRestoreErrorMessage, parseRestoreError } from '@/utils/trashUtils';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createRestoreConfirmation } from '@/utils/confirmationHelpers';
+import { formatArabicNumber } from '@/utils/numberUtils';
 
 type TrashItemPrimitive = string | number | boolean | null | undefined | Date;
 
@@ -140,7 +141,13 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     }
 
     if (value instanceof Date) {
-      return value.toISOString();
+      const { formatLocalDate } = require('@/utils/dateTimeUtils');
+      return formatLocalDate(value);
+    }
+
+    // Format numbers with Arabic-Indic numerals
+    if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)) && value.trim() !== '')) {
+      return formatArabicNumber(value);
     }
 
     return String(value);
@@ -299,9 +306,9 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                               ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
                               : 'bg-gray-100 text-gray-500 cursor-not-allowed'
                           }`}
-                          title={canRestore ? 'Restore this item' : 'Item is no longer restorable (expired)'}
+                          title={canRestore ? 'استعادة هذا العنصر' : 'لم يعد من الممكن استعادة هذا العنصر (منتهي الصلاحية)'}
                         >
-                          {isRestoring ? 'Restoring...' : 'Restore'}
+                          {isRestoring ? 'جاري الاستعادة...' : 'استعادة'}
                         </button>
                       )}
                     </td>
@@ -324,8 +331,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-600">
-            Showing {(pageNumber - 1) * pageSize + 1} to{' '}
-            {Math.min(pageNumber * pageSize, totalCount)} of {totalCount} items
+            عرض {formatArabicNumber((pageNumber - 1) * pageSize + 1)} إلى{' '}
+            {formatArabicNumber(Math.min(pageNumber * pageSize, totalCount))} من {formatArabicNumber(totalCount)} عنصر
           </p>
           <div className="space-x-2">
             <button
@@ -333,14 +340,14 @@ export const TrashTab: React.FC<TrashTabProps> = ({
               disabled={pageNumber === 1}
               className="px-4 py-2 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
-              Previous
+              السابق
             </button>
             <button
               onClick={() => onPageChange(pageNumber + 1)}
               disabled={pageNumber >= totalPages}
               className="px-4 py-2 rounded border border-gray-300 text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
             >
-              Next
+              التالي
             </button>
           </div>
         </div>

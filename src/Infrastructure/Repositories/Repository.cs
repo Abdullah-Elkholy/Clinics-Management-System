@@ -95,16 +95,28 @@ namespace Clinics.Infrastructure.Repositories
             return entity;
         }
 
-        public virtual async Task<T> RestoreAsync(T entity)
+        public virtual async Task<T> RestoreAsync(T entity, int? restoredBy = null, DateTime? restoredAt = null)
         {
             if (!_isSoftDeletable)
                 throw new InvalidOperationException($"Entity type {typeof(T).Name} does not support restore.");
+
+            // Capture operation snapshot timestamp for consistency
+            var operationTimestamp = restoredAt ?? DateTime.UtcNow;
 
             if (entity is ISoftDeletable softDeleteable)
             {
                 softDeleteable.IsDeleted = false;
                 softDeleteable.DeletedAt = null;
                 softDeleteable.DeletedBy = null;
+                softDeleteable.RestoredAt = operationTimestamp;
+                softDeleteable.RestoredBy = restoredBy;
+            }
+
+            // Set UpdatedBy and UpdatedAt if entity implements IAuditable
+            if (entity is IAuditable auditable)
+            {
+                auditable.UpdatedAt = operationTimestamp;
+                auditable.UpdatedBy = restoredBy;
             }
 
             DbSet.Update(entity);

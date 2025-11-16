@@ -26,7 +26,7 @@ public interface ITemplateCascadeService
     /// <summary>
     /// Restore a previously soft-deleted template
     /// </summary>
-    Task<(bool Success, string ErrorMessage)> RestoreTemplateAsync(int templateId);
+    Task<(bool Success, string ErrorMessage)> RestoreTemplateAsync(int templateId, int? restoredBy = null);
 
     /// <summary>
     /// Get soft-deleted templates for a queue (trash)
@@ -170,7 +170,7 @@ public class TemplateCascadeService : ITemplateCascadeService
         }
     }
 
-    public async Task<(bool Success, string ErrorMessage)> RestoreTemplateAsync(int templateId)
+    public async Task<(bool Success, string ErrorMessage)> RestoreTemplateAsync(int templateId, int? restoredBy = null)
     {
         try
         {
@@ -202,10 +202,14 @@ public class TemplateCascadeService : ITemplateCascadeService
             await using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                // Restore template
+                // Restore template with snapshot timestamp and audit fields
                 template.IsDeleted = false;
                 template.DeletedAt = null;
                 template.DeletedBy = null;
+                template.RestoredAt = operationTimestamp;
+                template.RestoredBy = restoredBy;
+                template.UpdatedAt = operationTimestamp;
+                template.UpdatedBy = restoredBy;
 
                 // Get the template's condition via navigation property
                 await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
@@ -232,7 +236,8 @@ public class TemplateCascadeService : ITemplateCascadeService
                         templateCondition.Value = null;
                         templateCondition.MinValue = null;
                         templateCondition.MaxValue = null;
-                        templateCondition.UpdatedAt = DateTime.UtcNow;
+                        templateCondition.UpdatedAt = operationTimestamp;
+                        templateCondition.UpdatedBy = restoredBy;
                         // Get the template ID that owns this default condition
                         var defaultTemplateId = await _db.MessageTemplates
                             .Where(t => t.MessageConditionId == currentDefaultCondition.Id)
@@ -252,6 +257,10 @@ public class TemplateCascadeService : ITemplateCascadeService
                     conditionToRestore.IsDeleted = false;
                     conditionToRestore.DeletedAt = null;
                     conditionToRestore.DeletedBy = null;
+                    conditionToRestore.RestoredAt = operationTimestamp;
+                    conditionToRestore.RestoredBy = restoredBy;
+                    conditionToRestore.UpdatedAt = operationTimestamp;
+                    conditionToRestore.UpdatedBy = restoredBy;
                 }
 
                 await _db.SaveChangesAsync();

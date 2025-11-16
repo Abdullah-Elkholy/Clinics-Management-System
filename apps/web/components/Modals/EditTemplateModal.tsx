@@ -351,8 +351,16 @@ export default function EditTemplateModal() {
         });
       }
 
+      // Handle DEFAULT operator separately with proper error handling
       if (conditionOperator === 'DEFAULT') {
-        await messageApiClient.setTemplateAsDefault(templateBackendId);
+        try {
+          await messageApiClient.setTemplateAsDefault(templateBackendId);
+        } catch (defaultError: any) {
+          logger.error('Failed to set template as default:', defaultError);
+          addToast(defaultError?.message || 'فشل تعيين القالب كافتراضي', 'error');
+          setIsLoading(false);
+          return;
+        }
       }
 
       addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
@@ -413,10 +421,11 @@ export default function EditTemplateModal() {
 
       closeModal('editTemplate');
       
-      // Trigger a custom event to notify other components to refetch
+      // Trigger custom events to notify other components to refetch
       // Dispatch after a small delay to ensure refreshQueueData has updated the state
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+        window.dispatchEvent(new CustomEvent('conditionDataUpdated')); // Also dispatch condition update event
       }, 100);
     } catch (error) {
       logger.error('Failed to update template:', error);

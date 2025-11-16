@@ -52,9 +52,9 @@ namespace Clinics.Infrastructure.Repositories
         Task<T> SoftDeleteAsync(T entity, int? deletedBy = null);
 
         /// <summary>
-        /// Restore a soft-deleted entity (marks IsDeleted = false, clears DeletedAt/DeletedBy).
+        /// Restore a soft-deleted entity (marks IsDeleted = false, clears DeletedAt/DeletedBy, sets RestoredAt/RestoredBy/UpdatedAt/UpdatedBy).
         /// </summary>
-        Task<T> RestoreAsync(T entity);
+        Task<T> RestoreAsync(T entity, int? restoredBy = null, DateTime? restoredAt = null);
 
         /// <summary>
         /// Permanently delete soft-deleted entities older than the specified days.

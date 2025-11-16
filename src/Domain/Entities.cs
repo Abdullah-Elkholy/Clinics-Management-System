@@ -84,6 +84,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("Queues")]
@@ -130,6 +135,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("Patients")]
@@ -187,6 +197,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("MessageTemplates")]
@@ -270,6 +285,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     [Table("Messages")]
@@ -453,6 +473,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
 
@@ -673,6 +698,11 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
+
+        // Restore fields
+        public DateTime? RestoredAt { get; set; }
+
+        public int? RestoredBy { get; set; }
     }
 
     /// <summary>

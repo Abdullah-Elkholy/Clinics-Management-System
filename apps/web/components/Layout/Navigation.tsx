@@ -339,7 +339,26 @@ export default function Navigation() {
           {/* Admin view: group queues by moderator */}
           {isAdmin && (
             <div className="space-y-3 flex-1">
-              {moderators.length === 0 ? (
+              {/* Check if there are any queues first, then check moderators */}
+              {queues.length === 0 && moderators.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center px-2">
+                  <i className="fas fa-users-slash text-4xl text-gray-300 mb-3"></i>
+                  <p className="text-xs text-gray-700 font-semibold mb-2">لا يوجد مشرفون</p>
+                  <p className="text-xs text-gray-500 mb-3">يجب إنشاء مشرف أولاً لإضافة طوابير مرتبطة به</p>
+                  <button
+                    onClick={() => setCurrentPanel('management')}
+                    title="انتقل لإدارة المستخدمين"
+                    className="
+                      text-xs bg-blue-600 text-white px-3 py-1.5 rounded
+                      hover:bg-blue-700 transition-colors
+                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                    "
+                  >
+                    <i className="fas fa-user-plus mr-1"></i>
+                    إدارة المستخدمين
+                  </button>
+                </div>
+              ) : moderators.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center px-2">
                   <i className="fas fa-users-slash text-4xl text-gray-300 mb-3"></i>
                   <p className="text-xs text-gray-700 font-semibold mb-2">لا يوجد مشرفون</p>
@@ -421,7 +440,7 @@ export default function Navigation() {
                       {isExpanded && (
                         <div className="border-t border-gray-100 bg-gray-50 p-1 space-y-0.5 overflow-hidden min-w-0">
                           {mod.queues.length === 0 ? (
-                            <p className="text-xs text-gray-500 px-2 py-1">لا توجد طوابير</p>
+                            <p className="text-xs text-gray-500 px-2 py-1">لا توجد طوابير لهذا المشرف</p>
                           ) : (
                             mod.queues.map(q => (
                               <QueueListItem

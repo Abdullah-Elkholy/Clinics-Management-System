@@ -10,6 +10,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { queuesApiClient } from '@/services/api/queuesApiClient';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import TrashTab from '@/components/TrashTab';
 import { TabNavigation } from '@/components/Common/TabNavigation';
 import logger from '@/utils/logger';
@@ -23,6 +24,7 @@ interface Tab {
 
 export default function QueuesManagementView() {
   const { addToast } = useUI();
+  const { refreshQueues } = useQueue();
   const [activeTab, setActiveTab] = useState<string>('active');
   
   // Trash tab state
@@ -102,12 +104,18 @@ export default function QueuesManagementView() {
         addToast('Queue restored successfully', 'success');
         // Reload trash list
         loadTrashQueues(trashPageNumber);
+        // Refresh sidebar queues
+        if (refreshQueues) {
+          await refreshQueues();
+        }
+        // Dispatch event for other components
+        window.dispatchEvent(new CustomEvent('queueDataUpdated'));
       } catch (error: any) {
         addToast(error?.message || 'Failed to restore queue', 'error');
         throw error;
       }
     },
-    [trashPageNumber, loadTrashQueues, addToast]
+    [trashPageNumber, loadTrashQueues, addToast, refreshQueues]
   );
 
   const tabs: Tab[] = [

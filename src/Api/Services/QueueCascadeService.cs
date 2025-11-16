@@ -26,7 +26,7 @@ public interface IQueueCascadeService
     /// <summary>
     /// Restore a previously soft-deleted queue
     /// </summary>
-    Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId);
+    Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null);
 
     /// <summary>
     /// Get soft-deleted queues (trash)
@@ -127,7 +127,7 @@ public class QueueCascadeService : IQueueCascadeService
         }
     }
 
-    public async Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId)
+    public async Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null)
     {
         try
         {
@@ -181,10 +181,16 @@ public class QueueCascadeService : IQueueCascadeService
                     }
                 }
 
-                // Restore queue
+                // Use restoredBy parameter passed from controller
+                
+                // Restore queue with snapshot timestamp and audit fields
                 queue.IsDeleted = false;
                 queue.DeletedAt = null;
                 queue.DeletedBy = null;
+                queue.RestoredAt = operationTimestamp;
+                queue.RestoredBy = restoredBy;
+                queue.UpdatedAt = operationTimestamp;
+                queue.UpdatedBy = restoredBy;
 
                 // Restore related patients
                 // Only restoring patients deleted during cascade window (DeletedAt >= parent deletion timestamp)
@@ -197,6 +203,10 @@ public class QueueCascadeService : IQueueCascadeService
                     patient.IsDeleted = false;
                     patient.DeletedAt = null;
                     patient.DeletedBy = null;
+                    patient.RestoredAt = operationTimestamp;
+                    patient.RestoredBy = restoredBy;
+                    patient.UpdatedAt = operationTimestamp;
+                    patient.UpdatedBy = restoredBy;
                 }
 
                 var templates = await _db.MessageTemplates
@@ -222,6 +232,10 @@ public class QueueCascadeService : IQueueCascadeService
                     template.IsDeleted = false;
                     template.DeletedAt = null;
                     template.DeletedBy = null;
+                    template.RestoredAt = operationTimestamp;
+                    template.RestoredBy = restoredBy;
+                    template.UpdatedAt = operationTimestamp;
+                    template.UpdatedBy = restoredBy;
 
                     // Restore related condition from preloaded data (one-to-one relationship)
                     if (template.MessageConditionId > 0 && conditionsByMessageConditionId.TryGetValue(template.MessageConditionId, out var condition))
@@ -229,6 +243,10 @@ public class QueueCascadeService : IQueueCascadeService
                         condition.IsDeleted = false;
                         condition.DeletedAt = null;
                         condition.DeletedBy = null;
+                        condition.RestoredAt = operationTimestamp;
+                        condition.RestoredBy = restoredBy;
+                        condition.UpdatedAt = operationTimestamp;
+                        condition.UpdatedBy = restoredBy;
                     }
                 }
 

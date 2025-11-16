@@ -33,14 +33,14 @@ export default function QuotaManagementModal() {
     : moderatorData?.firstName || 'غير محدد';
     
   const moderatorUsername = moderatorData?.username || '-';
-  const currentMessagesQuota = modalData?.currentQuotas?.messagesQuota || 0;
-  const currentQueuesQuota = modalData?.currentQuotas?.queuesQuota || 0;
+  const currentMessagesQuota = modalData?.currentQuotas?.messagesQuota ?? -1;
+  const currentQueuesQuota = modalData?.currentQuotas?.queuesQuota ?? -1;
   
   // Calculate used quotas from modal data or moderatorData
   const messagesUsed = moderatorData?.messagesUsed || 0;
   const queuesUsed = moderatorData?.queuesUsed || 0;
-  const messagesRemaining = Math.max(0, currentMessagesQuota - messagesUsed);
-  const queuesRemaining = Math.max(0, currentQueuesQuota - queuesUsed);
+  const messagesRemaining = currentMessagesQuota === -1 ? -1 : Math.max(0, currentMessagesQuota - messagesUsed);
+  const queuesRemaining = currentQueuesQuota === -1 ? -1 : Math.max(0, currentQueuesQuota - queuesUsed);
 
   const handleAddQuota = async (type: 'messages' | 'queues') => {
     if (!moderatorData?.id) {
@@ -124,7 +124,7 @@ export default function QuotaManagementModal() {
             <h4 className="font-medium text-gray-800 mb-3">حصة الرسائل</h4>
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-blue-600">{currentMessagesQuota}</div>
+                <div className="text-2xl font-bold text-blue-600">{currentMessagesQuota === -1 ? 'غير محدود' : currentMessagesQuota}</div>
                 <div className="text-sm text-blue-700">الحصة الإجمالية</div>
               </div>
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-center">
@@ -132,7 +132,7 @@ export default function QuotaManagementModal() {
                 <div className="text-sm text-orange-700">الحصة المستهلكة</div>
               </div>
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-600">{messagesRemaining}</div>
+                <div className="text-2xl font-bold text-green-600">{messagesRemaining === -1 ? 'غير محدود' : messagesRemaining}</div>
                 <div className="text-sm text-green-700">الحصة المتبقية</div>
               </div>
             </div>
@@ -173,7 +173,7 @@ export default function QuotaManagementModal() {
             <h4 className="font-medium text-gray-800 mb-3">حصة الطوابير</h4>
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-blue-600">{currentQueuesQuota}</div>
+                <div className="text-2xl font-bold text-blue-600">{currentQueuesQuota === -1 ? 'غير محدود' : currentQueuesQuota}</div>
                 <div className="text-sm text-blue-700">الحصة الإجمالية</div>
               </div>
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-center">
@@ -181,7 +181,7 @@ export default function QuotaManagementModal() {
                 <div className="text-sm text-orange-700">الحصة المستهلكة</div>
               </div>
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-600">{queuesRemaining}</div>
+                <div className="text-2xl font-bold text-green-600">{queuesRemaining === -1 ? 'غير محدود' : queuesRemaining}</div>
                 <div className="text-sm text-green-700">الحصة المتبقية</div>
               </div>
             </div>

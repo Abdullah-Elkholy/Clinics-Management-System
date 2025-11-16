@@ -1,7 +1,16 @@
 /**
  * DateTime Utilities
  * Handles conversion and formatting of DateTime values to user's local timezone
+ * All numbers are formatted with Arabic-Indic numerals
  */
+
+/**
+ * Convert Western digits (0-9) to Arabic-Indic numerals (٠-٩)
+ */
+function toArabicNumerals(str: string): string {
+  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return str.replace(/\d/g, (digit) => arabicNumerals[parseInt(digit)]);
+}
 
 /**
  * Convert UTC DateTime string to local Date object
@@ -53,7 +62,8 @@ export function formatLocalDate(date: string | Date | undefined | null): string 
       result += part.value;
     }
   }
-  return result;
+  // Convert all Western numerals to Arabic-Indic numerals
+  return toArabicNumerals(result);
 }
 
 /**
@@ -93,7 +103,8 @@ export function formatLocalDateTime(date: string | Date | undefined | null): str
       result += part.value;
     }
   }
-  return result;
+  // Convert all Western numerals to Arabic-Indic numerals
+  return toArabicNumerals(result);
 }
 
 /**
@@ -113,7 +124,10 @@ export function formatLocalTime(date: string | Date | undefined | null): string 
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
   
-  return formatter.format(localDate).replace(/ص/g, 'ص').replace(/م/g, 'م');
+  const formatted = formatter.format(localDate).replace(/ص/g, 'ص').replace(/م/g, 'م');
+  
+  // Convert all Western numerals to Arabic-Indic numerals
+  return toArabicNumerals(formatted);
 }
 
 /**
@@ -125,13 +139,16 @@ export function formatShortDate(date: string | Date | undefined | null): string 
   const localDate = toLocalDate(date);
   if (!localDate) return 'لم يحدد';
   
-  return localDate.toLocaleDateString('en-US', {
+  const formatted = localDate.toLocaleDateString('en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     calendar: 'gregory',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
+  
+  // Convert all Western numerals to Arabic-Indic numerals
+  return toArabicNumerals(formatted);
 }
 
 /**
@@ -153,11 +170,11 @@ export function formatRelativeTime(date: string | Date | undefined | null): stri
   if (diffSeconds < 60) {
     return 'الآن';
   } else if (diffMinutes < 60) {
-    return `منذ ${diffMinutes} ${diffMinutes === 1 ? 'دقيقة' : 'دقائق'}`;
+    return `منذ ${toArabicNumerals(String(diffMinutes))} ${diffMinutes === 1 ? 'دقيقة' : 'دقائق'}`;
   } else if (diffHours < 24) {
-    return `منذ ${diffHours} ${diffHours === 1 ? 'ساعة' : 'ساعات'}`;
+    return `منذ ${toArabicNumerals(String(diffHours))} ${diffHours === 1 ? 'ساعة' : 'ساعات'}`;
   } else if (diffDays < 7) {
-    return `منذ ${diffDays} ${diffDays === 1 ? 'يوم' : 'أيام'}`;
+    return `منذ ${toArabicNumerals(String(diffDays))} ${diffDays === 1 ? 'يوم' : 'أيام'}`;
   } else {
     return formatLocalDate(date);
   }

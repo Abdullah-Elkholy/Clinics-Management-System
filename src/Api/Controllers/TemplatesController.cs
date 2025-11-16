@@ -488,6 +488,9 @@ namespace Clinics.Api.Controllers
                             .Where(t => t.Condition != null)
                             .Select(t => t.Condition!)
                             .ToList();
+                        // Get current user ID for audit
+                        var userId = _userContext.GetUserId();
+
                         foreach (var other in otherConditions)
                         {
                             other.Operator = "UNCONDITIONED";
@@ -495,6 +498,7 @@ namespace Clinics.Api.Controllers
                             other.MinValue = null;
                             other.MaxValue = null;
                             other.UpdatedAt = operationTimestamp;
+                            other.UpdatedBy = userId;
                         }
 
                         // Get or create condition for this template with DEFAULT operator
@@ -507,7 +511,8 @@ namespace Clinics.Api.Controllers
                             condition.Value = null;
                             condition.MinValue = null;
                             condition.MaxValue = null;
-                            condition.UpdatedAt = DateTime.UtcNow;
+                            condition.UpdatedAt = operationTimestamp;
+                            condition.UpdatedBy = userId;
                         }
                         else
                         {
@@ -516,8 +521,10 @@ namespace Clinics.Api.Controllers
                             {
                                 QueueId = template.QueueId,
                                 Operator = "DEFAULT",
-                                CreatedAt = DateTime.UtcNow,
-                                UpdatedAt = DateTime.UtcNow
+                                CreatedAt = operationTimestamp,
+                                UpdatedAt = operationTimestamp,
+                                CreatedBy = userId,
+                                UpdatedBy = userId
                             };
                             _db.Set<MessageCondition>().Add(condition);
                             await _db.SaveChangesAsync(); // Save to get condition ID
@@ -526,7 +533,8 @@ namespace Clinics.Api.Controllers
                             template.MessageConditionId = condition.Id;
                         }
 
-                        template.UpdatedAt = DateTime.UtcNow;
+                        template.UpdatedAt = operationTimestamp;
+                        template.UpdatedBy = userId;
 
                         await _db.SaveChangesAsync();
                         await transaction.CommitAsync();
@@ -582,12 +590,17 @@ namespace Clinics.Api.Controllers
                 var moderatorId = _userContext.GetModeratorId();
                 var isAdmin = _userContext.IsAdmin();
 
-                var query = _ttlQueries.QueryTrash(30).AsQueryable();
+                var query = _ttlQueries.QueryTrash(30)
+                    .Include(t => t.Queue) // Include Queue to check if it's deleted
+                    .AsQueryable();
 
                 if (!isAdmin && moderatorId.HasValue)
                 {
                     query = query.Where(t => t.ModeratorId == moderatorId.Value);
                 }
+
+                // Filter out templates that belong to deleted queues
+                query = query.Where(t => t.Queue == null || !t.Queue.IsDeleted);
 
                 var total = await query.CountAsync();
                 var templates = await query
@@ -684,7 +697,7 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, error = "Template is not in trash", statusCode = 400 });
 
                 // Attempt restore
-                var (success, errorMessage) = await _templateCascadeService.RestoreTemplateAsync(id);
+                var (success, errorMessage) = await _templateCascadeService.RestoreTemplateAsync(id, userId);
 
                 if (!success)
                 {
