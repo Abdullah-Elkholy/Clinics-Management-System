@@ -255,6 +255,16 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
         window.dispatchEvent(new CustomEvent('userDataUpdated'));
       }, 100);
     } catch (err) {
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (err && typeof err === 'object' && 'message' in err)
+          ? String((err as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Failed to update user:', {
+        error: errorMessage,
+        statusCode: (err && typeof err === 'object' && 'statusCode' in err) ? (err as { statusCode?: unknown }).statusCode : undefined,
+        fullError: err,
+      });
       addToast('حدث خطأ أثناء تحديث البيانات', 'error');
     } finally {
       setIsLoading(false);

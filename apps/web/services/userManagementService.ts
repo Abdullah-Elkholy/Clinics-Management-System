@@ -103,10 +103,17 @@ class UserManagementService {
       return { success: true, data: userDtoToModel(user) };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error && typeof error === 'object' && 'message' in error)
+          ? String((error as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
       
       logger.error('❌ UserManagementService.updateUser error:', {
-        error,
+        error: errorMessage,
+        statusCode: (error && typeof error === 'object' && 'statusCode' in error) ? (error as { statusCode?: unknown }).statusCode : undefined,
         errorMsg,
+        fullError: error,
       });
 
       return {

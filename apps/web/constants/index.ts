@@ -109,8 +109,6 @@ export const COUNTRY_CODES = [
   { code: '+233', country: 'GH', countryName: 'غانا' },
   { code: '+256', country: 'UG', countryName: 'أوغندا' },
   { code: '+255', country: 'TZ', countryName: 'تنزانيا' },
-  { code: '+234', country: 'NG', countryName: 'نيجيريا' },
-  { code: '+27', country: 'ZA', countryName: 'جنوب أفريقيا' },
   
   // Oceania (أوقيانوسيا)
   { code: '+61', country: 'AU', countryName: 'أستراليا' },

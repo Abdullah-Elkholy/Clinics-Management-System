@@ -8,69 +8,114 @@ import logger from '@/utils/logger';
 
 export interface TestFixtures {
   authenticatedPage: Page;
+  authenticatedPageAsAdmin: Page;
+  authenticatedPageAsModerator: Page;
+  authenticatedPageAsUser: Page;
   testUserId?: string;
 }
 
-export const test = base.extend<TestFixtures>({
-  authenticatedPage: async ({ page }, provideAuthenticatedPage) => {
-    // Navigate to login and wait for full page load
-    await page.goto('/login', { waitUntil: 'networkidle' });
-    
-    logger.info(`[E2E] Navigated to login page. URL: ${page.url()}`);
+// Seeded test credentials
+export const TEST_CREDENTIALS = {
+  PRIMARY_ADMIN: { username: 'admin', password: 'admin123', role: 'primary_admin' },
+  SECONDARY_ADMIN: { username: 'admin2', password: 'admin123', role: 'secondary_admin' },
+  MODERATOR: { username: 'mod1', password: 'mod123', role: 'moderator' },
+  USER: { username: 'user1', password: 'user123', role: 'user' },
+} as const;
 
-    // Wait for login form inputs to be visible with longer timeout
-    try {
-      await page.waitForSelector('input[type="text"]', { timeout: 15000 });
-      await page.waitForSelector('input[type="password"]', { timeout: 15000 });
-    } catch (e) {
-      logger.error('[E2E] Failed to find login inputs. Dumping page content...');
-      logger.error(await page.content());
-      throw e;
-    }
+// Helper function to authenticate with specific credentials
+async function authenticate(page: Page, credentials: { username: string; password: string }) {
+  // Navigate to root page (login is shown when not authenticated)
+  await page.goto('/', { waitUntil: 'networkidle' });
+  
+  logger.info(`[E2E] Navigated to root page. URL: ${page.url()}`);
 
-    logger.info('[E2E] Login form inputs found, filling credentials');
+  // Wait for login form inputs to be visible with longer timeout
+  try {
+    await page.waitForSelector('input[type="text"]', { timeout: 15000 });
+    await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+  } catch (e) {
+    logger.error('[E2E] Failed to find login inputs. Dumping page content...');
+    logger.error(await page.content());
+    throw e;
+  }
 
-    // Fill login form using input type selectors (more robust than Arabic placeholders)
-    const textInputs = await page.locator('input[type="text"]').all();
-    const passwordInputs = await page.locator('input[type="password"]').all();
-    
-    if (textInputs.length >= 1 && passwordInputs.length >= 1) {
-      await textInputs[0].fill('testadmin');
-      await passwordInputs[0].fill('TestPassword123!');
-      logger.info('[E2E] Credentials filled');
+  logger.info(`[E2E] Login form inputs found, filling credentials for ${credentials.username}`);
+
+  // Fill login form using input type selectors (more robust than Arabic placeholders)
+  const textInputs = await page.locator('input[type="text"]').all();
+  const passwordInputs = await page.locator('input[type="password"]').all();
+  
+  if (textInputs.length >= 1 && passwordInputs.length >= 1) {
+    await textInputs[0].fill(credentials.username);
+    await passwordInputs[0].fill(credentials.password);
+    logger.info(`[E2E] Credentials filled for ${credentials.username}`);
+  } else {
+    throw new Error(`Expected text and password inputs, found text:${textInputs.length} password:${passwordInputs.length}`);
+  }
+
+  // Submit login by finding and clicking the submit button
+  const submitButton = await page.locator('button[type="submit"]').first();
+  
+  if (!await submitButton.isVisible()) {
+    throw new Error('Login submit button not found');
+  }
+
+  logger.info('[E2E] Clicking login submit button');
+
+  // Click submit and wait for navigation or page content change
+  await submitButton.click();
+  
+  // Wait for either navigation or for main app content (check if login screen is gone)
+  try {
+    // Wait for main app content to appear (login screen should be replaced)
+    await page.waitForSelector('header, nav, [role="main"]', { timeout: 15000 });
+    logger.info(`[E2E] Successfully authenticated as ${credentials.username} and main app loaded`);
+  } catch {
+    // Check if we're still on login screen
+    const loginScreen = await page.locator('input[type="text"], input[type="password"]').count();
+    if (loginScreen > 0) {
+      logger.warn(`[E2E] Still on login screen after authentication. URL: ${page.url()}`);
+      // Wait a bit more for async auth to complete
+      await page.waitForTimeout(2000);
+      const stillOnLogin = await page.locator('input[type="text"], input[type="password"]').count();
+      if (stillOnLogin > 0) {
+        throw new Error(`Authentication failed for ${credentials.username}. Still on login screen.`);
+      }
     } else {
-      throw new Error(`Expected text and password inputs, found text:${textInputs.length} password:${passwordInputs.length}`);
+      logger.info(`[E2E] Authentication completed for ${credentials.username}. URL: ${page.url()}`);
     }
+  }
 
-    // Submit login by finding and clicking the submit button
-    const submitButton = await page.locator('button[type="submit"]').first();
-    
-    if (!await submitButton.isVisible()) {
-      throw new Error('Login submit button not found');
-    }
+  // Wait for page to fully settle
+  await page.waitForLoadState('networkidle').catch(() => {
+    // Network might not become idle, that's ok
+  });
 
-    logger.info('[E2E] Clicking login submit button');
+  logger.info(`[E2E] Authenticated page ready for ${credentials.username}. Final URL: ${page.url()}`);
+}
 
-    // Click submit and wait for navigation or page content change
-    await submitButton.click();
-    
-    // Wait for either navigation away from login or for main app content
-    try {
-      await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 10000 });
-      logger.info('[E2E] Successfully navigated away from login page');
-    } catch {
-      logger.warn(`[E2E] Still on login page after authentication. URL: ${page.url()}`);
-      // Don't throw - some tests intentionally test auth persistence
-    }
+export const test = base.extend<TestFixtures>({
+  // Default: authenticate as primary admin
+  authenticatedPage: async ({ page }, provideAuthenticatedPage) => {
+    await authenticate(page, TEST_CREDENTIALS.PRIMARY_ADMIN);
+    await provideAuthenticatedPage(page);
+  },
 
-    // Wait for page to fully settle
-    await page.waitForLoadState('networkidle').catch(() => {
-      // Network might not become idle, that's ok
-    });
+  // Authenticate as primary admin
+  authenticatedPageAsAdmin: async ({ page }, provideAuthenticatedPage) => {
+    await authenticate(page, TEST_CREDENTIALS.PRIMARY_ADMIN);
+    await provideAuthenticatedPage(page);
+  },
 
-    logger.info(`[E2E] Authenticated page ready. Final URL: ${page.url()}`);
+  // Authenticate as moderator
+  authenticatedPageAsModerator: async ({ page }, provideAuthenticatedPage) => {
+    await authenticate(page, TEST_CREDENTIALS.MODERATOR);
+    await provideAuthenticatedPage(page);
+  },
 
-    // Provide authenticated page to test
+  // Authenticate as regular user
+  authenticatedPageAsUser: async ({ page }, provideAuthenticatedPage) => {
+    await authenticate(page, TEST_CREDENTIALS.USER);
     await provideAuthenticatedPage(page);
   },
 });

@@ -439,7 +439,16 @@ export default function EditTemplateModal() {
         window.dispatchEvent(new CustomEvent('conditionDataUpdated')); // Also dispatch condition update event
       }, 100);
     } catch (error) {
-      logger.error('Failed to update template:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error && typeof error === 'object' && 'message' in error)
+          ? String((error as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Failed to update template:', {
+        error: errorMessage,
+        statusCode: (error && typeof error === 'object' && 'statusCode' in error) ? (error as { statusCode?: unknown }).statusCode : undefined,
+        fullError: error,
+      });
       addToast('حدث خطأ أثناء تحديث القالب', 'error');
     } finally {
       // Always reset loading state, even if an error occurred

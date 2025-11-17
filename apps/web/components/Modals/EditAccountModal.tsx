@@ -256,9 +256,17 @@ export default function EditAccountModal({ selectedUser }: EditAccountModalProps
       }, 100);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'خطأ غير معروف';
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (err && typeof err === 'object' && 'message' in err)
+          ? String((err as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Update error:', {
+        error: errorMessage,
+        statusCode: (err && typeof err === 'object' && 'statusCode' in err) ? (err as { statusCode?: unknown }).statusCode : undefined,
+        fullError: err,
+      });
       addToast(`حدث خطأ: ${errorMsg}`, 'error');
-      
-      logger.error('Update error:', err);
     } finally {
       setIsLoading(false);
     }

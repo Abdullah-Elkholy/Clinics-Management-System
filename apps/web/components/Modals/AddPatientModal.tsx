@@ -221,7 +221,16 @@ export default function AddPatientModal() {
           });
           addedCount++;
         } catch (err) {
-          logger.error(`Failed to add patient: ${p.name}`, err);
+          const errorMessage = err instanceof Error 
+            ? err.message 
+            : (err && typeof err === 'object' && 'message' in err)
+              ? String((err as { message?: unknown }).message || 'Unknown error')
+              : 'Unknown error';
+          logger.error(`Failed to add patient: ${p.name}`, {
+            error: errorMessage,
+            statusCode: (err && typeof err === 'object' && 'statusCode' in err) ? (err as { statusCode?: unknown }).statusCode : undefined,
+            fullError: err,
+          });
         }
       }
       
@@ -248,7 +257,16 @@ export default function AddPatientModal() {
         window.dispatchEvent(new CustomEvent('patientDataUpdated'));
       }, 100);
     } catch (error) {
-      logger.error('Failed to add patients:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error && typeof error === 'object' && 'message' in error)
+          ? String((error as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Failed to add patients:', {
+        error: errorMessage,
+        statusCode: (error && typeof error === 'object' && 'statusCode' in error) ? (error as { statusCode?: unknown }).statusCode : undefined,
+        fullError: error,
+      });
       addToast('حدث خطأ أثناء إضافة المرضى', 'error');
     } finally {
       setIsLoading(false);

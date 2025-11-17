@@ -6,6 +6,7 @@ import { useUI } from '@/contexts/UIContext';
 import { validateName, validateUsername, ValidationError } from '@/utils/validation';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { UserRole } from '@/types/roles';
+import logger from '@/utils/logger';
 import Modal from './Modal';
 
 interface AddUserModalProps {
@@ -203,6 +204,16 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       onUserAdded?.();
       onClose?.();
     } catch (err) {
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (err && typeof err === 'object' && 'message' in err)
+          ? String((err as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Failed to add user:', {
+        error: errorMessage,
+        statusCode: (err && typeof err === 'object' && 'statusCode' in err) ? (err as { statusCode?: unknown }).statusCode : undefined,
+        fullError: err,
+      });
       addToast('حدث خطأ أثناء إضافة المستخدم', 'error');
     } finally {
       setIsLoading(false);
