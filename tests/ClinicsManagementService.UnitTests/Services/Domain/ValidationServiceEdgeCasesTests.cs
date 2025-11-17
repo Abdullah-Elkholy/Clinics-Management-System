@@ -36,27 +36,30 @@ namespace ClinicsManagementService.UnitTests.Services.Domain
         [InlineData("+1 (234) 567-8900")] // With parentheses and spaces
         [InlineData("+1.234.567.8900")] // With dots
         [InlineData("+1 234 567 8900")] // With spaces
-        public void ValidatePhoneNumber_WithSpecialCharacters_ReturnsFailure(string phoneNumber)
+        public void ValidatePhoneNumber_WithSpecialCharacters_ReturnsSuccess(string phoneNumber)
         {
             // Act
             var result = _validationService.ValidatePhoneNumber(phoneNumber);
 
             // Assert
-            result.IsValid.Should().BeFalse();
-            result.ErrorMessage.Should().Contain("digits");
+            // Special characters are accepted gracefully (aligned with phoneUtils.ts behavior)
+            // The service extracts digits and validates length, just like phoneUtils.ts
+            result.IsValid.Should().BeTrue();
         }
 
         [Theory]
         [InlineData("++1234567890")] // Double plus
         [InlineData("+1234567890+")] // Plus at end
         [InlineData("123+4567890")] // Plus in middle
-        public void ValidatePhoneNumber_WithInvalidPlusPlacement_ReturnsFailure(string phoneNumber)
+        public void ValidatePhoneNumber_WithInvalidPlusPlacement_ReturnsSuccess(string phoneNumber)
         {
             // Act
             var result = _validationService.ValidatePhoneNumber(phoneNumber);
 
             // Assert
-            result.IsValid.Should().BeFalse();
+            // Plus signs are accepted gracefully (aligned with phoneUtils.ts behavior)
+            // The service extracts digits and validates length, just like phoneUtils.ts
+            result.IsValid.Should().BeTrue();
         }
 
         [Theory]

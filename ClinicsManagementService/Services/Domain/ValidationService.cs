@@ -11,15 +11,21 @@ namespace ClinicsManagementService.Services.Domain
             if (string.IsNullOrWhiteSpace(phoneNumber))
                 return ValidationResult.Failure("Phone number is required.");
             
-            // Remove leading + if present, then validate remaining characters are all digits
-            var digitsOnly = phoneNumber.StartsWith("+") 
-                ? phoneNumber.Substring(1) 
-                : phoneNumber;
+            // Remove all non-numeric characters (spaces, dashes, parentheses, dots, etc.)
+            // This aligns with phoneUtils.ts behavior: phone.replace(/[^\d]/g, '')
+            var digitsOnly = new string(phoneNumber.Where(char.IsDigit).ToArray());
             
-            // Check all remaining characters are digits
-            if (!digitsOnly.All(char.IsDigit))
-                return ValidationResult.Failure("Phone number must be digits or start with '+' followed by digits only.");
+            // Ensure there are actual digits
+            if (string.IsNullOrWhiteSpace(digitsOnly))
+                return ValidationResult.Failure("Phone number must contain digits.");
             
+            // Validate digit length (generic range: 7-15 digits, matching phoneUtils.ts generic validation)
+            // WhatsApp accepts international format, so we allow a wide range
+            if (digitsOnly.Length < 7 || digitsOnly.Length > 15)
+                return ValidationResult.Failure("Phone number must be between 7 and 15 digits.");
+            
+            // Phone number is valid - accepts + sign, spaces, and other formatting characters gracefully
+            // Just like phoneUtils.ts and WhatsApp link format
             return ValidationResult.Success();
         }
 

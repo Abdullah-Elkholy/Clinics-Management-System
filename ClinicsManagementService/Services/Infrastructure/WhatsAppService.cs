@@ -44,8 +44,10 @@ namespace ClinicsManagementService.Services
                 // Initialize session/page
                 await browserSession.InitializeAsync();
 
-                // Navigate to send URL for the phone number
-                var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
+                // Normalize phone number for WhatsApp URL (extract digits only)
+                // Handles both formats: phone number only or phone number with country code
+                var normalizedPhone = PhoneNumberNormalizer.NormalizeDigitsOnly(phoneNumber);
+                var url = WhatsAppConfiguration.WhatsAppSendUrl + normalizedPhone;
                 _notifier.Notify($"🔗 Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
 
@@ -335,8 +337,10 @@ namespace ClinicsManagementService.Services
             try
             {
                 await browserSession.InitializeAsync();
-                // Navigate directly to the WhatsApp send URL for the phone number
-                var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
+                // Normalize phone number for WhatsApp URL (extract digits only)
+                // Handles both formats: phone number only or phone number with country code
+                var normalizedPhone = PhoneNumberNormalizer.NormalizeDigitsOnly(phoneNumber);
+                var url = WhatsAppConfiguration.WhatsAppSendUrl + normalizedPhone;
                 _notifier.Notify($"🔗 Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
 

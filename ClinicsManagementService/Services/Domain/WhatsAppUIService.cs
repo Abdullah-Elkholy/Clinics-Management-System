@@ -299,8 +299,10 @@ namespace ClinicsManagementService.Services.Domain
 
             try
             {
-                // Step 1: Construct URL
-                var url = $"{WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber}";
+                // Step 1: Normalize phone number and construct URL
+                // Handles both formats: phone number only or phone number with country code
+                var normalizedPhone = PhoneNumberNormalizer.NormalizeDigitsOnly(phoneNumber);
+                var url = $"{WhatsAppConfiguration.WhatsAppSendUrl + normalizedPhone}";
                 _notifier.Notify($"🔗 Navigation URL: {url}");
 
                 // Step 2: Navigate to URL
@@ -369,7 +371,8 @@ namespace ClinicsManagementService.Services.Domain
                     return OperationResult<bool>.Failure("Session expired: WhatsApp logged out. Please restart the service.");
                 }
 
-                if (currentUrl.Contains(phoneNumber))
+                // Check if normalized phone number is in URL
+                if (currentUrl.Contains(normalizedPhone))
                 {
                     _notifier.Notify("✅ Navigation successful - phone number found in URL");
                     return OperationResult<bool>.Success(true);
