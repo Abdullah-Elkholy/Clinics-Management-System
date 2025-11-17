@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { UIProvider, useUI } from '../../contexts/UIContext';
-import { QueueProvider, useQueue } from '../../contexts/QueueContext';
+import { useUI } from '../../contexts/UIContext';
+import { useQueue } from '../../contexts/QueueContext';
 import { ModalProvider } from '../../contexts/ModalContext';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import Header from '../Layout/Header';
@@ -112,29 +112,26 @@ function MainAppContent() {
 }
 
 export default function MainApp() {
+  // Providers are already in app/layout.tsx, so we don't need to wrap here
   return (
-    <UIProvider>
-      <QueueProvider>
-        <ModalProvider>
-          <MainAppContent />
-          <Modals.AddQueueModal />
-          <Modals.AddPatientModal />
-          <Modals.UploadModal />
-          <Modals.AddTemplateModal />
-          <Modals.EditTemplateModal />
-          <Modals.AccountInfoModal />
-          <Modals.WhatsAppAuthModal />
-          <Modals.EditQueueModal />
-          <Modals.EditUserModal />
-          <Modals.AddUserModal />
-          <Modals.EditPatientModal />
-          <Modals.MessageSelectionModal />
-          <Modals.MessagePreviewModal />
-          <Modals.ManageConditionsModal />
-          <Modals.RetryPreviewModal />
-          <Modals.QuotaManagementModal />
-        </ModalProvider>
-      </QueueProvider>
-    </UIProvider>
+    <ModalProvider>
+      <MainAppContent />
+      <Modals.AddQueueModal />
+      <Modals.AddPatientModal />
+      <Modals.UploadModal />
+      <Modals.AddTemplateModal />
+      <Modals.EditTemplateModal />
+      <Modals.AccountInfoModal />
+      <Modals.WhatsAppAuthModal />
+      <Modals.EditQueueModal />
+      <Modals.EditUserModal />
+      <Modals.AddUserModal />
+      <Modals.EditPatientModal />
+      <Modals.MessageSelectionModal />
+      <Modals.MessagePreviewModal />
+      <Modals.ManageConditionsModal />
+      <Modals.RetryPreviewModal />
+      <Modals.QuotaManagementModal />
+    </ModalProvider>
   );
 }

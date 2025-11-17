@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { TEST_CREDENTIALS } from '../../constants';
 import logger from '@/utils/logger';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
@@ -12,6 +13,7 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +38,17 @@ export default function LoginScreen() {
       setIsLoading(false);
     }
   };
+
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
 
   const handleQuickLogin = async (username: string, password: string) => {
     setIsLoading(true);
@@ -74,36 +87,35 @@ export default function LoginScreen() {
         )}
 
         {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="login-username" className="block text-sm font-medium text-gray-700 mb-2">
               اسم المستخدم
             </label>
             <input
+              id="login-username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="أدخل اسم المستخدم"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
               autoFocus
+              disabled={isLoading}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-2">
               كلمة المرور
             </label>
             <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="أدخل كلمة المرور"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>);
-                }
-              }}
+              disabled={isLoading}
             />
           </div>
 

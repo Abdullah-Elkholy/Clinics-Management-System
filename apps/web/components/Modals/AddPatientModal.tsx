@@ -6,8 +6,9 @@ import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validatePhone, ValidationError, validateCountryCode, MAX_PHONE_DIGITS } from '@/utils/validation';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import Modal from './Modal';
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
 import logger from '@/utils/logger';
 
@@ -32,6 +33,7 @@ export default function AddPatientModal() {
   const [errors, setErrors] = useState<PatientErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [expandedPatients, setExpandedPatients] = useState<Set<number>>(new Set([0])); // Track expanded patients
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isOpen = openModals.has('addPatient');
   const modalData = getModalData('addPatient');
@@ -273,6 +275,17 @@ export default function AddPatientModal() {
     }
   };
 
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   if (!isOpen) return null;
 
   return (
@@ -286,7 +299,7 @@ export default function AddPatientModal() {
       title="إضافة مرضى جدد"
       size="xl"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col h-full space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col h-full space-y-4">
         {/* Info Section */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-sm text-blue-700 flex items-center gap-2">

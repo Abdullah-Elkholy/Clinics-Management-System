@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { COUNTRY_CODES } from '@/constants';
@@ -11,6 +11,7 @@ import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.util
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import { useQueue } from '@/contexts/QueueContext';
 import logger from '@/utils/logger';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 export default function EditPatientModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -34,6 +35,7 @@ export default function EditPatientModal() {
 
   const isOpen = openModals.has('editPatient');
   const [freshPatientData, setFreshPatientData] = useState<any>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   
   // Fetch fresh patient data when modal opens
   useEffect(() => {
@@ -269,6 +271,17 @@ export default function EditPatientModal() {
     }
   };
 
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0;
 
@@ -286,7 +299,7 @@ export default function EditPatientModal() {
       title="تعديل بيانات المريض"
       size="md"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Disclaimer */}
         <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
           <p className="text-blue-800 text-sm font-medium flex items-center gap-2">

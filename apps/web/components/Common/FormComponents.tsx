@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 interface FormSectionProps {
   title?: string;
@@ -105,6 +106,8 @@ export function TextInput({
   icon,
   className = '',
 }: TextInputProps) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
   return (
     <div className="relative">
       {icon && (
@@ -113,6 +116,7 @@ export function TextInput({
         </div>
       )}
       <input
+        ref={inputRef}
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}

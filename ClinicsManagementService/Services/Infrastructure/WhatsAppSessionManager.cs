@@ -2,6 +2,7 @@ using ClinicsManagementService.Services.Interfaces;
 using ClinicsManagementService.Services.Domain;
 using ClinicsManagementService.Models;
 using ClinicsManagementService.Configuration;
+using ClinicsManagementService.Services;
 using Microsoft.Playwright;
 
 namespace ClinicsManagementService.Services.Infrastructure
@@ -64,12 +65,19 @@ namespace ClinicsManagementService.Services.Infrastructure
         {
             if (_session == null) return;
 
+            // Reset manual close flag if session supports it (for PlaywrightBrowserSession)
+            if (_session is PlaywrightBrowserSession playwrightSession)
+            {
+                playwrightSession.ResetManualCloseFlag();
+            }
+
             _notifier.Notify("🚀 Initializing WhatsApp session...");
             await _session.InitializeAsync();
 
             _notifier.Notify("🌐 Navigating to WhatsApp Web...");
             await _session.NavigateToAsync(WhatsAppConfiguration.WhatsAppBaseUrl);
             _notifier.Notify("✅ WhatsApp session initialized successfully");
+            _isInitialized = true; // Mark session as initialized after successful setup
         }
 
         public async Task<bool> IsSessionReadyAsync()

@@ -11,8 +11,9 @@ import { messageApiClient, type TemplateDto } from '@/services/api/messageApiCli
 import { templateDtoToModel } from '@/services/api/adapters';
 import logger from '@/utils/logger';
 import Modal from './Modal';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
-import { useState, useEffect, useMemo, type FormEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import type { MessageTemplate } from '@/types/messageTemplate';
 import type { ConditionOperator } from '@/types/messageCondition';
 
@@ -34,6 +35,7 @@ export default function EditTemplateModal() {
   const [selectedValue, setSelectedValue] = useState<number | undefined>(undefined);
   const [selectedMinValue, setSelectedMinValue] = useState<number | undefined>(undefined);
   const [selectedMaxValue, setSelectedMaxValue] = useState<number | undefined>(undefined);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isOpen = openModals.has('editTemplate');
   const modalData = getModalData('editTemplate');
@@ -456,6 +458,17 @@ export default function EditTemplateModal() {
     }
   };
 
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0 || !title.trim() || !content.trim();
 
@@ -483,7 +496,7 @@ export default function EditTemplateModal() {
       title="تحرير قالب رسالة"
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Required Fields Disclaimer */}
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
           <p className="flex items-center gap-2">

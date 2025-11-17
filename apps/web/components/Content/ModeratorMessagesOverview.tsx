@@ -48,7 +48,7 @@ const USAGE_GUIDE_ITEMS = [
 
 export default function ModeratorMessagesOverview() {
   const { moderators, queues, messageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
-  const { addToast } = useUI();
+  const { addToast, setCurrentPanel } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
@@ -342,7 +342,9 @@ export default function ModeratorMessagesOverview() {
             message="لم يتم العثور على أي مشرفين في النظام"
             actionLabel="اذهب إلى لوحة التحكم"
             onAction={() => {
-              window.location.href = '#/management';
+              // Navigation now handled by UIContext router
+              // Use setCurrentPanel('management') instead of window.location
+              setCurrentPanel('management');
             }}
           />
         ) : moderators.length === 0 ? (
@@ -352,7 +354,9 @@ export default function ModeratorMessagesOverview() {
             message="لم يتم العثور على أي مشرفين في النظام"
             actionLabel="اذهب إلى لوحة التحكم"
             onAction={() => {
-              window.location.href = '#/management';
+              // Navigation now handled by UIContext router
+              // Use setCurrentPanel('management') instead of window.location
+              setCurrentPanel('management');
             }}
           />
         ) : filteredModerators.length === 0 ? (

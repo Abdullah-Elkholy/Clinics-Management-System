@@ -243,9 +243,53 @@ export async function verifyTextContent(
 }
 
 /**
- * Check if user has specific role based on visible UI elements
+ * Check if user has specific role based on API call with UI fallback
  */
 export async function detectUserRole(page: Page): Promise<'admin' | 'moderator' | 'user' | 'unknown'> {
+  try {
+    // Use API call to get actual role from backend (more reliable)
+    const response = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (!token) return null;
+      
+      try {
+        // In Playwright's page.evaluate, we're in browser context
+        // Use default API URL (can be overridden via environment variable in test setup)
+        const API_BASE_URL = 'http://localhost:5000';
+        const apiUrl = API_BASE_URL.endsWith('/api') ? API_BASE_URL : `${API_BASE_URL}/api`;
+        const res = await fetch(`${apiUrl}/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data?.data?.Role || data?.Role || null;
+      } catch (error) {
+        console.warn('[E2E] Failed to fetch role from API:', error);
+        return null;
+      }
+    });
+
+    if (response) {
+      // Map backend roles to test roles
+      if (response === 'primary_admin' || response === 'secondary_admin') {
+        return 'admin';
+      }
+      if (response === 'moderator') {
+        return 'moderator';
+      }
+      if (response === 'user') {
+        return 'user';
+      }
+    }
+  } catch (error) {
+    console.warn('[E2E] Failed to detect role via API, falling back to UI detection:', error);
+  }
+
+  // Fallback to UI-based detection if API fails
   // Check for admin-only features
   const adminFeatures = [
     'button:has-text("إدارة المستخدمين")',
@@ -256,20 +300,21 @@ export async function detectUserRole(page: Page): Promise<'admin' | 'moderator' 
 
   for (const selector of adminFeatures) {
     const element = page.locator(selector).first();
-    if (await element.isVisible({ timeout: 1000 }).catch(() => false)) {
+    if (await element.isVisible({ timeout: 2000 }).catch(() => false)) {
       return 'admin';
     }
   }
 
-  // Check for moderator features
+  // Check for moderator features (more comprehensive)
   const moderatorFeatures = [
     'button:has-text("إضافة طابور")',
     'button:has-text("Add Queue")',
+    'text=/المشرف|Moderator/i', // Check for moderator label in UI
   ];
 
   for (const selector of moderatorFeatures) {
     const element = page.locator(selector).first();
-    if (await element.isVisible({ timeout: 1000 }).catch(() => false)) {
+    if (await element.isVisible({ timeout: 2000 }).catch(() => false)) {
       return 'moderator';
     }
   }

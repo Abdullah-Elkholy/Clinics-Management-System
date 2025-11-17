@@ -518,18 +518,29 @@ export default function QueueDashboard() {
                 type="number"
                 value={editingQueueValue}
                 onChange={(e) => setEditingQueueValue(e.target.value)}
-                className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveQueueEdit(patient.id);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelQueueEdit();
+                  }
+                }}
+                className="w-16 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 autoFocus
               />
               <button
                 onClick={() => saveQueueEdit(patient.id)}
                 className="bg-green-500 hover:bg-green-600 px-1 py-0.5 rounded text-xs text-white"
+                title="حفظ (Enter)"
               >
                 ✓
               </button>
               <button
                 onClick={cancelQueueEdit}
                 className="bg-red-500 hover:bg-red-600 px-1 py-0.5 rounded text-xs text-white"
+                title="إلغاء (Esc)"
               >
                 ✕
               </button>
@@ -672,18 +683,29 @@ export default function QueueDashboard() {
                 type="number"
                 value={currentCQP}
                 onChange={(e) => setCurrentCQP(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveCQP();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    handleCancelCQP();
+                  }
+                }}
                 className="flex-1 px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 autoFocus
               />
               <button
                 onClick={handleSaveCQP}
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                title="حفظ (Enter)"
               >
                 <i className="fas fa-check"></i>
               </button>
               <button
                 onClick={handleCancelCQP}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                title="إلغاء (Esc)"
               >
                 <i className="fas fa-times"></i>
               </button>
@@ -717,6 +739,15 @@ export default function QueueDashboard() {
                 type="number"
                 value={currentETS}
                 onChange={(e) => setCurrentETS(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveETS();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    handleCancelETS();
+                  }
+                }}
                 className="flex-1 px-3 py-2 border border-green-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 autoFocus
               />
@@ -724,12 +755,14 @@ export default function QueueDashboard() {
               <button
                 onClick={handleSaveETS}
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                title="حفظ (Enter)"
               >
                 <i className="fas fa-check"></i>
               </button>
               <button
                 onClick={handleCancelETS}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                title="إلغاء (Esc)"
               >
                 <i className="fas fa-times"></i>
               </button>

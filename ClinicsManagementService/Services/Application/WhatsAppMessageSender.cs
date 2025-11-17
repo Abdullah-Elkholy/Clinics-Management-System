@@ -314,7 +314,10 @@ namespace ClinicsManagementService.Services.Application
                 return MessageOperationStatus.PendingQR;
             }
 
-            if (error?.Contains("PendingNET:") == true || error?.Contains("Internet connection unavailable") == true)
+            if (error?.Contains("PendingNET:") == true || 
+                error?.Contains("Internet connection unavailable") == true ||
+                error?.Contains("net::ERR_NAME_NOT_RESOLVED") == true ||
+                error?.Contains("net::ERR_INTERNET_DISCONNECTED") == true)
             {
                 return MessageOperationStatus.PendingNET;
             }

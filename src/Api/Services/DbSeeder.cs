@@ -90,7 +90,8 @@ namespace Clinics.Api.Services
                     FirstName = "مستخدم",
                     LastName = "عادي",
                     Role = "user",
-                    PasswordHash = hasher.HashPassword(null!, "user123")
+                    PasswordHash = hasher.HashPassword(null!, "user123"),
+                    ModeratorId = moderatorAhmed.Id  // Assign to first moderator (mod1)
                 };
 
                 // Add a second moderator for testing with multiple moderators

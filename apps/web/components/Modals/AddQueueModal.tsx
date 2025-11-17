@@ -9,7 +9,8 @@ import { getModeratorInfo } from '@/utils/moderatorAggregation';
 import { queuesApiClient } from '@/services/api/queuesApiClient';
 import logger from '@/utils/logger';
 import Modal from './Modal';
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 export default function AddQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -21,6 +22,7 @@ export default function AddQueueModal() {
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isOpen = openModals.has('addQueue');
   const modalData = getModalData('addQueue');
@@ -107,6 +109,17 @@ export default function AddQueueModal() {
     }
   };
 
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   if (!isOpen) return null;
 
   return (
@@ -121,7 +134,7 @@ export default function AddQueueModal() {
       title={moderatorInfo ? `إضافة طابور للمشرف: ${moderatorInfo.name} (@${moderatorInfo.username})` : 'إضافة طابور جديد'}
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {moderatorInfo && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
             <i className="fas fa-user-tie text-blue-600"></i>

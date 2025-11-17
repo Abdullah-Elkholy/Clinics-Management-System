@@ -13,7 +13,8 @@ import type { MessageTemplate } from '@/types/messageTemplate';
 // Use QueueContext to perform API calls for templates
 import Modal from './Modal';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 // Mock data removed - using API data instead
 
 type AddTemplateModalData = {
@@ -36,6 +37,7 @@ export default function AddTemplateModal() {
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [showDefaultWarning, setShowDefaultWarning] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<MessageTemplate | null>(null);
   const [hasConfirmedDefaultOverride, setHasConfirmedDefaultOverride] = useState(false);
 
@@ -346,6 +348,17 @@ export default function AddTemplateModal() {
     }
   };
 
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0 || !title.trim() || !content.trim();
 
@@ -371,7 +384,7 @@ export default function AddTemplateModal() {
       title="إضافة قالب رسالة جديد"
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Required Fields Disclaimer */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
           <p className="flex items-center gap-2">

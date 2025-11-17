@@ -8,6 +8,7 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { UserRole } from '@/types/roles';
 import logger from '@/utils/logger';
 import Modal from './Modal';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 interface AddUserModalProps {
   onUserAdded?: () => void;
@@ -37,6 +38,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
   const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
+  const formRef = React.useRef<HTMLFormElement>(null);
 
   const isOpen = openModals.has('addUser');
   
@@ -220,6 +222,17 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
     }
   };
 
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
 
 
   // Get modal title based on role - memoized to ensure it updates when role changes
@@ -253,7 +266,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       title={modalTitle}
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Username Requirements Disclaimer */}
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
           <p className="text-sm text-amber-800 font-semibold flex items-center gap-2 mb-2">

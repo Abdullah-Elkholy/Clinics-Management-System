@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
@@ -9,6 +9,7 @@ import { queuesApiClient, type QueueDto } from '@/services/api/queuesApiClient';
 import { queueDtoToModel } from '@/services/api/adapters';
 import Modal from './Modal';
 import logger from '@/utils/logger';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 export default function EditQueueModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -19,6 +20,7 @@ export default function EditQueueModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
   const [freshQueueData, setFreshQueueData] = useState<any>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isOpen = openModals.has('editQueue');
   const data = getModalData('editQueue');
@@ -168,6 +170,17 @@ export default function EditQueueModal() {
     }
   };
 
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   if (!isOpen) return null;
 
   return (
@@ -182,7 +195,7 @@ export default function EditQueueModal() {
       title="تعديل الطابور"
       size="md"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label htmlFor="editQueue-doctorName" className="block text-sm font-medium text-gray-700 mb-2">اسم الطبيب *</label>
           <input

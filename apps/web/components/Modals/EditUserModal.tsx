@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, validateUsername, ValidationError } from '@/utils/validation';
@@ -8,6 +8,7 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { User } from '@/services/userManagementService';
 import Modal from './Modal';
 import logger from '@/utils/logger';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 interface EditUserModalProps {
   selectedUser?: User | null;
@@ -28,6 +29,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
   const [freshUserData, setFreshUserData] = useState<User | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   
   // Track initial values to detect changes
   const [initialValues, setInitialValues] = useState({
@@ -270,6 +272,18 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       setIsLoading(false);
     }
   };
+
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   // Only disable if loading - validation errors show on blur but don't disable submit
   // User can still click submit, which will show validation errors
 
@@ -291,7 +305,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       title="تعديل بيانات المستخدم"
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Disclaimer */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-sm text-blue-700 flex items-center gap-2">

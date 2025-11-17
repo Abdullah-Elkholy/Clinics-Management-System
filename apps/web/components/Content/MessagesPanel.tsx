@@ -66,7 +66,7 @@ const USAGE_GUIDE_ITEMS = [
 export default function MessagesPanel() {
   const { selectedQueueId: _selectedQueueId, queues, messageTemplates, messageConditions, refreshQueueData } = useQueue();
   const { user } = useAuth();
-  const { addToast } = useUI();
+  const { addToast, setCurrentPanel, setSelectedQueueId } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
@@ -376,7 +376,9 @@ export default function MessagesPanel() {
             message="يرجى إنشاء طابور أولاً من لوحة التحكم"
             actionLabel="اذهب إلى لوحة التحكم"
             onAction={() => {
-              window.location.href = '#/queue';
+              // Navigate to welcome screen (dashboard)
+              setCurrentPanel('welcome');
+              setSelectedQueueId(null);
             }}
           />
         ) : (

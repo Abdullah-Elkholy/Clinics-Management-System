@@ -65,11 +65,19 @@ namespace ClinicsManagementService.Services
                 }
                 if (uiLoad.IsWaiting())
                 {
-                    _notifier.Notify($"⚠️ Page load waiting state: {uiLoad.ResultMessage}");
-                    return OperationResult<string?>.Waiting(uiLoad.ResultMessage ?? "Waiting for page load");
+                    _notifier.Notify($"⚠️ Page load waiting state: {uiLoad.ResultMessage} - will check for error dialogs before deciding.");
+                }
+                else if (uiLoad.IsSuccess == false)
+                {
+                    _notifier.Notify($"⚠️ Page load failed: {uiLoad.ResultMessage} - will check for error dialogs before deciding.");
+                }
+                else
+                {
+                    _notifier.Notify($"✅ Page load successful - continuing to error-dialog check.");
                 }
 
                 // Check for WhatsApp error dialog (e.g., number not registered) before attempting to type/send
+                // This check is important even if page load is waiting, as error dialogs may appear for invalid numbers
                 var hasWhatsApp = await _retryService.ExecuteWithRetryAsync(
                     () => CheckForWhatsAppErrorDialog(browserSession),
                     maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
@@ -78,6 +86,14 @@ namespace ClinicsManagementService.Services
 
                 if (hasWhatsApp.IsWaiting())
                 {
+                    // If page load was also waiting, return waiting state
+                    // Otherwise, we had a successful page load but couldn't determine error dialog status
+                    if (uiLoad.IsWaiting())
+                    {
+                        _notifier.Notify($"Could not determine WhatsApp chat status - page load and error dialog check both in waiting state: {hasWhatsApp.ResultMessage}");
+                        return OperationResult<string?>.Waiting(hasWhatsApp.ResultMessage ?? "Could not determine chat status");
+                    }
+                    // Page loaded successfully but error dialog check is waiting - this is unusual, return waiting
                     _notifier.Notify($"Could not determine WhatsApp chat status in single pass: {hasWhatsApp.ResultMessage}");
                     return OperationResult<string?>.Waiting(hasWhatsApp.ResultMessage ?? "Could not determine chat status");
                 }
@@ -96,6 +112,14 @@ namespace ClinicsManagementService.Services
                     _notifier.Notify($"❌ Error dialog found - number {phoneNumber} does not have WhatsApp.");
                     return OperationResult<string?>.Failure(hasWhatsApp.ResultMessage ?? $"Number {phoneNumber} does not have WhatsApp.");
                 }
+                
+                // If we reach here, error dialog check passed (no error dialog found)
+                // But if page load was waiting, we should still return waiting state
+                if (uiLoad.IsWaiting())
+                {
+                    _notifier.Notify($"⚠️ Page load still waiting, but no error dialog found - number may be valid but page not fully loaded: {uiLoad.ResultMessage}");
+                    return OperationResult<string?>.Waiting(uiLoad.ResultMessage ?? "Waiting for page load");
+                }
 
                 // Ensure input field exists (use WaitForPageLoadAsync so progressbars/auth/network are observed)
                 var inputWait = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.InputFieldSelectors, WhatsAppConfiguration.DefaultSelectorTimeoutMs, WhatsAppConfiguration.defaultChecksFrequencyDelayMs);
@@ -113,6 +137,11 @@ namespace ClinicsManagementService.Services
                 {
                     _notifier.Notify($"⚠️ Waiting for input field: {inputWait.ResultMessage}");
                     return OperationResult<string?>.Waiting(inputWait.ResultMessage ?? "Waiting for input field");
+                }
+                if (inputWait.IsSuccess == false)
+                {
+                    _notifier.Notify($"❌ Input field wait failed: {inputWait.ResultMessage}");
+                    return OperationResult<string?>.Failure(inputWait.ResultMessage ?? "Input field not found");
                 }
 
                 // Find input element
@@ -320,16 +349,25 @@ namespace ClinicsManagementService.Services
         }
 
 
-        public Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession)
+        public async Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession)
         {
-            // Apply full-operation retry at the public entry point so callers get retries on Waiting results
-            // and Playwright/browser-closed exceptions. This keeps the internal method single-pass and
-            // simpler to reason about.
-            return _retryService.ExecuteWithRetryAsync<bool>(
-                () => CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession),
-                maxAttempts: Math.Max(1, WhatsAppConfiguration.DefaultMaxRetryAttempts),
-                shouldRetryResult: r => r?.IsWaiting() == true,
-                isRetryable: ex => _retryService.IsBrowserClosedException(ex));
+            try
+            {
+                // Apply full-operation retry at the public entry point so callers get retries on Waiting results
+                // and Playwright/browser-closed exceptions. This keeps the internal method single-pass and
+                // simpler to reason about.
+                return await _retryService.ExecuteWithRetryAsync<bool>(
+                    () => CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession),
+                    maxAttempts: Math.Max(1, WhatsAppConfiguration.DefaultMaxRetryAttempts),
+                    shouldRetryResult: r => r?.IsWaiting() == true,
+                    isRetryable: ex => _retryService.IsBrowserClosedException(ex));
+            }
+            catch (Exception ex)
+            {
+                // If retry service throws (e.g., non-retryable exception after max attempts), return failure
+                _notifier.Notify($"❌ CheckWhatsAppNumberAsync failed after retries: {ex.Message}");
+                return OperationResult<bool>.Failure($"Failed to check WhatsApp number: {ex.Message}");
+            }
         }
 
         private async Task<OperationResult<bool>> CheckWhatsAppNumberInternalAsync(string phoneNumber, IBrowserSession browserSession)

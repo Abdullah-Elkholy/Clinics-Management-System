@@ -10,6 +10,7 @@ import { patientsApiClient, type PatientDto } from '@/services/api/patientsApiCl
 import { queueDtoToModel, templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/useToast';
+import { useUI } from '@/contexts/UIContext';
 import logger from '@/utils/logger';
 
 interface QueueContextType {
@@ -59,10 +60,11 @@ export const QueueContext = createContext<QueueContextType | null>(null);
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+  // Use UIContext's selectedQueueId to keep them in sync with URL
+  const { selectedQueueId, setSelectedQueueId } = useUI();
   const [queues, setQueues] = useState<Queue[]>([]);
   const [queuesLoading, setQueuesLoading] = useState(false);
   const [queuesError, setQueuesError] = useState<string | null>(null);
-  const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [currentPosition, setCurrentPosition] = useState(3);
   const [estimatedTimePerSession, setEstimatedTimePerSession] = useState(15);

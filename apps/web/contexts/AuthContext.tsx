@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { useUI } from './UIContext';
 import type { User, AuthState } from '../types';
 import { UserRole } from '@/types/roles';
@@ -30,6 +30,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Refs for managing retry/backoff and preemption
   const attemptIdRef = useRef(0); // Incremented on each new login attempt
   const lastToastMessageRef = useRef<string>(''); // Track last toast to avoid duplicates
+  const isInitializingRef = useRef(false); // Prevent multiple initialization attempts
+
+  // Restore authentication state from localStorage on mount
+  useEffect(() => {
+    // Only run once on mount
+    if (isInitializingRef.current) return;
+    isInitializingRef.current = true;
+
+    const restoreAuth = async () => {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        if (!token) {
+          // No token, user is not authenticated
+          return;
+        }
+
+        // Verify token is valid by fetching current user
+        try {
+          const userData = await getCurrentUser();
+          if (userData) {
+            // Extract role from user data
+            const role = userData.role as UserRole;
+            
+            setAuthState({
+              user: {
+                id: userData.id,
+                username: userData.username,
+                firstName: userData.firstName || '',
+                lastName: userData.lastName || '',
+                role: role,
+              },
+              isAuthenticated: true,
+            });
+            logger.info('[Auth] Restored authentication state from localStorage');
+          }
+        } catch (error) {
+          // Token is invalid or expired, clear it
+          logger.warn('[Auth] Token validation failed, clearing localStorage');
+          localStorage.removeItem('token');
+          setAuthState({
+            user: null,
+            isAuthenticated: false,
+          });
+        }
+      } catch (error) {
+        logger.error('[Auth] Failed to restore authentication:', error);
+        // On error, assume not authenticated
+        setAuthState({
+          user: null,
+          isAuthenticated: false,
+        });
+      }
+    };
+
+    restoreAuth();
+  }, []); // Empty deps - only run on mount
 
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     // Increment attempt ID to enable preemption of older retry loops

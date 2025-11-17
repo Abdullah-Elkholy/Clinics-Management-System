@@ -179,7 +179,8 @@ namespace Clinics.Api.Controllers
                 }
                 else
                 {
-                    // Non-admin flow: use the effective moderator mapping from the user
+                    // Non-admin flow: moderators and users can create queues under their moderator's quota
+                    // Users create queues related to their assigned moderator (ModeratorId)
                     moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
 
                     _logger.LogInformation("CreateQueue(User/mod): userId={UserId}, effectiveModeratorId={ModeratorId}, doctorName={DoctorName}", userId, moderatorId, req.DoctorName);

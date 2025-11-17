@@ -18,17 +18,19 @@ namespace ClinicsManagementService.UnitTests.Services.Domain
         #region Phone Number Edge Cases
 
         [Theory]
-        [InlineData("+12345678901234567890")] // Very long number
-        [InlineData("+1")] // Very short number
-        [InlineData("+123456789012345678901234567890")] // Extremely long
-        [InlineData("12345678901234567890")] // Long without plus
-        public void ValidatePhoneNumber_WithBoundaryLengths_ReturnsSuccess(string phoneNumber)
+        [InlineData("+12345678901234567890")] // Very long number (20 digits) - exceeds 15 digit limit
+        [InlineData("+1")] // Very short number (1 digit) - below 7 digit minimum
+        [InlineData("+123456789012345678901234567890")] // Extremely long (30 digits) - exceeds 15 digit limit
+        [InlineData("12345678901234567890")] // Long without plus (20 digits) - exceeds 15 digit limit
+        public void ValidatePhoneNumber_WithBoundaryLengths_ReturnsFailure(string phoneNumber)
         {
             // Act
             var result = _validationService.ValidatePhoneNumber(phoneNumber);
 
             // Assert
-            result.IsValid.Should().BeTrue();
+            // Validation correctly enforces 7-15 digit range
+            result.IsValid.Should().BeFalse();
+            result.ErrorMessage.Should().ContainAny("between 7 and 15", "digits");
         }
 
         [Theory]
@@ -108,16 +110,17 @@ namespace ClinicsManagementService.UnitTests.Services.Domain
         }
 
         [Theory]
-        [InlineData("+1234567890123456789012345678901234567890")] // 40+ digits
-        [InlineData("1234567890123456789012345678901234567890")] // 40+ digits without plus
-        public void ValidatePhoneNumber_WithExtremelyLongNumbers_ReturnsSuccess(string phoneNumber)
+        [InlineData("+1234567890123456789012345678901234567890")] // 40+ digits - exceeds 15 digit limit
+        [InlineData("1234567890123456789012345678901234567890")] // 40+ digits without plus - exceeds 15 digit limit
+        public void ValidatePhoneNumber_WithExtremelyLongNumbers_ReturnsFailure(string phoneNumber)
         {
             // Act
             var result = _validationService.ValidatePhoneNumber(phoneNumber);
 
             // Assert
-            // Current validation only checks format, not length
-            result.IsValid.Should().BeTrue();
+            // Validation correctly enforces 7-15 digit range
+            result.IsValid.Should().BeFalse();
+            result.ErrorMessage.Should().ContainAny("between 7 and 15", "digits");
         }
 
         #endregion
@@ -420,9 +423,8 @@ namespace ClinicsManagementService.UnitTests.Services.Domain
         }
 
         [Theory]
-        [InlineData(60000)]
-        [InlineData(60001)]
-        [InlineData(100000)]
+        [InlineData(60001)] // One over the limit (60000 is the max allowed)
+        [InlineData(100000)] // Way over the limit
         public void ValidateDelayParameters_WithMaxDelayTooLarge_ReturnsFailure(int maxDelay)
         {
             // Act
