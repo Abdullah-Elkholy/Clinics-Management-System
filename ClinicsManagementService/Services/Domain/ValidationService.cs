@@ -10,9 +10,16 @@ namespace ClinicsManagementService.Services.Domain
         {
             if (string.IsNullOrWhiteSpace(phoneNumber))
                 return ValidationResult.Failure("Phone number is required.");
-            // Add more robust phone validation as needed
-            if (!phoneNumber.All(char.IsDigit) && !phoneNumber.StartsWith("+"))
-                return ValidationResult.Failure("Phone number must be digits or start with '+'.");
+            
+            // Remove leading + if present, then validate remaining characters are all digits
+            var digitsOnly = phoneNumber.StartsWith("+") 
+                ? phoneNumber.Substring(1) 
+                : phoneNumber;
+            
+            // Check all remaining characters are digits
+            if (!digitsOnly.All(char.IsDigit))
+                return ValidationResult.Failure("Phone number must be digits or start with '+' followed by digits only.");
+            
             return ValidationResult.Success();
         }
 

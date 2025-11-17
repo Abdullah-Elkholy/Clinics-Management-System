@@ -41,8 +41,8 @@ namespace ClinicsManagementService.Models
         /// <summary>
         /// Convenience boolean helpers to inspect states quickly.
         /// </summary>
-        public static bool IsWaiting(this IOperationResult r) => r.State == OperationState.Waiting;
-        public static bool IsPendingNet(this IOperationResult r) => r.State == OperationState.PendingNET;
-        public static bool IsPendingQr(this IOperationResult r) => r.State == OperationState.PendingQR;
+        public static bool IsWaiting(this IOperationResult? r) => r?.State == OperationState.Waiting;
+        public static bool IsPendingNet(this IOperationResult? r) => r?.State == OperationState.PendingNET;
+        public static bool IsPendingQr(this IOperationResult? r) => r?.State == OperationState.PendingQR;
     }
 }

@@ -283,12 +283,38 @@ namespace ClinicsManagementService.Services
 
         public async Task DisposeBrowserSessionAsync(IBrowserSession browserSession)
         {
+            if (browserSession == null)
+            {
+                _notifier.Notify("⚠️ Attempted to dispose null browser session");
+                return;
+            }
+
             _notifier.Notify("Disposing browser session...");
-            if (browserSession is IAsyncDisposable asyncDisposable)
-                await asyncDisposable.DisposeAsync();
-            else if (browserSession is IDisposable disposable)
-                disposable.Dispose();
-            _notifier.Notify("Disposed browser session.");
+            try
+            {
+                if (browserSession is IAsyncDisposable asyncDisposable)
+                    await asyncDisposable.DisposeAsync();
+                else if (browserSession is IDisposable disposable)
+                    disposable.Dispose();
+                _notifier.Notify("Disposed browser session.");
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"⚠️ Error disposing browser session: {ex.Message}");
+                // Try fallback to IDisposable if IAsyncDisposable failed
+                if (browserSession is IDisposable disposable)
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                        _notifier.Notify("Disposed browser session using fallback method.");
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        _notifier.Notify($"⚠️ Fallback disposal also failed: {fallbackEx.Message}");
+                    }
+                }
+            }
         }
 
 
@@ -485,7 +511,7 @@ namespace ClinicsManagementService.Services
                         if (errorDialog != null)
                         {
                             _notifier.Notify($"🚫 WhatsApp error dialog detected using selector: {selector}.");
-                            return OperationResult<bool>.Failure($"Error dialog detected, using selector: {selector}"); // Has error dialog -> does not have WhatsApp
+                            return OperationResult<bool>.Failure($"This phone number does not have WhatsApp registered. Error dialog detected using selector: {selector}"); // Has error dialog -> does not have WhatsApp
                         }
                     }
                     catch (Exception ex)
