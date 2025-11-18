@@ -21,6 +21,12 @@ namespace Clinics.Api.DTOs
         /// </summary>
         public string? CountryCode { get; set; }
 
+        /// <summary>
+        /// Indicates whether the phone number has been validated for WhatsApp.
+        /// null = not checked yet, true = valid WhatsApp number, false = invalid WhatsApp number.
+        /// </summary>
+        public bool? IsValidWhatsAppNumber { get; set; }
+
         public int Position { get; set; }
 
         public string Status { get; set; } = "waiting";

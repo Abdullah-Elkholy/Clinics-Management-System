@@ -59,6 +59,7 @@ namespace Clinics.Api.Controllers
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
                         CountryCode = p.CountryCode,
+                        IsValidWhatsAppNumber = p.IsValidWhatsAppNumber,
                         Position = p.Position,
                         Status = p.Status,
                         CreatedAt = p.CreatedAt,
@@ -103,6 +104,7 @@ namespace Clinics.Api.Controllers
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
                         CountryCode = p.CountryCode,
+                        IsValidWhatsAppNumber = p.IsValidWhatsAppNumber,
                         Position = p.Position,
                         Status = p.Status,
                         CreatedAt = p.CreatedAt,
@@ -176,6 +178,55 @@ namespace Clinics.Api.Controllers
                         ? req.CountryCode.Replace(" ", "") 
                         : req.CountryCode;
 
+                    // Check if phone number already includes country code
+                    // If it does and matches the provided country code, we can use it directly
+                    // Otherwise, extract the national number if needed
+                    string? phoneToNormalize = phoneNumberCleaned;
+                    string? extractedFromPhone = null;
+                    
+                    try
+                    {
+                        extractedFromPhone = _phoneNormalizationService.ExtractCountryCode(phoneNumberCleaned);
+                    }
+                    catch (Exception extractEx)
+                    {
+                        _logger.LogWarning(extractEx, "Error extracting country code from phone: {PhoneNumber}", phoneNumberCleaned);
+                        // Continue - phone might not have country code
+                    }
+                    
+                    // If phone already has a country code that matches, use it as-is
+                    // The normalization service will handle it correctly
+                    if (!string.IsNullOrWhiteSpace(extractedFromPhone) && 
+                        !string.IsNullOrWhiteSpace(countryCodeCleaned) &&
+                        extractedFromPhone.Equals(countryCodeCleaned, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Phone already has the correct country code - use it directly
+                        // TryNormalizeWithCountryCode can handle phone numbers with country codes
+                        phoneToNormalize = phoneNumberCleaned;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(extractedFromPhone) && 
+                             !string.IsNullOrWhiteSpace(countryCodeCleaned) &&
+                             !extractedFromPhone.Equals(countryCodeCleaned, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Phone has a different country code - extract national number
+                        var countryCodeDigits = countryCodeCleaned.TrimStart('+');
+                        var prefix = $"+{countryCodeDigits}";
+                        var oldPrefix = $"+{extractedFromPhone.TrimStart('+')}";
+                        
+                        if (phoneNumberCleaned.StartsWith(oldPrefix) && phoneNumberCleaned.Length > oldPrefix.Length)
+                        {
+                            phoneToNormalize = phoneNumberCleaned.Substring(oldPrefix.Length);
+                            
+                            // Validate that we have a valid national number after extraction
+                            if (string.IsNullOrWhiteSpace(phoneToNormalize))
+                            {
+                                _logger.LogWarning("Extracted national number is empty for phone: {PhoneNumber}, countryCode: {CountryCode}", phoneNumberCleaned, countryCodeCleaned);
+                                phoneToNormalize = phoneNumberCleaned; // Fallback to original
+                            }
+                        }
+                    }
+                    // If phone doesn't have a country code, use it as-is (normalization will add it)
+
                     // Normalize phone number with country-specific rules if country code provided
                     string? normalizedPhone;
                     string? countryCode;
@@ -183,8 +234,9 @@ namespace Clinics.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
                     {
                         // Use country-specific normalization
-                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
+                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneToNormalize, countryCodeCleaned, out normalizedPhone))
                         {
+                            _logger.LogWarning("Phone normalization failed for phone: {PhoneNumber}, normalizedInput: {NormalizedInput}, countryCode: {CountryCode}", phoneNumberCleaned, phoneToNormalize, countryCodeCleaned);
                             return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
                         }
                         countryCode = countryCodeCleaned;
@@ -192,16 +244,33 @@ namespace Clinics.Api.Controllers
                     else
                     {
                         // Use generic normalization (for "OTHER" or no country code)
-                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
+                        if (!_phoneNormalizationService.TryNormalize(phoneToNormalize, out normalizedPhone))
                         {
+                            _logger.LogWarning("Generic phone normalization failed for phone: {PhoneNumber}, normalizedInput: {NormalizedInput}", phoneNumberCleaned, phoneToNormalize);
                             return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
                         }
                         // Extract country code from normalized phone number
-                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
+                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneToNormalize);
+                        
+                        // Ensure country code is not null (use default if extraction fails)
+                        if (string.IsNullOrWhiteSpace(countryCode))
+                        {
+                            _logger.LogWarning("Country code extraction failed for phone: {PhoneNumber}, using default", normalizedPhone);
+                            countryCode = "+20"; // Default fallback
+                        }
                     }
 
                     // Get current user ID for audit using IUserContext
-                    var userId = _userContext.GetUserId();
+                    int userId;
+                    try
+                    {
+                        userId = _userContext.GetUserId();
+                    }
+                    catch (InvalidOperationException authEx)
+                    {
+                        _logger.LogError(authEx, "Authentication error: User ID not found in claims");
+                        return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+                    }
 
                     // No shift needed: new patients always inserted at end (maxPos + 1)
                     var patient = new Patient
@@ -209,7 +278,7 @@ namespace Clinics.Api.Controllers
                         QueueId = req.QueueId,
                         FullName = req.FullName,
                         PhoneNumber = normalizedPhone ?? phoneNumberCleaned,
-                        CountryCode = countryCode,
+                        CountryCode = countryCode ?? "+20", // Ensure non-null
                         Position = insertPos,
                         Status = "waiting",
                         CreatedBy = userId
@@ -224,6 +293,7 @@ namespace Clinics.Api.Controllers
                         FullName = patient.FullName,
                         PhoneNumber = patient.PhoneNumber,
                         CountryCode = patient.CountryCode,
+                        IsValidWhatsAppNumber = patient.IsValidWhatsAppNumber,
                         Position = patient.Position,
                         Status = patient.Status,
                         CreatedAt = patient.CreatedAt,
@@ -240,6 +310,11 @@ namespace Clinics.Api.Controllers
                     return StatusCode(400, new { success = false, error = "Invalid data or constraint violation", details = dbEx.InnerException?.Message });
                 }
             }
+            catch (InvalidOperationException authEx) when (authEx.Message.Contains("User ID") || authEx.Message.Contains("HttpContext"))
+            {
+                _logger.LogError(authEx, "Authentication error creating patient");
+                return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+            }
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database constraint error creating patient");
@@ -247,7 +322,8 @@ namespace Clinics.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating patient");
+                _logger.LogError(ex, "Error creating patient: {ErrorMessage}", ex.Message);
+                _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
                 return StatusCode(500, new { success = false, error = "Error creating patient", details = ex.Message });
             }
         }
@@ -294,56 +370,218 @@ namespace Clinics.Api.Controllers
         {
             try
             {
+                _logger.LogInformation("Update patient request: PatientId={PatientId}, FullName={FullName}, PhoneNumber={PhoneNumber}, CountryCode={CountryCode}, Status={Status}", 
+                    id, req?.FullName, req?.PhoneNumber, req?.CountryCode, req?.Status);
+                
                 var patient = await _db.Patients.FindAsync(id);
                 if (patient == null)
+                {
+                    _logger.LogWarning("Patient not found: PatientId={PatientId}", id);
                     return NotFound(new { message = "Patient not found" });
+                }
+
+                // Validate request is not null
+                if (req == null)
+                {
+                    _logger.LogWarning("Update request body is null for patient {PatientId}", id);
+                    return BadRequest(new { success = false, error = "Request body is required" });
+                }
+
+                // Check ModelState validation (for data annotations like [Phone], [StringLength])
+                if (!ModelState.IsValid)
+                {
+                    var validationErrors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
+                    _logger.LogWarning("ModelState validation failed for patient {PatientId}: {Errors}", id, string.Join(", ", validationErrors));
+                    return BadRequest(new { success = false, error = "Validation failed", errors = validationErrors });
+                }
 
                 if (!string.IsNullOrEmpty(req.FullName))
                     patient.FullName = req.FullName;
 
+                // Track if phone number or country code changed to reset WhatsApp validation
+                bool phoneOrCountryCodeChanged = false;
+
                 if (!string.IsNullOrEmpty(req.PhoneNumber))
                 {
-                    // Handle spaces in phone number (remove them instead of rejecting)
-                    var phoneNumberCleaned = req.PhoneNumber.Replace(" ", "");
-                    
-                    // Handle spaces in country code (remove them instead of rejecting)
-                    var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
-                        ? req.CountryCode.Replace(" ", "") 
-                        : req.CountryCode;
-
-                    // Normalize phone number with country-specific rules if country code provided
-                    string? normalizedPhone;
-                    string? countryCode;
-
-                    if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        // Use country-specific normalization
-                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
-                        {
-                            return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
-                        }
-                        countryCode = countryCodeCleaned;
-                    }
-                    else
-                    {
-                        // Use generic normalization (for "OTHER" or no country code)
-                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
-                        {
-                            return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
-                        }
-                        // Extract country code from normalized phone number
-                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
-                    }
+                        // Handle spaces in phone number (remove them instead of rejecting)
+                        var phoneNumberCleaned = req.PhoneNumber.Replace(" ", "");
+                        
+                        // Handle spaces in country code (remove them instead of rejecting)
+                        var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
+                            ? req.CountryCode.Replace(" ", "") 
+                            : req.CountryCode;
 
-                    patient.PhoneNumber = normalizedPhone ?? phoneNumberCleaned;
-                    patient.CountryCode = countryCode;
+                        // Check if phone number already includes country code
+                        // If it does and matches the provided country code, we can use it directly
+                        // Otherwise, extract the national number if needed
+                        string? phoneToNormalize = phoneNumberCleaned;
+                        string? extractedFromPhone = null;
+                        
+                        try
+                        {
+                            extractedFromPhone = _phoneNormalizationService.ExtractCountryCode(phoneNumberCleaned);
+                        }
+                        catch (Exception extractEx)
+                        {
+                            _logger.LogWarning(extractEx, "Error extracting country code from phone: {PhoneNumber}", phoneNumberCleaned);
+                            // Continue - phone might not have country code
+                        }
+                        
+                        // If phone already has a country code that matches, use it as-is
+                        // The normalization service will handle it correctly
+                        if (!string.IsNullOrWhiteSpace(extractedFromPhone) && 
+                            !string.IsNullOrWhiteSpace(countryCodeCleaned) &&
+                            extractedFromPhone.Equals(countryCodeCleaned, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Phone already has the correct country code - use it directly
+                            // TryNormalizeWithCountryCode can handle phone numbers with country codes
+                            phoneToNormalize = phoneNumberCleaned;
+                        }
+                        else if (!string.IsNullOrWhiteSpace(extractedFromPhone) && 
+                                 !string.IsNullOrWhiteSpace(countryCodeCleaned) &&
+                                 !extractedFromPhone.Equals(countryCodeCleaned, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Phone has a different country code - extract national number
+                            var oldPrefix = $"+{extractedFromPhone.TrimStart('+')}";
+                            
+                            if (phoneNumberCleaned.StartsWith(oldPrefix) && phoneNumberCleaned.Length > oldPrefix.Length)
+                            {
+                                phoneToNormalize = phoneNumberCleaned.Substring(oldPrefix.Length);
+                                
+                                // Validate that we have a valid national number after extraction
+                                if (string.IsNullOrWhiteSpace(phoneToNormalize))
+                                {
+                                    _logger.LogWarning("Extracted national number is empty for phone: {PhoneNumber}, countryCode: {CountryCode}", phoneNumberCleaned, countryCodeCleaned);
+                                    phoneToNormalize = phoneNumberCleaned; // Fallback to original
+                                }
+                            }
+                        }
+                        // If phone doesn't have a country code, use it as-is (normalization will add it)
+
+                        // Validate phoneToNormalize is not null or empty
+                        if (string.IsNullOrWhiteSpace(phoneToNormalize))
+                        {
+                            _logger.LogWarning("Phone number to normalize is empty after processing: original={OriginalPhone}, countryCode={CountryCode}", phoneNumberCleaned, countryCodeCleaned);
+                            return BadRequest(new { success = false, error = "Phone number cannot be empty" });
+                        }
+
+                        // Normalize phone number with country-specific rules if country code provided
+                        string? normalizedPhone;
+                        string? countryCode;
+
+                        if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Use country-specific normalization
+                            bool normalizationSuccess = false;
+                            try
+                            {
+                                normalizationSuccess = _phoneNormalizationService.TryNormalizeWithCountryCode(phoneToNormalize, countryCodeCleaned, out normalizedPhone);
+                            }
+                            catch (Exception normEx)
+                            {
+                                _logger.LogError(normEx, "Exception during phone normalization: phone={Phone}, countryCode={CountryCode}", phoneToNormalize, countryCodeCleaned);
+                                return StatusCode(500, new { success = false, error = "Error normalizing phone number", details = normEx.Message });
+                            }
+                            
+                            if (!normalizationSuccess)
+                            {
+                                _logger.LogWarning("Phone normalization failed for phone: {PhoneNumber}, normalizedInput: {NormalizedInput}, countryCode: {CountryCode}", phoneNumberCleaned, phoneToNormalize, countryCodeCleaned);
+                                return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
+                            }
+                            countryCode = countryCodeCleaned;
+                        }
+                        else
+                        {
+                            // Use generic normalization (for "OTHER" or no country code)
+                            bool normalizationSuccess = false;
+                            try
+                            {
+                                normalizationSuccess = _phoneNormalizationService.TryNormalize(phoneToNormalize, out normalizedPhone);
+                            }
+                            catch (Exception normEx)
+                            {
+                                _logger.LogError(normEx, "Exception during generic phone normalization: phone={Phone}", phoneToNormalize);
+                                return StatusCode(500, new { success = false, error = "Error normalizing phone number", details = normEx.Message });
+                            }
+                            
+                            if (!normalizationSuccess)
+                            {
+                                _logger.LogWarning("Generic phone normalization failed for phone: {PhoneNumber}, normalizedInput: {NormalizedInput}", phoneNumberCleaned, phoneToNormalize);
+                                return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
+                            }
+                            
+                            // Extract country code from normalized phone number
+                            try
+                            {
+                                countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneToNormalize);
+                            }
+                            catch (Exception extractEx)
+                            {
+                                _logger.LogWarning(extractEx, "Error extracting country code from normalized phone: {PhoneNumber}", normalizedPhone);
+                                countryCode = null;
+                            }
+                            
+                            // Ensure country code is not null (use default if extraction fails)
+                            if (string.IsNullOrWhiteSpace(countryCode))
+                            {
+                                _logger.LogWarning("Country code extraction failed for phone: {PhoneNumber}, using default", normalizedPhone);
+                                countryCode = "+20"; // Default fallback
+                            }
+                        }
+
+                        // Check if phone number or country code actually changed
+                        var newPhoneNumber = normalizedPhone ?? phoneNumberCleaned;
+                        if (patient.PhoneNumber != newPhoneNumber || patient.CountryCode != countryCode)
+                        {
+                            phoneOrCountryCodeChanged = true;
+                        }
+
+                        patient.PhoneNumber = newPhoneNumber;
+                        patient.CountryCode = countryCode ?? "+20"; // Ensure non-null
+                    }
+                    catch (Exception phoneEx)
+                    {
+                        _logger.LogError(phoneEx, "Error processing phone number update for patient {PatientId}: PhoneNumber={PhoneNumber}, CountryCode={CountryCode}, ExceptionType={ExceptionType}, Message={Message}, StackTrace={StackTrace}", 
+                            id, req.PhoneNumber, req.CountryCode, phoneEx.GetType().Name, phoneEx.Message, phoneEx.StackTrace);
+                        return StatusCode(500, new { success = false, error = "Error processing phone number", details = phoneEx.Message, exceptionType = phoneEx.GetType().Name });
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(req.CountryCode))
+                {
+                    // Only country code changed (phone number not provided in request)
+                    var countryCodeCleaned = req.CountryCode.Replace(" ", "");
+                    if (patient.CountryCode != countryCodeCleaned)
+                    {
+                        phoneOrCountryCodeChanged = true;
+                        patient.CountryCode = countryCodeCleaned;
+                    }
+                }
+
+                // Reset WhatsApp validation if phone number or country code changed
+                if (phoneOrCountryCodeChanged)
+                {
+                    patient.IsValidWhatsAppNumber = null;
                 }
 
                 if (!string.IsNullOrEmpty(req.Status))
                     patient.Status = req.Status;
 
                 // Get current user ID for audit using IUserContext
-                var userId = _userContext.GetUserId();
+                int userId;
+                try
+                {
+                    userId = _userContext.GetUserId();
+                }
+                catch (InvalidOperationException authEx)
+                {
+                    _logger.LogError(authEx, "Authentication error: User ID not found in claims");
+                    return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+                }
 
                 // Set UpdatedAt and UpdatedBy for audit trail
                 patient.UpdatedAt = DateTime.UtcNow;
@@ -351,26 +589,47 @@ namespace Clinics.Api.Controllers
 
                 await _db.SaveChangesAsync();
 
-                var dto = new PatientDto
+                try
                 {
-                    Id = patient.Id,
-                    FullName = patient.FullName,
-                    PhoneNumber = patient.PhoneNumber,
-                    CountryCode = patient.CountryCode,
-                    Position = patient.Position,
-                    Status = patient.Status,
+                    var dto = new PatientDto
+                    {
+                        Id = patient.Id,
+                        FullName = patient.FullName,
+                        PhoneNumber = patient.PhoneNumber,
+                        CountryCode = patient.CountryCode,
+                        IsValidWhatsAppNumber = patient.IsValidWhatsAppNumber,
+                        Position = patient.Position,
+                        Status = patient.Status,
                         CreatedAt = patient.CreatedAt,
                         UpdatedAt = patient.UpdatedAt,
                         CreatedBy = patient.CreatedBy,
                         UpdatedBy = patient.UpdatedBy
-                };
+                    };
 
-                return Ok(dto);
+                    _logger.LogInformation("Patient updated successfully: PatientId={PatientId}", id);
+                    return Ok(new { success = true, data = dto });
+                }
+                catch (Exception dtoEx)
+                {
+                    _logger.LogError(dtoEx, "Error creating DTO for patient {PatientId}", id);
+                    return StatusCode(500, new { success = false, error = "Error creating response", details = dtoEx.Message });
+                }
+            }
+            catch (InvalidOperationException authEx) when (authEx.Message.Contains("User ID") || authEx.Message.Contains("HttpContext"))
+            {
+                _logger.LogError(authEx, "Authentication error updating patient");
+                return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error updating patient");
+                return StatusCode(400, new { success = false, error = "Invalid data or constraint violation", details = dbEx.InnerException?.Message });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating patient");
-                return StatusCode(500, new { message = "Error updating patient" });
+                _logger.LogError(ex, "Error updating patient: {ErrorMessage}", ex.Message);
+                _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
+                return StatusCode(500, new { success = false, error = "Error updating patient", details = ex.Message });
             }
         }
 

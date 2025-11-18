@@ -22,6 +22,7 @@ export interface QueuePatientDto {
   lastName: string;
   phoneNumber: string;
   countryCode?: string;
+  isValidWhatsAppNumber?: boolean | null;
   position: number;
   status: 'waiting' | 'in_service' | 'completed' | 'cancelled';
   createdAt: string;

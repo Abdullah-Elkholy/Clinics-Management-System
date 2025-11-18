@@ -88,18 +88,27 @@ export function useFormKeyboardNavigation(options: UseFormKeyboardNavigationOpti
     // If form is mounted, formRef.current should be available
     const formElement = getFormElement();
     
-    // If we have a form ref, verify target is within it
-    // This ensures we only handle events for our specific form
-    if (formElement && !formElement.contains(target)) {
-      return; // Event not in our form, ignore
-    }
+    // Determine the form we should handle events for
+    let form: HTMLFormElement | null = null;
     
-    // If no form ref and no form element found, skip (form might not be mounted yet)
-    // This is okay - we'll catch it on the next render when form mounts
-    if (!formElement) {
-      // Check if target has a form ancestor as fallback
-      const closestForm = target.closest('form');
-      if (!closestForm) {
+    if (formRef) {
+      // If formRef is provided, we must have formElement to proceed
+      // This ensures we only handle events when our specific form is mounted
+      if (!formElement) {
+        return; // Form not mounted yet, ignore event
+      }
+      
+      // Verify target is within our form
+      if (!formElement.contains(target)) {
+        return; // Event not in our form, ignore
+      }
+      
+      form = formElement;
+    } else {
+      // If no formRef provided, use closest form as fallback
+      // (This allows hook to work without explicit form ref, but less secure)
+      form = target.closest('form');
+      if (!form) {
         return; // No form context at all
       }
     }
@@ -120,11 +129,7 @@ export function useFormKeyboardNavigation(options: UseFormKeyboardNavigationOpti
         return;
       }
 
-      // Use formElement if available, otherwise fall back to closest form
-      const form = formElement || target.closest('form');
-      if (!form) {
-        return;
-      }
+      // 'form' is already determined above with proper validation
 
       // Prevent default form submission (we'll handle it manually)
       e.preventDefault();
@@ -148,8 +153,8 @@ export function useFormKeyboardNavigation(options: UseFormKeyboardNavigationOpti
 
     // Escape key handling
     if (e.key === 'Escape' && enableEscape && onEscape) {
-      // Only handle escape if target is in our form (or no form ref specified)
-      if (!formElement || formElement.contains(target)) {
+      // Only handle escape if we have a valid form context (already validated above)
+      if (form) {
         e.preventDefault();
         e.stopPropagation();
         onEscape();

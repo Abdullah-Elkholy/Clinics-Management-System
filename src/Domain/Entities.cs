@@ -173,6 +173,13 @@ namespace Clinics.Domain
         [StringLength(10)]
         public string CountryCode { get; set; } = "+20";
 
+        /// <summary>
+        /// Indicates whether the phone number has been validated for WhatsApp.
+        /// null = not checked yet, true = valid WhatsApp number, false = invalid WhatsApp number.
+        /// Automatically reset to null when PhoneNumber or CountryCode changes.
+        /// </summary>
+        public bool? IsValidWhatsAppNumber { get; set; }
+
         [Required]
         public int Position { get; set; }
 

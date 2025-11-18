@@ -372,23 +372,23 @@ export default function AddPatientModal() {
                     : 'border-gray-200 bg-white hover:border-blue-300'
                 }`}
               >
-                {/* Patient Card Header - Fully Clickable */}
-                <button
-                  type="button"
-                  onClick={() => togglePatientExpanded(index)}
-                  disabled={isLoading}
-                  className={`w-full px-4 py-3 border-b text-right flex items-center justify-between transition-all ${
-                    patientError ? 'bg-red-100' : 'bg-gradient-to-r from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-150'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  title={isExpanded ? "طي القسم" : "توسيع القسم"}
-                >
-                  <div className="flex items-center gap-2 flex-1">
+                {/* Patient Card Header */}
+                <div className={`px-4 py-3 border-b text-right flex items-center justify-between transition-all ${
+                  patientError ? 'bg-red-100' : 'bg-gradient-to-r from-blue-50 to-blue-100'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => togglePatientExpanded(index)}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 flex-1 text-right transition-all hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isExpanded ? "طي القسم" : "توسيع القسم"}
+                  >
                     <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-gray-600 transition-transform`}></i>
                     <span className="text-sm font-semibold text-gray-700">
                       <i className="fas fa-user-circle text-blue-600 ml-2"></i>
                       المريض #{index + 1}
                     </span>
-                  </div>
+                  </button>
                   {patients.length > 1 && (
                     <button
                       type="button"
@@ -403,7 +403,7 @@ export default function AddPatientModal() {
                       حذف
                     </button>
                   )}
-                </button>
+                </div>
 
                 {/* Patient Form Fields - Collapsible */}
                 {isExpanded && (

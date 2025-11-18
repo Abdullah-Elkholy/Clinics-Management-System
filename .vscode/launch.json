@@ -61,7 +61,7 @@
     },
     {
       "name": "Run All",
-      "configurations": [ "FE only . Frontend (Next.js)", "BE only . Backend API (dotnet)", "WA only . WhatsApp Service (dotnet)" ]
+      "configurations": [ "FE only . Frontend (Next.js)", "BE only . Backend API (dotnet)", "WA ........ WhatsApp Service (dotnet)" ]
     }
   ]
 }

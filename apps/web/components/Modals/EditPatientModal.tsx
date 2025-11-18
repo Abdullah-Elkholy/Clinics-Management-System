@@ -224,9 +224,12 @@ export default function EditPatientModal() {
       return;
     }
 
+    // Declare patientIdNum outside try block so it's accessible in catch
+    let patientIdNum: number | undefined;
+    
     try {
       setIsLoading(true);
-      const patientIdNum = Number(data?.patient?.id);
+      patientIdNum = Number(data?.patient?.id);
       if (isNaN(patientIdNum)) {
         throw new Error('معرّف المريض غير صالح');
       }
@@ -241,6 +244,9 @@ export default function EditPatientModal() {
         // Send countryCode explicitly (backend will extract it if not provided, but better to send it)
         apiPayload.countryCode = effectiveCode;
       }
+
+      // Log the payload for debugging
+      logger.debug('Updating patient:', { patientId: patientIdNum, payload: apiPayload });
 
       await patientsApiClient.updatePatient(patientIdNum, apiPayload);
 
@@ -265,7 +271,31 @@ export default function EditPatientModal() {
         window.dispatchEvent(new CustomEvent('patientDataUpdated'));
       }, 100);
     } catch (err) {
-      addToast('حدث خطأ أثناء تحديث البيانات', 'error');
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (err && typeof err === 'object' && 'message' in err)
+          ? String((err as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      
+      const statusCode = (err && typeof err === 'object' && 'statusCode' in err) 
+        ? (err as { statusCode?: unknown }).statusCode 
+        : undefined;
+      
+      logger.error('Failed to update patient:', {
+        error: errorMessage,
+        statusCode,
+        patientId: patientIdNum ?? data?.patient?.id ?? 'unknown',
+        fullError: err,
+      });
+      
+      // Show more specific error message if available
+      const displayMessage = errorMessage.includes('Authentication') 
+        ? 'فشل المصادقة. يرجى تسجيل الدخول مرة أخرى'
+        : errorMessage.includes('Invalid phone') || errorMessage.includes('phone number')
+        ? 'رقم الهاتف غير صحيح'
+        : 'حدث خطأ أثناء تحديث البيانات';
+      
+      addToast(displayMessage, 'error');
     } finally {
       setIsLoading(false);
     }

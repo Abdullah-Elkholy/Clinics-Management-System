@@ -8,7 +8,9 @@ import { resolvePatientMessages } from '@/services/queueMessageService';
 import { QueueMessageConfig, MessageResolution } from '@/types/messageCondition';
 import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
-import { useState, useMemo } from 'react';
+import { whatsappApiClient } from '@/services/api/whatsappApiClient';
+import { normalizePhoneNumber } from '@/utils/core.utils';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Modal from './Modal';
 
 export default function MessagePreviewModal() {
@@ -27,6 +29,16 @@ export default function MessagePreviewModal() {
   // State for removed patients
   const [removedPatients, setRemovedPatients] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
+
+  // WhatsApp validation state
+  const [validationStatus, setValidationStatus] = useState<Record<string, {
+    isValid: boolean | null; // null = checking/not checked, true = valid, false = invalid
+    isChecking: boolean;
+    error?: string;
+    attempts: number;
+  }>>({});
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationProgress, setValidationProgress] = useState({ current: 0, total: 0 });
 
   // Get queue data from context as fallback
   const queue = useMemo(() => {
@@ -163,6 +175,38 @@ export default function MessagePreviewModal() {
   };
 
   const handleConfirmSend = async () => {
+    // Check if validation is still in progress
+    if (isValidating) {
+      addToast('يرجى الانتظار حتى اكتمال عملية التحقق من أرقام الواتساب', 'error');
+      return;
+    }
+
+    // Check if all patients have been validated
+    const patientsToCheck = resolutions
+      .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
+      .map((res) => String(res.patientId));
+
+    const unvalidatedPatients = patientsToCheck.filter(patientId => {
+      const status = validationStatus[patientId];
+      return !status || status.isValid === null;
+    });
+
+    if (unvalidatedPatients.length > 0) {
+      addToast('يرجى الانتظار حتى اكتمال عملية التحقق من أرقام الواتساب', 'error');
+      return;
+    }
+
+    // Check if any patients have invalid WhatsApp numbers
+    const invalidPatients = patientsToCheck.filter(patientId => {
+      const status = validationStatus[patientId];
+      return status && status.isValid === false;
+    });
+
+    if (invalidPatients.length > 0) {
+      addToast('بعض أرقام الهاتف غير صالحة للواتساب. يرجى إصلاحها أو إزالتها من المعاينة قبل الإرسال', 'error');
+      return;
+    }
+
     // Use default template from real templates if defaultTemplateId is not provided
     const templateToUse = defaultTemplateId ? Number(defaultTemplateId) : (defaultTemplate ? Number(defaultTemplate.id) : null);
     
@@ -215,6 +259,174 @@ export default function MessagePreviewModal() {
     addToast('تم استعادة المريض', 'info');
   };
 
+  // Check a single phone number with retry logic (max 2 attempts)
+  const checkPhoneNumber = useCallback(async (
+    patientId: string,
+    phoneNumber: string,
+    attempt: number = 1
+  ): Promise<boolean | null> => {
+    const maxAttempts = 2;
+    
+    // Update status to checking
+    setValidationStatus(prev => ({
+      ...prev,
+      [patientId]: {
+        isValid: null,
+        isChecking: true,
+        attempts: attempt,
+      }
+    }));
+
+    try {
+      const result = await whatsappApiClient.checkWhatsAppNumber(phoneNumber);
+      
+      // Check if result indicates success
+      if (result.isSuccess === true) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: true,
+            isChecking: false,
+            attempts: attempt,
+          }
+        }));
+        return true;
+      } else if (result.isSuccess === false) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: false,
+            isChecking: false,
+            attempts: attempt,
+          }
+        }));
+        return false;
+      } else {
+        // Pending or other states - treat as error for retry
+        throw new Error(result.resultMessage || 'Unknown validation state');
+      }
+    } catch (error: any) {
+      // If we haven't reached max attempts, retry
+      if (attempt < maxAttempts) {
+        // Wait a bit before retry
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return checkPhoneNumber(patientId, phoneNumber, attempt + 1);
+      } else {
+        // Max attempts reached - show error with retry option
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: error?.message || 'فشل التحقق من رقم الواتساب',
+            attempts: attempt,
+          }
+        }));
+        return null;
+      }
+    }
+  }, []);
+
+  // Validate all patients sequentially (1 at a time)
+  const validateAllPatients = useCallback(async () => {
+    if (!isOpen) return;
+
+    // Get patients that need validation (not excluded, not removed)
+    const patientsToValidate = sortedPatients.filter(p => 
+      selectedPatientIds.includes(String(p.id)) && 
+      !removedPatients.includes(String(p.id)) &&
+      p.phone
+    );
+
+    if (patientsToValidate.length === 0) {
+      setIsValidating(false);
+      return;
+    }
+
+    setIsValidating(true);
+    setValidationProgress({ current: 0, total: patientsToValidate.length });
+
+    // Initialize validation status for all patients
+    const initialStatus: Record<string, {
+      isValid: boolean | null;
+      isChecking: boolean;
+      error?: string;
+      attempts: number;
+    }> = {};
+
+    patientsToValidate.forEach(p => {
+      const patientId = String(p.id);
+      
+      // If already validated (true/false), use that value, otherwise check
+      if (p.isValidWhatsAppNumber === true) {
+        initialStatus[patientId] = {
+          isValid: true,
+          isChecking: false,
+          attempts: 0,
+        };
+      } else if (p.isValidWhatsAppNumber === false) {
+        initialStatus[patientId] = {
+          isValid: false,
+          isChecking: false,
+          attempts: 0,
+        };
+      } else {
+        // Need to check - will be set during validation
+        initialStatus[patientId] = {
+          isValid: null,
+          isChecking: false,
+          attempts: 0,
+        };
+      }
+    });
+
+    setValidationStatus(initialStatus);
+
+    // Check each patient sequentially (1 at a time)
+    for (let i = 0; i < patientsToValidate.length; i++) {
+      const patient = patientsToValidate[i];
+      const patientId = String(patient.id);
+      
+      // Skip if already validated (true/false from database)
+      if (patient.isValidWhatsAppNumber === true || patient.isValidWhatsAppNumber === false) {
+        setValidationProgress({ current: i + 1, total: patientsToValidate.length });
+        continue;
+      }
+
+      // Build full phone number with country code using normalization utility
+      const countryCode = patient.countryCode || '+20';
+      // Use normalizePhoneNumber utility to ensure consistent E.164 format
+      const phoneNumber = normalizePhoneNumber(patient.phone, countryCode);
+
+      await checkPhoneNumber(patientId, phoneNumber);
+      setValidationProgress({ current: i + 1, total: patientsToValidate.length });
+    }
+
+    setIsValidating(false);
+  }, [isOpen, sortedPatients, selectedPatientIds, removedPatients, checkPhoneNumber]);
+
+  // Trigger validation when modal opens
+  useEffect(() => {
+    if (isOpen && sortedPatients.length > 0 && selectedPatientIds.length > 0) {
+      // Reset validation status when modal opens
+      setValidationStatus({});
+      validateAllPatients();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]); // Only trigger on open/close, not on patient changes
+
+  // Retry validation for a specific patient
+  const handleRetryValidation = useCallback(async (patientId: string) => {
+    const patient = sortedPatients.find(p => String(p.id) === patientId);
+    if (!patient || !patient.phone) return;
+
+    const countryCode = patient.countryCode || '+20';
+    // Use normalizePhoneNumber utility to ensure consistent E.164 format
+    const phoneNumber = normalizePhoneNumber(patient.phone, countryCode);
+
+    await checkPhoneNumber(patientId, phoneNumber, 1);
+  }, [sortedPatients, checkPhoneNumber]);
+
   if (!isOpen) return null;
 
   return (
@@ -250,6 +462,58 @@ export default function MessagePreviewModal() {
               </div>
             </div>
           )}
+
+          {/* WhatsApp Validation Progress */}
+          {isValidating && (
+            <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center gap-3">
+              <i className="fas fa-spinner fa-spin text-blue-600"></i>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-800">
+                  جاري التحقق من أرقام الواتساب...
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  {validationProgress.current} / {validationProgress.total}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Invalid WhatsApp Numbers Disclaimer */}
+          {(() => {
+            const invalidPatients = resolutions
+              .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
+              .filter((res) => {
+                const status = validationStatus[String(res.patientId)];
+                return status && status.isValid === false;
+              });
+
+            if (invalidPatients.length > 0 && !isValidating) {
+              return (
+                <div className="px-4 py-3 bg-red-50 border-b border-red-200">
+                  <div className="flex items-start gap-3 text-sm text-red-800 mb-2">
+                    <i className="fas fa-exclamation-circle mt-1"></i>
+                    <div className="flex-1">
+                      <p className="font-medium">تحذير: بعض أرقام الهاتف غير صالحة للواتساب</p>
+                      <p className="mt-1 text-xs">يرجى إصلاح الأرقام التالية أو إزالتها من المعاينة قبل الإرسال:</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {invalidPatients.map((res) => {
+                      const patient = previewPatients.find((p) => String(p.id) === res.patientId);
+                      if (!patient) return null;
+                      return (
+                        <div key={res.patientId} className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded">
+                          <span className="font-medium">{patient.name}</span> - {formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           <div className="px-4 py-3 bg-gray-50 border-b flex-shrink-0">
             <h4 className="font-bold text-gray-800">جدول المعاينة</h4>
           </div>
@@ -287,7 +551,46 @@ export default function MessagePreviewModal() {
                           </div>
                         </td>
                         <td className="px-4 py-2">{resolution.patientName}</td>
-                        <td className="px-4 py-2">{formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}</td>
+                        <td className={`px-4 py-2 ${
+                          (() => {
+                            const status = validationStatus[String(resolution.patientId)];
+                            if (status && status.isValid === false) {
+                              return 'bg-red-100 text-red-800 font-medium';
+                            }
+                            return '';
+                          })()
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            {formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}
+                            {(() => {
+                              const status = validationStatus[String(resolution.patientId)];
+                              if (status?.isChecking) {
+                                return <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>;
+                              }
+                              if (status?.isValid === true) {
+                                return <i className="fas fa-check-circle text-green-500 text-xs"></i>;
+                              }
+                              if (status?.isValid === false) {
+                                return <i className="fas fa-times-circle text-red-500 text-xs"></i>;
+                              }
+                              if (status?.error) {
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    <i className="fas fa-exclamation-triangle text-orange-500 text-xs"></i>
+                                    <button
+                                      onClick={() => handleRetryValidation(String(resolution.patientId))}
+                                      className="text-xs text-orange-600 hover:text-orange-800 underline"
+                                      title="إعادة المحاولة"
+                                    >
+                                      إعادة المحاولة
+                                    </button>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
+                        </td>
                         <td className="px-4 py-2 text-gray-600 max-w-xs">{resolution.resolvedTemplate}</td>
                         <td className="px-4 py-2 text-center">
                           <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${reasonBadge.bg} ${reasonBadge.text}`}>
@@ -315,7 +618,23 @@ export default function MessagePreviewModal() {
         <div className="flex gap-3 pt-4 border-t flex-shrink-0">
           <button
             onClick={handleConfirmSend}
-            disabled={missingDefaultTemplate || selectedCount - removedPatients.length === 0 || isSending}
+            disabled={
+              missingDefaultTemplate || 
+              selectedCount - removedPatients.length === 0 || 
+              isSending ||
+              isValidating ||
+              (() => {
+                // Check if any patients are invalid or not validated
+                const patientsToCheck = resolutions
+                  .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
+                  .map((res) => String(res.patientId));
+                
+                return patientsToCheck.some(patientId => {
+                  const status = validationStatus[patientId];
+                  return !status || status.isValid === null || status.isValid === false;
+                });
+              })()
+            }
             className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             {isSending ? (
