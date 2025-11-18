@@ -295,6 +295,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأول"
               disabled={isLoading}
+              autoComplete="given-name"
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
                 errors.firstName
                   ? 'border-red-500 focus:ring-red-500'
@@ -319,6 +320,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأخير (اختياري)"
               disabled={isLoading}
+              autoComplete="family-name"
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
                 errors.lastName
                   ? 'border-red-500 focus:ring-red-500'
@@ -345,6 +347,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
             onBlur={handleFieldBlur}
             placeholder="أدخل اسم المستخدم"
             disabled={isLoading}
+            autoComplete="username"
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
               errors.username
                 ? 'border-red-500 focus:ring-red-500'
@@ -412,6 +415,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
                 onBlur={handleFieldBlur}
                 placeholder="أدخل كلمة المرور"
                 disabled={isLoading}
+                autoComplete="new-password"
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all pr-10 ${
                   errors.password
                     ? 'border-red-500 focus:ring-red-500'
@@ -446,6 +450,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
                 onBlur={handleFieldBlur}
                 placeholder="تأكيد كلمة المرور"
                 disabled={isLoading}
+                autoComplete="new-password"
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all pr-10 ${
                   errors.confirmPassword
                     ? 'border-red-500 focus:ring-red-500'

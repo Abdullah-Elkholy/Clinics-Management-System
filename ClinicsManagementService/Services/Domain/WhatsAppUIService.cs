@@ -290,6 +290,12 @@ namespace ClinicsManagementService.Services.Domain
                             _notifier.Notify("❌ Browser/session closed during wait");
                             return OperationResult<bool>.Failure("Failed: Browser session terminated during wait");
                         }
+                        // Check if browser was manually closed (InvalidOperationException with specific message)
+                        if (ex is InvalidOperationException && ex.Message.Contains("manually closed"))
+                        {
+                            _notifier.Notify("❌ Browser was manually closed - stopping wait operation");
+                            return OperationResult<bool>.Failure("Failed: Browser session was manually closed. Please restart the service.");
+                        }
                         _notifier.Notify($"⚠️ Wait condition error: {ex.Message}");
                         // Continue waiting despite other non-fatal errors
                     }

@@ -53,14 +53,13 @@ namespace Clinics.Api.DTOs
         public string FullName { get; set; } = null!;
 
         [Required(ErrorMessage = "Phone number is required")]
-        [StringLength(35, MinimumLength = 5, ErrorMessage = "Phone number must be between 5 and 35 characters")]
-        [CountryCodeRequired(ErrorMessage = "Phone number must include country code (e.g., +201234567890)")]
+        [StringLength(20, MinimumLength = 5, ErrorMessage = "Phone number must be between 5 and 20 characters")]
         public string PhoneNumber { get; set; } = null!;
 
     // PhoneExtension removed from create request.
 
         /// <summary>
-        /// Optional country code (e.g., "+20", "+966"). If not provided, will be extracted from PhoneNumber.
+        /// Country code (e.g., "+20", "+966"). Required when PhoneNumber is provided.
         /// </summary>
         [StringLength(10)]
         public string? CountryCode { get; set; }
@@ -87,7 +86,7 @@ namespace Clinics.Api.DTOs
     // PhoneExtension removed from update request.
 
         /// <summary>
-        /// Optional country code (e.g., "+20", "+966"). If not provided, will be extracted from PhoneNumber.
+        /// Country code (e.g., "+20", "+966"). Required when PhoneNumber is provided.
         /// </summary>
         [StringLength(10)]
         public string? CountryCode { get; set; }

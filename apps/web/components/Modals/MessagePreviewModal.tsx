@@ -9,7 +9,7 @@ import { QueueMessageConfig, MessageResolution } from '@/types/messageCondition'
 import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { whatsappApiClient } from '@/services/api/whatsappApiClient';
-import { normalizePhoneNumber } from '@/utils/core.utils';
+// normalizePhoneNumber removed - phone numbers stored separately from country codes
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import Modal from './Modal';
 
@@ -54,13 +54,39 @@ export default function MessagePreviewModal() {
 
   const realConditions = useMemo(() => {
     if (!queueId) return [];
-    return messageConditions.filter(c => String(c.queueId) === String(queueId));
-  }, [messageConditions, queueId]);
+    // Filter conditions for this queue and populate template content from templates
+    return messageConditions
+      .filter(c => String(c.queueId) === String(queueId))
+      .map(condition => {
+        // If condition already has template content, use it
+        if (condition.template) {
+          return condition;
+        }
+        // Otherwise, look up template content from templateId
+        if (condition.templateId) {
+          const template = realTemplates.find(t => String(t.id) === String(condition.templateId));
+          if (template) {
+            return {
+              ...condition,
+              template: template.content,
+            };
+          }
+        }
+        // If no template found, return condition as-is (will show empty message)
+        return condition;
+      });
+  }, [messageConditions, queueId, realTemplates]);
 
-  // Get default template ONLY if explicitly marked by DEFAULT condition (do not fallback silently)
+  // Get default template by finding condition with DEFAULT operator, then finding its template
   const defaultTemplate = useMemo(() => {
-    return realTemplates.find(t => t.condition?.operator === 'DEFAULT');
-  }, [realTemplates]);
+    // Find condition with DEFAULT operator
+    const defaultCondition = realConditions.find(c => c.operator === 'DEFAULT');
+    if (!defaultCondition || !defaultCondition.templateId) {
+      return undefined;
+    }
+    // Find template by templateId from the condition
+    return realTemplates.find(t => String(t.id) === String(defaultCondition.templateId));
+  }, [realConditions, realTemplates]);
 
   // Preview data with queue positions - use data from modal, fallback to context patients
   const previewPatients: Patient[] = useMemo(() => {
@@ -123,12 +149,41 @@ export default function MessagePreviewModal() {
   }, [sortedPatients, selectedPatientIds, removedPatients]);
 
   const resolutions = useMemo(() => {
-    return resolvePatientMessages(
+    const results = resolvePatientMessages(
       messageConfig,
       patientArray,
       currentQueuePosition,
       { estimatedTimePerSessionMinutes: estimatedTimePerSession }
     );
+    
+    // Debug logging (remove in production if needed)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[MessagePreview] Resolutions:', {
+        config: {
+          queueId: messageConfig.queueId,
+          queueName: messageConfig.queueName,
+          conditionsCount: messageConfig.conditions?.length || 0,
+          defaultTemplate: messageConfig.defaultTemplate ? 'exists' : 'missing',
+          conditions: messageConfig.conditions?.map(c => ({
+            id: c.id,
+            operator: c.operator,
+            template: c.template ? `${c.template.substring(0, 50)}...` : 'EMPTY',
+            templateId: c.templateId,
+            enabled: c.enabled,
+          })),
+        },
+        patients: patientArray.length,
+        currentQueuePosition,
+        results: results.map(r => ({
+          patientId: r.patientId,
+          reason: r.reason,
+          hasTemplate: !!r.resolvedTemplate,
+          templateLength: r.resolvedTemplate?.length || 0,
+        })),
+      });
+    }
+    
+    return results;
   }, [messageConfig, patientArray, currentQueuePosition, estimatedTimePerSession]);
 
   // Group resolutions by resolvedTemplate for grouped display
@@ -181,33 +236,42 @@ export default function MessagePreviewModal() {
       return;
     }
 
-    // Check if all patients have been validated
-    const patientsToCheck = resolutions
+    // Get patients that will be sent (not excluded, not removed)
+    const patientsToSend = resolutions
       .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
-      .map((res) => String(res.patientId));
+      .map((res) => {
+        const patient = previewPatients.find((p) => String(p.id) === res.patientId);
+        return {
+          patientId: res.patientId,
+          patient,
+        };
+      })
+      .filter((item) => item.patient !== undefined);
 
-    const unvalidatedPatients = patientsToCheck.filter(patientId => {
-      const status = validationStatus[patientId];
-      return !status || status.isValid === null;
-    });
-
-    if (unvalidatedPatients.length > 0) {
-      addToast('يرجى الانتظار حتى اكتمال عملية التحقق من أرقام الواتساب', 'error');
+    if (patientsToSend.length === 0) {
+      addToast('لا يوجد مرضى لإرسال الرسائل لهم', 'error');
       return;
     }
 
-    // Check if any patients have invalid WhatsApp numbers
-    const invalidPatients = patientsToCheck.filter(patientId => {
-      const status = validationStatus[patientId];
-      return status && status.isValid === false;
+    // Check 1: Verify all patients have IsValidWhatsAppNumber === true
+    const invalidWhatsAppPatients = patientsToSend.filter((item) => {
+      const patient = item.patient;
+      // Must have isValidWhatsAppNumber explicitly set to true
+      return !patient || patient.isValidWhatsAppNumber !== true;
     });
 
-    if (invalidPatients.length > 0) {
-      addToast('بعض أرقام الهاتف غير صالحة للواتساب. يرجى إصلاحها أو إزالتها من المعاينة قبل الإرسال', 'error');
+    if (invalidWhatsAppPatients.length > 0) {
+      const invalidNames = invalidWhatsAppPatients
+        .map((item) => item.patient?.name || `ID: ${item.patientId}`)
+        .join(', ');
+      addToast(
+        `لا يمكن إرسال الرسائل: بعض المرضى ليس لديهم أرقام واتساب صالحة (${invalidNames}). يرجى التحقق من صحة الأرقام أولاً.`,
+        'error'
+      );
       return;
     }
 
-    // Use default template from real templates if defaultTemplateId is not provided
+    // Check 2: Verify default template exists
     const templateToUse = defaultTemplateId ? Number(defaultTemplateId) : (defaultTemplate ? Number(defaultTemplate.id) : null);
     
     if (!templateToUse || isNaN(templateToUse)) {
@@ -215,25 +279,20 @@ export default function MessagePreviewModal() {
       return;
     }
 
-    const patientsToSend = resolutions
-      .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
-      .map((res) => Number(res.patientId))
+    // Extract patient IDs for API call
+    const patientIdsToSend = patientsToSend
+      .map((item) => Number(item.patientId))
       .filter((id) => !isNaN(id));
-
-    if (patientsToSend.length === 0) {
-      addToast('لا يوجد مرضى لإرسال الرسائل لهم', 'error');
-      return;
-    }
 
     setIsSending(true);
     try {
       await messageApiClient.sendMessages({
         templateId: templateToUse,
-        patientIds: patientsToSend,
+        patientIds: patientIdsToSend,
         channel: 'whatsapp',
       });
 
-      addToast(`تم إرسال ${patientsToSend.length} رسالة بنجاح`, 'success');
+      addToast(`تم إرسال ${patientIdsToSend.length} رسالة بنجاح`, 'success');
       closeModal('messagePreview');
       
       // Trigger refetch events
@@ -280,6 +339,20 @@ export default function MessagePreviewModal() {
     try {
       const result = await whatsappApiClient.checkWhatsAppNumber(phoneNumber);
       
+      // Check if service is unavailable (connection refused, etc.)
+      if (result.state === 'ServiceUnavailable') {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: 'خدمة التحقق من الواتساب غير متاحة. يمكنك المتابعة بدون التحقق.',
+            attempts: attempt,
+          }
+        }));
+        return null; // Don't retry if service is unavailable
+      }
+      
       // Check if result indicates success
       if (result.isSuccess === true) {
         setValidationStatus(prev => ({
@@ -306,6 +379,26 @@ export default function MessagePreviewModal() {
         throw new Error(result.resultMessage || 'Unknown validation state');
       }
     } catch (error: any) {
+      // Check if it's a connection error - don't retry
+      const isConnectionError = 
+        error?.message?.includes('ERR_CONNECTION_REFUSED') ||
+        error?.message?.includes('Failed to fetch') ||
+        error?.message?.includes('NetworkError') ||
+        error?.message?.includes('connection refused');
+      
+      if (isConnectionError) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: 'خدمة التحقق من الواتساب غير متاحة. يمكنك المتابعة بدون التحقق.',
+            attempts: attempt,
+          }
+        }));
+        return null; // Don't retry connection errors
+      }
+      
       // If we haven't reached max attempts, retry
       if (attempt < maxAttempts) {
         // Wait a bit before retry
@@ -393,10 +486,10 @@ export default function MessagePreviewModal() {
         continue;
       }
 
-      // Build full phone number with country code using normalization utility
+      // Build full phone number with country code (E.164 format for WhatsApp API)
       const countryCode = patient.countryCode || '+20';
-      // Use normalizePhoneNumber utility to ensure consistent E.164 format
-      const phoneNumber = normalizePhoneNumber(patient.phone, countryCode);
+      // Combine country code and phone number: +20 1018542431 -> +201018542431
+      const phoneNumber = `${countryCode}${patient.phone}`;
 
       await checkPhoneNumber(patientId, phoneNumber);
       setValidationProgress({ current: i + 1, total: patientsToValidate.length });
@@ -421,8 +514,8 @@ export default function MessagePreviewModal() {
     if (!patient || !patient.phone) return;
 
     const countryCode = patient.countryCode || '+20';
-    // Use normalizePhoneNumber utility to ensure consistent E.164 format
-    const phoneNumber = normalizePhoneNumber(patient.phone, countryCode);
+    // Combine country code and phone number: +20 1018542431 -> +201018542431
+    const phoneNumber = `${countryCode}${patient.phone}`;
 
     await checkPhoneNumber(patientId, phoneNumber, 1);
   }, [sortedPatients, checkPhoneNumber]);
@@ -618,23 +711,7 @@ export default function MessagePreviewModal() {
         <div className="flex gap-3 pt-4 border-t flex-shrink-0">
           <button
             onClick={handleConfirmSend}
-            disabled={
-              missingDefaultTemplate || 
-              selectedCount - removedPatients.length === 0 || 
-              isSending ||
-              isValidating ||
-              (() => {
-                // Check if any patients are invalid or not validated
-                const patientsToCheck = resolutions
-                  .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
-                  .map((res) => String(res.patientId));
-                
-                return patientsToCheck.some(patientId => {
-                  const status = validationStatus[patientId];
-                  return !status || status.isValid === null || status.isValid === false;
-                });
-              })()
-            }
+            disabled={isSending || isValidating}
             className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             {isSending ? (
@@ -645,7 +722,7 @@ export default function MessagePreviewModal() {
             ) : (
               <>
                 <i className="fab fa-whatsapp"></i>
-                {missingDefaultTemplate ? 'مطلوب قالب افتراضي' : `تأكيد الإرسال (${selectedCount - removedPatients.length})`}
+                {`تأكيد الإرسال (${selectedCount - removedPatients.length})`}
               </>
             )}
           </button>

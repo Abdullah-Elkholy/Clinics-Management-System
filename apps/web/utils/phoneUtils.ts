@@ -81,33 +81,15 @@ const COUNTRY_PHONE_RULES: Record<string, { removeLeadingZero: boolean; minLengt
 
 /**
  * Format phone number for display with country code
- * Handles cases where phone might already include country code or have leading 0
- * Removes leading zero based on country-specific rules
+ * Phone numbers are stored separately (no country code in phone field)
+ * Simply combines country code and phone number with a space
  */
 export function formatPhoneForDisplay(phone: string, countryCode: string): string {
   if (!phone) return '';
   
-  // Remove all non-numeric characters
-  let cleaned = phone.replace(/[^\d]/g, '');
-  
-  // Extract country code digits (without +)
-  const countryCodeDigits = countryCode.replace(/[^\d]/g, '');
-  
-  // If phone already starts with country code digits, remove them
-  if (cleaned.startsWith(countryCodeDigits)) {
-    cleaned = cleaned.substring(countryCodeDigits.length);
-  }
-  
-  // Get country-specific rules or use default
-  const rules = COUNTRY_PHONE_RULES[countryCodeDigits] || { removeLeadingZero: true, minLength: 8, maxLength: 15, placeholder: '123456789' };
-  
-  // Remove leading zero if country rules require it
-  if (rules.removeLeadingZero && cleaned.startsWith('0')) {
-    cleaned = cleaned.substring(1);
-  }
-  
+  // Phone number is already stored without country code, just combine them
   // Format as: +countryCode phoneNumber (with space)
-  return `${countryCode} ${cleaned}`;
+  return `${countryCode} ${phone}`;
 }
 
 /**

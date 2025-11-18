@@ -248,8 +248,9 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         // Convert DTOs to models
+        let templates: MessageTemplate[] = [];
         if (templateDtos.length > 0) {
-          const templates: MessageTemplate[] = templateDtos.map((dto: TemplateDto) =>
+          templates = templateDtos.map((dto: TemplateDto) =>
             templateDtoToModel(dto, selectedQueueId)
           );
           setMessageTemplates(templates);
@@ -261,9 +262,18 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         if (conditionDtos.length > 0) {
-          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) =>
-            conditionDtoToModel(dto, idx)
-          );
+          // Convert conditions and populate template content from templates
+          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) => {
+            const condition = conditionDtoToModel(dto, idx);
+            // Populate template content from templateId if available
+            if (condition.templateId && templates.length > 0) {
+              const template = templates.find(t => String(t.id) === String(condition.templateId));
+              if (template) {
+                condition.template = template.content;
+              }
+            }
+            return condition;
+          });
           setMessageConditions(conditions);
         } else {
           setMessageConditions([]);
@@ -519,6 +529,13 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // Replace optimistic with real condition
         const realCondition = conditionDtoToModel(dto, messageConditions.length);
+        // Populate template content from templateId if available
+        if (realCondition.templateId && messageTemplates.length > 0) {
+          const template = messageTemplates.find(t => String(t.id) === String(realCondition.templateId));
+          if (template) {
+            realCondition.template = template.content;
+          }
+        }
         setMessageConditions((prev) =>
           prev.map((c) => (c.id === tempId ? realCondition : c))
         );
@@ -577,9 +594,26 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const conditionToUpdate = messageConditions.find((c) => c.id === id);
       if (!conditionToUpdate) return;
 
-      // Update optimistically
+      // Update optimistically - preserve template content if not being updated
       setMessageConditions((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, ...conditionUpdates } : c))
+        prev.map((c) => {
+          if (c.id === id) {
+            const updated = { ...c, ...conditionUpdates };
+            // If template content is not in updates, preserve existing template content
+            if (!('template' in conditionUpdates) && c.template) {
+              updated.template = c.template;
+            }
+            // If templateId changed, try to find new template content
+            if (conditionUpdates.templateId && !updated.template && messageTemplates.length > 0) {
+              const template = messageTemplates.find(t => String(t.id) === String(conditionUpdates.templateId));
+              if (template) {
+                updated.template = template.content;
+              }
+            }
+            return updated;
+          }
+          return c;
+        })
       );
       setIsMutatingCondition(true);
 
@@ -672,9 +706,21 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // Update conditions: replace conditions for this queue
         if (conditionDtos.length > 0) {
-          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) =>
-            conditionDtoToModel(dto, idx)
-          );
+          // Get current templates to populate condition template content
+          const currentTemplates = messageTemplates.filter(t => String(t.queueId) === String(queueId));
+          
+          // Convert conditions and populate template content from templates
+          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) => {
+            const condition = conditionDtoToModel(dto, idx);
+            // Populate template content from templateId if available
+            if (condition.templateId && currentTemplates.length > 0) {
+              const template = currentTemplates.find(t => String(t.id) === String(condition.templateId));
+              if (template) {
+                condition.template = template.content;
+              }
+            }
+            return condition;
+          });
           setMessageConditions((prevConditions) => {
             const conditionsForOtherQueues = prevConditions.filter(c => c.queueId !== queueId);
             return [...conditionsForOtherQueues, ...conditions];

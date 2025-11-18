@@ -99,11 +99,29 @@ export async function checkWhatsAppNumber(
     );
     return result;
   } catch (error: any) {
+    // Handle connection and CORS errors gracefully
+    const errorMessage = error?.message || '';
+    const isConnectionError = 
+      errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+      errorMessage.includes('Failed to fetch') ||
+      errorMessage.includes('NetworkError') ||
+      errorMessage.includes('connection refused') ||
+      errorMessage.includes('CORS') ||
+      errorMessage.includes('Access-Control-Allow-Origin');
+    
+    if (isConnectionError) {
+      return {
+        isSuccess: false,
+        state: 'ServiceUnavailable',
+        resultMessage: 'WhatsApp validation service is not available. Please ensure the ClinicsManagementService is running and CORS is configured.',
+      };
+    }
+    
     // Return a failure result if request fails
     return {
       isSuccess: false,
       state: 'Failure',
-      resultMessage: error?.message || 'Failed to check WhatsApp number',
+      resultMessage: errorMessage || 'Failed to check WhatsApp number',
     };
   }
 }

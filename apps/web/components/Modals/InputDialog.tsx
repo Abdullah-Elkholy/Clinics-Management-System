@@ -110,6 +110,7 @@ export default function InputDialog({
                 placeholder={placeholder}
                 disabled={isLoading}
                 dir="rtl"
+                autoComplete={inputType === 'email' ? 'email' : inputType === 'password' ? 'current-password' : 'off'}
                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:border-blue-500 text-right rtl:text-right bg-white transition-all duration-200 disabled:bg-gray-100 disabled:cursor-not-allowed hover:border-gray-400"
               />
               {value && (

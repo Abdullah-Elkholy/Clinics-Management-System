@@ -94,11 +94,13 @@ export default function LoginScreen() {
             </label>
             <input
               id="login-username"
+              name="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="أدخل اسم المستخدم"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              autoComplete="username"
               autoFocus
               disabled={isLoading}
             />
@@ -110,11 +112,13 @@ export default function LoginScreen() {
             </label>
             <input
               id="login-password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="أدخل كلمة المرور"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              autoComplete="current-password"
               disabled={isLoading}
             />
           </div>

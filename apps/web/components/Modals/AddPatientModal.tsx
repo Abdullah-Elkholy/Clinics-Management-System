@@ -9,7 +9,7 @@ import Modal from './Modal';
 import { useState, useRef, type FormEvent } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
 import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
-import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import { getEffectiveCountryCode } from '@/utils/core.utils';
 import logger from '@/utils/logger';
 
 interface PatientField {
@@ -214,7 +214,7 @@ export default function AddPatientModal() {
       let addedCount = 0;
       for (const p of validPatients) {
         try {
-          const phoneNumber = normalizePhoneNumber(p.phone.trim(), p.effectiveCountryCode);
+          const phoneNumber = p.phone.trim(); // Store phone number as-is, no normalization
           await patientsApiClient.createPatient({
             queueId: qidNum,
             fullName: p.name.trim(),
@@ -425,6 +425,7 @@ export default function AddPatientModal() {
                         onBlur={() => handleFieldBlur(index, 'name')}
                         placeholder="مثال: أحمد محمد علي"
                         disabled={isLoading}
+                        autoComplete="name"
                         className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:border-transparent transition-all ${
                           patientError?.name
                             ? 'border-red-500 bg-red-50 focus:ring-red-500'
@@ -477,6 +478,7 @@ export default function AddPatientModal() {
                             disabled={isLoading}
                             maxLength={4}
                             title="الصيغة: + متبوعة بـ 1-4 أرقام"
+                            autoComplete="tel-country-code"
                             className={`w-20 px-2 py-2 border-2 rounded-lg text-sm focus:outline-none focus:ring-2 transition-all text-center font-mono ${
                               patientError?.customCountryCode
                                 ? 'border-red-500 bg-red-50 focus:ring-red-500'
@@ -504,6 +506,7 @@ export default function AddPatientModal() {
                           maxLength={MAX_PHONE_DIGITS}
                           inputMode="numeric"
                           pattern="[0-9]*"
+                          autoComplete="tel"
                           className={`min-w-40 flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all font-mono ${
                             patientError?.phone
                               ? 'border-red-500 bg-red-50 focus:ring-red-500'

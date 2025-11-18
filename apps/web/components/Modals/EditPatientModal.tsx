@@ -7,7 +7,7 @@ import { COUNTRY_CODES } from '@/constants';
 import { validateCountryCode, validateName, validatePhone, ValidationError, MAX_PHONE_DIGITS } from '@/utils/validation';
 import Modal from './Modal';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
-import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import { getEffectiveCountryCode } from '@/utils/core.utils';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import { useQueue } from '@/contexts/QueueContext';
 import logger from '@/utils/logger';
@@ -240,7 +240,7 @@ export default function EditPatientModal() {
       if (updatePayload.phone || updatePayload.countryCode) {
         const effectiveCode = getEffectiveCountryCode(countryCode, customCountryCode);
         const phoneRaw = updatePayload.phone || data?.patient?.phone || '';
-        apiPayload.phoneNumber = normalizePhoneNumber(phoneRaw, effectiveCode);
+        apiPayload.phoneNumber = phoneRaw.trim(); // Store phone number as-is, no normalization
         // Send countryCode explicitly (backend will extract it if not provided, but better to send it)
         apiPayload.countryCode = effectiveCode;
       }
@@ -349,6 +349,7 @@ export default function EditPatientModal() {
             onBlur={handleFieldBlur}
             placeholder="أدخل الاسم الكامل"
             disabled={isLoading}
+            autoComplete="name"
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
               errors.name
                 ? 'border-red-500 focus:ring-red-500'
@@ -395,6 +396,7 @@ export default function EditPatientModal() {
                 disabled={isLoading}
                 maxLength={4}
                 title="الصيغة: + متبوعة بـ 1-4 أرقام"
+                autoComplete="tel-country-code"
                 className={`w-20 px-2 py-2.5 border-2 rounded-lg focus:ring-2 focus:border-transparent transition-all text-center font-mono text-sm ${
                   errors.customCountryCode
                     ? 'border-red-500 focus:ring-red-500'
@@ -422,6 +424,7 @@ export default function EditPatientModal() {
               maxLength={MAX_PHONE_DIGITS}
               inputMode="numeric"
               pattern="[0-9]*"
+              autoComplete="tel"
               className={`min-w-40 flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all font-mono ${
                 errors.phone
                   ? 'border-red-500 focus:ring-red-500'

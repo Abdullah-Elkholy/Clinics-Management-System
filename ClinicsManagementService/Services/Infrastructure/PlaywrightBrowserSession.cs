@@ -196,6 +196,12 @@ namespace ClinicsManagementService.Services
 
         public async Task NavigateToAsync(string url)
         {
+            // Check if manually closed before attempting operation
+            if (_isManuallyClosed)
+            {
+                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
+            }
+            
             await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -235,6 +241,12 @@ namespace ClinicsManagementService.Services
         // Waits for a selector to reach a specific state (Visible, Attached, Detached).
         public async Task WaitForSelectorAsync(string selector, int timeout = WhatsAppConfiguration.DefaultSelectorTimeoutMs, WaitForSelectorState state = WaitForSelectorState.Visible)
         {
+            // Check if manually closed before attempting operation
+            if (_isManuallyClosed)
+            {
+                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
+            }
+            
             await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -281,6 +293,12 @@ namespace ClinicsManagementService.Services
 
         public async Task<IElementHandle?> QuerySelectorAsync(string selector)
         {
+            // Check if manually closed before attempting operation
+            if (_isManuallyClosed)
+            {
+                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
+            }
+            
             return await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -300,6 +318,12 @@ namespace ClinicsManagementService.Services
         // Returns all elements matching the selector as a list of IElementHandle.
         public async Task<IReadOnlyList<IElementHandle>> QuerySelectorAllAsync(string selector)
         {
+            // Check if manually closed before attempting operation
+            if (_isManuallyClosed)
+            {
+                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
+            }
+            
             return await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -310,6 +334,12 @@ namespace ClinicsManagementService.Services
 
         public async Task<string> GetUrlAsync()
         {
+            // Check if manually closed before attempting operation
+            if (_isManuallyClosed)
+            {
+                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
+            }
+            
             return await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
