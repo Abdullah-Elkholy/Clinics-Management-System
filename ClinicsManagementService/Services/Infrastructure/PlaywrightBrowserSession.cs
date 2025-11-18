@@ -14,7 +14,6 @@ namespace ClinicsManagementService.Services
         private IPage? _page;
         private readonly SemaphoreSlim _lock = new(1, 1); // For operation thread safety
         private readonly SemaphoreSlim _initLock = new(1, 1); // For initialization/recreation safety
-        private bool _isManuallyClosed = false; // Track if browser was manually closed by user
 
         // Helper that runs an operation under the page lock and retries once if the page/target was closed during the operation.
         private async Task<T> WithPageRetryAsync<T>(Func<Task<T>> operation)
@@ -37,13 +36,6 @@ namespace ClinicsManagementService.Services
                 {
                     try { _lock.Release(); } catch { }
                     lockTaken = false;
-                }
-
-                // If browser was manually closed, don't try to recreate
-                if (_isManuallyClosed)
-                {
-                    Console.Error.WriteLine("Browser was manually closed - not attempting recreation");
-                    throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
                 }
 
                 // Clean up any possibly-disposed objects and force recreation before retrying
@@ -125,12 +117,6 @@ namespace ClinicsManagementService.Services
                     );
                 }
 
-                // If browser was manually closed by user, don't recreate pages automatically
-                if (_isManuallyClosed)
-                {
-                    return; // Don't recreate pages if user manually closed the browser
-                }
-
                 // If browser exists but pages closed or page is null/closed, create a new page
                 bool needNewPage = false;
                 if (_page == null) needNewPage = true;
@@ -141,20 +127,6 @@ namespace ClinicsManagementService.Services
 
                 if (needNewPage)
                 {
-                    // Check if browser context still has pages (user might have closed all pages manually)
-                    if (_browser != null && _browser.Pages.Count == 0)
-                    {
-                        // All pages were closed - check if this was a manual close
-                        // If browser context is still valid but has no pages, it might be a manual close
-                        // Set flag to prevent auto-recreation
-                        _isManuallyClosed = true;
-                        Console.Error.WriteLine($"All browser pages were closed - assuming manual close. Auto-recreation disabled.");
-                        return;
-                    }
-
-                    if (_browser == null)
-                        throw new InvalidOperationException("Browser context is null");
-
                     _page = _browser.Pages.Count > 0 ? _browser.Pages[0] : await _browser.NewPageAsync();
                     // Post-creation health check: if the page is closed immediately (some environments close
                     // newly created pages due to profile or other issues), wait briefly and try one more time.
@@ -170,19 +142,10 @@ namespace ClinicsManagementService.Services
                         }
                     }
                     catch { /* ignore timing failures */ }
-                    // Log and instrument page close - detect manual closes
+                    // Log and instrument page close
                     try
                     {
-                        _page.Close += (_, _) => 
-                        {
-                            Console.Error.WriteLine($"Playwright page closed event at {DateTime.UtcNow:O}");
-                            // If all pages are closed and browser context is still valid, mark as manually closed
-                            if (_browser != null && _browser.Pages.Count == 0)
-                            {
-                                _isManuallyClosed = true;
-                                Console.Error.WriteLine($"All pages closed - marking as manually closed to prevent auto-recreation");
-                            }
-                        };
+                        _page.Close += (_, _) => Console.Error.WriteLine($"Playwright page closed event at {DateTime.UtcNow:O}");
                     }
                     catch { /* ignore if attach fails */ }
                     Console.Error.WriteLine($"Playwright page recreated at {DateTime.UtcNow:O}");
@@ -196,57 +159,16 @@ namespace ClinicsManagementService.Services
 
         public async Task NavigateToAsync(string url)
         {
-            // Check if manually closed before attempting operation
-            if (_isManuallyClosed)
-            {
-                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
-            }
-            
             await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
                 if (_page == null) throw new InvalidOperationException("Browser not initialized");
-                // Wait for network to be idle to ensure page is fully loaded
-                // This helps with WhatsApp Web login page where QR code takes time to render
-                await _page.GotoAsync(url, new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.NetworkIdle,
-                    Timeout = 60000 // 60 seconds timeout for page load
-                });
-                
-                // If navigating to WhatsApp Web base URL, wait for QR code to render
-                // WhatsApp Web's QR code is rendered dynamically after page load
-                if (url.Contains("web.whatsapp.com") && !url.Contains("send?phone="))
-                {
-                    // Wait for QR code canvas to be visible (up to 10 seconds)
-                    // This ensures the QR code is actually rendered, not just the page loaded
-                    try
-                    {
-                        await _page.WaitForSelectorAsync("canvas", new PageWaitForSelectorOptions
-                        {
-                            Timeout = 10000,
-                            State = WaitForSelectorState.Visible
-                        });
-                        // Additional small delay to ensure QR code image is fully rendered
-                        await Task.Delay(1000);
-                    }
-                    catch (TimeoutException)
-                    {
-                        // QR code might not appear if already authenticated, which is fine
-                        Console.Error.WriteLine("QR code canvas not found after navigation - may already be authenticated");
-                    }
-                }
+                await _page.GotoAsync(url);
             });
         }
         // Waits for a selector to reach a specific state (Visible, Attached, Detached).
         public async Task WaitForSelectorAsync(string selector, int timeout = WhatsAppConfiguration.DefaultSelectorTimeoutMs, WaitForSelectorState state = WaitForSelectorState.Visible)
         {
-            // Check if manually closed before attempting operation
-            if (_isManuallyClosed)
-            {
-                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
-            }
-            
             await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -269,7 +191,7 @@ namespace ClinicsManagementService.Services
                     {
                         url = _page?.Url ?? "unavailable";
                         if (_page != null)
-                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/timeout_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png" });
+                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/timeout_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
                     }
                     catch { url = "unavailable"; }
                     Console.Error.WriteLine($"Timeout waiting for selector '{selector}' (state: {state}) on URL: {url}. {ex.Message}");
@@ -282,7 +204,7 @@ namespace ClinicsManagementService.Services
                     {
                         url = _page?.Url ?? "unavailable";
                         if (_page != null)
-                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/error_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png" });
+                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/error_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
                     }
                     catch { url = "unavailable"; }
                     Console.Error.WriteLine($"Error waiting for selector '{selector}' (state: {state}) on URL: {url}. {ex.Message}");
@@ -293,12 +215,6 @@ namespace ClinicsManagementService.Services
 
         public async Task<IElementHandle?> QuerySelectorAsync(string selector)
         {
-            // Check if manually closed before attempting operation
-            if (_isManuallyClosed)
-            {
-                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
-            }
-            
             return await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -318,12 +234,6 @@ namespace ClinicsManagementService.Services
         // Returns all elements matching the selector as a list of IElementHandle.
         public async Task<IReadOnlyList<IElementHandle>> QuerySelectorAllAsync(string selector)
         {
-            // Check if manually closed before attempting operation
-            if (_isManuallyClosed)
-            {
-                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
-            }
-            
             return await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -334,12 +244,6 @@ namespace ClinicsManagementService.Services
 
         public async Task<string> GetUrlAsync()
         {
-            // Check if manually closed before attempting operation
-            if (_isManuallyClosed)
-            {
-                throw new InvalidOperationException("Browser session was manually closed. Please restart the service.");
-            }
-            
             return await WithPageRetryAsync(async () =>
             {
                 await EnsurePageInitializedAsync();
@@ -355,7 +259,6 @@ namespace ClinicsManagementService.Services
             await _lock.WaitAsync();
             try
             {
-                _isManuallyClosed = false; // Reset flag on disposal
                 if (_page != null)
                     await _page.CloseAsync();
                 if (_browser != null)
@@ -372,14 +275,6 @@ namespace ClinicsManagementService.Services
             {
                 _lock.Release();
             }
-        }
-        
-        /// <summary>
-        /// Resets the manual close flag to allow page recreation
-        /// </summary>
-        public void ResetManualCloseFlag()
-        {
-            _isManuallyClosed = false;
         }
     }
 }

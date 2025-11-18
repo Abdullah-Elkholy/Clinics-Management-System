@@ -41,11 +41,6 @@ namespace ClinicsManagementService.Services.Application
 
             var browserSession = _browserSessionFactory();
             browserSession = await _sessionManager.GetOrCreateSessionAsync();
-            if (browserSession == null)
-            {
-                _notifier.Notify("⚠️ Failed to get or create browser session for bulk send.");
-                return new List<MessageSendResult>();
-            }
 
             foreach (var item in items)
             {
@@ -75,11 +70,6 @@ namespace ClinicsManagementService.Services.Application
                         {
                             var session = _browserSessionFactory();
                             session = await _sessionManager.GetOrCreateSessionAsync();
-                            if (session == null)
-                            {
-                                _notifier.Notify($"⚠️ Failed to get or create browser session for {item.Phone}.");
-                                return OperationResult<string?>.Failure("Browser session could not be created.");
-                            }
                             try
                             {
                                 return await _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, session);
@@ -142,15 +132,9 @@ namespace ClinicsManagementService.Services.Application
                     if (monitoringResult != null)
                     {
                         _notifier.Notify($"[{counter + 1}/{total}] Throttling interrupted: {monitoringResult.ResultMessage}");
-                        // Mark remaining items as failed with the monitoring result status
-                        var remainingItems = items.Skip(counter).ToList();
-                        foreach (var remainingItem in remainingItems)
+                        for (int i = counter; i < total; i++)
                         {
-                            var status = monitoringResult.IsPendingQr() 
-                                ? MessageOperationStatus.PendingQR 
-                                : monitoringResult.IsPendingNet() 
-                                    ? MessageOperationStatus.PendingNET 
-                                    : MessageOperationStatus.Failure;
+                            var remainingItem = items.Skip(i).First();
                             results.Add(new MessageSendResult
                             {
                                 Phone = remainingItem.Phone,
@@ -158,7 +142,7 @@ namespace ClinicsManagementService.Services.Application
                                 Sent = false,
                                 Error = monitoringResult.ResultMessage,
                                 IconType = null,
-                                Status = status
+                                Status = MessageOperationStatus.PendingQR
                             });
                         }
                         break;
@@ -173,7 +157,8 @@ namespace ClinicsManagementService.Services.Application
 
         public async Task<bool> SendMessageAsync(string phoneNumber, string message)
         {
-            IBrowserSession? browserSession = null;
+            var browserSession = _browserSessionFactory();
+            // browserSession = await _sessionManager.GetOrCreateSessionAsync();
             MessageSendResult result;
             try
             {
@@ -181,18 +166,13 @@ namespace ClinicsManagementService.Services.Application
                     async () =>
                     {
                         browserSession = await _sessionManager.GetOrCreateSessionAsync();
-                        if (browserSession == null)
-                        {
-                            _notifier.Notify("⚠️ Failed to get or create browser session.");
-                            return OperationResult<string?>.Failure("Browser session could not be created.");
-                        }
                         try
                         {
                             return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
                         }
                         finally
                         {
-                            // Don't dispose here - dispose after retry logic completes
+                            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
                         }
                     },
                     maxAttempts: WhatsAppConfiguration.DefaultMaxRetryAttempts,
@@ -214,28 +194,16 @@ namespace ClinicsManagementService.Services.Application
                 _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {phoneNumber}: {ex.Message}");
                 result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
             }
-            finally
-            {
-                if (browserSession != null)
-                {
-                    await _whatsappService.DisposeBrowserSessionAsync(browserSession);
-                }
-            }
             if (!result.Sent && !string.IsNullOrEmpty(result.Error))
             {
                 _notifier.Notify(result.Error);
             }
+            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             return result.Sent;
         }
 
         public async Task<List<MessageSendResult>> SendMessagesAsync(string phoneNumber, IEnumerable<string> messages)
         {
-            if (messages == null)
-            {
-                _notifier.Notify("⚠️ Messages list is null, returning empty results.");
-                return new List<MessageSendResult>();
-            }
-            
             var browserSession = _browserSessionFactory();
             // browserSession = await _sessionManager.GetOrCreateSessionAsync();
             var results = new List<MessageSendResult>();
@@ -248,11 +216,6 @@ namespace ClinicsManagementService.Services.Application
                         async () =>
                         {
                             browserSession = await _sessionManager.GetOrCreateSessionAsync();
-                            if (browserSession == null)
-                            {
-                                _notifier.Notify("⚠️ Failed to get or create browser session.");
-                                return OperationResult<string?>.Failure("Browser session could not be created.");
-                            }
                             try
                             {
                                 return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
@@ -314,10 +277,7 @@ namespace ClinicsManagementService.Services.Application
                 return MessageOperationStatus.PendingQR;
             }
 
-            if (error?.Contains("PendingNET:") == true || 
-                error?.Contains("Internet connection unavailable") == true ||
-                error?.Contains("net::ERR_NAME_NOT_RESOLVED") == true ||
-                error?.Contains("net::ERR_INTERNET_DISCONNECTED") == true)
+            if (error?.Contains("PendingNET:") == true || error?.Contains("Internet connection unavailable") == true)
             {
                 return MessageOperationStatus.PendingNET;
             }

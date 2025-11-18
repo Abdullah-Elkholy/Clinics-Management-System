@@ -5,7 +5,6 @@ using Microsoft.Playwright;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Threading;
 
 namespace ClinicsManagementService.Services.Domain
 {
@@ -40,22 +39,6 @@ namespace ClinicsManagementService.Services.Domain
         {
             try
             {
-                // Check internet connectivity first (before checking progress bars)
-                // This ensures network issues are detected even if there's no progress bar
-                try
-                {
-                    if (!await _networkService.CheckInternetConnectivityAsync())
-                    {
-                        _notifier.Notify("🔌 Internet connection unavailable during monitoring");
-                        return OperationResult<bool>.PendingNET("Internet connection unavailable");
-                    }
-                }
-                catch (Exception netEx)
-                {
-                    _notifier.Notify($"⚠️ Error checking internet connectivity: {netEx.Message}");
-                    // Continue with other checks even if network check fails
-                }
-
                 // Check for progress bars and wait for them to disappear.
                 // Instead of using repeated short WaitForSelector timeouts, poll the selector until it no longer exists.
                 // If internet connectivity is lost during the wait, return a PendingNET so upstream can handle it.
@@ -152,66 +135,22 @@ namespace ClinicsManagementService.Services.Domain
                     }
                 }
 
-                // Check for authentication issues - wait for QR code to be fully rendered
-                // WhatsApp Web shows "Steps to log in" page with loading state before QR code appears
-                // We need to wait for the QR code canvas to be visible, not just present in DOM
-                bool qrCodeFound = false;
+                // Check for authentication issues
                 foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
                 {
                     try
                     {
-                        // For canvas elements (QR code), wait for it to be visible and rendered
-                        // Canvas may exist in DOM but QR code image may not be rendered yet
-                        if (selector == "canvas" || selector.Contains("canvas"))
+                        var authElement = await browserSession.QuerySelectorAsync(selector);
+                        if (authElement != null)
                         {
-                            try
-                            {
-                                // Wait for canvas to be visible (with timeout)
-                                // This ensures QR code is actually rendered, not just DOM element exists
-                                await browserSession.WaitForSelectorAsync(selector, 5000, WaitForSelectorState.Visible);
-                                _notifier.Notify($"🔐 QR code canvas detected and visible ({selector})");
-                                qrCodeFound = true;
-                                break;
-                            }
-                            catch (TimeoutException)
-                            {
-                                // Canvas not visible yet, continue checking other selectors
-                                _notifier.Notify($"⏳ QR code canvas not yet visible ({selector}), checking other indicators...");
-                            }
-                            catch (Exception ex)
-                            {
-                                _notifier.Notify($"⚠️ Error waiting for QR canvas {selector}: {ex.Message}");
-                            }
-                        }
-                        else
-                        {
-                            // For other selectors (text, containers), check if they exist and are visible
-                            try
-                            {
-                                await browserSession.WaitForSelectorAsync(selector, 2000, WaitForSelectorState.Visible);
-                                _notifier.Notify($"🔐 Authentication element detected ({selector})");
-                                qrCodeFound = true;
-                                break;
-                            }
-                            catch (TimeoutException)
-                            {
-                                // Element not visible, continue checking
-                            }
-                            catch (Exception ex)
-                            {
-                                _notifier.Notify($"⚠️ Error waiting for auth selector {selector}: {ex.Message}");
-                            }
+                            _notifier.Notify($"🔐 Authentication issue detected during monitoring ({selector})");
+                            return OperationResult<bool>.PendingQR("WhatsApp authentication required. Please scan QR code.");
                         }
                     }
                     catch (Exception ex)
                     {
                         _notifier.Notify($"⚠️ Error checking auth selector {selector}: {ex.Message}");
                     }
-                }
-                
-                if (qrCodeFound)
-                {
-                    return OperationResult<bool>.PendingQR("WhatsApp authentication required. Please scan QR code.");
                 }
 
                 // Check for logout indicators in URL
@@ -290,12 +229,6 @@ namespace ClinicsManagementService.Services.Domain
                             _notifier.Notify("❌ Browser/session closed during wait");
                             return OperationResult<bool>.Failure("Failed: Browser session terminated during wait");
                         }
-                        // Check if browser was manually closed (InvalidOperationException with specific message)
-                        if (ex is InvalidOperationException && ex.Message.Contains("manually closed"))
-                        {
-                            _notifier.Notify("❌ Browser was manually closed - stopping wait operation");
-                            return OperationResult<bool>.Failure("Failed: Browser session was manually closed. Please restart the service.");
-                        }
                         _notifier.Notify($"⚠️ Wait condition error: {ex.Message}");
                         // Continue waiting despite other non-fatal errors
                     }
@@ -366,10 +299,8 @@ namespace ClinicsManagementService.Services.Domain
 
             try
             {
-                // Step 1: Normalize phone number and construct URL
-                // Handles both formats: phone number only or phone number with country code
-                var normalizedPhone = PhoneNumberNormalizer.NormalizeDigitsOnly(phoneNumber);
-                var url = $"{WhatsAppConfiguration.WhatsAppSendUrl + normalizedPhone}";
+                // Step 1: Construct URL
+                var url = $"{WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber}";
                 _notifier.Notify($"🔗 Navigation URL: {url}");
 
                 // Step 2: Navigate to URL
@@ -438,8 +369,7 @@ namespace ClinicsManagementService.Services.Domain
                     return OperationResult<bool>.Failure("Session expired: WhatsApp logged out. Please restart the service.");
                 }
 
-                // Check if normalized phone number is in URL
-                if (currentUrl.Contains(normalizedPhone))
+                if (currentUrl.Contains(phoneNumber))
                 {
                     _notifier.Notify("✅ Navigation successful - phone number found in URL");
                     return OperationResult<bool>.Success(true);
@@ -570,7 +500,7 @@ namespace ClinicsManagementService.Services.Domain
                                     else
                                     {
                                         _notifier.Notify($"Unexpected iconType: {iconType}");
-                                        string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
+                                        string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
                                         await _screenshotService.TakeScreenshotAsync(browserSession, screenshotPath);
                                         _notifier.Notify($"Screenshot taken for unexpected icon: {screenshotPath}");
                                         await Task.Delay(pollIntervalMs);
@@ -837,7 +767,7 @@ namespace ClinicsManagementService.Services.Domain
                 }
             }
 
-            string fallbackScreenshotPath = $"Screenshots/status_fallback_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
+            string fallbackScreenshotPath = $"Screenshots/status_fallback_{DateTime.Now:yyyyMMdd_HHmmss}.png";
             await _screenshotService.TakeScreenshotAsync(browserSession, fallbackScreenshotPath);
             _notifier.Notify($"Screenshot taken for fallback status: {fallbackScreenshotPath}");
 
