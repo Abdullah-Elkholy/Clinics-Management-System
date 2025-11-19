@@ -10,6 +10,14 @@ export default function Header() {
 
   if (!user) return null;
 
+  // Debug logging in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Header] User object:', user);
+    console.log('[Header] User role:', user.role);
+    console.log('[Header] User firstName:', user.firstName);
+    console.log('[Header] User lastName:', user.lastName);
+  }
+
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
   // 2. firstName (if lastName is null/empty)

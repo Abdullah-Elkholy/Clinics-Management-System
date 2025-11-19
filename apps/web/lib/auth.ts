@@ -32,6 +32,11 @@ export const authenticateUser = (username: string, password: string): User | nul
 };
 
 export const getRoleDisplayName = (role: UserRole | string): string => {
+  // Debug logging in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getRoleDisplayName] Input role:', role, 'Type:', typeof role);
+  }
+  
   const names: Record<string, string> = {
     // New enum values
     'primary_admin': 'المدير الأساسي',
@@ -42,5 +47,12 @@ export const getRoleDisplayName = (role: UserRole | string): string => {
     'admin': 'المدير الأساسي',
     'admin2': 'المدير الثانوي',
   };
-  return names[role] || 'غير محدد';
+  
+  const displayName = names[role] || 'غير محدد';
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getRoleDisplayName] Output:', displayName);
+  }
+  
+  return displayName;
 };

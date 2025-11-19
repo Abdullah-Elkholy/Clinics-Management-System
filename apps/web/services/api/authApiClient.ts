@@ -124,6 +124,47 @@ export async function getCurrentUser(): Promise<User> {
     throw error;
   }
 
+  // Backend returns { success: true, data: { Id, Username, FirstName, LastName, Role, ... } }
+  // Need to unwrap and convert PascalCase to camelCase
+  const responseData = data as { success: boolean; data: any };
+  if (responseData.success && responseData.data) {
+    const userData = responseData.data;
+    
+    // Debug log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[getCurrentUser] Backend response data:', userData);
+      console.log('[getCurrentUser] Role value:', userData.Role || userData.role);
+    }
+    
+    // Backend only returns minimal fields from /auth/me endpoint
+    // Provide sensible defaults for required User interface fields
+    const user = {
+      id: String(userData.Id || userData.id || ''),
+      username: userData.Username || userData.username || '',
+      firstName: userData.FirstName || userData.firstName || '',
+      lastName: userData.LastName || userData.lastName || '',
+      role: userData.Role || userData.role,
+      // Fields not returned by backend - use sensible defaults
+      isActive: true, // User must be active to be authenticated
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      // Optional fields
+      lastLogin: undefined,
+      assignedModerator: userData.AssignedModerator || userData.assignedModerator || userData.ModeratorId || userData.moderatorId,
+      moderatorQuota: userData.ModeratorQuota || userData.moderatorQuota,
+      createdBy: undefined,
+      isDeleted: false,
+      deletedAt: undefined,
+    } as User;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[getCurrentUser] Mapped user object:', user);
+    }
+    
+    return user;
+  }
+
+  // Fallback: try to use data directly (shouldn't happen with current backend)
   return data as User;
 }
 

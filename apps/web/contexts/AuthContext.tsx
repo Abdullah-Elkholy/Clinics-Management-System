@@ -97,6 +97,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Extract role from user data
             const role = userData.role as UserRole;
             
+            // Debug log in development
+            if (process.env.NODE_ENV === 'development') {
+              logger.info('[Auth Restore] User data from API:', userData);
+              logger.info('[Auth Restore] Extracted role:', role);
+            }
+            
+            // Store complete user data from API response
             setAuthState({
               user: {
                 id: userData.id,
@@ -104,6 +111,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 firstName: userData.firstName || '',
                 lastName: userData.lastName || '',
                 role: role,
+                isActive: userData.isActive ?? true,
+                createdAt: userData.createdAt || new Date(),
+                updatedAt: userData.updatedAt || new Date(),
+                lastLogin: userData.lastLogin,
+                assignedModerator: userData.assignedModerator,
+                moderatorQuota: userData.moderatorQuota,
+                createdBy: userData.createdBy,
+                isDeleted: userData.isDeleted,
+                deletedAt: userData.deletedAt,
               },
               isAuthenticated: true,
             });
@@ -504,10 +520,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...prev,
             user: {
               ...prev.user,
+              id: freshUserData.id || prev.user.id,
+              username: freshUserData.username || prev.user.username,
               firstName: freshUserData.firstName || prev.user.firstName,
               lastName: freshUserData.lastName || prev.user.lastName,
-              username: freshUserData.username || prev.user.username,
-              // Preserve other fields that might not be in getCurrentUser response
+              role: freshUserData.role || prev.user.role,
+              isActive: freshUserData.isActive ?? prev.user.isActive,
+              createdAt: freshUserData.createdAt || prev.user.createdAt,
+              updatedAt: freshUserData.updatedAt || prev.user.updatedAt,
+              lastLogin: freshUserData.lastLogin || prev.user.lastLogin,
+              assignedModerator: freshUserData.assignedModerator || prev.user.assignedModerator,
+              moderatorQuota: freshUserData.moderatorQuota || prev.user.moderatorQuota,
+              createdBy: freshUserData.createdBy || prev.user.createdBy,
+              isDeleted: freshUserData.isDeleted || prev.user.isDeleted,
+              deletedAt: freshUserData.deletedAt || prev.user.deletedAt,
             },
           };
         });
