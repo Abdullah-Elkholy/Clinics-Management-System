@@ -93,6 +93,13 @@ namespace Clinics.Api.DTOs
 
         [StringLength(20)]
         public string? Status { get; set; }
+
+        /// <summary>
+        /// Indicates whether the phone number has been validated for WhatsApp.
+        /// null = not checked yet, true = valid WhatsApp number, false = invalid WhatsApp number.
+        /// Note: This field is automatically reset to null if PhoneNumber or CountryCode changes.
+        /// </summary>
+        public bool? IsValidWhatsAppNumber { get; set; }
     }
 
     /// <summary>

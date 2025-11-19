@@ -20,7 +20,7 @@ interface AddUserModalProps {
 export default function AddUserModal({ onUserAdded, role = null, moderatorId = null, onClose }: AddUserModalProps) {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const [, actions] = useUserManagement();
+  const [state, actions] = useUserManagement();
   
   // Get role and moderatorId from modal context data (takes precedence) or fallback to props
   const modalData = getModalData('addUser');
@@ -39,6 +39,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const [touched, setTouched] = useState(false);
   const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
   const formRef = React.useRef<HTMLFormElement>(null);
+  const [serverErrors, setServerErrors] = useState<Set<string>>(new Set()); // Track which fields have server errors
 
   const isOpen = openModals.has('addUser');
   
@@ -57,6 +58,38 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       });
     }
   }, [contextModeratorId, errors.moderatorId]);
+
+  // Watch for username-related errors from the service and set them in the username field
+  useEffect(() => {
+    if (state.error) {
+      const errorMessage = state.error.toLowerCase();
+      const isUsernameError = 
+        errorMessage.includes('username') ||
+        errorMessage.includes('already taken') ||
+        errorMessage.includes('already exists') ||
+        errorMessage.includes('مستخدم');
+      
+      if (isUsernameError) {
+        // Mark username as having a server error
+        setServerErrors((prev) => new Set(prev).add('username'));
+        
+        // Set the error in the username field
+        setErrors((prev) => ({
+          ...prev,
+          username: state.error || 'اسم المستخدم مستخدم بالفعل. يرجى اختيار اسم آخر'
+        }));
+        
+        // Scroll to username field and focus it
+        setTimeout(() => {
+          const usernameInput = formRef.current?.querySelector('input[name="username"]') as HTMLInputElement;
+          if (usernameInput) {
+            usernameInput.focus();
+            usernameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
+    }
+  }, [state.error]);
 
   // Generate random password
   const generateRandomPassword = () => {
@@ -112,6 +145,16 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   };
 
   const handleFieldChange = (field: string, value: string) => {
+    const previousValue = 
+      field === 'firstName' ? firstName :
+      field === 'lastName' ? lastName :
+      field === 'username' ? username :
+      field === 'password' ? password :
+      field === 'confirmPassword' ? confirmPassword : '';
+    
+    // Only update if value actually changed
+    if (previousValue === value) return;
+    
     if (field === 'firstName') setFirstName(value);
     if (field === 'lastName') setLastName(value);
     if (field === 'username') setUsername(value);
@@ -119,7 +162,16 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
     if (field === 'confirmPassword') setConfirmPassword(value);
     setTouched(true);
     
-    // Clear error if exists
+    // Clear server error flag and validation error when field value changes
+    if (serverErrors.has(field)) {
+      setServerErrors((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(field);
+        return newSet;
+      });
+    }
+    
+    // Clear error if exists (only when value actually changes)
     if (errors[field]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -132,7 +184,22 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
   const handleFieldBlur = () => {
     setTouched(true);
     const newErrors = validateFields();
-    setErrors(newErrors);
+    
+    // Preserve server errors unless there's a new client-side validation error for that field
+    setErrors((prev) => {
+      const merged = { ...prev };
+      Object.keys(newErrors).forEach((field) => {
+        // Only overwrite server error if there's a new client-side validation error
+        merged[field] = newErrors[field];
+      });
+      // Keep server errors that don't have new client-side validation errors
+      serverErrors.forEach((field) => {
+        if (!newErrors[field] && prev[field]) {
+          merged[field] = prev[field];
+        }
+      });
+      return merged;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,7 +243,8 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       const success = await actions.createUser(userPayload);
       
       if (!success) {
-        addToast('فشل إضافة المستخدم', 'error');
+        // Error message is already shown by useUserManagement hook via toast
+        // Username field error is set via useEffect that watches state.error
         return;
       }
 
@@ -193,6 +261,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
       setPassword('');
       setConfirmPassword('');
       setErrors({});
+      setServerErrors(new Set());
       setTouched(false);
       
       closeModal('addUser');
@@ -260,6 +329,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
         setPassword('');
         setConfirmPassword('');
         setErrors({});
+        setServerErrors(new Set());
         setTouched(false);
         onClose?.();
       }}
@@ -503,6 +573,7 @@ export default function AddUserModal({ onUserAdded, role = null, moderatorId = n
               setPassword('');
               setConfirmPassword('');
               setErrors({});
+              setServerErrors(new Set());
             }}
             disabled={isLoading}
             className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

@@ -32,6 +32,7 @@ export interface UpdatePatientRequest {
   phoneNumber?: string;
   countryCode?: string;
   status?: string;
+  isValidWhatsAppNumber?: boolean | null;
 }
 
 export interface ReorderPatientsRequest {

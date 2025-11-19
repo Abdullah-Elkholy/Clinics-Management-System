@@ -19,7 +19,7 @@ import * as Modals from '../Modals';
 
 function MainAppContent() {
   const { selectedQueueId } = useQueue();
-  const { currentPanel } = useUI();
+  const { currentPanel, isTransitioning } = useUI();
   const { isCollapsed } = useSidebarCollapse();
   const [customSidebarWidth, setCustomSidebarWidth] = React.useState<number | null>(null);
 
@@ -87,7 +87,15 @@ function MainAppContent() {
         />
         
         <div className="flex-1 bg-white overflow-y-auto">
-          {isQueueSelected ? (
+          {/* Show loading during panel transitions to prevent glitchy UI */}
+          {isTransitioning ? (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-gray-600">جاري التحميل...</p>
+              </div>
+            </div>
+          ) : isQueueSelected ? (
             currentPanel === 'ongoing' ? (
               <OngoingTasksPanel />
             ) : currentPanel === 'failed' ? (
@@ -100,6 +108,7 @@ function MainAppContent() {
           ) : currentPanel === 'messages' ? (
             <MessagesPanel />
           ) : currentPanel === 'management' ? (
+            // ManagementPanel has its own authentication guard
             <ManagementPanel />
           ) : (
             <WelcomeScreen />

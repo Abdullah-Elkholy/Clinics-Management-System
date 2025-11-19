@@ -291,8 +291,8 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                _logger.LogInformation("Update patient request: PatientId={PatientId}, FullName={FullName}, PhoneNumber={PhoneNumber}, CountryCode={CountryCode}, Status={Status}", 
-                    id, req?.FullName, req?.PhoneNumber, req?.CountryCode, req?.Status);
+                _logger.LogInformation("Update patient request: PatientId={PatientId}, FullName={FullName}, PhoneNumber={PhoneNumber}, CountryCode={CountryCode}, Status={Status}, IsValidWhatsAppNumber={IsValidWhatsAppNumber}", 
+                    id, req?.FullName, req?.PhoneNumber, req?.CountryCode, req?.Status, req?.IsValidWhatsAppNumber);
                 
                 var patient = await _db.Patients.FindAsync(id);
                 if (patient == null)
@@ -373,6 +373,11 @@ namespace Clinics.Api.Controllers
                 if (phoneOrCountryCodeChanged)
                 {
                     patient.IsValidWhatsAppNumber = null;
+                }
+                // Otherwise, allow updating IsValidWhatsAppNumber if provided in request
+                else if (req.IsValidWhatsAppNumber.HasValue)
+                {
+                    patient.IsValidWhatsAppNumber = req.IsValidWhatsAppNumber.Value;
                 }
 
                 if (!string.IsNullOrEmpty(req.Status))

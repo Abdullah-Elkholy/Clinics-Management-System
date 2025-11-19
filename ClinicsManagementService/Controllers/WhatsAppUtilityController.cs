@@ -5,6 +5,7 @@ using ClinicsManagementService.Services.Domain;
 using ClinicsManagementService.Services.Infrastructure;
 using ClinicsManagementService.Configuration;
 using System.Net;
+using System.Threading;
 
 namespace ClinicsManagementService.Controllers
 {
@@ -73,17 +74,30 @@ namespace ClinicsManagementService.Controllers
         /// Checks if a phone number has WhatsApp
         /// </summary>
         /// <param name="phoneNumber">Phone number to check</param>
+        /// <param name="cancellationToken">Cancellation token to detect client disconnection</param>
         /// <returns>WhatsApp availability status</returns>
         [HttpGet("check-whatsapp/{phoneNumber}")]
-        public async Task<ActionResult<OperationResult<bool>>> CheckWhatsAppNumber(string phoneNumber)
+        public async Task<ActionResult<OperationResult<bool>>> CheckWhatsAppNumber(
+            string phoneNumber,
+            CancellationToken cancellationToken = default)
         {
             try
             {
+                // Check if request was already cancelled
+                cancellationToken.ThrowIfCancellationRequested();
+
                 _notifier.Notify($"🔍 Checking if {phoneNumber} has WhatsApp...");
 
                 // Create a direct browser session for this simple check
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync();
-                var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession);
+                
+                // Check cancellation before starting operation
+                cancellationToken.ThrowIfCancellationRequested();
+                
+                var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession, cancellationToken);
+
+                // Check cancellation before disposing
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // Dispose the session after use
                 await browserSession.DisposeAsync();
@@ -116,6 +130,11 @@ namespace ClinicsManagementService.Controllers
                     _notifier.Notify($"❌ Unable to determine WhatsApp status for {phoneNumber}.");
                 }
                 return Ok(result);
+            }
+            catch (OperationCanceledException)
+            {
+                _notifier.Notify($"⚠️ Request cancelled while checking WhatsApp number {phoneNumber}");
+                return Ok(OperationResult<bool>.Failure("Request was cancelled", false));
             }
             catch (TimeoutException tex)
             {

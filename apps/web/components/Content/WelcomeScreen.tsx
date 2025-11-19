@@ -1,6 +1,44 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
+import { UserRole } from '@/types/roles';
+
 export default function WelcomeScreen() {
+  const { user, isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  // Authentication guard - ensure user has token and valid role
+  useEffect(() => {
+    // Check for token
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    
+    // If no token or not authenticated, redirect to login
+    if (!token || !isAuthenticated || !user) {
+      router.replace('/');
+      return;
+    }
+
+    // Ensure user has a valid role
+    if (!user.role || !Object.values(UserRole).includes(user.role)) {
+      router.replace('/');
+      return;
+    }
+  }, [isAuthenticated, user, router]);
+
+  // Show loading while checking authentication
+  if (!isAuthenticated || !user) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-gray-600">جاري التحميل...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 text-center h-full flex items-center justify-center">
       <div className="max-w-md">

@@ -10,8 +10,26 @@ export default function Header() {
 
   if (!user) return null;
 
+  // Helper function to get user display name following priority:
+  // 1. firstName + lastName (if both exist)
+  // 2. firstName (if lastName is null/empty)
+  // 3. المشرف #${id} (ID-based fallback)
+  // 4. username (last fallback)
+  const getUserDisplayName = (user: typeof user): string => {
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    if (user.firstName) {
+      return user.firstName;
+    }
+    if (user.id) {
+      return `المشرف #${user.id}`;
+    }
+    return user.username || 'Unknown';
+  };
+
   const roleDisplay = getRoleDisplayName(user.role);
-  const fullName = user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName;
+  const fullName = getUserDisplayName(user);
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-40">

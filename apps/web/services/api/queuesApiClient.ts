@@ -3,6 +3,8 @@
  * Handles fetching queue data from the backend
  */
 
+import { translateNetworkError } from '@/utils/errorUtils';
+
 export interface QueueDto {
   id: number;
   doctorName: string;
@@ -83,43 +85,58 @@ async function fetchAPI<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
 
-  // Handle non-JSON responses
-  let data: unknown;
-  const contentType = response.headers.get('content-type');
-  if (contentType?.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
-
-  if (!response.ok) {
-    // Try to extract meaningful error messages from various backend shapes
-    let message: string | undefined;
-    if (typeof data === 'string') {
-      message = data;
-    } else if (data && typeof data === 'object') {
-      const obj = data as any;
-      if (obj.message) message = obj.message;
-      else if (obj.error) message = obj.error;
-      else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
-      // Include dev details if available
-      if (obj.details && typeof obj.details === 'string') {
-        message = message ? `${message}: ${obj.details}` : obj.details;
-      }
+    // Handle non-JSON responses
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
     }
 
+    if (!response.ok) {
+      // Try to extract meaningful error messages from various backend shapes
+      let message: string | undefined;
+      if (typeof data === 'string') {
+        message = data;
+      } else if (data && typeof data === 'object') {
+        const obj = data as any;
+        if (obj.message) message = obj.message;
+        else if (obj.error) message = obj.error;
+        else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
+        // Include dev details if available
+        if (obj.details && typeof obj.details === 'string') {
+          message = message ? `${message}: ${obj.details}` : obj.details;
+        }
+      }
+
+      throw {
+        message: message || 'API request failed',
+        statusCode: response.status,
+      } as ApiError;
+    }
+
+    return data as T;
+  } catch (error) {
+    // Translate network errors to Arabic
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      // This is already an ApiError, re-throw it
+      throw error;
+    }
+    
+    // This is a network/fetch error, translate it
+    const translatedMessage = translateNetworkError(error);
     throw {
-      message: message || 'API request failed',
-      statusCode: response.status,
+      message: translatedMessage,
+      statusCode: 0, // Network errors don't have status codes
     } as ApiError;
   }
-
-  return data as T;
 }
 
 // ============================================

@@ -3,6 +3,8 @@
  * Handles WhatsApp number validation and other utility operations
  */
 
+import { translateNetworkError } from '@/utils/errorUtils';
+
 export interface OperationResult<T> {
   data?: T;
   isSuccess?: boolean;
@@ -40,40 +42,57 @@ async function fetchAPI<T>(
     ...options.headers,
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      // Include signal if provided for cancellation
+      signal: options.signal,
+    });
 
-  // Handle non-JSON responses
-  let data: unknown;
-  const contentType = response.headers.get('content-type');
-  if (contentType?.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
-
-  if (!response.ok) {
-    // Try to extract meaningful error messages
-    let message: string | undefined;
-    if (typeof data === 'string') {
-      message = data;
-    } else if (data && typeof data === 'object') {
-      const obj = data as any;
-      if (obj.message) message = obj.message;
-      else if (obj.error) message = obj.error;
-      else if (obj.resultMessage) message = obj.resultMessage;
-      else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
+    // Handle non-JSON responses
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
     }
 
+    if (!response.ok) {
+      // Try to extract meaningful error messages
+      let message: string | undefined;
+      if (typeof data === 'string') {
+        message = data;
+      } else if (data && typeof data === 'object') {
+        const obj = data as any;
+        if (obj.message) message = obj.message;
+        else if (obj.error) message = obj.error;
+        else if (obj.resultMessage) message = obj.resultMessage;
+        else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
+      }
+
+      throw {
+        message: message || 'API request failed',
+        statusCode: response.status,
+      } as ApiError;
+    }
+
+    return data as T;
+  } catch (error) {
+    // Translate network errors to Arabic
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      // This is already an ApiError, re-throw it
+      throw error;
+    }
+    
+    // This is a network/fetch error, translate it
+    const translatedMessage = translateNetworkError(error);
     throw {
-      message: message || 'API request failed',
-      statusCode: response.status,
+      message: translatedMessage,
+      statusCode: 0, // Network errors don't have status codes
     } as ApiError;
   }
-
-  return data as T;
 }
 
 // ============================================
@@ -83,10 +102,12 @@ async function fetchAPI<T>(
 /**
  * Check if a phone number has WhatsApp
  * @param phoneNumber Phone number in E.164 format (e.g., +201234567890)
+ * @param signal Optional AbortSignal to cancel the request
  * @returns OperationResult with boolean indicating if number has WhatsApp
  */
 export async function checkWhatsAppNumber(
-  phoneNumber: string
+  phoneNumber: string,
+  signal?: AbortSignal
 ): Promise<OperationResult<boolean>> {
   try {
     // URL encode the phone number to handle special characters
@@ -95,10 +116,22 @@ export async function checkWhatsAppNumber(
       `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}`,
       {
         method: 'GET',
+        signal, // Pass abort signal to fetch
       }
     );
     return result;
   } catch (error: any) {
+    // Check if error is due to abort
+    if (error?.name === 'AbortError' || signal?.aborted) {
+      return {
+        isSuccess: false,
+        state: 'Aborted',
+        resultMessage: 'تم إلغاء عملية التحقق',
+      };
+    }
+    // Translate network errors to Arabic
+    const translatedMessage = translateNetworkError(error);
+    
     // Handle connection and CORS errors gracefully
     const errorMessage = error?.message || '';
     const isConnectionError = 
@@ -113,15 +146,15 @@ export async function checkWhatsAppNumber(
       return {
         isSuccess: false,
         state: 'ServiceUnavailable',
-        resultMessage: 'WhatsApp validation service is not available. Please ensure the ClinicsManagementService is running and CORS is configured.',
+        resultMessage: translatedMessage || 'خدمة التحقق من الواتساب غير متاحة. يرجى التأكد من تشغيل الخادم وإعدادات CORS.',
       };
     }
     
-    // Return a failure result if request fails
+    // Return a failure result if request fails (use translated message)
     return {
       isSuccess: false,
       state: 'Failure',
-      resultMessage: errorMessage || 'Failed to check WhatsApp number',
+      resultMessage: translatedMessage || 'فشل التحقق من رقم الواتساب',
     };
   }
 }

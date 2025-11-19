@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type React from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { TEST_CREDENTIALS } from '../../constants';
 import logger from '@/utils/logger';
@@ -14,6 +15,26 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Clean URL of any sensitive parameters on mount
+  useEffect(() => {
+    if (searchParams.has('username') || searchParams.has('password')) {
+      // DO NOT use credentials from URL - this is a security risk
+      // Just clean the URL
+      const newSearchParams = new URLSearchParams(searchParams.toString());
+      newSearchParams.delete('username');
+      newSearchParams.delete('password');
+      
+      const newUrl = newSearchParams.toString() 
+        ? `/?${newSearchParams.toString()}`
+        : '/';
+      
+      // Use replace to avoid adding to history
+      router.replace(newUrl);
+    }
+  }, [searchParams, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,7 +108,19 @@ export default function LoginScreen() {
         )}
 
         {/* Login Form */}
-        <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
+        <form 
+          ref={formRef} 
+          onSubmit={handleSubmit} 
+          method="post"
+          action="#"
+          className="space-y-6"
+          // Prevent any accidental GET submission
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+              // Let the form handle Enter key properly
+            }
+          }}
+        >
           <div>
             <label htmlFor="login-username" className="block text-sm font-medium text-gray-700 mb-2">
               اسم المستخدم

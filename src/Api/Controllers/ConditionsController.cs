@@ -124,6 +124,7 @@ namespace Clinics.Api.Controllers
     /// Template state (DEFAULT/UNCONDITIONED/active operator) is determined by the condition.Operator value.
         /// </summary>
         [HttpPost]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<ConditionDto>> CreateCondition([FromBody] CreateConditionRequest request)
         {
             if (!ModelState.IsValid)
@@ -243,6 +244,7 @@ namespace Clinics.Api.Controllers
     /// Template state transitions automatically reflect in the condition.Operator value (DEFAULT/UNCONDITIONED/active operator).
         /// </summary>
         [HttpPut("{id}")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<ConditionDto>> UpdateCondition(int id, [FromBody] UpdateConditionRequest request)
         {
             if (!ModelState.IsValid)
@@ -380,6 +382,7 @@ namespace Clinics.Api.Controllers
     /// Updates template.UpdatedAt atomically within a transaction.
         /// </summary>
         [HttpDelete("{id}")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<IActionResult> DeleteCondition(int id)
         {
             var condition = await _context.Set<MessageCondition>()

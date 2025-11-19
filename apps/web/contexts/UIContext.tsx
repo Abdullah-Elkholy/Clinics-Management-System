@@ -12,6 +12,7 @@ interface UIContextType {
   setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done') => void;
   selectedQueueId: string | null;
   setSelectedQueueId: (id: string | null) => void;
+  isTransitioning: boolean;
 }
 
 const UIContext = createContext<UIContextType | null>(null);
@@ -22,28 +23,54 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done'>('welcome');
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const toastCounterRef = React.useRef(0);
+  const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Sync state with URL on mount and pathname changes
   // Use ref to prevent infinite loops when state updates trigger URL changes
   const isUpdatingFromUrl = React.useRef(false);
+  const lastPathnameRef = React.useRef<string | null>(null);
+  const isNavigatingProgrammatically = React.useRef(false);
   
   useEffect(() => {
-    if (!pathname || isUpdatingFromUrl.current) return;
+    // Skip if already updating or pathname hasn't changed
+    // Also skip if we're in the middle of programmatic navigation
+    if (!pathname || isUpdatingFromUrl.current || isNavigatingProgrammatically.current || lastPathnameRef.current === pathname) {
+      return;
+    }
     
+    lastPathnameRef.current = pathname;
     isUpdatingFromUrl.current = true;
 
+    // Clear any existing transition timeout
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+    }
+
+    // Start transition - show loading when URL changes
+    setIsTransitioning(true);
+
     // Parse URL to determine panel and queue
+    // Use functional updates to avoid stale closure issues
     if (pathname === '/messages') {
-      if (currentPanel !== 'messages' || selectedQueueId !== null) {
-        setCurrentPanel('messages');
-        setSelectedQueueId(null);
-      }
+      setCurrentPanel(prev => {
+        if (prev !== 'messages') return 'messages';
+        return prev;
+      });
+      setSelectedQueueId(prev => {
+        if (prev !== null) return null;
+        return prev;
+      });
     } else if (pathname === '/management') {
-      if (currentPanel !== 'management' || selectedQueueId !== null) {
-        setCurrentPanel('management');
-        setSelectedQueueId(null);
-      }
+      setCurrentPanel(prev => {
+        if (prev !== 'management') return 'management';
+        return prev;
+      });
+      setSelectedQueueId(prev => {
+        if (prev !== null) return null;
+        return prev;
+      });
     } else if (pathname.startsWith('/queues/')) {
       const match = pathname.match(/^\/queues\/(\d+)(?:\/(ongoing|failed|done))?$/);
       if (match) {
@@ -58,23 +85,42 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           targetPanel = 'done';
         }
         
-        if (selectedQueueId !== queueId || currentPanel !== targetPanel) {
-          setSelectedQueueId(queueId);
-          setCurrentPanel(targetPanel);
-        }
+        setSelectedQueueId(prev => {
+          if (prev !== queueId) return queueId;
+          return prev;
+        });
+        setCurrentPanel(prev => {
+          if (prev !== targetPanel) return targetPanel;
+          return prev;
+        });
       }
     } else if (pathname === '/') {
-      if (currentPanel !== 'welcome' || selectedQueueId !== null) {
-        setCurrentPanel('welcome');
-        setSelectedQueueId(null);
-      }
+      setCurrentPanel(prev => {
+        if (prev !== 'welcome') return 'welcome';
+        return prev;
+      });
+      setSelectedQueueId(prev => {
+        if (prev !== null) return null;
+        return prev;
+      });
     }
     
-    // Reset flag after a short delay to allow state updates
-    setTimeout(() => {
-      isUpdatingFromUrl.current = false;
-    }, 100);
-  }, [pathname, currentPanel, selectedQueueId]);
+    // End transition after a brief delay to allow panel to render
+    // Reduced timeout for faster response
+    transitionTimeoutRef.current = setTimeout(() => {
+      setIsTransitioning(false);
+      // Reset flag after navigation completes
+      setTimeout(() => {
+        isUpdatingFromUrl.current = false;
+      }, 50);
+    }, 150);
+
+    return () => {
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+    };
+  }, [pathname]); // Only depend on pathname to prevent loops
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => {
     const id = `${Date.now()}-${++toastCounterRef.current}`;
@@ -92,57 +138,163 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   // Enhanced setCurrentPanel that updates URL
   const handleSetCurrentPanel = useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done') => {
-    // Prevent updates if already at target state
-    if (currentPanel === panel) return;
-    
-    setCurrentPanel(panel);
-    isUpdatingFromUrl.current = true; // Prevent URL sync from triggering state update
-    
-    // Update URL based on panel
-    if (panel === 'messages') {
-      router.push('/messages');
-    } else if (panel === 'management') {
-      router.push('/management');
-    } else if (selectedQueueId) {
-      // If we have a queue selected, navigate to appropriate queue route
-      if (panel === 'ongoing') {
-        router.push(`/queues/${selectedQueueId}/ongoing`);
-      } else if (panel === 'failed') {
-        router.push(`/queues/${selectedQueueId}/failed`);
-      } else if (panel === 'done') {
-        router.push(`/queues/${selectedQueueId}/done`);
-      } else {
-        router.push(`/queues/${selectedQueueId}`);
+    // Authentication check for management panel
+    if (panel === 'management') {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) {
+        // Don't allow navigation to management without authentication
+        // The caller should handle this, but we add a safety check here
+        return;
       }
-    } else if (panel === 'welcome') {
-      router.push('/');
     }
     
-    setTimeout(() => {
-      isUpdatingFromUrl.current = false;
-    }, 100);
-  }, [router, selectedQueueId, currentPanel]);
+    // Panels that don't require a queue - clear queue selection first
+    const panelsWithoutQueue = ['messages', 'management', 'welcome'];
+    const shouldClearQueue = panelsWithoutQueue.includes(panel) && selectedQueueId !== null;
+    
+    // Calculate target path first to check if URL needs updating
+    let targetPath = '/';
+    if (panel === 'messages') {
+      targetPath = '/messages';
+    } else if (panel === 'management') {
+      targetPath = '/management';
+    } else if (selectedQueueId && !shouldClearQueue) {
+      // If we have a queue selected and we're not clearing it, navigate to appropriate queue route
+      if (panel === 'ongoing') {
+        targetPath = `/queues/${selectedQueueId}/ongoing`;
+      } else if (panel === 'failed') {
+        targetPath = `/queues/${selectedQueueId}/failed`;
+      } else if (panel === 'done') {
+        targetPath = `/queues/${selectedQueueId}/done`;
+      } else {
+        targetPath = `/queues/${selectedQueueId}`;
+      }
+    }
+    
+    // Prevent updates only if both panel state AND URL are already at target AND queue state is correct
+    // This ensures URL always stays in sync with panel state
+    if (currentPanel === panel && pathname === targetPath && !shouldClearQueue) {
+      return;
+    }
+    
+    // Clear any existing transition timeout
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+    }
+    
+    // Start transition - show loading
+    setIsTransitioning(true);
+    isUpdatingFromUrl.current = true; // Prevent URL sync from triggering state update
+    
+    // Clear queue selection if needed (for panels that don't use queues)
+    // Use the state setter directly to avoid triggering handleSetSelectedQueueId which would navigate to '/'
+    // We'll handle the URL navigation ourselves based on the target panel
+    if (shouldClearQueue) {
+      // Update state directly without triggering the handler
+      setSelectedQueueId(prev => {
+        if (prev !== null) return null;
+        return prev;
+      });
+    }
+    
+    // Update panel state (only if different)
+    if (currentPanel !== panel) {
+      setCurrentPanel(panel);
+    }
+    
+    // Always update URL if it doesn't match target path
+    // This ensures URL stays in sync even if panel state was already correct
+    if (pathname !== targetPath) {
+      // Mark that we're navigating programmatically to prevent URL sync from interfering
+      isNavigatingProgrammatically.current = true;
+      router.push(targetPath);
+      
+      // Reduced timeout for faster navigation - Next.js router is usually fast
+      transitionTimeoutRef.current = setTimeout(() => {
+        setIsTransitioning(false);
+        // Reset flags after navigation completes
+        setTimeout(() => {
+          isUpdatingFromUrl.current = false;
+          isNavigatingProgrammatically.current = false;
+        }, 50);
+      }, 150);
+    } else {
+      // URL already matches, just end transition quickly
+      transitionTimeoutRef.current = setTimeout(() => {
+        setIsTransitioning(false);
+        isUpdatingFromUrl.current = false;
+        isNavigatingProgrammatically.current = false;
+      }, 100);
+    }
+  }, [router, selectedQueueId, currentPanel, pathname]);
 
   // Enhanced setSelectedQueueId that updates URL
   const handleSetSelectedQueueId = useCallback((id: string | null) => {
-    // Prevent updates if already at target state
-    if (selectedQueueId === id) return;
+    // Calculate target path first
+    const targetPath = id ? `/queues/${id}` : '/';
     
-    setSelectedQueueId(id);
-    isUpdatingFromUrl.current = true; // Prevent URL sync from triggering state update
-    
-    if (id) {
-      // Navigate to queue dashboard
-      router.push(`/queues/${id}`);
-    } else {
-      // If deselecting queue, go to welcome screen
-      router.push('/');
+    // Prevent updates only if both state AND URL are already at target
+    // This ensures URL always stays in sync with queue selection
+    if (selectedQueueId === id && pathname === targetPath) {
+      return;
     }
     
-    setTimeout(() => {
-      isUpdatingFromUrl.current = false;
-    }, 100);
-  }, [router, selectedQueueId]);
+    // Clear any existing transition timeout
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+    }
+    
+    // Start transition - show loading
+    setIsTransitioning(true);
+    isUpdatingFromUrl.current = true; // Prevent URL sync from triggering state update
+    
+    // When selecting a queue, also set panel to 'welcome' (queue dashboard)
+    // This prevents conflicts and ensures correct panel state
+    if (id !== null) {
+      // Set panel to 'welcome' for queue dashboard view
+      if (currentPanel !== 'welcome' && !pathname.startsWith('/queues/')) {
+        setCurrentPanel('welcome');
+      }
+    }
+    
+    // Update state (only if different)
+    if (selectedQueueId !== id) {
+      setSelectedQueueId(id);
+    }
+    
+    // Always update URL if it doesn't match target path
+    // This ensures URL stays in sync even if queue selection was already correct
+    if (pathname !== targetPath) {
+      // Mark that we're navigating programmatically to prevent URL sync from interfering
+      isNavigatingProgrammatically.current = true;
+      router.push(targetPath);
+      
+      // Reduced timeout for faster navigation
+      transitionTimeoutRef.current = setTimeout(() => {
+        setIsTransitioning(false);
+        setTimeout(() => {
+          isUpdatingFromUrl.current = false;
+          isNavigatingProgrammatically.current = false;
+        }, 50);
+      }, 150);
+    } else {
+      // URL already matches, just end transition quickly
+      transitionTimeoutRef.current = setTimeout(() => {
+        setIsTransitioning(false);
+        isUpdatingFromUrl.current = false;
+        isNavigatingProgrammatically.current = false;
+      }, 100);
+    }
+  }, [router, selectedQueueId, pathname, currentPanel]);
+
+  // Cleanup transition timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <UIContext.Provider
@@ -154,6 +306,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         setCurrentPanel: handleSetCurrentPanel,
         selectedQueueId,
         setSelectedQueueId: handleSetSelectedQueueId,
+        isTransitioning,
       }}
     >
       {children}

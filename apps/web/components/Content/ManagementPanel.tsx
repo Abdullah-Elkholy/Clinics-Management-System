@@ -7,20 +7,39 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/types/roles';
 import { useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import type { User } from '@/types/user';
 
 export default function ManagementPanel() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isAuthenticated } = useAuth();
+  const router = useRouter();
   const [state, actions] = useUserManagement();
 
+  // Authentication guard
   useEffect(() => {
-    actions.fetchUsers();
-  }, []);
+    if (!isAuthenticated || !currentUser) {
+      // Redirect to login if not authenticated
+      router.replace('/');
+      return;
+    }
+  }, [isAuthenticated, currentUser, router]);
 
-  // Refetch users when data is updated
+  // Only fetch users if authenticated and user is not a regular user
+  useEffect(() => {
+    if (isAuthenticated && currentUser && currentUser.role !== UserRole.User) {
+      actions.fetchUsers();
+    }
+  }, [isAuthenticated, currentUser?.id, currentUser?.role]); // Only depend on user ID and role
+
+  // Refetch users and moderators when data is updated
   useEffect(() => {
     const handleUserDataUpdate = async () => {
-      await actions.fetchUsers();
+      // Only refetch if user is not a regular user
+      if (currentUser && currentUser.role !== UserRole.User) {
+        await actions.fetchUsers();
+        // Also refetch moderators to update sidebar
+        await actions.fetchModerators();
+      }
     };
 
     window.addEventListener('userDataUpdated', handleUserDataUpdate);
@@ -28,7 +47,7 @@ export default function ManagementPanel() {
     return () => {
       window.removeEventListener('userDataUpdated', handleUserDataUpdate);
     };
-  }, [actions]);
+  }, [currentUser?.id, currentUser?.role]); // Only depend on user ID and role
 
   // Memoize stats calculations to prevent unnecessary re-renders
   const stats = useMemo(() => {
@@ -110,6 +129,20 @@ export default function ManagementPanel() {
         return { title: 'إدارة المستخدمين', stats: [] };
     }
   };
+
+  // Don't render if not authenticated
+  if (!isAuthenticated || !currentUser) {
+    return (
+      <PanelWrapper>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+            <p className="text-gray-600">جاري إعادة التوجيه...</p>
+          </div>
+        </div>
+      </PanelWrapper>
+    );
+  }
 
   return (
     <PanelWrapper>

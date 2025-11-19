@@ -6,6 +6,7 @@ import type { User, AuthState } from '../types';
 import { UserRole } from '@/types/roles';
 import { login as loginApi, logout as logoutApi, getCurrentUser } from '@/services/api/authApiClient';
 import logger from '@/utils/logger';
+import { registerAuthErrorHandler, unregisterAuthErrorHandler } from '@/utils/apiInterceptor';
 
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
@@ -239,6 +240,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 user,
                 isAuthenticated: true,
               });
+              
+              // Clean URL of any sensitive parameters after successful login
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('username') || url.searchParams.has('password')) {
+                  url.searchParams.delete('username');
+                  url.searchParams.delete('password');
+                  // Replace URL without sensitive params (don't add to history)
+                  window.history.replaceState({}, '', url.pathname + (url.search || ''));
+                }
+              }
+              
               return { success: true };
             } catch (e) {
               logger.warn('Failed to decode JWT:', e);
@@ -256,6 +269,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 },
                 isAuthenticated: true,
               });
+              
+              // Clean URL of any sensitive parameters after successful login
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('username') || url.searchParams.has('password')) {
+                  url.searchParams.delete('username');
+                  url.searchParams.delete('password');
+                  // Replace URL without sensitive params (don't add to history)
+                  window.history.replaceState({}, '', url.pathname + (url.search || ''));
+                }
+              }
+              
               return { success: true };
             }
           }
@@ -348,12 +373,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [addToast]);
 
   const logout = useCallback(() => {
-    logoutApi();
+    // Clear auth state first (this will trigger page.tsx to show loading)
     setAuthState({
       user: null,
       isAuthenticated: false,
     });
+    
+    // Clear API call (clears token)
+    logoutApi();
+    
+    // Clear any stored state immediately
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      // Clear any session storage
+      sessionStorage.clear();
+      
+      // Clean URL of any parameters
+      const url = new URL(window.location.href);
+      url.search = '';
+      
+      // Use replaceState to update URL without reload (allows React to handle the transition)
+      window.history.replaceState({}, '', url.pathname);
+      
+      // If we're not already on home, navigate there (but let React handle it)
+      if (window.location.pathname !== '/') {
+        // Use a small delay to allow state updates to propagate
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 100);
+      }
+    }
   }, []);
+
+  // Register global auth error handler
+  useEffect(() => {
+    registerAuthErrorHandler((error) => {
+      logger.warn('[Auth] Global auth error detected, logging out:', error);
+      logout();
+    });
+
+    return () => {
+      unregisterAuthErrorHandler();
+    };
+  }, [logout]);
 
   /**
    * Refresh current user data from backend

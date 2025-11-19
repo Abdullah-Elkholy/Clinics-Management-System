@@ -83,13 +83,16 @@ const COUNTRY_PHONE_RULES: Record<string, { removeLeadingZero: boolean; minLengt
  * Format phone number for display with country code
  * Phone numbers are stored separately (no country code in phone field)
  * Simply combines country code and phone number with a space
+ * Uses Left-to-Right Mark (LRM) to ensure proper display in RTL contexts
  */
 export function formatPhoneForDisplay(phone: string, countryCode: string): string {
   if (!phone) return '';
   
   // Phone number is already stored without country code, just combine them
   // Format as: +countryCode phoneNumber (with space)
-  return `${countryCode} ${phone}`;
+  // Use Left-to-Right Mark (\u200E) to force LTR rendering in RTL contexts
+  // This ensures the "+" sign appears on the left side of the country code
+  return `\u200E${countryCode} ${phone}`;
 }
 
 /**

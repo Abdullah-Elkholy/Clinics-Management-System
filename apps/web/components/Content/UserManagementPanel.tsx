@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { useModeratorQuota } from '@/hooks/useModeratorQuota';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
@@ -31,6 +32,232 @@ import logger from '@/utils/logger';
 const TRASH_PAGE_SIZE = 10;
 
 /**
+ * QuotaTabContent - Component for displaying quota information
+ * Shows quota for moderators (their own) or users (their assigned moderator's quota)
+ */
+function QuotaTabContent({ currentUser }: { currentUser: User }) {
+  // Determine which moderator ID to use for quota fetching
+  const moderatorIdForQuota = 
+    currentUser.role === UserRole.Moderator 
+      ? currentUser.id 
+      : currentUser.assignedModerator || currentUser.id; // Fallback to own ID if no moderator assigned
+  
+  // Fetch quota using the hook
+  const { quota, loading: quotaLoading, error: quotaError } = useModeratorQuota(moderatorIdForQuota);
+  
+  // Calculate stats for display
+  const messagesQuota = quota?.messagesQuota || {
+    limit: -1,
+    used: 0,
+    percentage: 0,
+    isLow: false,
+    warningThreshold: 80,
+  };
+  
+  const queuesQuota = quota?.queuesQuota || {
+    limit: -1,
+    used: 0,
+    percentage: 0,
+    isLow: false,
+    warningThreshold: 80,
+  };
+  
+  const messagesRemaining = messagesQuota.limit === -1 ? -1 : Math.max(0, messagesQuota.limit - messagesQuota.used);
+  const queuesRemaining = queuesQuota.limit === -1 ? -1 : Math.max(0, queuesQuota.limit - queuesQuota.used);
+  
+  const messagesPercentage = messagesQuota.limit === -1 ? 0 : Math.min(100, messagesQuota.percentage);
+  const queuesPercentage = queuesQuota.limit === -1 ? 0 : Math.min(100, queuesQuota.percentage);
+
+  return (
+    <div className="space-y-6 p-6">
+      {/* Quota Header */}
+      <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
+        <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
+          <i className="fas fa-chart-pie"></i>
+          معلومات الحصة
+        </h3>
+        <p className="text-sm text-indigo-700 mt-2">
+          {currentUser.role === UserRole.Moderator
+            ? 'اطلع على حصتك من الرسائل وقوائم الانتظار المتاحة'
+            : 'اطلع على حصة المشرف الخاص بك من الرسائل وقوائم الانتظار'}
+        </p>
+      </div>
+
+      {/* Loading State */}
+      {quotaLoading && (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin">
+            <i className="fas fa-spinner text-2xl text-indigo-600"></i>
+          </div>
+        </div>
+      )}
+
+      {/* Error State */}
+      {quotaError && !quotaLoading && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-600">
+            <i className="fas fa-exclamation-circle ml-2"></i>
+            {quotaError}
+          </p>
+        </div>
+      )}
+
+      {/* Quota Display */}
+      {!quotaLoading && !quotaError && (
+        <>
+          <ModeratorQuotaDisplay
+            moderatorId={moderatorIdForQuota}
+            quota={quota || undefined}
+            onEditMessages={() => {}}
+            onEditQueues={() => {}}
+          />
+
+          {/* Quota Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white border border-blue-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-envelope text-blue-600 text-xl"></i>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">حصة الرسائل</p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {messagesQuota.limit === -1 ? 'غير محدود' : messagesQuota.limit.toLocaleString('ar-SA')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {messagesQuota.limit !== -1 && (
+                <>
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all ${
+                        messagesPercentage >= 100 
+                          ? 'bg-red-600' 
+                          : messagesPercentage >= 80 
+                          ? 'bg-yellow-500' 
+                          : 'bg-blue-600'
+                      }`}
+                      style={{ width: `${messagesPercentage}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">
+                      مستخدم: {messagesQuota.used.toLocaleString('ar-SA')} / {messagesQuota.limit.toLocaleString('ar-SA')}
+                    </span>
+                    <span className={`font-medium ${
+                      messagesPercentage >= 100 
+                        ? 'text-red-600' 
+                        : messagesPercentage >= 80 
+                        ? 'text-yellow-600' 
+                        : 'text-gray-600'
+                    }`}>
+                      {messagesPercentage.toFixed(1)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    متبقي: {messagesRemaining === -1 ? 'غير محدود' : messagesRemaining.toLocaleString('ar-SA')}
+                  </p>
+                </>
+              )}
+              {messagesQuota.limit === -1 && (
+                <p className="text-xs text-gray-500 mt-2">حصة غير محدودة</p>
+              )}
+            </div>
+
+            <div className="bg-white border border-purple-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i className="fas fa-list text-purple-600 text-xl"></i>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">حصة قوائم الانتظار</p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {queuesQuota.limit === -1 ? 'غير محدود' : queuesQuota.limit.toLocaleString('ar-SA')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {queuesQuota.limit !== -1 && (
+                <>
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                    <div 
+                      className={`h-2 rounded-full transition-all ${
+                        queuesPercentage >= 100 
+                          ? 'bg-red-600' 
+                          : queuesPercentage >= 80 
+                          ? 'bg-yellow-500' 
+                          : 'bg-purple-600'
+                      }`}
+                      style={{ width: `${queuesPercentage}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600">
+                      مستخدم: {queuesQuota.used.toLocaleString('ar-SA')} / {queuesQuota.limit.toLocaleString('ar-SA')}
+                    </span>
+                    <span className={`font-medium ${
+                      queuesPercentage >= 100 
+                        ? 'text-red-600' 
+                        : queuesPercentage >= 80 
+                        ? 'text-yellow-600' 
+                        : 'text-gray-600'
+                    }`}>
+                      {queuesPercentage.toFixed(1)}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    متبقي: {queuesRemaining === -1 ? 'غير محدود' : queuesRemaining.toLocaleString('ar-SA')}
+                  </p>
+                </>
+              )}
+              {queuesQuota.limit === -1 && (
+                <p className="text-xs text-gray-500 mt-2">حصة غير محدودة</p>
+              )}
+            </div>
+          </div>
+
+          {/* Request Extra Quota Info - Only for Moderators */}
+          {currentUser.role === UserRole.Moderator && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
+                <i className="fas fa-exclamation-triangle"></i>
+                هل تحتاج إلى حصة إضافية؟
+              </h4>
+              <p className="text-sm text-yellow-800 mb-3">
+                إذا كنت بحاجة إلى زيادة حصتك من الرسائل أو قوائم الانتظار، يمكنك طلب ذلك من المدير
+              </p>
+              <button
+                className="inline-flex items-center gap-2 rounded-lg bg-yellow-600 px-4 py-2 text-white hover:bg-yellow-700 transition-colors text-sm font-medium"
+                disabled
+              >
+                <i className="fas fa-paper-plane"></i>
+                <span>طلب حصة إضافية (قريباً)</span>
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* No Quota State */}
+      {!quotaLoading && !quotaError && !quota && (
+        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+          <i className="fas fa-chart-pie text-4xl text-gray-400 mb-4 block"></i>
+          <p className="text-gray-600 mb-2">لا توجد معلومات حصة</p>
+          <p className="text-sm text-gray-500">
+            {currentUser.role === UserRole.User
+              ? 'يتم مشاركة الحصة مع مشرفك'
+              : 'لم يتم تعيين حصة لحسابك'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * UserManagementPanel - Manage moderators and their users
  * Features:
  * - Display moderators with expandable user lists
@@ -39,13 +266,34 @@ const TRASH_PAGE_SIZE = 10;
  * - Collapsible sections per moderator
  */
 export default function UserManagementPanel() {
-  const { user: currentUser, refreshUser } = useAuth();
+  const { user: currentUser, refreshUser, isAuthenticated } = useAuth();
   const { permissions, roleInfo } = useRoleBasedUI();
   const [state, actions] = useUserManagement();
   const { openModal } = useModal();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const { refreshQueues } = useQueue();
+  const router = useRouter();
+
+  // Authentication guard
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) {
+      router.replace('/');
+      return;
+    }
+  }, [isAuthenticated, currentUser, router]);
+
+  // Don't render if not authenticated
+  if (!isAuthenticated || !currentUser) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-gray-600">جاري إعادة التوجيه...</p>
+        </div>
+      </div>
+    );
+  }
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash'>('moderators');
   const [expandedModerators, setExpandedModerators] = useState<Set<string>>(new Set());
@@ -58,6 +306,24 @@ export default function UserManagementPanel() {
   const [selectedModerator, setSelectedModerator] = useState<string | null>(null);
   const [expandedTrashSections, setExpandedTrashSections] = useState<Set<string>>(new Set(['users', 'queues', 'templates'])); // Default all expanded
   
+  // Helper function to get user display name following priority:
+  // 1. firstName + lastName (if both exist)
+  // 2. firstName (if lastName is null/empty)
+  // 3. المشرف #${id} (ID-based fallback)
+  // 4. username (last fallback)
+  const getUserDisplayName = (user: User): string => {
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    if (user.firstName) {
+      return user.firstName;
+    }
+    if (user.id) {
+      return `المشرف #${user.id}`;
+    }
+    return user.username || 'Unknown';
+  };
+
   // Helper function to change tab and persist to sessionStorage
   const handleTabChange = (tab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash') => {
     setActiveTab(tab);
@@ -69,7 +335,7 @@ export default function UserManagementPanel() {
     // placeholder effect for any side-effects if needed later
   }, [selectedRole]);
 
-  // Set default tab based on user role (only on initial load, not when user data updates)
+  // Set default tab to "معلومات الحساب" (Account Settings) for all roles
   useEffect(() => {
     // Only set default tab if no tab has been explicitly set by user interaction
     // This prevents resetting the tab when currentUser updates after editing
@@ -80,23 +346,8 @@ export default function UserManagementPanel() {
     }
     
     if (currentUser) {
-      let defaultTab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash' = 'moderators';
-      switch (currentUser.role) {
-        case UserRole.PrimaryAdmin:
-          defaultTab = 'moderators';
-          break;
-        case UserRole.SecondaryAdmin:
-          defaultTab = 'moderators';
-          break;
-        case UserRole.Moderator:
-          defaultTab = 'myUsers';
-          break;
-        case UserRole.User:
-          defaultTab = 'accountSettings';
-          break;
-        default:
-          defaultTab = 'accountSettings';
-      }
+      // Default to 'accountSettings' for all roles
+      const defaultTab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash' = 'accountSettings';
       setActiveTab(defaultTab);
       sessionStorage.setItem('userManagementActiveTab', defaultTab);
     }
@@ -370,10 +621,13 @@ export default function UserManagementPanel() {
     }
   };
 
-  // Fetch users on mount
+  // Fetch users on mount - only once when component mounts or when currentUser changes
   useEffect(() => {
+    // Only fetch if we have a current user and they're not a regular user
+    if (currentUser && currentUser.role !== UserRole.User) {
     actions.fetchUsers();
-  }, [actions]);
+    }
+  }, [currentUser?.id, currentUser?.role]); // Only depend on user ID and role, not the entire actions object
 
   // Get all moderators
   const getModerators = (): User[] => {
@@ -449,7 +703,7 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteUser = async (user: User) => {
-    const fullName = user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName;
+    const fullName = getUserDisplayName(user);
     const confirmed = await confirm(createDeleteConfirmation(fullName));
     if (!confirmed) return;
 
@@ -465,7 +719,7 @@ export default function UserManagementPanel() {
   };
 
   const handleDeleteModerator = async (moderator: User) => {
-    const fullName = moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName;
+    const fullName = getUserDisplayName(moderator);
     const confirmed = await confirm(createDeleteConfirmation(fullName));
     if (!confirmed) return;
 
@@ -542,23 +796,31 @@ export default function UserManagementPanel() {
         quotaWithoutMode as ModeratorQuota,
         mode
       );
-      if (result.success) {
-        const fullName = selectedModeratorForQuota.lastName ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : selectedModeratorForQuota.firstName;
+      if (result.success && result.data) {
+        const fullName = getUserDisplayName(selectedModeratorForQuota);
         addToast(`تم تحديث حصة ${fullName} بنجاح`, 'success');
-        // Close all quota modals
-        setShowQuotaModal(false);
-        setShowMessagesQuotaModal(false);
-        setShowQueuesQuotaModal(false);
-        setSelectedModeratorForQuota(null);
-        setSelectedQuota(null);
-        // Refresh users to get updated quota data
+        
+        // Update selectedQuota with fresh data from API before closing modal
+        setSelectedQuota(result.data);
+        
+        // Refresh users to get updated quota data in the list
         await actions.fetchUsers();
+        
         // Trigger event to notify other components
         setTimeout(() => {
           window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
         }, 100);
+        
+        // Close modals after a brief delay to allow state update
+        setTimeout(() => {
+          setShowQuotaModal(false);
+          setShowMessagesQuotaModal(false);
+          setShowQueuesQuotaModal(false);
+          setSelectedModeratorForQuota(null);
+          setSelectedQuota(null);
+        }, 300);
       } else {
-        addToast('فشل تحديث الحصة', 'error');
+        addToast(result.error || 'فشل تحديث الحصة', 'error');
       }
     } catch (error) {
       addToast('حدث خطأ أثناء تحديث الحصة', 'error');
@@ -692,6 +954,17 @@ export default function UserManagementPanel() {
       <div className="p-6">
         {/* Navigation Tabs - Role Based */}
         <div className="flex gap-2 mb-6 border-b border-gray-200">
+          {/* Account Settings Tab - Show for all (First Tab) */}
+          <button
+            onClick={() => handleTabChange('accountSettings')}
+            className={`${TAB_BASE} ${
+              activeTab === 'accountSettings' ? TAB_ACTIVE.blue : TAB_INACTIVE
+            }`}
+          >
+            <i className="fas fa-user-cog"></i>
+            معلومات الحساب
+          </button>
+
           {/* Moderators Tab - Show for Primary & Secondary Admin */}
           {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
             <button
@@ -757,19 +1030,8 @@ export default function UserManagementPanel() {
             </button>
           )}
 
-          {/* Account Settings Tab - Show for all */}
-          <button
-            onClick={() => handleTabChange('accountSettings')}
-            className={`${TAB_BASE} ${
-              activeTab === 'accountSettings' ? TAB_ACTIVE.blue : TAB_INACTIVE
-            }`}
-          >
-            <i className="fas fa-user-cog"></i>
-            معلومات الحساب
-          </button>
-
-          {/* Logs Tab - Show for Admins and Moderators */}
-          {currentUser && currentUser.role !== UserRole.User && (
+          {/* Logs Tab - Show for Admins and Moderators only (NOT Users) */}
+          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin || currentUser.role === UserRole.Moderator) && (
             <button
               onClick={() => handleTabChange('logs')}
               className={`${TAB_BASE} ${
@@ -781,7 +1043,7 @@ export default function UserManagementPanel() {
             </button>
           )}
 
-          {/* Trash Tab - Show for Admins and Moderators */}
+          {/* Trash Tab - Show for Admins and Moderators only (NOT Users) */}
           {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin || currentUser.role === UserRole.Moderator) && (
             <button
               onClick={() => handleTabChange('trash')}
@@ -829,12 +1091,11 @@ export default function UserManagementPanel() {
                 </p>
               </div>
             )}
-            {/* Add Moderator Button */}
-            {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
+            {/* Add Moderator Button - Only PrimaryAdmin can create moderators */}
+            {currentUser?.role === UserRole.PrimaryAdmin && (
               <div>
                 <button
                   onClick={() => handleAddUser(UserRole.Moderator)}
-                  disabled={state.loading}
                   className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
                 >
                   <i className="fas fa-plus"></i>
@@ -871,7 +1132,7 @@ export default function UserManagementPanel() {
                       </span>
                       <div className="text-right">
                         <h3 className="font-semibold text-gray-900">
-                          {moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName}
+                          {getUserDisplayName(moderator)}
                         </h3>
                       </div>
                     </div>
@@ -879,6 +1140,8 @@ export default function UserManagementPanel() {
                       <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${roleInfo.color}`}>
                         {roleInfo.label}
                       </span>
+                      {/* Edit Moderator - Only PrimaryAdmin and SecondaryAdmin */}
+                      {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -889,6 +1152,9 @@ export default function UserManagementPanel() {
                       >
                         <i className="fas fa-edit"></i>
                       </button>
+                      )}
+                      {/* Delete Moderator - Only PrimaryAdmin */}
+                      {currentUser?.role === UserRole.PrimaryAdmin && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -899,6 +1165,7 @@ export default function UserManagementPanel() {
                       >
                         <i className="fas fa-trash"></i>
                       </button>
+                      )}
                     </div>
                   </div>
 
@@ -955,17 +1222,18 @@ export default function UserManagementPanel() {
                         />
                       </div>
 
-                      {/* Add User Button for this Moderator */}
+                      {/* Add User Button for this Moderator - Only for admins and moderators (NOT regular users) */}
+                      {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
                       <div className="px-6 py-4 border-b border-gray-200">
                         <button
                           onClick={() => handleAddUser(UserRole.User, moderator.id)}
-                          disabled={state.loading}
                           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                         >
                           <i className="fas fa-plus"></i>
                           <span>إضافة مستخدم جديد</span>
                         </button>
                       </div>
+                      )}
 
                       {managedUsers.length > 0 ? (
                         <div className="overflow-hidden rounded-lg border border-gray-200 m-4">
@@ -993,7 +1261,7 @@ export default function UserManagementPanel() {
                                   className={`hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
                                 >
                                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                                    {user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName}
+                                    {getUserDisplayName(user)}
                                   </td>
                                   <td className="px-6 py-4 text-sm text-gray-600">
                                     @{user.username}
@@ -1002,6 +1270,8 @@ export default function UserManagementPanel() {
                                     {formatDate(user.lastLogin)}
                                   </td>
                                   <td className="px-6 py-4 text-sm">
+                                    {/* Edit/Delete buttons - Only for admins and moderators (NOT regular users) */}
+                                    {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
                                     <div className="flex gap-2">
                                       <button
                                         onClick={() => handleEditUser(user)}
@@ -1018,6 +1288,7 @@ export default function UserManagementPanel() {
                                         <i className="fas fa-trash"></i>
                                       </button>
                                     </div>
+                                    )}
                                   </td>
                                 </tr>
                               ))}
@@ -1073,7 +1344,6 @@ export default function UserManagementPanel() {
                 <div>
                   <button
                     onClick={() => handleAddUser(UserRole.SecondaryAdmin)}
-                    disabled={state.loading}
                     className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
                   >
                     <i className="fas fa-plus"></i>
@@ -1104,7 +1374,7 @@ export default function UserManagementPanel() {
                         ></i>
                         <div className="text-right">
                           <h3 className="font-semibold text-gray-900">
-                            {admin.lastName ? `${admin.firstName} ${admin.lastName}` : admin.firstName}
+                            {getUserDisplayName(admin)}
                           </h3>
                         </div>
                       </div>
@@ -1112,6 +1382,9 @@ export default function UserManagementPanel() {
                         <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${roleInfo.color}`}>
                           {roleInfo.label}
                         </span>
+                        {/* Edit/Delete Secondary Admin - Only PrimaryAdmin */}
+                        {currentUser?.role === UserRole.PrimaryAdmin && (
+                          <>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1132,6 +1405,8 @@ export default function UserManagementPanel() {
                         >
                           <i className="fas fa-trash"></i>
                         </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -1213,9 +1488,7 @@ export default function UserManagementPanel() {
                 <div className="p-3 bg-gray-50 rounded-lg">
                   <p className="text-xs text-gray-600 font-medium">الاسم الكامل</p>
                   <p className="text-sm text-gray-900 font-semibold mt-1">
-                    {currentUser?.lastName 
-                      ? `${currentUser?.firstName} ${currentUser?.lastName}`
-                      : currentUser?.firstName || 'لم يتم تعيين'}
+                    {currentUser ? getUserDisplayName(currentUser) : 'لم يتم تعيين'}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 rounded-lg">
@@ -1677,17 +1950,18 @@ export default function UserManagementPanel() {
               </p>
             </div>
 
-            {/* Add User Button */}
+            {/* Add User Button - Only for Moderators (NOT regular users) */}
+            {currentUser?.role === UserRole.Moderator && (
             <div>
               <button
                 onClick={() => handleAddUser(UserRole.User, currentUser.id)}
-                disabled={state.loading}
                 className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
               >
                 <i className="fas fa-plus"></i>
                 <span>إضافة مستخدم جديد</span>
               </button>
             </div>
+            )}
 
             {/* Users List */}
             {myManagedUsers.length === 0 ? (
@@ -1750,6 +2024,8 @@ export default function UserManagementPanel() {
                             {formatDate(user.lastLogin)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            {/* Edit/Delete buttons - Only for Moderators (NOT regular users) */}
+                            {currentUser?.role === UserRole.Moderator && (
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleEditUser(user)}
@@ -1766,6 +2042,7 @@ export default function UserManagementPanel() {
                                 <i className="fas fa-trash"></i>
                               </button>
                             </div>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -1861,99 +2138,7 @@ export default function UserManagementPanel() {
 
         {/* Quota Section - For Moderators and Users */}
         {activeTab === 'quota' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
-          <div className="space-y-6 p-6">
-            {/* Quota Header */}
-            <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
-                <i className="fas fa-chart-pie"></i>
-                معلومات الحصة
-              </h3>
-              <p className="text-sm text-indigo-700 mt-2">
-                {currentUser.role === UserRole.Moderator
-                  ? 'اطلع على حصتك من الرسائل وقوائم الانتظار المتاحة'
-                  : 'اطلع على حصة المشرف الخاص بك من الرسائل وقوائم الانتظار'}
-              </p>
-            </div>
-
-            {/* Quota Display */}
-            {currentUser.role === UserRole.Moderator && 'quota' in currentUser ? (
-              <ModeratorQuotaDisplay
-                moderatorId={currentUser.id}
-                quota={(currentUser as any).quota as ModeratorQuota}
-                onEditMessages={() => {}}
-                onEditQueues={() => {}}
-              />
-            ) : (
-              <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-                <i className="fas fa-chart-pie text-4xl text-gray-400 mb-4 block"></i>
-                <p className="text-gray-600 mb-2">لا توجد معلومات حصة</p>
-                <p className="text-sm text-gray-500">
-                  {currentUser.role === UserRole.User
-                    ? 'يتم مشاركة الحصة مع مشرفك'
-                    : 'لم يتم تعيين حصة لحسابك'}
-                </p>
-              </div>
-            )}
-
-            {/* Quota Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white border border-blue-200 rounded-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                      <i className="fas fa-envelope text-blue-600 text-xl"></i>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">حصة الرسائل</p>
-                      <p className="text-2xl font-bold text-gray-900">-</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '0%' }}></div>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
-              </div>
-
-              <div className="bg-white border border-purple-200 rounded-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                      <i className="fas fa-list text-purple-600 text-xl"></i>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">حصة قوائم الانتظار</p>
-                      <p className="text-2xl font-bold text-gray-900">-</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-purple-600 h-2 rounded-full" style={{ width: '0%' }}></div>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">0% مستخدم</p>
-              </div>
-            </div>
-
-            {/* Request Extra Quota Info */}
-            {currentUser.role === UserRole.Moderator && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
-                  <i className="fas fa-exclamation-triangle"></i>
-                  هل تحتاج إلى حصة إضافية؟
-                </h4>
-                <p className="text-sm text-yellow-800 mb-3">
-                  إذا كنت بحاجة إلى زيادة حصتك من الرسائل أو قوائم الانتظار، يمكنك طلب ذلك من المدير
-                </p>
-                <button
-                  className="inline-flex items-center gap-2 rounded-lg bg-yellow-600 px-4 py-2 text-white hover:bg-yellow-700 transition-colors text-sm font-medium"
-                  disabled
-                >
-                  <i className="fas fa-paper-plane"></i>
-                  <span>طلب حصة إضافية (قريباً)</span>
-                </button>
-              </div>
-            )}
-          </div>
+          <QuotaTabContent currentUser={currentUser} />
         )}
       </div>
 
@@ -2222,7 +2407,7 @@ export default function UserManagementPanel() {
           createdAt: new Date(),
           updatedAt: new Date(),
         }}
-        moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
+        moderatorName={selectedModeratorForQuota ? getUserDisplayName(selectedModeratorForQuota) : ''}
         onClose={() => {
           setShowQuotaModal(false);
           setSelectedModeratorForQuota(null);
@@ -2241,7 +2426,7 @@ export default function UserManagementPanel() {
           createdAt: new Date(),
           updatedAt: new Date(),
         }}
-        moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
+        moderatorName={selectedModeratorForQuota ? getUserDisplayName(selectedModeratorForQuota) : ''}
         moderatorData={selectedModeratorForQuota}
         onClose={async () => {
           setShowMessagesQuotaModal(false);
@@ -2273,7 +2458,7 @@ export default function UserManagementPanel() {
           createdAt: new Date(),
           updatedAt: new Date(),
         }}
-        moderatorName={selectedModeratorForQuota ? `${selectedModeratorForQuota.firstName} ${selectedModeratorForQuota.lastName}` : ''}
+        moderatorName={selectedModeratorForQuota ? getUserDisplayName(selectedModeratorForQuota) : ''}
         moderatorData={selectedModeratorForQuota}
         onClose={async () => {
           setShowQueuesQuotaModal(false);

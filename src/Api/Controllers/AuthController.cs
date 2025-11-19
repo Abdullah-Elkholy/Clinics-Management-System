@@ -90,7 +90,7 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, errors = new[] { new { code = "MissingCredentials", message = "Username and password are required" } } });
                 }
 
-                var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username && !u.IsDeleted);
                 if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
                 // For scaffold: PasswordHash may be null (seeded). Accept 'admin' without hash for demo
@@ -145,10 +145,10 @@ namespace Clinics.Api.Controllers
                 return Unauthorized();
             }
 
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
             if (user == null)
             {
-                return NotFound();
+                return Unauthorized(new { success = false, error = "User account has been deleted" });
             }
 
             var roleDisplayName = Clinics.Domain.UserRoleExtensions.GetDisplayNameFromRoleName(user.Role);
@@ -177,8 +177,8 @@ namespace Clinics.Api.Controllers
             var session = _db.Sessions.FirstOrDefault(s => s.Id == sessionId);
             if (session == null || session.ExpiresAt <= DateTime.UtcNow) return Unauthorized(new { success = false });
 
-            var user = _db.Users.FirstOrDefault(u => u.Id == session.UserId);
-            if (user == null) return Unauthorized(new { success = false });
+            var user = _db.Users.FirstOrDefault(u => u.Id == session.UserId && !u.IsDeleted);
+            if (user == null) return Unauthorized(new { success = false, error = "User account has been deleted" });
 
             // rotate refresh token: revoke old session and create a new one
             _sessionService.RevokeSession(session.Id);

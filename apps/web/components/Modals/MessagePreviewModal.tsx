@@ -9,14 +9,16 @@ import { QueueMessageConfig, MessageResolution } from '@/types/messageCondition'
 import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { whatsappApiClient } from '@/services/api/whatsappApiClient';
+import { patientsApiClient } from '@/services/api/patientsApiClient';
 // normalizePhoneNumber removed - phone numbers stored separately from country codes
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Modal from './Modal';
+import ConfirmationDialog from './ConfirmationDialog';
 
 export default function MessagePreviewModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { queues, messageTemplates, messageConditions, patients: contextPatients } = useQueue();
+  const { queues, messageTemplates, messageConditions, patients: contextPatients, refreshPatients } = useQueue();
   const data = getModalData('messagePreview');
 
   const isOpen = openModals.has('messagePreview');
@@ -39,6 +41,23 @@ export default function MessagePreviewModal() {
   }>>({});
   const [isValidating, setIsValidating] = useState(false);
   const [validationProgress, setValidationProgress] = useState({ current: 0, total: 0 });
+  
+  // Abort controller to actually cancel fetch requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Abort flag to cancel validation when modal closes
+  const abortValidationRef = useRef(false);
+  
+  // Ref to track modal open state (for checking inside async functions)
+  const isOpenRef = useRef(isOpen);
+  
+  // Confirmation dialog state
+  const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
+  
+  // Update isOpenRef whenever isOpen changes
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
 
   // Get queue data from context as fallback
   const queue = useMemo(() => {
@@ -210,7 +229,10 @@ export default function MessagePreviewModal() {
     if (countryCodeDigits === '20' && cleaned.startsWith('0')) {
       cleaned = cleaned.substring(1);
     }
-    return `${countryCode} ${cleaned}`;
+    // Format as: +countryCode phoneNumber (with space)
+    // Use Left-to-Right Mark (\u200E) to force LTR rendering in RTL contexts
+    // This ensures the "+" sign appears on the left side of the country code
+    return `\u200E${countryCode} ${cleaned}`;
   };
 
   // Function to get badge color and text for resolution reason
@@ -253,21 +275,51 @@ export default function MessagePreviewModal() {
       return;
     }
 
-    // Check 1: Verify all patients have IsValidWhatsAppNumber === true
-    const invalidWhatsAppPatients = patientsToSend.filter((item) => {
-      const patient = item.patient;
-      // Must have isValidWhatsAppNumber explicitly set to true
-      return !patient || patient.isValidWhatsAppNumber !== true;
-    });
+    // Check ALL patients' IsValidWhatsAppNumber attribute from database
+    // Separate into: valid (true), invalid (false), and unvalidated (null)
+    const validPatients = patientsToSend.filter((item) => 
+      item.patient?.isValidWhatsAppNumber === true
+    );
+    const invalidPatients = patientsToSend.filter((item) => 
+      item.patient?.isValidWhatsAppNumber === false
+    );
+    const unvalidatedPatients = patientsToSend.filter((item) => 
+      item.patient?.isValidWhatsAppNumber !== true && 
+      item.patient?.isValidWhatsAppNumber !== false
+    );
 
-    if (invalidWhatsAppPatients.length > 0) {
-      const invalidNames = invalidWhatsAppPatients
+    // Reject if ANY patient is invalid (false) or unvalidated (null)
+    if (invalidPatients.length > 0) {
+      // Some patients have invalid WhatsApp numbers (false)
+      const invalidNames = invalidPatients
         .map((item) => item.patient?.name || `ID: ${item.patientId}`)
+        .slice(0, 5) // Show max 5 names
         .join(', ');
+      const moreCount = invalidPatients.length > 5 ? ` و${invalidPatients.length - 5} آخرين` : '';
       addToast(
-        `لا يمكن إرسال الرسائل: بعض المرضى ليس لديهم أرقام واتساب صالحة (${invalidNames}). يرجى التحقق من صحة الأرقام أولاً.`,
+        `لا يمكن إرسال الرسائل: بعض المرضى لديهم أرقام هاتف غير صالحة للواتساب (${invalidNames}${moreCount}). يرجى إصلاح الأرقام أو إزالة هؤلاء المرضى من المعاينة.`,
         'error'
       );
+      return;
+    }
+
+    if (unvalidatedPatients.length > 0) {
+      // Some patients haven't been validated yet (null)
+      const unvalidatedNames = unvalidatedPatients
+        .map((item) => item.patient?.name || `ID: ${item.patientId}`)
+        .slice(0, 5) // Show max 5 names
+        .join(', ');
+      const moreCount = unvalidatedPatients.length > 5 ? ` و${unvalidatedPatients.length - 5} آخرين` : '';
+      addToast(
+        `لا يمكن إرسال الرسائل: بعض المرضى لم يتم التحقق من أرقام الواتساب الخاصة بهم بعد (${unvalidatedNames}${moreCount}). يرجى الانتظار حتى اكتمال عملية التحقق أو إعادة المحاولة للتحقق من الأرقام.`,
+        'error'
+      );
+      return;
+    }
+
+    // All patients must have IsValidWhatsAppNumber === true to proceed
+    if (validPatients.length !== patientsToSend.length) {
+      addToast('لا يمكن إرسال الرسائل: يجب التحقق من جميع أرقام الواتساب أولاً', 'error');
       return;
     }
 
@@ -326,6 +378,87 @@ export default function MessagePreviewModal() {
   ): Promise<boolean | null> => {
     const maxAttempts = 2;
     
+    // Check if modal is still open and validation was aborted
+    if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+      setValidationStatus(prev => ({
+        ...prev,
+        [patientId]: {
+          isValid: null,
+          isChecking: false,
+          error: 'تم إلغاء عملية التحقق',
+          attempts: attempt,
+        }
+      }));
+      return null;
+    }
+    
+    // CRITICAL: FIRST check database IsValidWhatsAppNumber attribute BEFORE calling API
+    // Look up patient from sortedPatients to get latest database value
+    const patient = sortedPatients.find(p => String(p.id) === patientId);
+    
+    if (patient) {
+      // Check database value FIRST - if it exists, use it directly (NO API CALL)
+      const dbValue = patient.isValidWhatsAppNumber;
+      
+      // Debug logging (remove in production if needed)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[MessagePreview] checkPhoneNumber for ${patientId} (${patient.name}): isValidWhatsAppNumber =`, dbValue, typeof dbValue);
+      }
+      
+      if (dbValue === true) {
+        // Database says valid - use it directly, NO API call
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[MessagePreview] checkPhoneNumber: Patient ${patientId} has TRUE in DB, skipping API call`);
+        }
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: true,
+            isChecking: false,
+            attempts: attempt,
+          }
+        }));
+        return true;
+      } else if (dbValue === false) {
+        // Database says invalid - use it directly, NO API call
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[MessagePreview] checkPhoneNumber: Patient ${patientId} has FALSE in DB, skipping API call`);
+        }
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: false,
+            isChecking: false,
+            attempts: attempt,
+          }
+        }));
+        return false;
+      }
+      // If database value is null/undefined, continue to API call below
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[MessagePreview] checkPhoneNumber: Patient ${patientId} has ${dbValue} (${typeof dbValue}) in DB, will call API`);
+      }
+    } else {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[MessagePreview] checkPhoneNumber: Patient ${patientId} not found in sortedPatients, will call API`);
+      }
+    }
+    
+    // Check if modal is still open and abort flag again before API call
+    if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+      setValidationStatus(prev => ({
+        ...prev,
+        [patientId]: {
+          isValid: null,
+          isChecking: false,
+          error: 'تم إلغاء عملية التحقق',
+          attempts: attempt,
+        }
+      }));
+      return null;
+    }
+    
+    // Only call API if database value is null/undefined
     // Update status to checking
     setValidationStatus(prev => ({
       ...prev,
@@ -337,7 +470,39 @@ export default function MessagePreviewModal() {
     }));
 
     try {
-      const result = await whatsappApiClient.checkWhatsAppNumber(phoneNumber);
+      // Check if modal is still open and abort flag before making API call
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: 'تم إلغاء عملية التحقق',
+            attempts: attempt,
+          }
+        }));
+        return null;
+      }
+      
+      // Pass abort signal to actually cancel the fetch request
+      const result = await whatsappApiClient.checkWhatsAppNumber(
+        phoneNumber,
+        abortControllerRef.current?.signal
+      );
+      
+      // Check if modal is still open and abort flag after API call
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted || result.state === 'Aborted') {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: 'تم إلغاء عملية التحقق',
+            attempts: attempt,
+          }
+        }));
+        return null;
+      }
       
       // Check if service is unavailable (connection refused, etc.)
       if (result.state === 'ServiceUnavailable') {
@@ -363,6 +528,20 @@ export default function MessagePreviewModal() {
             attempts: attempt,
           }
         }));
+        
+        // Update database with validation result
+        try {
+          const patientIdNum = Number(patientId);
+          if (!isNaN(patientIdNum)) {
+            await patientsApiClient.updatePatient(patientIdNum, {
+              isValidWhatsAppNumber: true,
+            });
+          }
+        } catch (dbError) {
+          // Log error but don't block UI - validation succeeded, just DB update failed
+          console.error(`Failed to update database for patient ${patientId}:`, dbError);
+        }
+        
         return true;
       } else if (result.isSuccess === false) {
         setValidationStatus(prev => ({
@@ -373,12 +552,40 @@ export default function MessagePreviewModal() {
             attempts: attempt,
           }
         }));
+        
+        // Update database with validation result
+        try {
+          const patientIdNum = Number(patientId);
+          if (!isNaN(patientIdNum)) {
+            await patientsApiClient.updatePatient(patientIdNum, {
+              isValidWhatsAppNumber: false,
+            });
+          }
+        } catch (dbError) {
+          // Log error but don't block UI - validation succeeded, just DB update failed
+          console.error(`Failed to update database for patient ${patientId}:`, dbError);
+        }
+        
         return false;
       } else {
         // Pending or other states - treat as error for retry
         throw new Error(result.resultMessage || 'Unknown validation state');
       }
     } catch (error: any) {
+      // Check if modal is still open and error is due to abort
+      if (!isOpenRef.current || error?.name === 'AbortError' || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: 'تم إلغاء عملية التحقق',
+            attempts: attempt,
+          }
+        }));
+        return null; // Don't retry if aborted or modal closed
+      }
+      
       // Check if it's a connection error - don't retry
       const isConnectionError = 
         error?.message?.includes('ERR_CONNECTION_REFUSED') ||
@@ -399,10 +606,50 @@ export default function MessagePreviewModal() {
         return null; // Don't retry connection errors
       }
       
+      // Check if modal is still open and abort flag before retry
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: 'تم إلغاء عملية التحقق',
+            attempts: attempt,
+          }
+        }));
+        return null;
+      }
+      
       // If we haven't reached max attempts, retry
       if (attempt < maxAttempts) {
-        // Wait a bit before retry
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait a bit before retry, but check abort and modal state during wait
+        await new Promise(resolve => {
+          const timeout = setTimeout(resolve, 1000);
+          // Check abort and modal state every 100ms during wait
+          const checkAbort = setInterval(() => {
+            if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+              clearTimeout(timeout);
+              clearInterval(checkAbort);
+              resolve(undefined);
+            }
+          }, 100);
+          setTimeout(() => clearInterval(checkAbort), 1000);
+        });
+        
+        // Check if modal is still open and abort flag again after wait
+        if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+          setValidationStatus(prev => ({
+            ...prev,
+            [patientId]: {
+              isValid: null,
+              isChecking: false,
+              error: 'تم إلغاء عملية التحقق',
+              attempts: attempt,
+            }
+          }));
+          return null;
+        }
+        
         return checkPhoneNumber(patientId, phoneNumber, attempt + 1);
       } else {
         // Max attempts reached - show error with retry option
@@ -418,28 +665,45 @@ export default function MessagePreviewModal() {
         return null;
       }
     }
-  }, []);
+  }, [sortedPatients]);
 
   // Validate all patients sequentially (1 at a time)
   const validateAllPatients = useCallback(async () => {
-    if (!isOpen) return;
+    // Check if modal is still open using ref (for current value)
+    if (!isOpenRef.current) return;
+    
+    // Create new AbortController for this validation session
+    abortControllerRef.current = new AbortController();
+    
+    // Reset abort flag when starting new validation
+    abortValidationRef.current = false;
 
-    // Get patients that need validation (not excluded, not removed)
-    const patientsToValidate = sortedPatients.filter(p => 
+    // Get all eligible patients (not excluded, not removed, have phone)
+    const allEligiblePatients = sortedPatients.filter(p => 
       selectedPatientIds.includes(String(p.id)) && 
       !removedPatients.includes(String(p.id)) &&
       p.phone
     );
 
-    if (patientsToValidate.length === 0) {
+    if (allEligiblePatients.length === 0) {
       setIsValidating(false);
       return;
     }
 
-    setIsValidating(true);
-    setValidationProgress({ current: 0, total: patientsToValidate.length });
+    // Debug: Log all patients and their isValidWhatsAppNumber values
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[MessagePreview] validateAllPatients: Checking ${allEligiblePatients.length} patients`);
+      console.log(`[MessagePreview] Sample patient data:`, allEligiblePatients.slice(0, 3).map(p => ({
+        id: p.id,
+        name: p.name,
+        isValidWhatsAppNumber: p.isValidWhatsAppNumber,
+        hasField: 'isValidWhatsAppNumber' in p,
+      })));
+    }
 
-    // Initialize validation status for all patients
+    // Initialize validation status for ALL patients
+    // FIRST: Check IsValidWhatsAppNumber from database (Patient entity)
+    // Only call check-whatsapp endpoint if value is null/undefined
     const initialStatus: Record<string, {
       isValid: boolean | null;
       isChecking: boolean;
@@ -447,88 +711,361 @@ export default function MessagePreviewModal() {
       attempts: number;
     }> = {};
 
-    patientsToValidate.forEach(p => {
+    // Separate patients: those with database values vs those needing API validation
+    const patientsNeedingApiValidation: typeof allEligiblePatients = [];
+
+    allEligiblePatients.forEach(p => {
       const patientId = String(p.id);
       
-      // If already validated (true/false), use that value, otherwise check
-      if (p.isValidWhatsAppNumber === true) {
+      // CRITICAL: Check database IsValidWhatsAppNumber attribute FIRST
+      // Explicitly check for true, false, null, and undefined
+      // If it's true or false, use that value directly (no API call needed)
+      const dbValue = p.isValidWhatsAppNumber;
+      
+      // Debug logging (remove in production if needed)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[MessagePreview] Patient ${patientId} (${p.name}): isValidWhatsAppNumber =`, dbValue, typeof dbValue);
+      }
+      
+      if (dbValue === true) {
+        // Database says valid - use it directly, no API call
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[MessagePreview] Patient ${patientId}: Using database value TRUE, skipping API call`);
+        }
         initialStatus[patientId] = {
           isValid: true,
           isChecking: false,
           attempts: 0,
         };
-      } else if (p.isValidWhatsAppNumber === false) {
+      } else if (dbValue === false) {
+        // Database says invalid - use it directly, no API call
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[MessagePreview] Patient ${patientId}: Using database value FALSE, skipping API call`);
+        }
         initialStatus[patientId] = {
           isValid: false,
           isChecking: false,
           attempts: 0,
         };
       } else {
-        // Need to check - will be set during validation
+        // Database value is null/undefined - need to call check-whatsapp endpoint
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[MessagePreview] Patient ${patientId}: Database value is ${dbValue} (${typeof dbValue}), will call API`);
+        }
         initialStatus[patientId] = {
           isValid: null,
           isChecking: false,
           attempts: 0,
         };
+        patientsNeedingApiValidation.push(p);
       }
     });
 
     setValidationStatus(initialStatus);
 
-    // Check each patient sequentially (1 at a time)
-    for (let i = 0; i < patientsToValidate.length; i++) {
-      const patient = patientsToValidate[i];
-      const patientId = String(patient.id);
+    // If no patients need API validation (all have database values), we're done
+    if (patientsNeedingApiValidation.length === 0) {
+      setIsValidating(false);
+      return;
+    }
+
+    setIsValidating(true);
+    // Progress counter only includes patients that actually need API validation
+    setValidationProgress({ current: 0, total: patientsNeedingApiValidation.length });
+
+    // Only call check-whatsapp endpoint for patients where database value is null
+    for (let i = 0; i < patientsNeedingApiValidation.length; i++) {
+      // Check if modal is still open and abort flags at start of each iteration
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setIsValidating(false);
+        return;
+      }
       
-      // Skip if already validated (true/false from database)
-      if (patient.isValidWhatsAppNumber === true || patient.isValidWhatsAppNumber === false) {
-        setValidationProgress({ current: i + 1, total: patientsToValidate.length });
+      const patientFromArray = patientsNeedingApiValidation[i];
+      const patientId = String(patientFromArray.id);
+
+      // CRITICAL: Fresh lookup from sortedPatients to get latest database value
+      // Don't rely on patientFromArray which might have stale data
+      const freshPatient = sortedPatients.find(p => String(p.id) === patientId);
+
+      // Double-check: only validate if database value is still null
+      // (in case it was updated by another process or between iterations)
+      if (freshPatient && (freshPatient.isValidWhatsAppNumber === true || freshPatient.isValidWhatsAppNumber === false)) {
+        // Check if modal is still open before updating state
+        if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+          setIsValidating(false);
+          return;
+        }
+        // Database value exists now - use it instead of API call
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: freshPatient.isValidWhatsAppNumber === true,
+            isChecking: false,
+            attempts: 0,
+          }
+        }));
+        setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
         continue;
       }
 
-      // Build full phone number with country code (E.164 format for WhatsApp API)
-      const countryCode = patient.countryCode || '+20';
-      // Combine country code and phone number: +20 1018542431 -> +201018542431
-      const phoneNumber = `${countryCode}${patient.phone}`;
+      // Check if modal is still open and abort flags before API call
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setIsValidating(false);
+        return;
+      }
 
-      await checkPhoneNumber(patientId, phoneNumber);
-      setValidationProgress({ current: i + 1, total: patientsToValidate.length });
+      // Build full phone number with country code (E.164 format for WhatsApp API)
+      // Use freshPatient if available, otherwise fallback to patientFromArray
+      const patientToUse = freshPatient || patientFromArray;
+      const countryCode = patientToUse.countryCode || '+20';
+      // Combine country code and phone number: +20 1018542431 -> +201018542431
+      const phoneNumber = `${countryCode}${patientToUse.phone}`;
+
+      // checkPhoneNumber will also check database value before calling API
+      // It uses abortControllerRef.current?.signal internally
+      await checkPhoneNumber(patientId, phoneNumber, 1);
+      
+      // Check if modal is still open and abort flags after API call
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setIsValidating(false);
+        return;
+      }
+      
+      setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
     }
 
     setIsValidating(false);
   }, [isOpen, sortedPatients, selectedPatientIds, removedPatients, checkPhoneNumber]);
 
-  // Trigger validation when modal opens
+  // Refresh patient data and trigger validation when modal opens
   useEffect(() => {
-    if (isOpen && sortedPatients.length > 0 && selectedPatientIds.length > 0) {
-      // Reset validation status when modal opens
-      setValidationStatus({});
-      validateAllPatients();
+    if (isOpen && queueId && selectedPatientIds.length > 0) {
+      // Refresh patients from database to get latest IsValidWhatsAppNumber values
+      refreshPatients(queueId).then(() => {
+        // After refresh, wait a bit for state to update, then validate
+        // Use a longer timeout to ensure React state has updated
+        setTimeout(() => {
+          // Reset validation status when modal opens
+          setValidationStatus({});
+          // Call validateAllPatients - it will use the fresh sortedPatients
+          validateAllPatients();
+        }, 200);
+      }).catch((error) => {
+        console.error('Failed to refresh patients:', error);
+        // Still try to validate with existing data
+        setValidationStatus({});
+        validateAllPatients();
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]); // Only trigger on open/close, not on patient changes
+  }, [isOpen, queueId, selectedPatientIds.length]); // Trigger on open/close and when patient selection changes
 
-  // Retry validation for a specific patient
+  // Retry validation for a specific patient (always re-validates, even if value exists)
   const handleRetryValidation = useCallback(async (patientId: string) => {
+    // First, refresh patient data to get latest from database
+    if (queueId) {
+      try {
+        await refreshPatients(queueId);
+        // Wait a bit for state to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('Failed to refresh patient data:', error);
+      }
+    }
+
+    // Get fresh patient data after refresh
     const patient = sortedPatients.find(p => String(p.id) === patientId);
-    if (!patient || !patient.phone) return;
+    if (!patient || !patient.phone) {
+      // If still not found, try to get from contextPatients
+      const contextPatient = contextPatients.find(p => String(p.id) === patientId);
+      if (!contextPatient || !contextPatient.phone) {
+        addToast('لم يتم العثور على بيانات المريض', 'error');
+        return;
+      }
+    }
 
-    const countryCode = patient.countryCode || '+20';
+    const patientToUse = patient || contextPatients.find(p => String(p.id) === patientId);
+    if (!patientToUse || !patientToUse.phone) return;
+
+    // ALWAYS re-validate by calling API, regardless of existing database value
+    // Create new AbortController if one doesn't exist
+    if (!abortControllerRef.current) {
+      abortControllerRef.current = new AbortController();
+    }
+    
+    const countryCode = patientToUse.countryCode || '+20';
     // Combine country code and phone number: +20 1018542431 -> +201018542431
-    const phoneNumber = `${countryCode}${patient.phone}`;
+    const phoneNumber = `${countryCode}${patientToUse.phone}`;
 
-    await checkPhoneNumber(patientId, phoneNumber, 1);
-  }, [sortedPatients, checkPhoneNumber]);
+    // Reset validation status before retry
+    setValidationStatus(prev => ({
+      ...prev,
+      [patientId]: {
+        isValid: null,
+        isChecking: true,
+        attempts: 0,
+      }
+    }));
+
+    // ALWAYS re-validate by calling API directly (bypassing database check)
+    // This ensures we get fresh validation even if database has a value
+    try {
+      const result = await whatsappApiClient.checkWhatsAppNumber(
+        phoneNumber,
+        abortControllerRef.current?.signal
+      );
+
+      if (result.isSuccess === true) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: true,
+            isChecking: false,
+            attempts: 0,
+          }
+        }));
+        
+        // Update database
+        try {
+          const patientIdNum = Number(patientId);
+          if (!isNaN(patientIdNum)) {
+            await patientsApiClient.updatePatient(patientIdNum, {
+              isValidWhatsAppNumber: true,
+            });
+            // Refresh patients to get updated value
+            if (queueId) {
+              await refreshPatients(queueId);
+            }
+          }
+        } catch (dbError) {
+          console.error(`Failed to update database for patient ${patientId}:`, dbError);
+        }
+      } else if (result.isSuccess === false) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: false,
+            isChecking: false,
+            attempts: 0,
+          }
+        }));
+        
+        // Update database
+        try {
+          const patientIdNum = Number(patientId);
+          if (!isNaN(patientIdNum)) {
+            await patientsApiClient.updatePatient(patientIdNum, {
+              isValidWhatsAppNumber: false,
+            });
+            // Refresh patients to get updated value
+            if (queueId) {
+              await refreshPatients(queueId);
+            }
+          }
+        } catch (dbError) {
+          console.error(`Failed to update database for patient ${patientId}:`, dbError);
+        }
+      } else {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: result.resultMessage || 'فشل التحقق من رقم الواتساب',
+            attempts: 0,
+          }
+        }));
+      }
+    } catch (error: any) {
+      if (error?.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: 'تم إلغاء عملية التحقق',
+            attempts: 0,
+          }
+        }));
+        return;
+      }
+      
+      setValidationStatus(prev => ({
+        ...prev,
+        [patientId]: {
+          isValid: null,
+          isChecking: false,
+          error: error?.message || 'فشل التحقق من رقم الواتساب',
+          attempts: 0,
+        }
+      }));
+    }
+  }, [sortedPatients, contextPatients, checkPhoneNumber, queueId, refreshPatients, addToast]);
+
+  // Handle modal close with confirmation if validating
+  const handleCloseModal = () => {
+    if (isValidating) {
+      // Show confirmation dialog
+      setShowCloseConfirmation(true);
+    } else {
+      // Close immediately if not validating
+      closeModal('messagePreview');
+    }
+  };
+
+  // Handle confirmation to abort validation
+  const handleConfirmAbort = () => {
+    // Set abort flag
+    abortValidationRef.current = true;
+    
+    // Actually abort all ongoing fetch requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    setIsValidating(false);
+    setShowCloseConfirmation(false);
+    closeModal('messagePreview');
+    addToast('تم إلغاء عملية التحقق من أرقام الواتساب', 'info');
+  };
+
+  // Handle cancel - continue validation
+  const handleCancelAbort = () => {
+    setShowCloseConfirmation(false);
+  };
+
+  // Reset all state and abort processes when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      // Abort any ongoing requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      
+      // Reset all state variables
+      abortValidationRef.current = false;
+      setIsValidating(false);
+      setShowCloseConfirmation(false);
+      setValidationStatus({});
+      setValidationProgress({ current: 0, total: 0 });
+      setRemovedPatients([]);
+      setIsSending(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={() => closeModal('messagePreview')}
-      title="معاينة الرسائل قبل الإرسال"
-      size="2xl"
-    >
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={handleCloseModal}
+        title="معاينة الرسائل قبل الإرسال"
+        size="2xl"
+      >
       <div className="flex flex-col h-full space-y-4">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex-shrink-0">
           <div className="flex items-center justify-between">
@@ -654,34 +1191,37 @@ export default function MessagePreviewModal() {
                           })()
                         }`}>
                           <div className="flex items-center gap-2">
-                            {formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}
-                            {(() => {
-                              const status = validationStatus[String(resolution.patientId)];
-                              if (status?.isChecking) {
-                                return <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>;
-                              }
-                              if (status?.isValid === true) {
-                                return <i className="fas fa-check-circle text-green-500 text-xs"></i>;
-                              }
-                              if (status?.isValid === false) {
-                                return <i className="fas fa-times-circle text-red-500 text-xs"></i>;
-                              }
-                              if (status?.error) {
-                                return (
-                                  <div className="flex items-center gap-1">
-                                    <i className="fas fa-exclamation-triangle text-orange-500 text-xs"></i>
-                                    <button
-                                      onClick={() => handleRetryValidation(String(resolution.patientId))}
-                                      className="text-xs text-orange-600 hover:text-orange-800 underline"
-                                      title="إعادة المحاولة"
-                                    >
-                                      إعادة المحاولة
-                                    </button>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
+                            <span>{formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}</span>
+                            <div className="flex items-center gap-1">
+                              {(() => {
+                                const status = validationStatus[String(resolution.patientId)];
+                                if (status?.isChecking) {
+                                  return <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>;
+                                }
+                                if (status?.isValid === true) {
+                                  return <i className="fas fa-check-circle text-green-500 text-xs"></i>;
+                                }
+                                if (status?.isValid === false) {
+                                  return <i className="fas fa-times-circle text-red-500 text-xs"></i>;
+                                }
+                                if (status?.error) {
+                                  return <i className="fas fa-exclamation-triangle text-orange-500 text-xs"></i>;
+                                }
+                                return null;
+                              })()}
+                              {/* Always show retry button */}
+                              <button
+                                onClick={() => handleRetryValidation(String(resolution.patientId))}
+                                disabled={(() => {
+                                  const status = validationStatus[String(resolution.patientId)];
+                                  return status?.isChecking === true;
+                                })()}
+                                className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="إعادة التحقق من رقم الواتساب"
+                              >
+                                <i className="fas fa-redo text-xs"></i>
+                              </button>
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-2 text-gray-600 max-w-xs">{resolution.resolvedTemplate}</td>
@@ -727,7 +1267,7 @@ export default function MessagePreviewModal() {
             )}
           </button>
           <button
-            onClick={() => closeModal('messagePreview')}
+            onClick={handleCloseModal}
             className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors"
           >
             إلغاء
@@ -735,5 +1275,18 @@ export default function MessagePreviewModal() {
         </div>
       </div>
     </Modal>
+    
+    {/* Confirmation Dialog for Aborting Validation */}
+    <ConfirmationDialog
+      isOpen={showCloseConfirmation}
+      title="إلغاء عملية التحقق"
+      message="جاري التحقق من أرقام الواتساب حالياً. هل تريد إلغاء العملية وإغلاق النافذة؟"
+      confirmText="نعم، إلغاء وإغلاق"
+      cancelText="لا، متابعة التحقق"
+      isDangerous={true}
+      onConfirm={handleConfirmAbort}
+      onCancel={handleCancelAbort}
+    />
+    </>
   );
 }

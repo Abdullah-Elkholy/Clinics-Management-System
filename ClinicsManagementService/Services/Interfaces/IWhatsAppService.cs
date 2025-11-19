@@ -1,4 +1,5 @@
 using ClinicsManagementService.Models;
+using System.Threading;
 
 namespace ClinicsManagementService.Services.Interfaces
 {
@@ -7,7 +8,7 @@ namespace ClinicsManagementService.Services.Interfaces
         Task<bool> CheckInternetConnectivityAsync();
         Task<IBrowserSession> PrepareSessionAsync();
         Task<OperationResult<string?>> SendMessageWithIconTypeAsync(
-            string phoneNumber, string message, IBrowserSession browserSession);
+            string phoneNumber, string message, IBrowserSession browserSession, CancellationToken cancellationToken = default);
         Task<OperationResult<string?>> ExecuteWithRetryAsync(
             Func<Task<OperationResult<string?>>> taskFunc,
             int maxAttempts,
@@ -18,7 +19,7 @@ namespace ClinicsManagementService.Services.Interfaces
         Task DisposeBrowserSessionAsync(IBrowserSession browserSession);
 
         // New utility methods
-        Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession);
+        Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession, CancellationToken cancellationToken = default);
         Task<OperationResult<bool>> CheckInternetConnectivityDetailedAsync();
     }
 }

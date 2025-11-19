@@ -113,7 +113,7 @@ namespace Clinics.Infrastructure.Services
                         QuotasFreed = managedUsers.Count + 1 // +1 for moderator's quota
                     });
 
-                return (true, null);
+                return (true, (string?)null);
             });
         }
 
@@ -142,36 +142,52 @@ namespace Clinics.Infrastructure.Services
                 // Capture operation snapshot timestamp to ensure consistency across all transaction operations
                 var operationTimestamp = DateTime.UtcNow;
 
+                // IMPORTANT: Capture moderator.DeletedAt BEFORE restoring the moderator
+                // because RestoreAsync sets DeletedAt to null, and we need this value
+                // to identify related records that were deleted in the same cascade operation
+                var moderatorDeletedAt = moderator.DeletedAt;
+
                 var userRepo = _unitOfWork.Repository<User>();
                 var quotaRepo = _unitOfWork.Repository<Quota>();
 
                 // Restore the moderator with snapshot timestamp
                 await userRepo.RestoreAsync(moderator, restoredBy, operationTimestamp);
 
-                // Restore moderator's quota
+                // Restore moderator's quota that was deleted in the same cascade operation
+                // Use the captured moderatorDeletedAt value (not moderator.DeletedAt which is now null)
                 var moderatorQuota = await quotaRepo.GetByPredicateAsync(
                     q => q.ModeratorUserId == moderator.Id, 
                     includeDeleted: true);
-                foreach (var quota in moderatorQuota.Where(q => q.IsDeleted))
+                if (moderatorDeletedAt.HasValue)
                 {
-                    await quotaRepo.RestoreAsync(quota, restoredBy, operationTimestamp);
+                    foreach (var quota in moderatorQuota.Where(q => q.IsDeleted && q.DeletedAt.HasValue && q.DeletedAt >= moderatorDeletedAt.Value))
+                    {
+                        await quotaRepo.RestoreAsync(quota, restoredBy, operationTimestamp);
+                    }
                 }
 
-                // Restore managed users with snapshot timestamp
+                // Restore managed users that were deleted in the same cascade operation
+                // Use the captured moderatorDeletedAt value (not moderator.DeletedAt which is now null)
                 var managedUsers = await userRepo.GetByPredicateAsync(
                     u => u.ModeratorId == moderator.Id, 
                     includeDeleted: true);
-                foreach (var managedUser in managedUsers.Where(u => u.IsDeleted))
+                int restoredManagedUsersCount = 0;
+                if (moderatorDeletedAt.HasValue)
                 {
-                    await userRepo.RestoreAsync(managedUser, restoredBy, operationTimestamp);
-
-                    // Restore managed user's quota
-                    var managedUserQuota = await quotaRepo.GetByPredicateAsync(
-                        q => q.ModeratorUserId == managedUser.Id,
-                        includeDeleted: true);
-                    foreach (var quota in managedUserQuota.Where(q => q.IsDeleted))
+                    var usersToRestore = managedUsers.Where(u => u.IsDeleted && u.DeletedAt.HasValue && u.DeletedAt >= moderatorDeletedAt.Value).ToList();
+                    foreach (var managedUser in usersToRestore)
                     {
-                        await quotaRepo.RestoreAsync(quota, restoredBy, operationTimestamp);
+                        await userRepo.RestoreAsync(managedUser, restoredBy, operationTimestamp);
+                        restoredManagedUsersCount++;
+
+                        // Restore managed user's quota that was deleted in the same cascade operation
+                        var managedUserQuota = await quotaRepo.GetByPredicateAsync(
+                            q => q.ModeratorUserId == managedUser.Id,
+                            includeDeleted: true);
+                        foreach (var quota in managedUserQuota.Where(q => q.IsDeleted && q.DeletedAt.HasValue && q.DeletedAt >= moderatorDeletedAt.Value))
+                        {
+                            await quotaRepo.RestoreAsync(quota, restoredBy, operationTimestamp);
+                        }
                     }
                 }
 
@@ -185,7 +201,7 @@ namespace Clinics.Infrastructure.Services
                     moderator.Id,
                     restoredBy,
                     new { moderator.Id, moderator.Username, moderator.Role },
-                    $"Moderator and {managedUsers.Count(u => u.IsDeleted)} managed users restored");
+                    $"Moderator and {restoredManagedUsersCount} managed users restored");
 
                 return RestoreResult.SuccessResult();
             });

@@ -33,13 +33,14 @@ public class QuotaService
         if (user == null)
             throw new InvalidOperationException($"User with ID {userId} not found");
 
+        // IMPORTANT: Check if user is a moderator FIRST, before checking ModeratorId
+        // This ensures moderators always use their own ID, even if ModeratorId is incorrectly set
+        if (user.Role == "moderator")
+            return user.Id;
+
         // If user has ModeratorId set, use that (users share moderator's quota)
         if (user.ModeratorId.HasValue)
             return user.ModeratorId.Value;
-
-        // If user is moderator themselves, use their own ID
-        if (user.Role == "moderator")
-            return user.Id;
 
         // Admins don't have quotas
         throw new InvalidOperationException("User is not associated with any moderator");
@@ -57,13 +58,13 @@ public class QuotaService
         if (existingQuota != null)
             return existingQuota;
 
-        // Create new unlimited quota for this moderator
+        // Create new unlimited quota for this moderator (-1 = unlimited)
         var newQuota = new Quota
         {
             ModeratorUserId = moderatorId,
-            MessagesQuota = int.MaxValue,
+            MessagesQuota = -1, // -1 = unlimited
             ConsumedMessages = 0,
-            QueuesQuota = int.MaxValue,
+            QueuesQuota = -1, // -1 = unlimited
             ConsumedQueues = 0,
             UpdatedAt = DateTime.UtcNow
         };
@@ -92,22 +93,30 @@ public class QuotaService
 
     /// <summary>
     /// Check if user/moderator has enough quota for messages
+    /// Returns true if quota is unlimited (-1) or if remaining quota >= count
     /// </summary>
     public async Task<bool> HasMessagesQuotaAsync(int userId, int count)
     {
         var quota = await GetQuotaForUserAsync(userId);
         if (quota == null) return true; // No quota restriction (admins)
         
+        // Unlimited quota (-1) always has enough
+        if (quota.MessagesQuota == -1) return true;
+        
         return quota.RemainingMessages >= count;
     }
 
     /// <summary>
     /// Check if user/moderator has enough quota for queues
+    /// Returns true if quota is unlimited (-1) or if remaining quota > 0
     /// </summary>
     public async Task<bool> HasQueuesQuotaAsync(int userId)
     {
         var quota = await GetQuotaForUserAsync(userId);
         if (quota == null) return true; // No quota restriction (admins)
+        
+        // Unlimited quota (-1) always has enough
+        if (quota.QueuesQuota == -1) return true;
         
         return quota.RemainingQueues > 0;
     }
@@ -140,8 +149,8 @@ public class QuotaService
                 _context.Quotas.Add(quota);
             }
 
-            // Check if enough quota
-            if (quota.RemainingMessages < count)
+            // Check if enough quota (skip check if unlimited)
+            if (quota.MessagesQuota != -1 && quota.RemainingMessages < count)
                 return false;
 
             quota.ConsumedMessages += count;
@@ -182,8 +191,8 @@ public class QuotaService
                 _context.Quotas.Add(quota);
             }
 
-            // Check if enough quota
-            if (quota.RemainingQueues <= 0)
+            // Check if enough quota (skip check if unlimited)
+            if (quota.QueuesQuota != -1 && quota.RemainingQueues <= 0)
                 return false;
 
             quota.ConsumedQueues++;
@@ -223,7 +232,8 @@ public class QuotaService
             _context.Quotas.Add(quota);
         }
 
-        if (quota.RemainingQueues <= 0)
+        // Check if enough quota (skip check if unlimited)
+        if (quota.QueuesQuota != -1 && quota.RemainingQueues <= 0)
             return false;
 
         quota.ConsumedQueues++;
@@ -258,6 +268,7 @@ public class QuotaService
 
     /// <summary>
     /// Add quota to moderator
+    /// Note: Cannot add to unlimited quota (-1). If current quota is unlimited, setting a new limit will replace it.
     /// </summary>
     public async Task AddQuotaAsync(int moderatorId, int addMessages, int addQueues)
     {
@@ -278,8 +289,18 @@ public class QuotaService
         }
         else
         {
-            quota.MessagesQuota += addMessages;
-            quota.QueuesQuota += addQueues;
+            // Only add if current quota is not unlimited (-1)
+            // If unlimited, adding would be meaningless, so we skip it
+            if (quota.MessagesQuota != -1)
+            {
+                quota.MessagesQuota += addMessages;
+            }
+            
+            if (quota.QueuesQuota != -1)
+            {
+                quota.QueuesQuota += addQueues;
+            }
+            
             quota.UpdatedAt = DateTime.UtcNow;
         }
         

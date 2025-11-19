@@ -76,6 +76,7 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
 
   if (!response.ok) {
     const message = (typeof data === 'string' ? data : ((data as Record<string, unknown>)?.errors as Array<{message: string}>)?.[0]?.message || (data as Record<string, unknown>)?.message as string) || response.statusText || 'Login failed';
+    // Don't trigger global auth handler for login endpoint - these are expected errors
     throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
   }
 
@@ -112,7 +113,15 @@ export async function getCurrentUser(): Promise<User> {
 
   if (!response.ok) {
     const message = (typeof data === 'string' ? data : (data as Record<string, unknown>)?.message as string) || response.statusText || 'Failed to get current user';
-    throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
+    const error = new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
+    
+    // Handle auth errors globally
+    if (response.status === 401 || response.status === 403) {
+      const { handleApiError } = require('@/utils/apiInterceptor');
+      handleApiError({ statusCode: response.status, message });
+    }
+    
+    throw error;
   }
 
   return data as User;

@@ -13,7 +13,7 @@ namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
     public class TemplatesController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -46,8 +46,26 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var moderatorId = _userContext.GetModeratorId();
-                var isAdmin = _userContext.IsAdmin();
+                var userId = _userContext.GetUserId();
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == userId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
+
+                if (currentUser == null)
+                    return Unauthorized(new { message = "User not found" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+                
+                // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+                int? moderatorId = null;
+                if (currentUser.Role == "moderator")
+                {
+                    moderatorId = currentUser.Id;
+                }
+                else if (currentUser.Role == "user" && currentUser.ModeratorId.HasValue)
+                {
+                    moderatorId = currentUser.ModeratorId.Value;
+                }
 
                 IQueryable<MessageTemplate> query = _db.MessageTemplates
                     .Where(t => !t.IsDeleted) // Only show non-deleted templates (active = !IsDeleted)
@@ -58,12 +76,17 @@ namespace Clinics.Api.Controllers
                 {
                     // Verify moderator owns this queue
                     var queue = await _db.Queues.FindAsync(queueId.Value);
-                    if (queue == null)
+                    if (queue == null || queue.IsDeleted)
                         return NotFound(new { message = "Queue not found" });
 
                     // Check ownership
-                    if (!isAdmin && queue.ModeratorId != moderatorId)
-                        return Forbid();
+                    if (!isAdmin)
+                    {
+                        if (currentUser.Role == "moderator" && queue.ModeratorId != userId)
+                            return Forbid();
+                        if (currentUser.Role == "user" && queue.ModeratorId != moderatorId)
+                            return Forbid();
+                    }
 
                     query = query.Where(t => t.QueueId == queueId.Value);
                 }
@@ -135,12 +158,35 @@ namespace Clinics.Api.Controllers
                 if (template == null)
                     return NotFound(new { message = "Template not found" });
 
-                var moderatorId = _userContext.GetModeratorId();
-                var isAdmin = _userContext.IsAdmin();
+                var userId = _userContext.GetUserId();
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == userId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
+
+                if (currentUser == null)
+                    return Unauthorized(new { message = "User not found" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+
+                // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+                int? moderatorId = null;
+                if (currentUser.Role == "moderator")
+                {
+                    moderatorId = currentUser.Id;
+                }
+                else if (currentUser.Role == "user" && currentUser.ModeratorId.HasValue)
+                {
+                    moderatorId = currentUser.ModeratorId.Value;
+                }
 
                 // Verify ownership
-                if (!isAdmin && template.ModeratorId != moderatorId)
-                    return Forbid();
+                if (!isAdmin)
+                {
+                    if (currentUser.Role == "moderator" && template.ModeratorId != userId)
+                        return Forbid();
+                    if (currentUser.Role == "user" && template.ModeratorId != moderatorId)
+                        return Forbid();
+                }
 
                 // Load condition
                 await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
@@ -185,6 +231,7 @@ namespace Clinics.Api.Controllers
         /// Create a new template for a specific queue.
         /// </summary>
         [HttpPost]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<TemplateDto>> Create([FromBody] CreateTemplateRequest req)
         {
             // Use transaction to ensure template and condition are created atomically
@@ -353,6 +400,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPut("{id}")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<TemplateDto>> Update(int id, [FromBody] UpdateTemplateRequest req)
         {
             try
@@ -419,6 +467,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<IActionResult> Delete(int id)
         {
             try
@@ -462,6 +511,7 @@ namespace Clinics.Api.Controllers
         /// - Atomically removes DEFAULT operator from all other templates in the same queue.
         /// </summary>
         [HttpPut("{id}/default")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<TemplateDto>> SetAsDefault(int id)
         {
             try

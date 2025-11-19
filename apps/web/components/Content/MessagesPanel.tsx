@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQueue } from '@/contexts/QueueContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
@@ -65,11 +66,12 @@ const USAGE_GUIDE_ITEMS = [
 
 export default function MessagesPanel() {
   const { selectedQueueId: _selectedQueueId, queues, messageTemplates, messageConditions, refreshQueueData } = useQueue();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { addToast, setCurrentPanel, setSelectedQueueId } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
+  const router = useRouter();
 
   /**
    * Role-based rendering:
@@ -77,8 +79,40 @@ export default function MessagesPanel() {
    * - Moderator: Show existing queue-based layout
    * - User: Show moderator-centric view (will see their assigned moderator's content)
    */
+  // Authentication guard - ensure user has token and valid role
+  useEffect(() => {
+    // Check for token
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    
+    // If no token or not authenticated, redirect to login
+    if (!token || !isAuthenticated || !user) {
+      router.replace('/');
+      return;
+    }
+
+    // Ensure user has a valid role
+    if (!user.role || !Object.values(UserRole).includes(user.role)) {
+      router.replace('/');
+      return;
+    }
+  }, [isAuthenticated, user, router]);
+
   const isAdminView = user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin);
   const isUserView = user && user.role === UserRole.User;
+
+  // Show loading while checking authentication
+  if (!isAuthenticated || !user) {
+    return (
+      <PanelWrapper>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+            <p className="text-gray-600">جاري التحميل...</p>
+          </div>
+        </div>
+      </PanelWrapper>
+    );
+  }
 
   // State for search, filtering, sorting
   const [searchTerm, setSearchTerm] = useState('');
@@ -174,11 +208,31 @@ export default function MessagesPanel() {
   const checkConditionIntersections = (queueId: string) => {
     // Get all conditions from messageConditions array (authoritative source) or fall back to template.condition
     // This matches the logic in EditTemplateModal and the template rendering to ensure consistency
+    const queueIdStr = String(queueId);
     const queueConditions: MessageCondition[] = messageTemplates
-      .filter((t) => t.queueId === String(queueId))
+      .filter((t) => t.queueId === queueIdStr)
       .map((t) => {
         // Find condition from messageConditions array first, then fall back to template.condition
-        return messageConditions.find((c) => c.templateId === t.id) ?? t.condition ?? null;
+        // IMPORTANT: Filter by queueId first, then match by templateId (same as table rendering)
+        return messageConditions.find((c) => {
+          // First ensure condition belongs to this queue
+          if (String(c.queueId) !== queueIdStr) {
+            return false;
+          }
+          // Then match by templateId - handle both string and number comparisons (same as table rendering)
+          if (!c.templateId) return false;
+          const conditionTemplateId = String(c.templateId);
+          const templateIdStr = String(t.id);
+          // Primary: exact string match
+          if (conditionTemplateId === templateIdStr) return true;
+          // Fallback: numeric comparison if both are valid numbers
+          const conditionNum = Number(conditionTemplateId);
+          const templateNum = Number(templateIdStr);
+          if (!isNaN(conditionNum) && !isNaN(templateNum) && conditionNum === templateNum) {
+            return true;
+          }
+          return false;
+        }) ?? t.condition ?? null;
       })
       .filter((c): c is MessageCondition => 
         c !== null && 
@@ -294,10 +348,16 @@ export default function MessagesPanel() {
   const getRoleContextStats = useMemo(() => {
     // Use API data if available, fallback to default values
     const quotaData = userQuota || { limit: 0, used: 0 };
+    
     const baseStats = {
       total: quotaData.limit,
       used: quotaData.used,
-      remaining: quotaData.limit - quotaData.used,
+      remaining: quotaData.limit === -1 ? -1 : Math.max(0, quotaData.limit - quotaData.used),
+    };
+
+    // Format value for display: show "غير محدود" for -1
+    const formatQuotaValue = (value: number): string => {
+      return value === -1 ? 'غير محدود' : value.toLocaleString('ar-SA');
     };
 
     // Since we're in moderator view (admins are redirected to ModeratorMessagesOverview)
@@ -305,19 +365,19 @@ export default function MessagesPanel() {
     return [
       {
         label: 'حصتي من الرسائل',
-        value: baseStats.total.toString(),
+        value: formatQuotaValue(baseStats.total),
         color: 'blue' as const,
         info: 'عدد الرسائل المسموح لي بإرسالها'
       },
       {
         label: 'الرسائل المستخدمة',
-        value: baseStats.used.toString(),
+        value: baseStats.used.toLocaleString('ar-SA'),
         color: 'yellow' as const,
         info: 'من حصتي الشخصية'
       },
       {
         label: 'الرسائل المتبقية',
-        value: baseStats.remaining.toString(),
+        value: formatQuotaValue(baseStats.remaining),
         color: 'green' as const,
         info: ''
       },
@@ -506,8 +566,32 @@ export default function MessagesPanel() {
                                 .map((template) => {
                                 // Find condition from messageConditions array (authoritative source) or fall back to template.condition
                                 // This matches the logic in EditTemplateModal to ensure consistency
+                                // IMPORTANT: Filter by queueId first to ensure we only match conditions for this queue
+                                // Then match by templateId (handle both string and number formats for robustness)
                                 const condition = 
-                                  messageConditions.find((c) => c.templateId === template.id) ??
+                                  messageConditions.find((c) => {
+                                    // First ensure condition belongs to this queue
+                                    const conditionQueueId = String(c.queueId);
+                                    const templateQueueId = String(queue.id);
+                                    if (conditionQueueId !== templateQueueId) {
+                                      return false;
+                                    }
+                                    // Then match by templateId - handle both string and number comparisons
+                                    // Both template.id and c.templateId should be strings after adapter conversion,
+                                    // but add defensive check for number comparison as fallback
+                                    if (!c.templateId) return false;
+                                    const conditionTemplateId = String(c.templateId);
+                                    const templateIdStr = String(template.id);
+                                    // Primary: exact string match
+                                    if (conditionTemplateId === templateIdStr) return true;
+                                    // Fallback: numeric comparison if both are valid numbers
+                                    const conditionNum = Number(conditionTemplateId);
+                                    const templateNum = Number(templateIdStr);
+                                    if (!isNaN(conditionNum) && !isNaN(templateNum) && conditionNum === templateNum) {
+                                      return true;
+                                    }
+                                    return false;
+                                  }) ??
                                   template.condition ??
                                   null;
                                 

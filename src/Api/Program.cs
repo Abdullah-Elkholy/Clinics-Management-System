@@ -102,6 +102,33 @@ builder.Services.AddAuthentication(options =>
         // For tests, we can relax clock skew
         ClockSkew = TimeSpan.FromSeconds(30)
     };
+
+    // Validate that user is not soft-deleted on each request
+    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var dbContext = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+            
+            // Extract user ID from claims
+            var userIdClaim = context.Principal?.Claims.FirstOrDefault(c => 
+                c.Type == System.Security.Claims.ClaimTypes.NameIdentifier || 
+                c.Type == "sub" || 
+                c.Type == "userId");
+            
+            if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+            {
+                var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                
+                // Reject token if user is deleted or doesn't exist
+                if (user == null || user.IsDeleted)
+                {
+                    context.Fail("User account has been deleted");
+                    return;
+                }
+            }
+        }
+    };
 });
 
 builder.Services.AddCors(options =>

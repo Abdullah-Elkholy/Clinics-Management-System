@@ -6,6 +6,7 @@
 import logger from '@/utils/logger';
 import { UserRole } from '@/types/roles';
 import type { User } from '@/types/user';
+import { translateNetworkError } from '@/utils/errorUtils';
 
 export interface UserDto {
   id: number;
@@ -54,10 +55,21 @@ const extractErrorMessage = (payload: unknown, fallback = DEFAULT_ERROR_MESSAGE)
     return payload || fallback;
   }
 
-  if (payload && typeof payload === 'object' && 'message' in payload) {
-    const message = (payload as { message?: unknown }).message;
-    if (typeof message === 'string') {
-      return message || fallback;
+  if (payload && typeof payload === 'object') {
+    // Check for 'error' field first (commonly used in API responses)
+    if ('error' in payload) {
+      const error = (payload as { error?: unknown }).error;
+      if (typeof error === 'string' && error) {
+        return error;
+      }
+    }
+    
+    // Check for 'message' field (alternative response format)
+    if ('message' in payload) {
+      const message = (payload as { message?: unknown }).message;
+      if (typeof message === 'string' && message) {
+        return message;
+      }
     }
   }
 
@@ -102,38 +114,59 @@ async function fetchAPI<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-
-  // Handle non-JSON responses
-  let data: unknown;
-  const contentType = response.headers.get('content-type');
-  if (contentType?.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
-
-  if (!response.ok) {
-    const errorMessage = extractErrorMessage(data);
-
-    logger.error('❌ API Error:', {
-      url,
-      status: response.status,
-      statusText: response.statusText,
-      message: errorMessage,
-      responseData: data,
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
     });
 
+    // Handle non-JSON responses
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
+
+    if (!response.ok) {
+      const errorMessage = extractErrorMessage(data);
+
+      logger.error('❌ API Error:', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        message: errorMessage,
+        responseData: data,
+      });
+
+      throw {
+        message: errorMessage,
+        statusCode: response.status,
+      } as ApiError;
+    }
+
+    return data as T;
+  } catch (error) {
+    // Translate network errors to Arabic
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      // This is already an ApiError, re-throw it
+      throw error;
+    }
+    
+    // This is a network/fetch error, translate it
+    const translatedMessage = translateNetworkError(error);
+    logger.error('❌ Network Error:', {
+      url,
+      originalError: error,
+      translatedMessage,
+    });
+    
     throw {
-      message: errorMessage,
-      statusCode: response.status,
+      message: translatedMessage,
+      statusCode: 0, // Network errors don't have status codes
     } as ApiError;
   }
-
-  return data as T;
 }
 
 const emptyListResponse = <T>(pageNumber: number, pageSize: number): ListResponse<T> => ({

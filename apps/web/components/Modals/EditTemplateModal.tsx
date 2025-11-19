@@ -88,8 +88,16 @@ export default function EditTemplateModal() {
       setContent(freshTemplate.content || '');
 
       // Find condition from messageConditions array
+      // IMPORTANT: Filter by queueId first to ensure we only match conditions for this template's queue
       const templateConditionForTemplate =
-        messageConditions.find((condition) => condition.templateId === freshTemplate.id) ??
+        messageConditions.find((condition) => {
+          // First ensure condition belongs to this template's queue
+          if (freshTemplate.queueId && String(condition.queueId) !== String(freshTemplate.queueId)) {
+            return false;
+          }
+          // Then match by templateId using simple equality
+          return condition.templateId === freshTemplate.id;
+        }) ??
         freshTemplate.condition ??
         null;
 
@@ -119,8 +127,16 @@ export default function EditTemplateModal() {
   const templateCondition = useMemo(() => {
     if (!currentTemplate) return null;
     // Find condition from messageConditions array
+    // IMPORTANT: Filter by queueId first to ensure we only match conditions for this template's queue
     return (
-      messageConditions.find((condition) => condition.templateId === currentTemplate.id) ??
+      messageConditions.find((condition) => {
+        // First ensure condition belongs to this template's queue
+        if (currentTemplate.queueId && String(condition.queueId) !== String(currentTemplate.queueId)) {
+          return false;
+        }
+        // Then match by templateId using simple equality
+        return condition.templateId === currentTemplate.id;
+      }) ??
       currentTemplate.condition ??
       null
     );

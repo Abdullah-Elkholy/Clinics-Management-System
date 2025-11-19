@@ -2,6 +2,7 @@ using ClinicsManagementService.Models;
 using ClinicsManagementService.Services.Interfaces;
 using ClinicsManagementService.Services.Domain;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading;
 
 namespace ClinicsManagementService.Controllers
 {
@@ -13,6 +14,11 @@ namespace ClinicsManagementService.Controllers
             try
             {
                 return await operation();
+            }
+            catch (OperationCanceledException)
+            {
+                notifier?.Notify($"⚠️ Operation cancelled in {operationName}");
+                return controller.StatusCode(499, "Request was cancelled");
             }
             catch (Exception ex)
             {
@@ -43,13 +49,17 @@ namespace ClinicsManagementService.Controllers
         }
         // Send a single message to a single phone number.
         [HttpPost("send-single")]
-        public async Task<IActionResult> SendSingle([FromBody] PhoneMessageDto request)
+        public async Task<IActionResult> SendSingle(
+            [FromBody] PhoneMessageDto request,
+            CancellationToken cancellationToken = default)
         {
             return await ControllerAsyncHelper.TryExecuteAsync(async () =>
             {
+                // Check if request was already cancelled
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
                 var messageValidation = _validationService.ValidateMessage(request.Message);
-
 
                 if (!phoneValidation.IsValid)
                     return BadRequest(phoneValidation.ErrorMessage);
@@ -57,7 +67,11 @@ namespace ClinicsManagementService.Controllers
                 if (!messageValidation.IsValid)
                     return BadRequest(messageValidation.ErrorMessage);
 
-                var sent = await _messageSender.SendMessageAsync(request.Phone, request.Message);
+                // Check cancellation before sending
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var sent = await _messageSender.SendMessageAsync(request.Phone, request.Message, cancellationToken);
+                
                 if (sent)
                     return Ok("Message sent successfully.");
                 return StatusCode(502, "Message failed to be sent.");

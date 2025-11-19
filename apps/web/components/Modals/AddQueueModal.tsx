@@ -6,6 +6,7 @@ import { useUI } from '@/contexts/UIContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { validateName, ValidationError, hasErrors } from '@/utils/validation';
 import { getModeratorInfo } from '@/utils/moderatorAggregation';
+import { useUserManagement } from '@/hooks/useUserManagement';
 import { queuesApiClient } from '@/services/api/queuesApiClient';
 import logger from '@/utils/logger';
 import Modal from './Modal';
@@ -17,6 +18,7 @@ export default function AddQueueModal() {
   const { refreshQueues } = useQueue();
   const { addToast } = useUI();
   const { user: currentUser } = useAuth();
+  const [userManagementState] = useUserManagement();
   
   const [doctorName, setDoctorName] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
@@ -27,7 +29,8 @@ export default function AddQueueModal() {
   const isOpen = openModals.has('addQueue');
   const modalData = getModalData('addQueue');
   const targetModeratorId = modalData?.moderatorId;
-  const moderatorInfo = targetModeratorId ? getModeratorInfo(targetModeratorId) : null;
+  // Use real moderator data from backend instead of mock data
+  const moderatorInfo = targetModeratorId ? getModeratorInfo(targetModeratorId, userManagementState.moderators) : null;
 
   const validateField = (value: string) => {
     const error = validateName(value, 'اسم الطبيب');
