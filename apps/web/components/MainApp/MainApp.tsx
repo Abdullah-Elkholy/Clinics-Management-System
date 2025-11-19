@@ -3,6 +3,7 @@
 import React from 'react';
 import { useUI } from '../../contexts/UIContext';
 import { useQueue } from '../../contexts/QueueContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { ModalProvider } from '../../contexts/ModalContext';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import Header from '../Layout/Header';
@@ -20,8 +21,20 @@ import * as Modals from '../Modals';
 function MainAppContent() {
   const { selectedQueueId } = useQueue();
   const { currentPanel, isTransitioning } = useUI();
+  const { isNavigatingToHome, clearNavigationFlag } = useAuth();
   const { isCollapsed } = useSidebarCollapse();
   const [customSidebarWidth, setCustomSidebarWidth] = React.useState<number | null>(null);
+
+  // Clear navigation flag once MainApp renders (home page is ready)
+  React.useEffect(() => {
+    if (isNavigatingToHome) {
+      // Give a brief moment for rendering to complete, then clear flag
+      const timer = setTimeout(() => {
+        clearNavigationFlag();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isNavigatingToHome, clearNavigationFlag]);
 
   // Listen for sidebar custom width changes and respond to collapse state
   React.useEffect(() => {
@@ -100,7 +113,7 @@ function MainAppContent() {
               <OngoingTasksPanel />
             ) : currentPanel === 'failed' ? (
               <FailedTasksPanel />
-            ) : currentPanel === 'done' ? (
+            ) : currentPanel === 'completed' ? (
               <CompletedTasksPanel />
             ) : (
               <QueueDashboard />

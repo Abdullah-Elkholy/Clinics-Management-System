@@ -62,18 +62,21 @@ namespace Clinics.Api.DTOs
         
         /// <summary>
         /// Maximum messages quota.
+        /// Uses long to support large values up to JavaScript's MAX_SAFE_INTEGER (9007199254740991).
         /// </summary>
-        public int Limit { get; set; }
+        public long Limit { get; set; }
         
         /// <summary>
         /// Messages consumed so far.
+        /// Uses long to match the database schema and support large values.
         /// </summary>
-        public int Used { get; set; }
+        public long Used { get; set; }
         
         /// <summary>
         /// Remaining messages (calculated). Returns -1 if Limit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int Remaining => Limit == -1 ? -1 : Math.Max(0, Limit - Used);
+        public long Remaining => Limit == -1 ? -1 : Limit - Used;
         
         /// <summary>
         /// Percentage of messages quota consumed (0-100). Returns 0 if Limit is -1 (unlimited).
@@ -97,8 +100,9 @@ namespace Clinics.Api.DTOs
         
         /// <summary>
         /// Remaining queues (calculated). Returns -1 if QueuesLimit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int QueuesRemaining => QueuesLimit == -1 ? -1 : Math.Max(0, QueuesLimit - QueuesUsed);
+        public int QueuesRemaining => QueuesLimit == -1 ? -1 : QueuesLimit - QueuesUsed;
         
         public DateTime UpdatedAt { get; set; }
     }
@@ -244,18 +248,21 @@ namespace Clinics.Api.DTOs
     {
         /// <summary>
         /// Maximum messages this moderator can send.
+        /// Uses long to support large values up to JavaScript's MAX_SAFE_INTEGER (9007199254740991).
         /// </summary>
-        public int Limit { get; set; }
+        public long Limit { get; set; }
 
         /// <summary>
         /// Messages consumed so far.
+        /// Uses long to match the database schema and support large values.
         /// </summary>
-        public int Used { get; set; }
+        public long Used { get; set; }
 
         /// <summary>
         /// Remaining messages. Returns -1 if Limit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int Remaining => Limit == -1 ? -1 : Math.Max(0, Limit - Used);
+        public long Remaining => Limit == -1 ? -1 : Limit - Used;
 
         /// <summary>
         /// Percentage of quota consumed (0-100). Returns 0 if Limit is -1 (unlimited).
@@ -279,7 +286,8 @@ namespace Clinics.Api.DTOs
 
         /// <summary>
         /// Remaining queues. Returns -1 if QueuesLimit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int QueuesRemaining => QueuesLimit == -1 ? -1 : Math.Max(0, QueuesLimit - QueuesUsed);
+        public int QueuesRemaining => QueuesLimit == -1 ? -1 : QueuesLimit - QueuesUsed;
     }
 }

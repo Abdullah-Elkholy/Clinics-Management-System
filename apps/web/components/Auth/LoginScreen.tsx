@@ -13,7 +13,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isNavigatingToHome } = useAuth();
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -158,10 +158,10 @@ export default function LoginScreen() {
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || isNavigatingToHome}
             className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
+            {isLoading || isNavigatingToHome ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
           </button>
         </form>
 
@@ -174,7 +174,7 @@ export default function LoginScreen() {
                 key={key}
                 type="button"
                 onClick={() => handleQuickLogin(cred.username, cred.password)}
-                disabled={isLoading}
+                disabled={isLoading || isNavigatingToHome}
                 className="w-full p-2 text-left bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center justify-between">

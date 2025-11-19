@@ -41,12 +41,14 @@ interface QueueContextType {
   addMessageTemplate: (template: Omit<MessageTemplate, 'id'>) => void;
   updateMessageTemplate: (id: string, template: Partial<MessageTemplate>) => void;
   deleteMessageTemplate: (id: string) => void;
+  setMessageTemplates: React.Dispatch<React.SetStateAction<MessageTemplate[]>>;
   selectedMessageTemplateId: string;
   setSelectedMessageTemplateId: (id: string) => void;
   messageConditions: MessageCondition[];
   addMessageCondition: (condition: Omit<MessageCondition, 'id'>) => void;
   removeMessageCondition: (id: string) => void;
   updateMessageCondition: (id: string, condition: Partial<MessageCondition>) => void;
+  setMessageConditions: React.Dispatch<React.SetStateAction<MessageCondition[]>>;
   refreshQueueData: (queueId: string) => Promise<void>;  // NEW: Reload templates and conditions from backend
   moderators: ModeratorWithStats[];
   isLoadingTemplates: boolean;
@@ -798,12 +800,14 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addMessageTemplate,
         updateMessageTemplate,
         deleteMessageTemplate,
+        setMessageTemplates,
         selectedMessageTemplateId,
         setSelectedMessageTemplateId,
         messageConditions,
         addMessageCondition,
         removeMessageCondition,
         updateMessageCondition,
+        setMessageConditions,
         refreshQueueData,  // NEW
         moderators,
         isLoadingTemplates,

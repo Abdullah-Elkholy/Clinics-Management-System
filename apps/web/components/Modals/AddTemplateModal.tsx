@@ -26,8 +26,6 @@ export default function AddTemplateModal() {
   const { addToast } = useUI();
   const {
     selectedQueueId,
-    addMessageTemplate,
-    addMessageCondition,
     messageTemplates,
     messageConditions,
     refreshQueueData,
@@ -200,9 +198,13 @@ export default function AddTemplateModal() {
     if (validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH)) {
       newErrors.content = validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH) || '';
     }
+    // Enforce backend minimum length (10 chars) explicitly to prevent 400
+    if (content.trim().length < 10) {
+      newErrors.content = 'المحتوى يجب أن يكون 10 أحرف على الأقل';
+    }
 
-    // Validate condition if operator is selected
-    if (selectedOperator) {
+    // Validate condition if operator is selected (but not DEFAULT)
+    if (selectedOperator && selectedOperator !== 'DEFAULT') {
       if (selectedOperator === 'RANGE') {
         if (!selectedMinValue || selectedMinValue <= 0) {
           newErrors.minValue = 'الحد الأدنى مطلوب ويجب أن يكون > 0';
@@ -255,8 +257,8 @@ export default function AddTemplateModal() {
       // Determine the operator: if no operator selected, use UNCONDITIONED
       const conditionOperator = selectedOperator || 'UNCONDITIONED';
       
-      // Create the template with condition in one call (backend handles one-to-one relationship)
-      const createdTemplate = await messageApiClient.createTemplate({
+      // Prepare request payload
+      const requestPayload = {
         title,
         content,
         queueId: queueIdNum,
@@ -266,54 +268,23 @@ export default function AddTemplateModal() {
           : undefined,
         conditionMinValue: conditionOperator === 'RANGE' ? selectedMinValue : undefined,
         conditionMaxValue: conditionOperator === 'RANGE' ? selectedMaxValue : undefined,
-      });
+      };
+      
+      // Debug: log the request payload
+      logger.debug('CreateTemplate Request Payload:', requestPayload);
+      
+      // Create the template with condition in one call (backend handles one-to-one relationship)
+      const createdTemplate = await messageApiClient.createTemplate(requestPayload);
 
-      // If DEFAULT operator was selected, set the template as default
-      // (Backend creates the condition, but we need to call setTemplateAsDefault for DEFAULT)
-      if (conditionOperator === 'DEFAULT') {
-        await messageApiClient.setTemplateAsDefault(createdTemplate.id);
+      // Refetch queue data to get the latest state from backend (includes new template + condition)
+      if (typeof refreshQueueData === 'function' && queueId) {
+        await refreshQueueData(String(queueId));
       }
 
       addToast('تم إضافة قالب الرسالة والشرط بنجاح', 'success');
       
-      // Always refetch full data to reflect server truth
-      // Wait for refetch to complete before closing modal and dispatching event
-      if (typeof refreshQueueData === 'function' && queueId) {
-        await refreshQueueData(String(queueId));
-      } else {
-        // Fallback: update via context helper (in tests, this is usually a mock and won't hit API)
-        // Note: createdBy and createdAt will be set by backend, but we provide defaults for test mocks
-        await addMessageTemplate({
-          title,
-          content,
-          queueId: String(queueId),
-          variables: [],
-          createdBy: '', // Will be populated from backend response after API call
-          createdAt: new Date(), // Will be populated from backend response after API call
-        });
-
-        if (queueId) {
-          const queueIdStr = String(queueId);
-          const priority =
-            messageConditions.filter((condition) => condition.queueId === queueIdStr).length + 1;
-
-          await addMessageCondition({
-            queueId: queueIdStr,
-            templateId: String(createdTemplate.id),
-            name: `${title} شرط`,
-            priority,
-            enabled: true,
-            operator: conditionOperator,
-            value:
-              conditionOperator === 'RANGE' || conditionOperator === 'DEFAULT'
-                ? undefined
-                : selectedValue,
-            minValue: conditionOperator === 'RANGE' ? selectedMinValue : undefined,
-            maxValue: conditionOperator === 'RANGE' ? selectedMaxValue : undefined,
-            template: content,
-          });
-        }
-      }
+      // Dispatch event immediately (refreshQueueData has completed)
+      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
       
       // Clear form fields after successful creation
       setTitle('');
@@ -325,24 +296,38 @@ export default function AddTemplateModal() {
       setSelectedMaxValue(undefined);
       
       closeModal('addTemplate');
-      
-      // Trigger a custom event to notify other components to refetch
-      // Dispatch after a small delay to ensure refreshQueueData has updated the state
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-      }, 100);
     } catch (error) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : (error && typeof error === 'object' && 'message' in error)
-          ? String((error as { message?: unknown }).message || 'Unknown error')
-          : 'Unknown error';
+      // Attempt to extract structured validation errors (problem+json)
+      let userMessage = 'حدث خطأ أثناء إضافة القالب';
+      let errorDetails: unknown = null;
+      let statusCode: unknown = undefined;
+
+      if (error && typeof error === 'object') {
+        if ('statusCode' in error) statusCode = (error as any).statusCode;
+        if ('message' in error) errorDetails = (error as any).message;
+        // If message contains problem+json payload, try parse
+        if (typeof errorDetails === 'string') {
+          try {
+            const parsed = JSON.parse(errorDetails);
+            if (parsed && parsed.errors) {
+              const contentErrors = parsed.errors.Content || parsed.errors.content;
+              if (Array.isArray(contentErrors) && contentErrors.length > 0) {
+                userMessage = contentErrors[0];
+              }
+            }
+          } catch (_) {
+            // ignore JSON parse fail
+          }
+        }
+      }
+
       logger.error('Failed to add template:', {
-        error: errorMessage,
-        statusCode: (error && typeof error === 'object' && 'statusCode' in error) ? (error as { statusCode?: unknown }).statusCode : undefined,
+        statusCode,
+        errorDetails,
         fullError: error,
       });
-      addToast('حدث خطأ أثناء إضافة القالب', 'error');
+
+      addToast(userMessage, 'error');
     } finally {
       setIsLoading(false);
     }

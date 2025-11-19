@@ -62,7 +62,7 @@ export default function ModeratorQuotaDisplay({
 
   const calculateRemaining = (limit: number, used: number): number => {
     if (limit === -1) return -1; // Unlimited
-    return Math.max(0, limit - used);
+    return limit - used;
   };
 
   const renderQuotaBreakdown = (

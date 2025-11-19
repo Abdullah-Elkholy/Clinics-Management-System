@@ -27,8 +27,8 @@ export function useAuthGuard() {
       return;
     }
 
-    // Skip check for root path during initial load
-    if (pathname === '/' && lastPathRef.current === null) {
+    // Skip check for root path and login during initial load
+    if ((pathname === '/' || pathname === '/login') && lastPathRef.current === null) {
       lastPathRef.current = pathname;
       return;
     }
@@ -50,17 +50,17 @@ export function useAuthGuard() {
     }
     
     // If no token and trying to access protected route, redirect to login immediately
-    if (!token && pathname !== '/') {
+    if (!token && pathname !== '/login' && pathname !== '/') {
       logger.info('[AuthGuard] No token found, redirecting to login from:', pathname);
       // Use window.location for immediate redirect to ensure clean state
-      window.location.href = '/';
+      window.location.href = '/login';
       isCheckingRef.current = false;
       return;
     }
     
     // If token exists but user is not authenticated, wait for auth validation
     // But if we're on a protected route and not authenticated after a delay, redirect
-    if (token && !isAuthenticated && pathname !== '/') {
+    if (token && !isAuthenticated && pathname !== '/login' && pathname !== '/') {
       // AuthContext will handle validation on mount
       // Just wait a bit for it to complete, then check again
       const timeout = setTimeout(() => {
@@ -74,8 +74,14 @@ export function useAuthGuard() {
       return () => clearTimeout(timeout);
     }
 
-    // If authenticated but on root, allow (will show MainApp)
-    // If not authenticated and on root, allow (will show LoginScreen)
+    // If authenticated but on login, allow (middleware will redirect to /home)
+    // If not authenticated and on login, allow (user needs to log in)
+    if (pathname === '/login') {
+      isCheckingRef.current = false;
+      return;
+    }
+
+    // If on root, allow (component will redirect based on auth state)
     if (pathname === '/') {
       isCheckingRef.current = false;
       return;

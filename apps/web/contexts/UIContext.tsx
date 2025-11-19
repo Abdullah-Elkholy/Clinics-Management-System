@@ -8,8 +8,8 @@ interface UIContextType {
   toasts: Toast[];
   addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => void;
   removeToast: (id: string) => void;
-  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done';
-  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done') => void;
+  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed';
+  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed') => void;
   selectedQueueId: string | null;
   setSelectedQueueId: (id: string | null) => void;
   isTransitioning: boolean;
@@ -21,11 +21,29 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const pathname = usePathname();
   const router = useRouter();
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done'>('welcome');
+  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed'>('welcome');
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const toastCounterRef = React.useRef(0);
   const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const navigationTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Restore selectedQueueId from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('selectedQueueId');
+    if (stored) {
+      setSelectedQueueId(stored);
+    }
+  }, []);
+
+  // Persist selectedQueueId to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedQueueId) {
+      localStorage.setItem('selectedQueueId', selectedQueueId);
+    } else {
+      localStorage.removeItem('selectedQueueId');
+    }
+  }, [selectedQueueId]);
 
   // Sync state with URL on mount and pathname changes
   // Use ref to prevent infinite loops when state updates trigger URL changes
@@ -48,16 +66,25 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       clearTimeout(transitionTimeoutRef.current);
     }
 
-    // Start transition - show loading when URL changes
-    setIsTransitioning(true);
-
-    // Parse URL to determine panel and queue
+    // Parse URL to determine panel - no loading transition needed
+    // New route structure: /home, /messages, /management, /queues/{dashboard|ongoing|failed|completed}
     // Use functional updates to avoid stale closure issues
-    if (pathname === '/messages') {
+    if (pathname === '/home') {
+      setCurrentPanel(prev => {
+        if (prev !== 'welcome') return 'welcome';
+        return prev;
+      });
+      // Clear queue selection when on home
+      setSelectedQueueId(prev => {
+        if (prev !== null) return null;
+        return prev;
+      });
+    } else if (pathname === '/messages') {
       setCurrentPanel(prev => {
         if (prev !== 'messages') return 'messages';
         return prev;
       });
+      // Clear queue selection
       setSelectedQueueId(prev => {
         if (prev !== null) return null;
         return prev;
@@ -67,53 +94,46 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         if (prev !== 'management') return 'management';
         return prev;
       });
+      // Clear queue selection
       setSelectedQueueId(prev => {
         if (prev !== null) return null;
         return prev;
       });
     } else if (pathname.startsWith('/queues/')) {
-      const match = pathname.match(/^\/queues\/(\d+)(?:\/(ongoing|failed|done))?$/);
+      // Queue routes: /queues/dashboard, /queues/ongoing, /queues/failed, /queues/completed
+      const match = pathname.match(/^\/queues\/(dashboard|ongoing|failed|completed)$/);
       if (match) {
-        const queueId = match[1];
-        const subPanel = match[2];
-        let targetPanel: 'welcome' | 'ongoing' | 'failed' | 'done' = 'welcome';
-        if (subPanel === 'ongoing') {
+        const subPanel = match[1];
+        let targetPanel: 'welcome' | 'ongoing' | 'failed' | 'completed' = 'welcome';
+        if (subPanel === 'dashboard') {
+          targetPanel = 'welcome';
+        } else if (subPanel === 'ongoing') {
           targetPanel = 'ongoing';
         } else if (subPanel === 'failed') {
           targetPanel = 'failed';
-        } else if (subPanel === 'done') {
-          targetPanel = 'done';
+        } else if (subPanel === 'completed') {
+          targetPanel = 'completed';
         }
         
-        setSelectedQueueId(prev => {
-          if (prev !== queueId) return queueId;
-          return prev;
-        });
         setCurrentPanel(prev => {
           if (prev !== targetPanel) return targetPanel;
           return prev;
         });
+        
+        // Queue routes require a selected queue - restore from localStorage if needed
+        if (!selectedQueueId) {
+          const stored = localStorage.getItem('selectedQueueId');
+          if (stored) {
+            setSelectedQueueId(stored);
+          }
+        }
       }
-    } else if (pathname === '/') {
-      setCurrentPanel(prev => {
-        if (prev !== 'welcome') return 'welcome';
-        return prev;
-      });
-      setSelectedQueueId(prev => {
-        if (prev !== null) return null;
-        return prev;
-      });
     }
     
-    // End transition after a brief delay to allow panel to render
-    // Reduced timeout for faster response
+    // Reset flag after URL sync completes
     transitionTimeoutRef.current = setTimeout(() => {
-      setIsTransitioning(false);
-      // Reset flag after navigation completes
-      setTimeout(() => {
-        isUpdatingFromUrl.current = false;
-      }, 50);
-    }, 150);
+      isUpdatingFromUrl.current = false;
+    }, 50);
 
     return () => {
       if (transitionTimeoutRef.current) {
@@ -137,38 +157,39 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   // Enhanced setCurrentPanel that updates URL
-  const handleSetCurrentPanel = useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'done') => {
+  const handleSetCurrentPanel = useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed') => {
     // Authentication check for management panel
     if (panel === 'management') {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       if (!token) {
         // Don't allow navigation to management without authentication
-        // The caller should handle this, but we add a safety check here
         return;
       }
     }
     
     // Panels that don't require a queue - clear queue selection first
-    const panelsWithoutQueue = ['messages', 'management', 'welcome'];
+    // Note: 'welcome' panel represents queue dashboard, so it DOES require a queue
+    const panelsWithoutQueue = ['messages', 'management'];
     const shouldClearQueue = panelsWithoutQueue.includes(panel) && selectedQueueId !== null;
     
     // Calculate target path first to check if URL needs updating
-    let targetPath = '/';
+    // New route structure: /home, /messages, /management, /queues/{dashboard|ongoing|failed|completed}
+    let targetPath = '/home';
     if (panel === 'messages') {
       targetPath = '/messages';
     } else if (panel === 'management') {
       targetPath = '/management';
-    } else if (selectedQueueId && !shouldClearQueue) {
-      // If we have a queue selected and we're not clearing it, navigate to appropriate queue route
-      if (panel === 'ongoing') {
-        targetPath = `/queues/${selectedQueueId}/ongoing`;
-      } else if (panel === 'failed') {
-        targetPath = `/queues/${selectedQueueId}/failed`;
-      } else if (panel === 'done') {
-        targetPath = `/queues/${selectedQueueId}/done`;
-      } else {
-        targetPath = `/queues/${selectedQueueId}`;
-      }
+    } else if (panel === 'welcome') {
+      // Welcome panel always navigates to /queues/dashboard
+      targetPath = '/queues/dashboard';
+    } else if (panel === 'ongoing') {
+      targetPath = '/queues/ongoing';
+    } else if (panel === 'failed') {
+      targetPath = '/queues/failed';
+    } else if (panel === 'completed') {
+      targetPath = '/queues/completed';
+    } else {
+      targetPath = '/home';
     }
     
     // Prevent updates only if both panel state AND URL are already at target AND queue state is correct
@@ -182,59 +203,72 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       clearTimeout(transitionTimeoutRef.current);
     }
     
-    // Start transition - show loading
+    // Mark that we're about to navigate - prevent URL sync effect from running
+    lastPathnameRef.current = targetPath;
+    isUpdatingFromUrl.current = true;
+    isNavigatingProgrammatically.current = true;
+    
+    // Show loading during navigation
     setIsTransitioning(true);
-    isUpdatingFromUrl.current = true; // Prevent URL sync from triggering state update
     
     // Clear queue selection if needed (for panels that don't use queues)
-    // Use the state setter directly to avoid triggering handleSetSelectedQueueId which would navigate to '/'
-    // We'll handle the URL navigation ourselves based on the target panel
     if (shouldClearQueue) {
-      // Update state directly without triggering the handler
       setSelectedQueueId(prev => {
         if (prev !== null) return null;
         return prev;
       });
     }
     
-    // Update panel state (only if different)
+    // Update panel state immediately (only if different)
     if (currentPanel !== panel) {
       setCurrentPanel(panel);
     }
     
-    // Always update URL if it doesn't match target path
-    // This ensures URL stays in sync even if panel state was already correct
+    // Navigate to target path if needed
     if (pathname !== targetPath) {
-      // Mark that we're navigating programmatically to prevent URL sync from interfering
-      isNavigatingProgrammatically.current = true;
       router.push(targetPath);
-      
-      // Reduced timeout for faster navigation - Next.js router is usually fast
-      transitionTimeoutRef.current = setTimeout(() => {
-        setIsTransitioning(false);
-        // Reset flags after navigation completes
-        setTimeout(() => {
-          isUpdatingFromUrl.current = false;
-          isNavigatingProgrammatically.current = false;
-        }, 50);
-      }, 150);
-    } else {
-      // URL already matches, just end transition quickly
-      transitionTimeoutRef.current = setTimeout(() => {
-        setIsTransitioning(false);
-        isUpdatingFromUrl.current = false;
-        isNavigatingProgrammatically.current = false;
-      }, 100);
     }
+    
+    // Clear any existing navigation timeout
+    if (navigationTimeoutRef.current) {
+      clearTimeout(navigationTimeoutRef.current);
+    }
+    
+    // Hide loading after navigation completes and component renders
+    navigationTimeoutRef.current = setTimeout(() => {
+      setIsTransitioning(false);
+    }, 400);
+    
+    // Reset flags after a longer delay to ensure URL has propagated
+    transitionTimeoutRef.current = setTimeout(() => {
+      isUpdatingFromUrl.current = false;
+      isNavigatingProgrammatically.current = false;
+    }, 200);
   }, [router, selectedQueueId, currentPanel, pathname]);
 
   // Enhanced setSelectedQueueId that updates URL
   const handleSetSelectedQueueId = useCallback((id: string | null) => {
-    // Calculate target path first
-    const targetPath = id ? `/queues/${id}` : '/';
+    // Calculate target path based on current panel and new queue selection
+    let targetPath = '/home';
+    
+    if (id !== null) {
+      // Queue selected - determine which queue panel to show based on current panel
+      if (currentPanel === 'ongoing') {
+        targetPath = '/queues/ongoing';
+      } else if (currentPanel === 'failed') {
+        targetPath = '/queues/failed';
+      } else if (currentPanel === 'completed') {
+        targetPath = '/queues/completed';
+      } else {
+        // Default to dashboard for queue
+        targetPath = '/queues/dashboard';
+      }
+    } else {
+      // No queue selected - go to home
+      targetPath = '/home';
+    }
     
     // Prevent updates only if both state AND URL are already at target
-    // This ensures URL always stays in sync with queue selection
     if (selectedQueueId === id && pathname === targetPath) {
       return;
     }
@@ -244,47 +278,52 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       clearTimeout(transitionTimeoutRef.current);
     }
     
-    // Start transition - show loading
-    setIsTransitioning(true);
-    isUpdatingFromUrl.current = true; // Prevent URL sync from triggering state update
+    // Mark that we're about to navigate - prevent URL sync effect from running
+    lastPathnameRef.current = targetPath;
+    isUpdatingFromUrl.current = true;
+    isNavigatingProgrammatically.current = true;
     
-    // When selecting a queue, also set panel to 'welcome' (queue dashboard)
-    // This prevents conflicts and ensures correct panel state
+    // Show loading during queue selection navigation
+    setIsTransitioning(true);
+    
+    // When selecting a queue, also set panel to 'welcome' (queue dashboard) if not already on a queue panel
     if (id !== null) {
-      // Set panel to 'welcome' for queue dashboard view
-      if (currentPanel !== 'welcome' && !pathname.startsWith('/queues/')) {
+      const queuePanels = ['welcome', 'ongoing', 'failed', 'completed'];
+      if (!queuePanels.includes(currentPanel)) {
+        setCurrentPanel('welcome');
+      }
+    } else {
+      // Clearing queue selection - return to welcome home panel
+      if (currentPanel !== 'messages' && currentPanel !== 'management') {
         setCurrentPanel('welcome');
       }
     }
     
-    // Update state (only if different)
+    // Update state immediately (only if different)
     if (selectedQueueId !== id) {
       setSelectedQueueId(id);
     }
     
-    // Always update URL if it doesn't match target path
-    // This ensures URL stays in sync even if queue selection was already correct
+    // Navigate to target path if needed
     if (pathname !== targetPath) {
-      // Mark that we're navigating programmatically to prevent URL sync from interfering
-      isNavigatingProgrammatically.current = true;
       router.push(targetPath);
-      
-      // Reduced timeout for faster navigation
-      transitionTimeoutRef.current = setTimeout(() => {
-        setIsTransitioning(false);
-        setTimeout(() => {
-          isUpdatingFromUrl.current = false;
-          isNavigatingProgrammatically.current = false;
-        }, 50);
-      }, 150);
-    } else {
-      // URL already matches, just end transition quickly
-      transitionTimeoutRef.current = setTimeout(() => {
-        setIsTransitioning(false);
-        isUpdatingFromUrl.current = false;
-        isNavigatingProgrammatically.current = false;
-      }, 100);
     }
+    
+    // Clear any existing navigation timeout
+    if (navigationTimeoutRef.current) {
+      clearTimeout(navigationTimeoutRef.current);
+    }
+    
+    // Hide loading after navigation completes
+    navigationTimeoutRef.current = setTimeout(() => {
+      setIsTransitioning(false);
+    }, 400);
+    
+    // Reset flags after a longer delay to ensure URL has propagated
+    transitionTimeoutRef.current = setTimeout(() => {
+      isUpdatingFromUrl.current = false;
+      isNavigatingProgrammatically.current = false;
+    }, 200);
   }, [router, selectedQueueId, pathname, currentPanel]);
 
   // Cleanup transition timeout on unmount
@@ -292,6 +331,9 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     return () => {
       if (transitionTimeoutRef.current) {
         clearTimeout(transitionTimeoutRef.current);
+      }
+      if (navigationTimeoutRef.current) {
+        clearTimeout(navigationTimeoutRef.current);
       }
     };
   }, []);

@@ -1,10 +1,11 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useUI } from './UIContext';
 import type { User, AuthState } from '../types';
 import { UserRole } from '@/types/roles';
-import { login as loginApi, logout as logoutApi, getCurrentUser } from '@/services/api/authApiClient';
+import { login as loginApi, logout as logoutApi, getCurrentUser, refreshAccessToken } from '@/services/api/authApiClient';
 import logger from '@/utils/logger';
 import { registerAuthErrorHandler, unregisterAuthErrorHandler } from '@/utils/apiInterceptor';
 
@@ -16,17 +17,41 @@ interface AuthContextType extends AuthState {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  clearNavigationFlag: () => void;
+  hasToken: boolean;
+  isValidating: boolean;
+  isNavigatingToHome: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+/**
+ * Helper function to set auth presence cookie
+ * Used by middleware for server-side route protection
+ */
+function setAuthCookie(isAuthenticated: boolean) {
+  if (typeof document === 'undefined') return;
+  
+  if (isAuthenticated) {
+    // Set cookie with SameSite=Lax for navigation, expires in 7 days
+    document.cookie = 'auth=1; Path=/; SameSite=Lax; Max-Age=604800';
+  } else {
+    // Clear cookie by setting Max-Age=0
+    document.cookie = 'auth=; Path=/; SameSite=Lax; Max-Age=0';
+  }
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     isAuthenticated: false,
   });
+  const [isValidating, setIsValidating] = useState(true);
+  const [hasToken, setHasToken] = useState(false);
+  const [isNavigatingToHome, setIsNavigatingToHome] = useState(false);
 
   const { addToast } = useUI();
+  const router = useRouter();
 
   // Refs for managing retry/backoff and preemption
   const attemptIdRef = useRef(0); // Incremented on each new login attempt
@@ -40,11 +65,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isInitializingRef.current = true;
 
     const restoreAuth = async () => {
+      setIsValidating(true);
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        setHasToken(!!token);
+        
         if (!token) {
-          // No token, user is not authenticated
-          return;
+          // No access token - attempt refresh using HttpOnly cookie (if available)
+          try {
+            const refreshed = await refreshAccessToken();
+            if (refreshed?.accessToken) {
+              localStorage.setItem('token', refreshed.accessToken);
+              setHasToken(true);
+            } else {
+              // Still no token, user is not authenticated
+              setAuthCookie(false);
+              setIsValidating(false);
+              return;
+            }
+          } catch {
+            setAuthCookie(false);
+            setIsValidating(false);
+            return;
+          }
         }
 
         // Verify token is valid by fetching current user
@@ -64,12 +107,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               },
               isAuthenticated: true,
             });
+            setAuthCookie(true);
             logger.info('[Auth] Restored authentication state from localStorage');
           }
         } catch (error) {
           // Token is invalid or expired, clear it
           logger.warn('[Auth] Token validation failed, clearing localStorage');
           localStorage.removeItem('token');
+          localStorage.removeItem('selectedQueueId');
+          setHasToken(false);
+          setAuthCookie(false);
           setAuthState({
             user: null,
             isAuthenticated: false,
@@ -77,11 +124,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (error) {
         logger.error('[Auth] Failed to restore authentication:', error);
+        setAuthCookie(false);
         // On error, assume not authenticated
         setAuthState({
           user: null,
           isAuthenticated: false,
         });
+      } finally {
+        setIsValidating(false);
       }
     };
 
@@ -240,6 +290,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 user,
                 isAuthenticated: true,
               });
+              setHasToken(true);
+              setAuthCookie(true);
               
               // Clean URL of any sensitive parameters after successful login
               if (typeof window !== 'undefined') {
@@ -251,6 +303,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   window.history.replaceState({}, '', url.pathname + (url.search || ''));
                 }
               }
+              
+              // Redirect to home after successful login
+              setIsNavigatingToHome(true);
+              router.replace('/home');
               
               return { success: true };
             } catch (e) {
@@ -269,6 +325,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 },
                 isAuthenticated: true,
               });
+              setHasToken(true);
+              setAuthCookie(true);
               
               // Clean URL of any sensitive parameters after successful login
               if (typeof window !== 'undefined') {
@@ -280,6 +338,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   window.history.replaceState({}, '', url.pathname + (url.search || ''));
                 }
               }
+              
+              // Redirect to home after successful login
+              setIsNavigatingToHome(true);
+              router.replace('/home');
               
               return { success: true };
             }
@@ -372,19 +434,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: false, error: 'فشل تسجيل الدخول' };
   }, [addToast]);
 
-  const logout = useCallback(() => {
-    // Clear auth state first (this will trigger page.tsx to show loading)
+  const clearNavigationFlag = useCallback(() => {
+    setIsNavigatingToHome(false);
+  }, []);
+
+  const logout = useCallback(async () => {
+    // Clear auth state first (immediate UI feedback)
     setAuthState({
       user: null,
       isAuthenticated: false,
     });
-    
-    // Clear API call (clears token)
-    logoutApi();
+    setHasToken(false);
+    setAuthCookie(false);
     
     // Clear any stored state immediately
     if (typeof window !== 'undefined') {
+      // Remove authentication token
       localStorage.removeItem('token');
+      
+      // Remove user-specific data
+      localStorage.removeItem('selectedQueueId');
+      
       // Clear any session storage
       sessionStorage.clear();
       
@@ -392,18 +462,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const url = new URL(window.location.href);
       url.search = '';
       
-      // Use replaceState to update URL without reload (allows React to handle the transition)
+      // Use replaceState to update URL without reload
       window.history.replaceState({}, '', url.pathname);
-      
-      // If we're not already on home, navigate there (but let React handle it)
-      if (window.location.pathname !== '/') {
-        // Use a small delay to allow state updates to propagate
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 100);
-      }
     }
-  }, []);
+    
+    // Call backend to revoke refresh token (async, but don't block UI)
+    // This happens in background - user sees immediate logout
+    logoutApi().catch(() => {
+      // Ignore errors - client-side cleanup already done
+    });
+    
+    // Redirect to login page
+    router.replace('/login');
+  }, [router]);
 
   // Register global auth error handler
   useEffect(() => {
@@ -450,7 +521,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []); // No dependencies - uses functional setState to access current state
 
   return (
-    <AuthContext.Provider value={{ ...authState, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ ...authState, login, logout, refreshUser, clearNavigationFlag, hasToken, isValidating, isNavigatingToHome }}>
       {children}
     </AuthContext.Provider>
   );

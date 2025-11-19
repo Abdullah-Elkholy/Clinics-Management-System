@@ -459,15 +459,17 @@ namespace Clinics.Domain
 
         /// <summary>
         /// Remaining messages quota. Returns -1 if MessagesQuota is -1 (unlimited).
+        /// Can be negative if consumed exceeds limit.
         /// </summary>
         [NotMapped]
-        public long RemainingMessages => MessagesQuota == -1 ? -1 : Math.Max(0, MessagesQuota - ConsumedMessages);
+        public long RemainingMessages => MessagesQuota == -1 ? -1 : MessagesQuota - ConsumedMessages;
 
         /// <summary>
         /// Remaining queues quota. Returns -1 if QueuesQuota is -1 (unlimited).
+        /// Can be negative if consumed exceeds limit.
         /// </summary>
         [NotMapped]
-        public long RemainingQueues => QueuesQuota == -1 ? -1 : Math.Max(0, QueuesQuota - ConsumedQueues);
+        public long RemainingQueues => QueuesQuota == -1 ? -1 : QueuesQuota - ConsumedQueues;
 
         /// <summary>
         /// Check if quota is low (less than 10%). Returns false if quota is unlimited (-1).
@@ -651,8 +653,7 @@ namespace Clinics.Domain
         /// Note: The relationship is owned by MessageTemplate (MessageTemplate.MessageConditionId -> MessageCondition.Id),
         /// but this foreign key provides reverse lookup capability for easier queries.
         /// </summary>
-        [Required]
-        public int TemplateId { get; set; }
+        public int? TemplateId { get; set; }
 
         /// <summary>
         /// Navigation property to the one-to-one REQUIRED relationship with MessageTemplate.

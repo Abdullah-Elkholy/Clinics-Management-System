@@ -210,7 +210,7 @@ export default function ModeratorQueuesQuotaModal({
 
   const calculateRemaining = (limit: number, used: number): number => {
     if (limit === -1) return -1;
-    return Math.max(0, limit - used);
+    return limit - used;
   };
 
   const remaining = calculateRemaining(formData.queuesQuota.limit, formData.queuesQuota.used);

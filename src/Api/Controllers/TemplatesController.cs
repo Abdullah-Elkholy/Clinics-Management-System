@@ -68,6 +68,7 @@ namespace Clinics.Api.Controllers
                 }
 
                 IQueryable<MessageTemplate> query = _db.MessageTemplates
+                    .Include(t => t.Condition) // IMPORTANT: Include the Condition navigation property
                     .Where(t => !t.IsDeleted) // Only show non-deleted templates (active = !IsDeleted)
                     .AsQueryable();
 
@@ -153,6 +154,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 var template = await _db.MessageTemplates
+                    .Include(t => t.Condition) // Include the Condition navigation property
                     .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
                 
                 if (template == null)
@@ -188,9 +190,7 @@ namespace Clinics.Api.Controllers
                         return Forbid();
                 }
 
-                // Load condition
-                await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
-
+                // Condition already loaded via Include
                 var dto = new TemplateDto
                 {
                     Id = template.Id,
@@ -234,7 +234,8 @@ namespace Clinics.Api.Controllers
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<TemplateDto>> Create([FromBody] CreateTemplateRequest req)
         {
-            // Use transaction to ensure template and condition are created atomically
+            // Use a normal transaction, but keep a single DateTime variable for all timestamps (acts as a logical snapshot)
+            var now = DateTime.UtcNow;
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
@@ -314,27 +315,12 @@ namespace Clinics.Api.Controllers
                     }
                 }
 
-                // Step 2: Create the template first (need template ID for condition.TemplateId)
-                var template = new MessageTemplate
-                {
-                    Title = req.Title,
-                    Content = req.Content,
-                    CreatedBy = userId,
-                    UpdatedBy = userId, // Set UpdatedBy on creation as well
-                    ModeratorId = queue.ModeratorId,
-                    QueueId = req.QueueId,
-                    MessageConditionId = 0, // Temporary, will be updated after condition creation
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
 
-                _db.MessageTemplates.Add(template);
-                await _db.SaveChangesAsync(); // Save to get the template ID
+                // Step 2: Create the condition first (TemplateId will be set after template is created)
 
-                // Step 3: Create the condition with TemplateId foreign key (one-to-one required relationship)
                 var condition = new MessageCondition
                 {
-                    TemplateId = template.Id, // Set foreign key to template
+                    TemplateId = null, // Will set after template is created
                     QueueId = req.QueueId,
                     Operator = conditionOperator,
                     Value = conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS" 
@@ -344,17 +330,35 @@ namespace Clinics.Api.Controllers
                     MaxValue = conditionOperator == "RANGE" ? req.ConditionMaxValue : null,
                     CreatedBy = userId,
                     UpdatedBy = userId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
 
                 _db.Set<MessageCondition>().Add(condition);
                 await _db.SaveChangesAsync(); // Save to get the condition ID
 
-                // Step 4: Update template with MessageConditionId (maintain bidirectional relationship)
-                template.MessageConditionId = condition.Id;
-                template.UpdatedAt = DateTime.UtcNow;
-                _db.MessageTemplates.Update(template);
+                // Step 3: Create the template referencing the new condition
+
+                var template = new MessageTemplate
+                {
+                    Title = req.Title,
+                    Content = req.Content,
+                    CreatedBy = userId,
+                    UpdatedBy = userId, // Set UpdatedBy on creation as well
+                    ModeratorId = queue.ModeratorId,
+                    QueueId = req.QueueId,
+                    MessageConditionId = condition.Id, // Reference the just-created condition
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                _db.MessageTemplates.Add(template);
+                await _db.SaveChangesAsync(); // Save to get the template ID
+
+                // Step 4: Update the condition with the correct TemplateId
+                condition.TemplateId = template.Id;
+                condition.UpdatedAt = now;
+                _db.Set<MessageCondition>().Update(condition);
                 await _db.SaveChangesAsync();
 
                 // Commit transaction
@@ -395,7 +399,8 @@ namespace Clinics.Api.Controllers
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error creating template");
-                return StatusCode(500, new { message = "Error creating template" });
+                // Return error details for debugging
+                return StatusCode(500, new { message = "Error creating template", details = ex.ToString() });
             }
         }
 
@@ -430,6 +435,9 @@ namespace Clinics.Api.Controllers
                 existing.UpdatedBy = userId;
                 existing.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
+
+                // Reload template with condition for DTO (ensures condition is included in response)
+                await _db.Entry(existing).Reference(t => t.Condition).LoadAsync();
 
                 var dto = new TemplateDto
                 {

@@ -25,7 +25,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("login")]
-        // [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] LoginRequest? req)
         {
             try
@@ -200,6 +200,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("logout")]
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         public IActionResult Logout()
         {
             if (Request.Cookies.TryGetValue("refreshToken", out var token))

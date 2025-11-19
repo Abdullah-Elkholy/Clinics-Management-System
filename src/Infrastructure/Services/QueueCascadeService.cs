@@ -95,7 +95,6 @@ namespace Clinics.Infrastructure.Services
                 {
                     var quota = quotas.First();
                     quota.ConsumedQueues--;
-                    if (quota.ConsumedQueues < 0) quota.ConsumedQueues = 0;
                     await quotaRepo.UpdateAsync(quota);
                 }
 

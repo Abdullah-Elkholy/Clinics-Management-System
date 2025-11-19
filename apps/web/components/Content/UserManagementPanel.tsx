@@ -43,7 +43,19 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
       : currentUser.assignedModerator || currentUser.id; // Fallback to own ID if no moderator assigned
   
   // Fetch quota using the hook
-  const { quota, loading: quotaLoading, error: quotaError } = useModeratorQuota(moderatorIdForQuota);
+  const { quota, loading: quotaLoading, error: quotaError, refresh } = useModeratorQuota(moderatorIdForQuota);
+  
+  // Listen for quota updates and refresh
+  useEffect(() => {
+    const handleQuotaUpdate = () => {
+      refresh();
+    };
+    
+    window.addEventListener('quotaDataUpdated', handleQuotaUpdate);
+    return () => {
+      window.removeEventListener('quotaDataUpdated', handleQuotaUpdate);
+    };
+  }, [refresh]);
   
   // Calculate stats for display
   const messagesQuota = quota?.messagesQuota || {
@@ -62,8 +74,8 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
     warningThreshold: 80,
   };
   
-  const messagesRemaining = messagesQuota.limit === -1 ? -1 : Math.max(0, messagesQuota.limit - messagesQuota.used);
-  const queuesRemaining = queuesQuota.limit === -1 ? -1 : Math.max(0, queuesQuota.limit - queuesQuota.used);
+  const messagesRemaining = messagesQuota.limit === -1 ? -1 : messagesQuota.limit - messagesQuota.used;
+  const queuesRemaining = queuesQuota.limit === -1 ? -1 : queuesQuota.limit - queuesQuota.used;
   
   const messagesPercentage = messagesQuota.limit === -1 ? 0 : Math.min(100, messagesQuota.percentage);
   const queuesPercentage = queuesQuota.limit === -1 ? 0 : Math.min(100, queuesQuota.percentage);
@@ -267,7 +279,8 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
  */
 export default function UserManagementPanel() {
   const { user: currentUser, refreshUser, isAuthenticated } = useAuth();
-  const { permissions, roleInfo } = useRoleBasedUI();
+  // Pass current user's role to avoid fallback labels like "Unknown/غير محدد"
+  const { permissions, roleInfo } = useRoleBasedUI({ userRole: currentUser?.role });
   const [state, actions] = useUserManagement();
   const { openModal } = useModal();
   const { addToast } = useUI();

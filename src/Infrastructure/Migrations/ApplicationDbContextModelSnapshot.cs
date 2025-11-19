@@ -843,8 +843,7 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.MessageTemplate", null)
                         .WithMany()
                         .HasForeignKey("TemplateId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Queue");
                 });

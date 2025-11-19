@@ -348,7 +348,7 @@ export default function ModeratorMessagesOverview() {
     const baseStats = {
       total: quotaData.limit,
       used: quotaData.used,
-      remaining: quotaData.limit === -1 ? -1 : Math.max(0, quotaData.limit - quotaData.used),
+      remaining: quotaData.limit === -1 ? -1 : quotaData.limit - quotaData.used,
     };
 
     // Format value for display: show "غير محدود" for -1
@@ -668,8 +668,8 @@ export default function ModeratorMessagesOverview() {
                                                   return 0;
                                                 })
                                                 .map((template) => {
-                                                  // TODO: Replace with operator-driven condition from template.condition
-                                                  const condition = null;
+                                                  // Resolve condition from embedded template.condition
+                                                  const condition = template.condition;
 
                                                   return (
                                                     <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">
@@ -680,6 +680,8 @@ export default function ModeratorMessagesOverview() {
                                                         {condition ? (
                                                           condition.operator === 'DEFAULT' ? (
                                                             <span className="text-green-600 text-xs font-medium">✓ افتراضي</span>
+                                                          ) : condition.operator === 'UNCONDITIONED' ? (
+                                                            <span className="text-gray-600 text-xs font-medium">بدون شرط</span>
                                                           ) : (
                                                             <span className="text-sm font-semibold text-blue-600">
                                                               {condition.operator === 'EQUAL' && 'يساوي'}

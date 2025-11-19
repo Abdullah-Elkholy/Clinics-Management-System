@@ -128,11 +128,66 @@ export async function getCurrentUser(): Promise<User> {
 }
 
 /**
- * Logout by clearing token
- * (Backend uses HttpOnly cookies for refresh tokens, so no logout call needed)
+ * Logout by clearing token and revoking refresh token session on backend
  */
-export function logout(): void {
+export async function logout(): Promise<void> {
   if (typeof window !== 'undefined') {
+    // Clear token from localStorage first
     localStorage.removeItem('token');
+    
+    // Call backend to revoke refresh token session
+    try {
+      const API_BASE_URL = getApiBaseUrl();
+      const url = `${API_BASE_URL}/auth/logout`;
+      
+      await fetch(url, {
+        method: 'POST',
+        credentials: 'include', // Include cookies for refresh token
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      // Ignore response - logout should succeed even if backend call fails
+    } catch (error) {
+      // Ignore errors - logout is best-effort on backend
+      // Client-side cleanup is most important
+    }
+  }
+}
+
+// ============================================
+// Token Refresh API
+// ============================================
+
+/**
+ * Attempt to refresh the access token using the HttpOnly refresh cookie.
+ * Returns the new access token on success, or null on failure.
+ */
+export async function refreshAccessToken(): Promise<{ accessToken: string } | null> {
+  const API_BASE_URL = getApiBaseUrl();
+  const url = `${API_BASE_URL}/auth/refresh`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include', // include refresh cookie
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await response.json() : await response.text();
+
+    if (!response.ok) {
+      return null;
+    }
+
+    // Expected: { success: true, data: { accessToken, expiresIn } }
+    const token = (data && (data as any).data && (data as any).data.accessToken) as string | undefined;
+    if (token && typeof token === 'string') {
+      return { accessToken: token };
+    }
+    return null;
+  } catch {
+    return null;
   }
 }

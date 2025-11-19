@@ -426,8 +426,8 @@ export default function Navigation() {
             <TabItem
               icon="fa-check-circle"
               label="المهام المكتملة"
-              isActive={currentPanel === 'done'}
-              onClick={() => setCurrentPanel('done')}
+              isActive={currentPanel === 'completed'}
+              onClick={() => setCurrentPanel('completed')}
             />
           </div>
         </nav>
@@ -690,10 +690,10 @@ export default function Navigation() {
                 <i className="fas fa-exclamation-circle text-xs"></i>
               </button>
               <button
-                onClick={() => setCurrentPanel('done')}
+                onClick={() => setCurrentPanel('completed')}
                 title="المهام المكتملة"
                 aria-label="المهام المكتملة"
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'done' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'completed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
               >
                 <i className="fas fa-check-circle text-xs"></i>
               </button>

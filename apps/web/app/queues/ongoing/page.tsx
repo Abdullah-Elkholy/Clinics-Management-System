@@ -3,11 +3,14 @@
 import ProtectedRoute from '../../../components/Auth/ProtectedRoute';
 import MainApp from '../../../components/MainApp/MainApp';
 
-export default function QueuePage() {
+/**
+ * Ongoing Tasks Route
+ * Displays ongoing/pending tasks for the selected queue
+ */
+export default function OngoingTasksPage() {
   return (
     <ProtectedRoute>
       <MainApp />
     </ProtectedRoute>
   );
 }
-
