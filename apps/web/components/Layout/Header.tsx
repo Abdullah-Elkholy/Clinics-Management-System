@@ -2,38 +2,33 @@
 
 import { useAuth } from '../../contexts/AuthContext';
 import { useModal } from '../../contexts/ModalContext';
+import { useWhatsAppSession } from '../../contexts/WhatsAppSessionContext';
 import { getRoleDisplayName } from '../../lib/auth';
+import { User } from '../../types';
 
 export default function Header() {
   const { user, logout } = useAuth();
   const { openModal } = useModal();
+  const { sessionStatus } = useWhatsAppSession();
 
   if (!user) return null;
-
-  // Debug logging in development
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[Header] User object:', user);
-    console.log('[Header] User role:', user.role);
-    console.log('[Header] User firstName:', user.firstName);
-    console.log('[Header] User lastName:', user.lastName);
-  }
 
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
   // 2. firstName (if lastName is null/empty)
   // 3. المشرف #${id} (ID-based fallback)
   // 4. username (last fallback)
-  const getUserDisplayName = (user: typeof user): string => {
-    if (user.firstName && user.lastName) {
-      return `${user.firstName} ${user.lastName}`;
+  const getUserDisplayName = (u: User): string => {
+    if (u.firstName && u.lastName) {
+      return `${u.firstName} ${u.lastName}`;
     }
-    if (user.firstName) {
-      return user.firstName;
+    if (u.firstName) {
+      return u.firstName;
     }
-    if (user.id) {
-      return `المشرف #${user.id}`;
+    if (u.id) {
+      return `المشرف #${u.id}`;
     }
-    return user.username || 'Unknown';
+    return u.username || 'Unknown';
   };
 
   const roleDisplay = getRoleDisplayName(user.role);
@@ -56,9 +51,33 @@ export default function Header() {
         {/* Right side - Status and User Menu */}
         <div className="flex items-center space-x-4 space-x-reverse">
           {/* WhatsApp Status */}
-          <div className="hidden sm:flex items-center space-x-2 space-x-reverse bg-green-100 px-3 py-1 rounded-full">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-sm text-green-700">واتساب متصل</span>
+          <div className={`hidden sm:flex items-center space-x-2 space-x-reverse px-3 py-1 rounded-full ${
+            sessionStatus === 'connected' 
+              ? 'bg-green-100' 
+              : sessionStatus === 'pending' 
+              ? 'bg-yellow-100' 
+              : 'bg-red-100'
+          }`}>
+            <div className={`w-2 h-2 rounded-full ${
+              sessionStatus === 'connected' 
+                ? 'bg-green-500 animate-pulse' 
+                : sessionStatus === 'pending' 
+                ? 'bg-yellow-500 animate-pulse' 
+                : 'bg-red-500'
+            }`}></div>
+            <span className={`text-sm ${
+              sessionStatus === 'connected' 
+                ? 'text-green-700' 
+                : sessionStatus === 'pending' 
+                ? 'text-yellow-700' 
+                : 'text-red-700'
+            }`}>
+              {sessionStatus === 'connected' 
+                ? 'واتساب متصل' 
+                : sessionStatus === 'pending' 
+                ? 'في انتظار المصادقة' 
+                : 'واتساب غير متصل'}
+            </span>
           </div>
 
           {/* User Info and Logout */}

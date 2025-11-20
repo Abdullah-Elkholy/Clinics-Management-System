@@ -522,12 +522,20 @@ namespace Clinics.Api.Controllers
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
 
-                // Users can only view their moderator's session, moderators can view their own
-                if (currentUser?.Role == "user" && currentUser.ModeratorId != id)
-                    return Forbid();
+                // Permission checks:
+                // - Admins can view any moderator's session
+                // - Moderators can only view their own session
+                // - Users can only view their assigned moderator's session
+                var isAdmin = currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin";
+                
+                if (!isAdmin)
+                {
+                    if (currentUser?.Role == "user" && currentUser.ModeratorId != id)
+                        return Forbid();
 
-                if (currentUser?.Role == "moderator" && currentUserId != id)
-                    return Forbid();
+                    if (currentUser?.Role == "moderator" && currentUserId != id)
+                        return Forbid();
+                }
 
                 var session = await _db.WhatsAppSessions
                     .Where(s => s.ModeratorUserId == id)

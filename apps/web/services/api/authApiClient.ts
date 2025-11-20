@@ -183,7 +183,7 @@ export async function logout(): Promise<void> {
       
       await fetch(url, {
         method: 'POST',
-        credentials: 'include', // Include cookies for refresh token
+        credentials: 'include', // Include HttpOnly refresh token cookie
         headers: {
           'Content-Type': 'application/json',
         },
@@ -211,7 +211,7 @@ export async function refreshAccessToken(): Promise<{ accessToken: string } | nu
   try {
     const response = await fetch(url, {
       method: 'POST',
-      credentials: 'include', // include refresh cookie
+      credentials: 'include', // Include HttpOnly refresh token cookie
       headers: { 'Content-Type': 'application/json' },
     });
 

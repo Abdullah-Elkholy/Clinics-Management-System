@@ -91,15 +91,15 @@ Write-Host ""
 
 # Optionally start WhatsApp Service
 if ($IncludeWhatsApp) {
-    Write-Host "Checking WhatsApp Service (port 5100)..." -ForegroundColor Yellow
-    if (Test-Port -Port 5100) {
-        Write-Host "✓ WhatsApp Service is already running on port 5100" -ForegroundColor Green
+    Write-Host "Checking WhatsApp Service (port 5185)..." -ForegroundColor Yellow
+    if (Test-Port -Port 5185) {
+        Write-Host "✓ WhatsApp Service is already running on port 5185" -ForegroundColor Green
     } else {
         Write-Host "Starting WhatsApp Service..." -ForegroundColor Yellow
         Start-Process powershell -ArgumentList @(
             "-NoExit",
             "-Command",
-            "cd '$PSScriptRoot\..\ClinicsManagementService'; `$env:ASPNETCORE_ENVIRONMENT='Development'; `$env:ASPNETCORE_URLS='http://localhost:5100'; dotnet run --project WhatsAppMessagingService"
+            "cd '$PSScriptRoot\..\ClinicsManagementService'; `$env:ASPNETCORE_ENVIRONMENT='Development'; `$env:ASPNETCORE_URLS='http://localhost:5185'; dotnet run --project WhatsAppMessagingService"
         ) -WindowStyle Normal
         Write-Host "WhatsApp Service starting in new window..." -ForegroundColor Cyan
     }
@@ -112,7 +112,7 @@ Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "Backend API:  http://localhost:5000" -ForegroundColor $(if (Test-Port -Port 5000) { "Green" } else { "Red" })
 Write-Host "Frontend:     http://localhost:3000" -ForegroundColor $(if (Test-Port -Port 3000) { "Green" } else { "Red" })
 if ($IncludeWhatsApp) {
-    Write-Host "WhatsApp:     http://localhost:5100" -ForegroundColor $(if (Test-Port -Port 5100) { "Green" } else { "Red" })
+    Write-Host "WhatsApp:     http://localhost:5185" -ForegroundColor $(if (Test-Port -Port 5185) { "Green" } else { "Red" })
 }
 Write-Host ""
 Write-Host "Test Credentials:" -ForegroundColor Cyan

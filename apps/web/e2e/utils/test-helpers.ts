@@ -203,7 +203,9 @@ export async function selectDropdownOption(
       if (typeof optionValue === 'string') {
         await select.selectOption(optionValue);
       } else {
-        await select.selectOption(optionValue);
+        // Convert RegExp label to string for selectOption
+        const selectValue = optionValue.value || (optionValue.label ? String(optionValue.label) : '');
+        await select.selectOption({ value: selectValue });
       }
       await page.waitForTimeout(300);
       return true;

@@ -98,10 +98,10 @@ namespace Clinics.Api.Controllers
                         await _db.SaveChangesAsync();
                         await transaction.CommitAsync();
 
-                        // Consume quota after successful queueing
-                        await _quotaService.ConsumeMessagesQuotaAsync(userId, messages.Count);
+                        // NOTE: Quota is now consumed on successful send (in MessageProcessor), not on queueing
+                        // This ensures quota is only consumed for messages that are actually sent
                         
-                        _logger.LogInformation("User {UserId} queued {Count} messages, consumed quota", 
+                        _logger.LogInformation("User {UserId} queued {Count} messages (quota will be consumed on successful send)", 
                             userId, messages.Count);
                     }
 

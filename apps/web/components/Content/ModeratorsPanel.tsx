@@ -9,6 +9,7 @@ import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { useUserManagement } from '@/hooks/useUserManagement';
+import WhatsAppAuthTabContent from '@/components/Content/WhatsAppAuthTabContent';
 
 interface ModeratorsState {
   moderators: ModeratorDetails[];
@@ -37,7 +38,7 @@ export default function ModeratorsPanel() {
     selectedModerator: null,
   });
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'users' | 'quota'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'users' | 'quota' | 'whatsappAuth'>('overview');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [_showEditForm, setShowEditForm] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -290,7 +291,7 @@ export default function ModeratorsPanel() {
 
       {/* Tabs */}
       <div className="flex gap-4 mb-6 border-b">
-        {(['overview', 'details', 'users', 'quota'] as const).map((tab) => (
+        {(['overview', 'details', 'users', 'quota', 'whatsappAuth'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -304,6 +305,7 @@ export default function ModeratorsPanel() {
             {tab === 'details' && '📝 التفاصيل'}
             {tab === 'users' && '👥 المستخدمون'}
             {tab === 'quota' && '📊 الحصة'}
+            {tab === 'whatsappAuth' && '📱 مصادقة الواتساب'}
           </button>
         ))}
       </div>
@@ -707,6 +709,11 @@ export default function ModeratorsPanel() {
             </div>
           )}
         </div>
+      )}
+
+      {/* WhatsApp Authentication Tab */}
+      {activeTab === 'whatsappAuth' && (
+        <WhatsAppAuthTabContent />
       )}
     </PanelWrapper>
   );

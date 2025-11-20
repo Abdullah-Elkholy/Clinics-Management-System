@@ -112,8 +112,18 @@ namespace Clinics.Api.Controllers
                 // Use Role property directly (now stores the role name string)
                 var token = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FirstName, user.LastName);
                 // create refresh token and set cookie
+                // Align SameSite/Secure behavior with refresh endpoint logic: allow cross-origin (frontend dev server) in Development
                 var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
-                Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions { HttpOnly = true, Secure = !_env.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = DateTime.UtcNow.AddDays(7) });
+                var isTestEnv = _env.IsEnvironment("Test");
+                var cookieOptions = new CookieOptions
+                {
+                    HttpOnly = true,
+                    // In Test use Strict to simplify; in other envs (Dev/Prod) use None to allow cross-site (Dev: port 3000 -> 5000)
+                    SameSite = isTestEnv ? SameSiteMode.Strict : SameSiteMode.None,
+                    Secure = !isTestEnv, // Secure required when SameSite=None (Chrome enforcement)
+                    Expires = DateTime.UtcNow.AddDays(7)
+                };
+                Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
 
                 return Ok(new { success = true, data = new { accessToken = token } });
             }

@@ -35,17 +35,23 @@ namespace ClinicsManagementService.Controllers
         private readonly IWhatsAppService _whatsappService;
         private readonly INotifier _notifier;
         private readonly IValidationService _validationService;
+        private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
+        private readonly IWhatsAppSessionSyncService _sessionSyncService;
 
         public BulkMessagingController(
             IMessageSender messageSender, 
             IWhatsAppService whatsappService, 
             INotifier notifier,
-            IValidationService validationService)
+            IValidationService validationService,
+            IWhatsAppSessionOptimizer sessionOptimizer,
+            IWhatsAppSessionSyncService sessionSyncService)
         {
             _messageSender = messageSender;
             _whatsappService = whatsappService;
             _notifier = notifier;
             _validationService = validationService;
+            _sessionOptimizer = sessionOptimizer;
+            _sessionSyncService = sessionSyncService;
         }
         // Send a single message to a single phone number.
         [HttpPost("send-single")]
@@ -67,14 +73,58 @@ namespace ClinicsManagementService.Controllers
                 if (!messageValidation.IsValid)
                     return BadRequest(messageValidation.ErrorMessage);
 
+                // Check and auto-restore if session size exceeds threshold
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
+
                 // Check cancellation before sending
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var sent = await _messageSender.SendMessageAsync(request.Phone, request.Message, cancellationToken);
                 
                 if (sent)
+                {
                     return Ok("Message sent successfully.");
-                return StatusCode(502, "Message failed to be sent.");
+                }
+                else
+                {
+                    // Message failed - check if it's due to PendingQR by calling check-authentication
+                    const int MODERATOR_ID = 1; // TODO: Get from authenticated user context
+                    try
+                    {
+                        var browserSession = await _whatsappService.PrepareSessionAsync();
+                        await browserSession.InitializeAsync();
+                        await browserSession.NavigateToAsync(Configuration.WhatsAppConfiguration.WhatsAppBaseUrl);
+                        var authCheck = await _whatsappService.CheckInternetConnectivityDetailedAsync();
+                        
+                        // If authentication is pending, update database status
+                        if (authCheck.State == Models.OperationState.PendingQR)
+                        {
+                            _notifier.Notify($"⚠️ Message failed due to PendingQR - updating database status");
+                            await _sessionSyncService.UpdateSessionStatusAsync(MODERATOR_ID, "pending");
+                        }
+                    }
+                    catch (Exception syncEx)
+                    {
+                        _notifier.Notify($"⚠️ Failed to sync session status after send failure: {syncEx.Message}");
+                    }
+                    // Check and auto-restore if session size exceeds threshold
+                    try
+                    {
+                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                    }
+                    catch (Exception optimizeEx)
+                    {
+                        _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                    }
+                    return StatusCode(502, "Message failed to be sent.");
+                }
             }, this, _notifier, nameof(SendSingle));
         }
 

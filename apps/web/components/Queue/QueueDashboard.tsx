@@ -30,6 +30,23 @@ export default function QueueDashboard() {
   const { addToast } = useUI();
   const router = useRouter();
   
+  const queue = queues.find((q) => q.id === selectedQueueId);
+  
+  // ALL hooks must be declared before any conditional returns
+  // Initialize CQP and ETS from queue data
+  const [currentCQP, setCurrentCQP] = useState(() => queue?.currentPosition?.toString() || '1');
+  const [originalCQP, setOriginalCQP] = useState(() => queue?.currentPosition?.toString() || '1');
+  const [isEditingCQP, setIsEditingCQP] = useState(false);
+  
+  const [currentETS, setCurrentETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
+  const [originalETS, setOriginalETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
+  const [isEditingETS, setIsEditingETS] = useState(false);
+  
+  const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
+  const [editingQueueValue, setEditingQueueValue] = useState('');
+  const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
+  
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {
     // Check for token
@@ -47,31 +64,6 @@ export default function QueueDashboard() {
       return;
     }
   }, [isAuthenticated, user, router]);
-
-  // Show loading while checking authentication
-  if (!isAuthenticated || !user) {
-    return (
-      <PanelWrapper>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
-            <p className="text-gray-600">جاري التحميل...</p>
-          </div>
-        </div>
-      </PanelWrapper>
-    );
-  }
-  
-  const queue = queues.find((q) => q.id === selectedQueueId);
-  
-  // Initialize CQP and ETS from queue data
-  const [currentCQP, setCurrentCQP] = useState(() => queue?.currentPosition?.toString() || '1');
-  const [originalCQP, setOriginalCQP] = useState(() => queue?.currentPosition?.toString() || '1');
-  const [isEditingCQP, setIsEditingCQP] = useState(false);
-  
-  const [currentETS, setCurrentETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
-  const [originalETS, setOriginalETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
-  const [isEditingETS, setIsEditingETS] = useState(false);
   
   // Update CQP and ETS when queue data changes
   useEffect(() => {
@@ -82,11 +74,6 @@ export default function QueueDashboard() {
       setOriginalETS(queue.estimatedWaitMinutes?.toString() || '15');
     }
   }, [queue?.currentPosition, queue?.estimatedWaitMinutes, queue?.id]);
-  
-  const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
-  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
-  const [editingQueueValue, setEditingQueueValue] = useState('');
-  const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
 
   /**
    * Listen for data updates and refetch

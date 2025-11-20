@@ -105,13 +105,13 @@ echo ""
 
 # Optionally start WhatsApp Service
 if [ "$INCLUDE_WHATSAPP" = true ]; then
-  echo "Checking WhatsApp Service (port 5100)..."
-  if check_port 5100; then
-    echo "✓ WhatsApp Service is already running on port 5100"
+  echo "Checking WhatsApp Service (port 5185)..."
+  if check_port 5185; then
+    echo "✓ WhatsApp Service is already running on port 5185"
   else
     echo "Starting WhatsApp Service..."
     cd "$(dirname "$0")/../ClinicsManagementService"
-    ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5100 dotnet run --project WhatsAppMessagingService &
+    ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5185 dotnet run --project WhatsAppMessagingService &
     WHATSAPP_PID=$!
     echo "WhatsApp Service starting (PID: $WHATSAPP_PID)..."
   fi
@@ -134,10 +134,10 @@ else
 fi
 
 if [ "$INCLUDE_WHATSAPP" = true ]; then
-  if check_port 5100; then
-    echo -e "WhatsApp:     \033[32mhttp://localhost:5100\033[0m"
+  if check_port 5185; then
+    echo -e "WhatsApp:     \033[32mhttp://localhost:5185\033[0m"
   else
-    echo -e "WhatsApp:     \033[31mhttp://localhost:5100\033[0m"
+    echo -e "WhatsApp:     \033[31mhttp://localhost:5185\033[0m"
   fi
 fi
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAuthGuard } from '../../hooks/useAuthGuard';
@@ -95,6 +95,13 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     }
   }, [isAuthenticated, user, isInitialized]);
 
+  // Redirect to login if not authenticated (using useEffect to avoid setState during render)
+  useEffect(() => {
+    if (!isAuthenticated && !isValidating && pathname !== '/login' && pathname !== '/') {
+      router.replace('/login');
+    }
+  }, [isAuthenticated, isValidating, pathname, router]);
+
   // Show loading state during initialization
   if (!isInitialized || isChecking) {
     return (
@@ -120,9 +127,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         </div>
       );
     }
-    // Redirect to login page
+    // Show loading while redirecting or show login screen
     if (pathname !== '/login' && pathname !== '/') {
-      router.replace('/login');
       return (
         <div className="flex items-center justify-center min-h-screen bg-gray-50">
           <div className="text-center">

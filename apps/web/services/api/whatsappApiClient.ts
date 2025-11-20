@@ -159,8 +159,72 @@ export async function checkWhatsAppNumber(
   }
 }
 
+/**
+ * Check WhatsApp authentication status
+ * @param moderatorUserId - Optional moderator user ID to sync session for
+ * @returns OperationResult with boolean indicating if WhatsApp is authenticated
+ */
+export async function checkAuthentication(moderatorUserId?: number): Promise<OperationResult<boolean>> {
+  try {
+    const url = moderatorUserId 
+      ? `/api/WhatsAppUtility/check-authentication?moderatorUserId=${moderatorUserId}`
+      : '/api/WhatsAppUtility/check-authentication';
+    
+    console.log('[WhatsApp API] checkAuthentication called - moderatorUserId:', moderatorUserId, 'url:', url);
+    
+    const result = await fetchAPI<OperationResult<boolean>>(
+      url,
+      { method: 'GET' }
+    );
+    
+    console.log('[WhatsApp API] checkAuthentication result:', result);
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] checkAuthentication error:', error);
+    const translatedMessage = translateNetworkError(error);
+    return {
+      isSuccess: false,
+      state: 'Failure',
+      resultMessage: translatedMessage || 'فشل التحقق من حالة المصادقة',
+    };
+  }
+}
+
+/**
+ * Start WhatsApp authentication flow (QR code scan)
+ * @param moderatorUserId - Optional moderator user ID to sync session for
+ * @returns OperationResult with boolean indicating if authentication was successful
+ */
+export async function authenticate(moderatorUserId?: number): Promise<OperationResult<boolean>> {
+  try {
+    const url = moderatorUserId 
+      ? `/api/WhatsAppUtility/authenticate?moderatorUserId=${moderatorUserId}`
+      : '/api/WhatsAppUtility/authenticate';
+    
+    console.log('[WhatsApp API] authenticate called - moderatorUserId:', moderatorUserId, 'url:', url);
+    
+    const result = await fetchAPI<OperationResult<boolean>>(
+      url,
+      { method: 'POST' }
+    );
+    
+    console.log('[WhatsApp API] authenticate result:', result);
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] authenticate error:', error);
+    const translatedMessage = translateNetworkError(error);
+    return {
+      isSuccess: false,
+      state: 'Failure',
+      resultMessage: translatedMessage || 'فشل بدء عملية المصادقة',
+    };
+  }
+}
+
 // Export the client object for consistency with other API clients
 export const whatsappApiClient = {
   checkWhatsAppNumber,
+  checkAuthentication,
+  authenticate,
 };
 

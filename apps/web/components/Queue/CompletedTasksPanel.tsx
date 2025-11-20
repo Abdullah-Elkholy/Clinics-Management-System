@@ -48,6 +48,8 @@ const COMPLETED_TASKS_GUIDE_ITEMS = [
 export default function CompletedTasksPanel() {
   const { user, isAuthenticated } = useAuth();
   const router = useRouter();
+  
+  // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -69,20 +71,6 @@ export default function CompletedTasksPanel() {
       return;
     }
   }, [isAuthenticated, user, router]);
-
-  // Show loading while checking authentication
-  if (!isAuthenticated || !user) {
-    return (
-      <PanelWrapper>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
-            <p className="text-gray-600">جاري التحميل...</p>
-          </div>
-        </div>
-      </PanelWrapper>
-    );
-  }
 
   /**
    * Listen for data updates and refetch

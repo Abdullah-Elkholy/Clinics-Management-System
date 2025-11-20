@@ -1,3 +1,6 @@
+/* eslint-disable no-console */
+/* NOTE: This component has extensive debug logging for message preview functionality.
+   Console statements are kept for debugging production issues. */
 'use client';
 
 import { useModal } from '@/contexts/ModalContext';

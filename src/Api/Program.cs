@@ -56,7 +56,8 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
-builder.Services.AddScoped<QuotaService>();
+builder.Services.AddScoped<Clinics.Application.Interfaces.IQuotaService, QuotaService>();
+builder.Services.AddScoped<QuotaService>(); // Also register concrete class for controllers that need extended methods
 builder.Services.AddScoped<IUserContext, UserContext>();
 builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
 builder.Services.AddScoped<IPatientPositionService, PatientPositionService>();  // Add missing service
@@ -136,9 +137,16 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
     {
         // When AllowCredentials() is used you must explicitly list allowed origins.
-        policy.AllowAnyOrigin()
+        // Cannot use AllowAnyOrigin() with AllowCredentials() - specify exact origins
+        policy.WithOrigins(
+                  "http://localhost:3000",
+                  "http://127.0.0.1:3000",
+                  "https://localhost:3000",
+                  "https://127.0.0.1:3000"
+              )
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials(); // Required for HttpOnly cookies
     });
 });
 
@@ -171,7 +179,8 @@ if (!builder.Environment.IsEnvironment("Test"))
 }
 
 // message sender and processor
-builder.Services.AddScoped<IMessageSender, SimulatedMessageSender>();
+builder.Services.AddHttpClient<WhatsAppServiceSender>();
+builder.Services.AddScoped<IMessageSender, WhatsAppServiceSender>();
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
 
 // Authorization policies

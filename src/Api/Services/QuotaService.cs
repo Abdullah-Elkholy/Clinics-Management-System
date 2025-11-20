@@ -9,7 +9,7 @@ namespace Clinics.Api.Services;
 /// Service for managing quotas and user-moderator relationships.
 /// Handles shared quota logic where users consume their moderator's quota.
 /// </summary>
-public class QuotaService
+public class QuotaService : Clinics.Application.Interfaces.IQuotaService
 {
     private readonly ApplicationDbContext _context;
     private readonly Clinics.Infrastructure.Services.IQueueCascadeService _queueCascadeService;
@@ -123,11 +123,11 @@ public class QuotaService
 
     /// <summary>
     /// Consume messages quota for user/moderator
-    /// Note: Quota is consumed when messages are queued (upfront), not when sent.
-    /// This prevents exceeding quota. ConsumedMessages tracks the total number of 
-    /// messages queued/sent, regardless of their IsDeleted status.
+    /// NOTE: Quota is now consumed when messages are SUCCESSFULLY SENT (in MessageProcessor),
+    /// not when queued. This ensures fair billing - users only pay for delivered messages.
+    /// ConsumedMessages tracks the total number of messages actually sent.
     /// </summary>
-    public async Task<bool> ConsumeMessagesQuotaAsync(int userId, int count)
+    public async Task<bool> ConsumeMessageQuotaAsync(int userId, int count)
     {
         try
         {
@@ -206,6 +206,32 @@ public class QuotaService
             // Admins - no quota restrictions
             return true;
         }
+    }
+
+    // IQuotaService interface implementation wrappers
+    
+    /// <summary>
+    /// Check if user can send messages (IQuotaService interface)
+    /// </summary>
+    public async Task<(bool allowed, string message)> CanSendMessageAsync(int userId, int count = 1)
+    {
+        var hasQuota = await HasMessagesQuotaAsync(userId, count);
+        if (hasQuota)
+            return (true, "Quota available");
+        
+        return (false, $"Insufficient message quota. Need {count} messages.");
+    }
+
+    /// <summary>
+    /// Check if user can create queue (IQuotaService interface)
+    /// </summary>
+    public async Task<(bool allowed, string message)> CanCreateQueueAsync(int userId)
+    {
+        var hasQuota = await HasQueuesQuotaAsync(userId);
+        if (hasQuota)
+            return (true, "Quota available");
+        
+        return (false, "Insufficient queue quota.");
     }
 
     /// <summary>
