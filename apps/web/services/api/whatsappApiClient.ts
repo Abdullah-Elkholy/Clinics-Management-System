@@ -123,7 +123,11 @@ export async function checkWhatsAppNumber(
     const result = await fetchAPI<OperationResult<boolean>>(
       `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}${query}`,
       {
-        method: 'GET',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phoneNumber }),
         signal, // Pass abort signal to fetch
       }
     );
