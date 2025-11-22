@@ -22,6 +22,7 @@ namespace Clinics.Api.Controllers
         private readonly IModeratorCascadeService _moderatorCascadeService;
         private readonly IUserContext _userContext;
         private readonly Clinics.Api.Services.IUserCascadeService _userCascadeService;
+        private readonly IWebHostEnvironment _env;
 
         public UsersController(
             ApplicationDbContext db,
@@ -29,7 +30,8 @@ namespace Clinics.Api.Controllers
             IGenericUnitOfWork unitOfWork,
             IModeratorCascadeService moderatorCascadeService,
             IUserContext userContext,
-            Clinics.Api.Services.IUserCascadeService userCascadeService)
+            Clinics.Api.Services.IUserCascadeService userCascadeService,
+            IWebHostEnvironment env)
         {
             _db = db;
             _logger = logger;
@@ -37,6 +39,7 @@ namespace Clinics.Api.Controllers
             _moderatorCascadeService = moderatorCascadeService;
             _userContext = userContext;
             _userCascadeService = userCascadeService;
+            _env = env;
         }
 
         /// <summary>
@@ -65,14 +68,16 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { error = "Invalid user ID format" });
                 }
 
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == currentUserId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
                 if (currentUser == null)
                 {
                     _logger.LogWarning($"User not found in database: {currentUserId}");
                     return NotFound(new { error = "Current user not found" });
                 }
 
-                IQueryable<User> query = _db.Users;
+                IQueryable<User> query = _db.Users.Where(u => !u.IsDeleted);
 
                 // Admins see all users
                 if (currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin")
@@ -142,9 +147,13 @@ namespace Clinics.Api.Controllers
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
                 
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == currentUserId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
 
-                var targetUser = await _db.Users.FindAsync(id);
+                var targetUser = await _db.Users
+                    .Where(u => u.Id == id && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
                 if (targetUser == null)
                     return NotFound(new { success = false, error = "User not found" });
 
@@ -199,10 +208,35 @@ namespace Clinics.Api.Controllers
                 if (existingUser != null)
                     return BadRequest(new { success = false, error = "Username already exists" });
 
+                // Get current user to check permissions
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
+                    ?? User.FindFirst("sub")
+                    ?? User.FindFirst("userId");
+                
+                if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+                    return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
+
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == currentUserId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
+
+                if (currentUser == null)
+                    return Unauthorized(new { success = false, error = "Current user not found" });
+
                 // Determine desired role name
                 var desiredRoleName = string.IsNullOrWhiteSpace(req.Role)
                     ? Clinics.Domain.UserRole.User.ToRoleName()
                     : Clinics.Domain.UserRoleExtensions.FromRoleName(req.Role).ToRoleName();
+
+                // Only primary_admin can create secondary_admin or primary_admin users
+                // Secondary_admin cannot manage secondary_admin (only primary_admin can)
+                if (desiredRoleName == "secondary_admin" || desiredRoleName == "primary_admin")
+                {
+                    if (currentUser.Role != "primary_admin")
+                    {
+                        return StatusCode(403, new { success = false, error = "Only primary admin can create secondary admin or primary admin users" });
+                    }
+                }
 
                 // If creating a regular user, moderator must be specified
                 if (desiredRoleName == "user" && !req.ModeratorId.HasValue)
@@ -239,10 +273,57 @@ namespace Clinics.Api.Controllers
 
                 return Ok(user);
             }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error creating user");
+                var innerMessage = dbEx.InnerException?.Message ?? dbEx.Message;
+                
+                // Check for unique constraint violation on Username
+                if (innerMessage.Contains("IX_Users_Username", StringComparison.OrdinalIgnoreCase) ||
+                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) && 
+                    (innerMessage.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
+                     innerMessage.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
+                     innerMessage.Contains("unique constraint", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return BadRequest(new 
+                    { 
+                        success = false, 
+                        error = $"Username '{req.Username}' is already taken. Please choose a different username.",
+                        message = $"Username '{req.Username}' is already taken. Please choose a different username."
+                    });
+                }
+                
+                // Other database constraint violations
+                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) || 
+                    innerMessage.Contains("constraint", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new 
+                    { 
+                        success = false, 
+                        error = "Unable to create user due to invalid data or constraint violation.",
+                        message = "Unable to create user due to invalid data or constraint violation."
+                    });
+                }
+                
+                // Generic database error
+                return StatusCode(500, new 
+                { 
+                    success = false, 
+                    error = "An error occurred while creating the user. Please try again.",
+                    message = "An error occurred while creating the user. Please try again.",
+                    details = _env?.IsDevelopment() == true ? innerMessage : null
+                });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating user");
-                return StatusCode(500, new { success = false, error = "Error creating user" });
+                return StatusCode(500, new 
+                { 
+                    success = false, 
+                    error = "An unexpected error occurred while creating the user. Please try again.",
+                    message = "An unexpected error occurred while creating the user. Please try again.",
+                    details = _env?.IsDevelopment() == true ? ex.Message : null
+                });
             }
         }
 
@@ -262,16 +343,34 @@ namespace Clinics.Api.Controllers
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
                 
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == currentUserId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
 
-                var targetUser = await _db.Users.FindAsync(id);
+                var targetUser = await _db.Users
+                    .Where(u => u.Id == id && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
+                    
                 if (targetUser == null)
                     return NotFound(new { success = false, error = "User not found" });
 
-                // Only admin can update, or moderator can update their managed users
-                if (currentUser?.Role != "primary_admin" && currentUser?.Role != "secondary_admin")
+                if (currentUser == null)
+                    return Unauthorized(new { success = false, error = "Current user not found" });
+
+                // Only primary_admin can update primary_admin or secondary_admin users
+                // Secondary_admin cannot update secondary_admin (only primary_admin can)
+                if (targetUser.Role == "primary_admin" || targetUser.Role == "secondary_admin")
                 {
-                    if (currentUser?.Role != "moderator" || targetUser.ModeratorId != currentUserId)
+                    if (currentUser.Role != "primary_admin")
+                    {
+                        return StatusCode(403, new { success = false, error = "Only primary admin can update primary admin or secondary admin users" });
+                    }
+                }
+
+                // Only admin can update, or moderator can update their managed users
+                if (currentUser.Role != "primary_admin" && currentUser.Role != "secondary_admin")
+                {
+                    if (currentUser.Role != "moderator" || targetUser.ModeratorId != currentUserId)
                         return Forbid();
                 }
 
@@ -348,16 +447,34 @@ namespace Clinics.Api.Controllers
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
                 
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == currentUserId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
 
-                var targetUser = await _db.Users.FindAsync(id);
+                var targetUser = await _db.Users
+                    .Where(u => u.Id == id && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
+                    
                 if (targetUser == null)
                     return NotFound(new { success = false, error = "User not found" });
 
-                // Only admin can delete, or moderator can delete their managed users
-                if (currentUser?.Role != "primary_admin" && currentUser?.Role != "secondary_admin")
+                if (currentUser == null)
+                    return Unauthorized(new { success = false, error = "Current user not found" });
+
+                // Only primary_admin can delete primary_admin or secondary_admin users
+                // Secondary_admin cannot delete secondary_admin (only primary_admin can)
+                if (targetUser.Role == "primary_admin" || targetUser.Role == "secondary_admin")
                 {
-                    if (currentUser?.Role != "moderator" || targetUser.ModeratorId != currentUserId)
+                    if (currentUser.Role != "primary_admin")
+                    {
+                        return StatusCode(403, new { success = false, error = "Only primary admin can delete primary admin or secondary admin users" });
+                    }
+                }
+
+                // Only admin can delete, or moderator can delete their managed users
+                if (currentUser.Role != "primary_admin" && currentUser.Role != "secondary_admin")
+                {
+                    if (currentUser.Role != "moderator" || targetUser.ModeratorId != currentUserId)
                         return Forbid();
                 }
 

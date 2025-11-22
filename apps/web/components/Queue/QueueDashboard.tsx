@@ -1,10 +1,13 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useQueue } from '@/contexts/QueueContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import { UserRole } from '@/types/roles';
 import { validateNumber } from '@/utils/validation';
 import { createDeleteConfirmation, createBulkDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
@@ -21,12 +24,15 @@ import logger from '@/utils/logger';
 
 export default function QueueDashboard() {
   const { selectedQueueId, queues, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData, refreshQueues } = useQueue();
+  const { user, isAuthenticated } = useAuth();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { addToast } = useUI();
+  const router = useRouter();
   
   const queue = queues.find((q) => q.id === selectedQueueId);
   
+  // ALL hooks must be declared before any conditional returns
   // Initialize CQP and ETS from queue data
   const [currentCQP, setCurrentCQP] = useState(() => queue?.currentPosition?.toString() || '1');
   const [originalCQP, setOriginalCQP] = useState(() => queue?.currentPosition?.toString() || '1');
@@ -35,6 +41,29 @@ export default function QueueDashboard() {
   const [currentETS, setCurrentETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
   const [originalETS, setOriginalETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
   const [isEditingETS, setIsEditingETS] = useState(false);
+  
+  const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
+  const [editingQueueValue, setEditingQueueValue] = useState('');
+  const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
+  
+  // Authentication guard - ensure user has token and valid role
+  useEffect(() => {
+    // Check for token
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    
+    // If no token or not authenticated, redirect to login
+    if (!token || !isAuthenticated || !user) {
+      router.replace('/');
+      return;
+    }
+
+    // Ensure user has a valid role
+    if (!user.role || !Object.values(UserRole).includes(user.role)) {
+      router.replace('/');
+      return;
+    }
+  }, [isAuthenticated, user, router]);
   
   // Update CQP and ETS when queue data changes
   useEffect(() => {
@@ -45,11 +74,6 @@ export default function QueueDashboard() {
       setOriginalETS(queue.estimatedWaitMinutes?.toString() || '15');
     }
   }, [queue?.currentPosition, queue?.estimatedWaitMinutes, queue?.id]);
-  
-  const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
-  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
-  const [editingQueueValue, setEditingQueueValue] = useState('');
-  const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
 
   /**
    * Listen for data updates and refetch
@@ -518,18 +542,29 @@ export default function QueueDashboard() {
                 type="number"
                 value={editingQueueValue}
                 onChange={(e) => setEditingQueueValue(e.target.value)}
-                className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveQueueEdit(patient.id);
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelQueueEdit();
+                  }
+                }}
+                className="w-16 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 autoFocus
               />
               <button
                 onClick={() => saveQueueEdit(patient.id)}
                 className="bg-green-500 hover:bg-green-600 px-1 py-0.5 rounded text-xs text-white"
+                title="حفظ (Enter)"
               >
                 ✓
               </button>
               <button
                 onClick={cancelQueueEdit}
                 className="bg-red-500 hover:bg-red-600 px-1 py-0.5 rounded text-xs text-white"
+                title="إلغاء (Esc)"
               >
                 ✕
               </button>
@@ -672,18 +707,29 @@ export default function QueueDashboard() {
                 type="number"
                 value={currentCQP}
                 onChange={(e) => setCurrentCQP(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveCQP();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    handleCancelCQP();
+                  }
+                }}
                 className="flex-1 px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 autoFocus
               />
               <button
                 onClick={handleSaveCQP}
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                title="حفظ (Enter)"
               >
                 <i className="fas fa-check"></i>
               </button>
               <button
                 onClick={handleCancelCQP}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                title="إلغاء (Esc)"
               >
                 <i className="fas fa-times"></i>
               </button>
@@ -717,6 +763,15 @@ export default function QueueDashboard() {
                 type="number"
                 value={currentETS}
                 onChange={(e) => setCurrentETS(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveETS();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    handleCancelETS();
+                  }
+                }}
                 className="flex-1 px-3 py-2 border border-green-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 autoFocus
               />
@@ -724,12 +779,14 @@ export default function QueueDashboard() {
               <button
                 onClick={handleSaveETS}
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                title="حفظ (Enter)"
               >
                 <i className="fas fa-check"></i>
               </button>
               <button
                 onClick={handleCancelETS}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                title="إلغاء (Esc)"
               >
                 <i className="fas fa-times"></i>
               </button>

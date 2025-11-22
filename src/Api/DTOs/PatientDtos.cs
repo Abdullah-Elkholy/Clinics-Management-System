@@ -21,6 +21,12 @@ namespace Clinics.Api.DTOs
         /// </summary>
         public string? CountryCode { get; set; }
 
+        /// <summary>
+        /// Indicates whether the phone number has been validated for WhatsApp.
+        /// null = not checked yet, true = valid WhatsApp number, false = invalid WhatsApp number.
+        /// </summary>
+        public bool? IsValidWhatsAppNumber { get; set; }
+
         public int Position { get; set; }
 
         public string Status { get; set; } = "waiting";
@@ -47,14 +53,13 @@ namespace Clinics.Api.DTOs
         public string FullName { get; set; } = null!;
 
         [Required(ErrorMessage = "Phone number is required")]
-        [StringLength(35, MinimumLength = 5, ErrorMessage = "Phone number must be between 5 and 35 characters")]
-        [CountryCodeRequired(ErrorMessage = "Phone number must include country code (e.g., +201234567890)")]
+        [StringLength(20, MinimumLength = 5, ErrorMessage = "Phone number must be between 5 and 20 characters")]
         public string PhoneNumber { get; set; } = null!;
 
     // PhoneExtension removed from create request.
 
         /// <summary>
-        /// Optional country code (e.g., "+20", "+966"). If not provided, will be extracted from PhoneNumber.
+        /// Country code (e.g., "+20", "+966"). Required when PhoneNumber is provided.
         /// </summary>
         [StringLength(10)]
         public string? CountryCode { get; set; }
@@ -81,13 +86,20 @@ namespace Clinics.Api.DTOs
     // PhoneExtension removed from update request.
 
         /// <summary>
-        /// Optional country code (e.g., "+20", "+966"). If not provided, will be extracted from PhoneNumber.
+        /// Country code (e.g., "+20", "+966"). Required when PhoneNumber is provided.
         /// </summary>
         [StringLength(10)]
         public string? CountryCode { get; set; }
 
         [StringLength(20)]
         public string? Status { get; set; }
+
+        /// <summary>
+        /// Indicates whether the phone number has been validated for WhatsApp.
+        /// null = not checked yet, true = valid WhatsApp number, false = invalid WhatsApp number.
+        /// Note: This field is automatically reset to null if PhoneNumber or CountryCode changes.
+        /// </summary>
+        public bool? IsValidWhatsAppNumber { get; set; }
     }
 
     /// <summary>

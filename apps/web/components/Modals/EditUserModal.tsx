@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { validateName, validateUsername, ValidationError } from '@/utils/validation';
@@ -8,6 +8,7 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { User } from '@/services/userManagementService';
 import Modal from './Modal';
 import logger from '@/utils/logger';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 interface EditUserModalProps {
   selectedUser?: User | null;
@@ -28,6 +29,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
   const [freshUserData, setFreshUserData] = useState<User | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   
   // Track initial values to detect changes
   const [initialValues, setInitialValues] = useState({
@@ -255,11 +257,33 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
         window.dispatchEvent(new CustomEvent('userDataUpdated'));
       }, 100);
     } catch (err) {
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (err && typeof err === 'object' && 'message' in err)
+          ? String((err as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Failed to update user:', {
+        error: errorMessage,
+        statusCode: (err && typeof err === 'object' && 'statusCode' in err) ? (err as { statusCode?: unknown }).statusCode : undefined,
+        fullError: err,
+      });
       addToast('حدث خطأ أثناء تحديث البيانات', 'error');
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
+
   // Only disable if loading - validation errors show on blur but don't disable submit
   // User can still click submit, which will show validation errors
 
@@ -281,7 +305,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
       title="تعديل بيانات المستخدم"
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Disclaimer */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-sm text-blue-700 flex items-center gap-2">
@@ -318,6 +342,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأول"
               disabled={isLoading}
+              autoComplete="given-name"
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
                 errors.firstName
                   ? 'border-red-500 focus:ring-red-500'
@@ -342,6 +367,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
               onBlur={handleFieldBlur}
               placeholder="أدخل الاسم الأخير (اختياري)"
               disabled={isLoading}
+              autoComplete="family-name"
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
                 errors.lastName
                   ? 'border-red-500 focus:ring-red-500'
@@ -368,6 +394,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
             onBlur={handleFieldBlur}
             placeholder="أدخل اسم المستخدم"
             disabled={isLoading}
+            autoComplete="username"
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
               errors.username
                 ? 'border-red-500 focus:ring-red-500'
@@ -407,6 +434,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
                 onBlur={handleFieldBlur}
                 placeholder="اتركها فارغة للاحتفاظ بكلمة المرور الحالية"
                 disabled={isLoading}
+                autoComplete="new-password"
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all pr-10 ${
                   errors.password
                     ? 'border-red-500 focus:ring-red-500'
@@ -441,6 +469,7 @@ export default function EditUserModal({ selectedUser }: EditUserModalProps) {
                 onBlur={handleFieldBlur}
                 placeholder="تأكيد كلمة المرور الجديدة"
                 disabled={isLoading}
+                autoComplete="new-password"
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all pr-10 ${
                   errors.confirmPassword
                     ? 'border-red-500 focus:ring-red-500'

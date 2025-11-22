@@ -191,7 +191,7 @@ namespace ClinicsManagementService.Services
                     {
                         url = _page?.Url ?? "unavailable";
                         if (_page != null)
-                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/timeout_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png" });
+                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/timeout_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
                     }
                     catch { url = "unavailable"; }
                     Console.Error.WriteLine($"Timeout waiting for selector '{selector}' (state: {state}) on URL: {url}. {ex.Message}");
@@ -204,7 +204,7 @@ namespace ClinicsManagementService.Services
                     {
                         url = _page?.Url ?? "unavailable";
                         if (_page != null)
-                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/error_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png" });
+                            await _page.ScreenshotAsync(new PageScreenshotOptions { Path = $"Screenshots/error_{DateTime.Now:yyyyMMdd_HHmmss}.png" });
                     }
                     catch { url = "unavailable"; }
                     Console.Error.WriteLine($"Error waiting for selector '{selector}' (state: {state}) on URL: {url}. {ex.Message}");

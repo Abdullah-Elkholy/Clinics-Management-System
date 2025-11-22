@@ -128,13 +128,12 @@ namespace Clinics.Infrastructure
                 .HasOne<MessageTemplate>()
                 .WithMany()
                 .HasForeignKey(mc => mc.TemplateId)
-                .OnDelete(DeleteBehavior.Restrict) // Prevent template deletion if condition exists
-                .IsRequired();
-            
-            // Ensure TemplateId is unique (one condition per template via this FK)
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired(false);
+
+            // TemplateId is optional; keep a non-unique index for lookup performance
             modelBuilder.Entity<MessageCondition>()
-                .HasIndex(mc => mc.TemplateId)
-                .IsUnique();
+                .HasIndex(mc => mc.TemplateId);
             
             modelBuilder.Entity<MessageCondition>()
                 .HasOne(mc => mc.Queue)

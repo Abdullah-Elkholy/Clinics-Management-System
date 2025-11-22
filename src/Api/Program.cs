@@ -56,11 +56,12 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
-builder.Services.AddScoped<QuotaService>();
+builder.Services.AddScoped<Clinics.Application.Interfaces.IQuotaService, QuotaService>();
+builder.Services.AddScoped<QuotaService>(); // Also register concrete class for controllers that need extended methods
 builder.Services.AddScoped<IUserContext, UserContext>();
 builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
 builder.Services.AddScoped<IPatientPositionService, PatientPositionService>();  // Add missing service
-builder.Services.AddScoped<IPhoneNormalizationService, PhoneNormalizationService>();  // Add phone normalization
+builder.Services.AddScoped<IPhonePlaceholderService, PhonePlaceholderService>();  // Add phone placeholder service
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
 builder.Services.AddScoped<IAuditService, AuditService>();
@@ -102,6 +103,33 @@ builder.Services.AddAuthentication(options =>
         // For tests, we can relax clock skew
         ClockSkew = TimeSpan.FromSeconds(30)
     };
+
+    // Validate that user is not soft-deleted on each request
+    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var dbContext = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+            
+            // Extract user ID from claims
+            var userIdClaim = context.Principal?.Claims.FirstOrDefault(c => 
+                c.Type == System.Security.Claims.ClaimTypes.NameIdentifier || 
+                c.Type == "sub" || 
+                c.Type == "userId");
+            
+            if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+            {
+                var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
+                
+                // Reject token if user is deleted or doesn't exist
+                if (user == null || user.IsDeleted)
+                {
+                    context.Fail("User account has been deleted");
+                    return;
+                }
+            }
+        }
+    };
 });
 
 builder.Services.AddCors(options =>
@@ -109,9 +137,16 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
     {
         // When AllowCredentials() is used you must explicitly list allowed origins.
-        policy.AllowAnyOrigin()
+        // Cannot use AllowAnyOrigin() with AllowCredentials() - specify exact origins
+        policy.WithOrigins(
+                  "http://localhost:3000",
+                  "http://127.0.0.1:3000",
+                  "https://localhost:3000",
+                  "https://127.0.0.1:3000"
+              )
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials(); // Required for HttpOnly cookies
     });
 });
 
@@ -144,7 +179,8 @@ if (!builder.Environment.IsEnvironment("Test"))
 }
 
 // message sender and processor
-builder.Services.AddScoped<IMessageSender, SimulatedMessageSender>();
+builder.Services.AddHttpClient<WhatsAppServiceSender>();
+builder.Services.AddScoped<IMessageSender, WhatsAppServiceSender>();
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
 
 // Authorization policies

@@ -4,6 +4,7 @@
  */
 
 import type { Queue, MessageTemplate } from '@/types';
+import type { User } from '@/types/user';
 
 export interface ModeratorWithStats {
   moderatorId: string | number;
@@ -20,35 +21,57 @@ export interface QueueWithConflicts extends Queue {
 }
 
 /**
- * Mock data: Map of moderator GUIDs to their names and usernames
- * In production, this would come from API or context
- */
-const MODERATOR_MAP: Record<string | number, { name: string; username: string }> = {
-  'moderator-uuid-1': { name: 'أحمد محمد', username: 'ahmed_doctor' },
-  'moderator-uuid-2': { name: 'فاطمة علي', username: 'fatima_clinic' },
-  'moderator-uuid-3': { name: 'محمود عبده', username: 'mahmoud_med' },
-  'moderator-uuid-4': { name: 'سارة إبراهيم', username: 'sarah_health' },
-  'moderator-uuid-5': { name: 'خالد حسن', username: 'khaled_dr' },
-  // Legacy numeric IDs (for backward compatibility)
-  1: { name: 'أحمد محمد', username: 'ahmed_doctor' },
-  2: { name: 'فاطمة علي', username: 'fatima_clinic' },
-  3: { name: 'محمود عبده', username: 'mahmoud_med' },
-  4: { name: 'سارة إبراهيم', username: 'sarah_health' },
-  5: { name: 'خالد حسن', username: 'khaled_dr' },
-};
-
-/**
- * Get moderator info by ID (name and username)
+ * Get moderator info by ID from real moderator data
+ * Falls back to default values if moderator not found
+ * 
+ * Handles ID matching for both string and number formats:
+ * - Backend sends integer IDs (e.g., 3)
+ * - Frontend converts to strings (e.g., "3")
+ * - Matching must handle both formats and numeric comparisons
  */
 export const getModeratorInfo = (
-  moderatorId: string | number
+  moderatorId: string | number,
+  moderators?: User[]
 ): { name: string; username: string } => {
-  return (
-    MODERATOR_MAP[moderatorId] || {
-      name: `المشرف #${moderatorId}`,
-      username: `moderator_${moderatorId}`,
+  // If real moderator data is provided, use it
+  if (moderators && moderators.length > 0) {
+    // Normalize moderatorId to string for comparison
+    const normalizedModId = String(moderatorId);
+    
+    // Try to find moderator by:
+    // 1. Exact string match on id
+    // 2. Numeric match (convert both to numbers and compare)
+    // 3. Username match
+    const moderator = moderators.find((m) => {
+      const modIdStr = String(m.id);
+      const modIdNum = Number(m.id);
+      const searchIdNum = Number(moderatorId);
+      
+      return (
+        modIdStr === normalizedModId || // Exact string match
+        (!isNaN(modIdNum) && !isNaN(searchIdNum) && modIdNum === searchIdNum) || // Numeric match
+        String(m.username) === normalizedModId // Username match
+      );
+    });
+    
+    if (moderator) {
+      // Use firstName + lastName if both exist, otherwise firstName, otherwise username
+      const name = moderator.firstName && moderator.lastName
+        ? `${moderator.firstName} ${moderator.lastName}`
+        : moderator.firstName || moderator.username || `المشرف #${moderatorId}`;
+      
+      return {
+        name,
+        username: moderator.username || `moderator_${moderatorId}`,
+      };
     }
-  );
+  }
+  
+  // Fallback to default values if moderator not found
+  return {
+    name: `المشرف #${moderatorId}`,
+    username: `moderator_${moderatorId}`,
+  };
 };
 
 /**
@@ -135,11 +158,17 @@ const conditionsOverlap = (cond1: any, cond2: any): boolean => {
 /**
  * Group queues and templates by moderator
  * Returns array of moderators with aggregated stats
+ * 
+ * @param queues - Array of queues to group
+ * @param templates - Array of message templates
+ * @param conditions - Array of message conditions (for conflict detection)
+ * @param moderators - Optional array of real moderator data from backend (User[])
  */
 export const groupQueuesByModerator = (
   queues: Queue[],
   templates: MessageTemplate[],
-  conditions: any[] = []
+  conditions: any[] = [],
+  moderators?: User[]
 ): ModeratorWithStats[] => {
   // Create map of moderator ID to queues and templates
   const moderatorMap = new Map<string | number, ModeratorWithStats>();
@@ -149,7 +178,7 @@ export const groupQueuesByModerator = (
 
   // Initialize all moderators with zero counts
   Array.from(uniqueModeratorIds).forEach((modId) => {
-    const modInfo = getModeratorInfo(modId);
+    const modInfo = getModeratorInfo(modId, moderators);
     moderatorMap.set(modId, {
       moderatorId: modId,
       moderatorName: modInfo.name,

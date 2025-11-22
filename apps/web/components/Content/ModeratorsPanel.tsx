@@ -8,6 +8,8 @@ import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
+import { useUserManagement } from '@/hooks/useUserManagement';
+import WhatsAppAuthTabContent from '@/components/Content/WhatsAppAuthTabContent';
 
 interface ModeratorsState {
   moderators: ModeratorDetails[];
@@ -28,6 +30,7 @@ interface ModeratorsState {
  */
 export default function ModeratorsPanel() {
   const { confirm } = useConfirmDialog();
+  const [, userManagementActions] = useUserManagement();
   const [state, setState] = useState<ModeratorsState>({
     moderators: [],
     loading: true,
@@ -35,11 +38,29 @@ export default function ModeratorsPanel() {
     selectedModerator: null,
   });
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'users' | 'quota'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'users' | 'quota' | 'whatsappAuth'>('overview');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [_showEditForm, setShowEditForm] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Helper function to get user display name following priority:
+  // 1. firstName + lastName (if both exist)
+  // 2. firstName (if lastName is null/empty)
+  // 3. المشرف #${id} (ID-based fallback)
+  // 4. username (last fallback)
+  const getUserDisplayName = (user: { firstName: string; lastName?: string; username: string; id?: string | number }): string => {
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    if (user.firstName) {
+      return user.firstName;
+    }
+    if (user.id) {
+      return `المشرف #${user.id}`;
+    }
+    return user.username || 'Unknown';
+  };
 
   const [formData, setFormData] = useState<CreateModeratorRequest>({
     firstName: '',
@@ -100,6 +121,8 @@ export default function ModeratorsPanel() {
       const response = await moderatorsService.createModerator(formData);
       if (response.success) {
         await fetchModerators();
+        // Refetch moderators in sidebar (Navigation component uses userManagementState.moderators)
+        await userManagementActions.fetchModerators();
         setShowCreateForm(false);
         setFormData({
           firstName: '',
@@ -134,6 +157,8 @@ export default function ModeratorsPanel() {
       );
       if (response.success) {
         await fetchModerators();
+        // Refetch moderators in sidebar (Navigation component uses userManagementState.moderators)
+        await userManagementActions.fetchModerators();
         setShowEditForm(false);
         setState((prev) => ({ ...prev, selectedModerator: null }));
         // Dispatch event to refresh PanelHeader stats
@@ -160,6 +185,8 @@ export default function ModeratorsPanel() {
       const response = await moderatorsService.deleteModerator(moderatorId);
       if (response.success) {
         await fetchModerators();
+        // Refetch moderators in sidebar (Navigation component uses userManagementState.moderators)
+        await userManagementActions.fetchModerators();
         // Refresh sidebar queues (moderator's queues are now deleted)
         // Note: refreshQueues might not be available in this component, so we dispatch events
         // Dispatch events to refresh PanelHeader stats, sidebar queues, and moderators list
@@ -219,7 +246,7 @@ export default function ModeratorsPanel() {
   }, [state.selectedModerator, userFormData, fetchModerators]);
 
   const filteredModerators = state.moderators.filter((m) => {
-    const fullName = m.lastName ? `${m.firstName} ${m.lastName}` : m.firstName;
+    const fullName = getUserDisplayName(m);
     return fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
            m.username.toLowerCase().includes(searchTerm.toLowerCase());
   });
@@ -264,7 +291,7 @@ export default function ModeratorsPanel() {
 
       {/* Tabs */}
       <div className="flex gap-4 mb-6 border-b">
-        {(['overview', 'details', 'users', 'quota'] as const).map((tab) => (
+        {(['overview', 'details', 'users', 'quota', 'whatsappAuth'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -278,6 +305,7 @@ export default function ModeratorsPanel() {
             {tab === 'details' && '📝 التفاصيل'}
             {tab === 'users' && '👥 المستخدمون'}
             {tab === 'quota' && '📊 الحصة'}
+            {tab === 'whatsappAuth' && '📱 مصادقة الواتساب'}
           </button>
         ))}
       </div>
@@ -399,7 +427,7 @@ export default function ModeratorsPanel() {
                   {/* Header */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="font-bold text-lg text-gray-900">{moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName}</h3>
+                      <h3 className="font-bold text-lg text-gray-900">{getUserDisplayName(moderator)}</h3>
                       <p className="text-sm text-gray-600 mt-1">
                         <span className="text-gray-500">@</span>
                         {moderator.username}
@@ -527,7 +555,7 @@ export default function ModeratorsPanel() {
                   key={moderator.id}
                   className="bg-white border border-gray-200 rounded-lg p-6"
                 >
-                  <h4 className="font-bold text-gray-900 mb-4">{moderator.lastName ? `${moderator.firstName} ${moderator.lastName}` : moderator.firstName}</h4>
+                  <h4 className="font-bold text-gray-900 mb-4">{getUserDisplayName(moderator)}</h4>
 
                   {/* Messages Quota */}
                   <div className="mb-6">
@@ -584,7 +612,7 @@ export default function ModeratorsPanel() {
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-lg">
-              مستخدمو {state.selectedModerator.lastName ? `${state.selectedModerator.firstName} ${state.selectedModerator.lastName}` : state.selectedModerator.firstName}
+              مستخدمو {getUserDisplayName(state.selectedModerator)}
             </h3>
             <button
               onClick={() => setShowAddUserModal(true)}
@@ -681,6 +709,11 @@ export default function ModeratorsPanel() {
             </div>
           )}
         </div>
+      )}
+
+      {/* WhatsApp Authentication Tab */}
+      {activeTab === 'whatsappAuth' && (
+        <WhatsAppAuthTabContent />
       )}
     </PanelWrapper>
   );

@@ -78,10 +78,32 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const fetchUsers = useCallback(
     async (filters?: { role?: UserRole; isActive?: boolean; search?: string }) => {
+      // CRITICAL: Don't fetch if no user is authenticated
+      if (!currentUser) {
+        // Only clear users if they exist, and only set loading to false if it's true
+        setUsers(prev => {
+          if (prev.length === 0) return prev; // No change needed
+          return []; // Clear users
+        });
+        setLoading(prev => {
+          if (!prev) return prev; // No change needed
+          return false; // Set loading to false
+        });
+        return;
+      }
+
       // Only admins and moderators can fetch the user list
       // Regular users don't have permission, so skip the fetch silently
-      if (currentUser && currentUser.role === UserRole.User) {
-        setUsers([]);
+      if (currentUser.role === UserRole.User) {
+        // Only clear users if they exist, and only set loading to false if it's true
+        setUsers(prev => {
+          if (prev.length === 0) return prev; // No change needed
+          return []; // Clear users
+        });
+        setLoading(prev => {
+          if (!prev) return prev; // No change needed
+          return false; // Set loading to false
+        });
         return;
       }
 
@@ -97,7 +119,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
           if (result.error && result.error.includes('403')) {
             setUsers([]);
           } else {
-            setError(result.error || 'Failed to fetch users');
+            setError(result.error || 'فشل في جلب المستخدمين');
           }
         }
       } catch (err) {
@@ -117,10 +139,18 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    * Fetch all moderators
    */
   const fetchModerators = useCallback(async () => {
+    // CRITICAL: Don't fetch if no user is authenticated
+    if (!currentUser) {
+      setModerators([]);
+      setLoading(false);
+      return;
+    }
+
     // Only admins and moderators can see the full moderator list
     // Regular users don't have permission, so skip the fetch silently
-    if (currentUser && currentUser.role === UserRole.User) {
+    if (currentUser.role === UserRole.User) {
       setModerators([]);
+      setLoading(false);
       return;
     }
 
@@ -136,7 +166,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         if (result.error && result.error.includes('403')) {
           setModerators([]);
         } else {
-          setError(result.error || 'Failed to fetch moderators');
+          setError(result.error || 'فشل في جلب المشرفين');
         }
       }
     } catch (err) {
@@ -180,6 +210,12 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         const result = await userManagementService.createUser(payload);
         if (result.success && result.data) {
           setUsers((prev) => [...prev, result.data]);
+          
+          // If created user is a moderator, refetch moderators list for sidebar
+          if (result.data.role === UserRole.Moderator) {
+            await fetchModerators();
+          }
+          
           addToast(`تم إنشاء المستخدم: ${result.data.firstName} ${result.data.lastName}`, 'success');
           return true;
         } else {
@@ -189,7 +225,24 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
           return false;
         }
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        // Extract error message from ApiError or Error object
+        let errorMsg = 'Unknown error';
+        if (err && typeof err === 'object') {
+          // Check for ApiError format (has message property)
+          if ('message' in err && typeof err.message === 'string') {
+            errorMsg = err.message;
+          }
+          // Check for standard Error object
+          else if (err instanceof Error) {
+            errorMsg = err.message;
+          }
+          // Check for error property in object
+          else if ('error' in err && typeof err.error === 'string') {
+            errorMsg = err.error;
+          }
+        } else if (err instanceof Error) {
+          errorMsg = err.message;
+        }
         setError(errorMsg);
         addToast(errorMsg, 'error');
         return false;
@@ -197,7 +250,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         setLoading(false);
       }
     },
-    [addToast]
+    [addToast, fetchModerators]
   );
 
   /**
@@ -209,12 +262,23 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       setError(null);
 
       try {
+        // Check if user being updated is a moderator (before update)
+        const userBeforeUpdate = users.find((u) => u.id === id);
+        const wasModerator = userBeforeUpdate?.role === UserRole.Moderator;
+        
         const result = await userManagementService.updateUser(id, payload);
         if (result.success && result.data) {
           setUsers((prev) => prev.map((u) => (u.id === id ? result.data : u)));
           if (selectedUser?.id === id) {
             setSelectedUser(result.data);
           }
+          
+          // Refetch moderators if user being updated is/was a moderator
+          const isModerator = result.data.role === UserRole.Moderator;
+          if (wasModerator || isModerator) {
+            await fetchModerators();
+          }
+          
           addToast(`تم تحديث المستخدم: ${result.data.firstName} ${result.data.lastName}`, 'success');
           return true;
         } else {
@@ -232,7 +296,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         setLoading(false);
       }
     },
-    [selectedUser, addToast]
+    [selectedUser, addToast, fetchModerators, users]
   );
 
   /**
@@ -247,12 +311,22 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       setError(null);
 
       try {
+        // Check if user being deleted is a moderator
+        const userToDelete = users.find((u) => u.id === id);
+        const wasModerator = userToDelete?.role === UserRole.Moderator;
+        
         const result = await userManagementService.deleteUser(id);
         if (result.success) {
           setUsers((prev) => prev.filter((u) => u.id !== id));
           if (selectedUser?.id === id) {
             setSelectedUser(undefined);
           }
+          
+          // Refetch moderators if deleted user was a moderator
+          if (wasModerator) {
+            await fetchModerators();
+          }
+          
           addToast('تم حذف المستخدم بنجاح', 'success');
           return true;
         } else {
@@ -270,7 +344,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         setLoading(false);
       }
     },
-    [selectedUser, addToast]
+    [selectedUser, addToast, fetchModerators, users]
   );
 
   /**
@@ -288,14 +362,15 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
   }, []);
 
   /**
-   * Fetch users on mount
+   * Fetch users on mount - removed to prevent infinite loops
+   * Components should call fetchUsers/fetchModerators explicitly when needed
    */
-  useEffect(() => {
-    if (currentUser) {
-      fetchUsers();
-      fetchModerators();
-    }
-  }, [currentUser, fetchUsers, fetchModerators]);
+  // useEffect(() => {
+  //   if (currentUser) {
+  //     fetchUsers();
+  //     fetchModerators();
+  //   }
+  // }, [currentUser, fetchUsers, fetchModerators]);
 
   /**
    * Build state object

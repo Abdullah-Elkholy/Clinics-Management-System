@@ -15,6 +15,10 @@ interface ModeratorQueuesQuotaModalProps {
 
 type QuotaMode = 'set' | 'add';
 
+// Maximum value for 32-bit integer (int in C#)
+// This is 2^31 - 1 = 2,147,483,647, which is the maximum value for int in C# backend
+const MAX_INTEGER = 2147483647;
+
 /**
  * ModeratorQueuesQuotaModal - Edit moderator queues quota
  * Features:
@@ -22,6 +26,7 @@ type QuotaMode = 'set' | 'add';
  * - Handle empty field as unlimited (-1)
  * - Three-column breakdown display
  * - Queues-specific button styling
+ * - Integer validation with maximum value capping
  */
 export default function ModeratorQueuesQuotaModal({
   quota,
@@ -33,7 +38,7 @@ export default function ModeratorQueuesQuotaModal({
   isLoading = false,
 }: ModeratorQueuesQuotaModalProps) {
   const [formData, setFormData] = useState<ModeratorQuota>(quota);
-  const [mode, setMode] = useState<QuotaMode>('set');
+  const [mode, setMode] = useState<QuotaMode | 'unlimited'>('set');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [inputValue, setInputValue] = useState<string>(''); // Store raw input for 'add' mode
@@ -42,7 +47,8 @@ export default function ModeratorQueuesQuotaModal({
   React.useEffect(() => {
     if (isOpen && quota) {
       setFormData(quota);
-      setMode('set');
+      // If quota is already unlimited, set mode to 'unlimited'
+      setMode(quota.queuesQuota.limit === -1 ? 'unlimited' : 'set');
       setError(null);
       setInputValue(''); // Reset input value
     }
@@ -60,6 +66,13 @@ export default function ModeratorQueuesQuotaModal({
         return;
       }
 
+      // Validate integer maximum for queues quota
+      if (formData.queuesQuota.limit !== -1 && formData.queuesQuota.limit > MAX_INTEGER) {
+        setError(`القيمة القصوى المسموحة هي ${MAX_INTEGER.toLocaleString('ar-SA')}`);
+        setSaving(false);
+        return;
+      }
+
       if (mode === 'set' && formData.queuesQuota.limit !== -1 && formData.queuesQuota.limit < formData.queuesQuota.used) {
         setError(`الحد لا يمكن أن يكون أقل من الكمية المستخدمة (${formData.queuesQuota.used.toLocaleString('ar-SA')})`);
         setSaving(false);
@@ -72,6 +85,19 @@ export default function ModeratorQueuesQuotaModal({
         return;
       }
 
+      // For 'add' mode, validate that adding won't exceed MAX_INTEGER
+      if (mode === 'add' && inputValue !== '' && quota.queuesQuota.limit !== -1) {
+        const currentLimit = quota.queuesQuota.limit;
+        const delta = parseInt(inputValue, 10) || 0;
+        const maxAddable = MAX_INTEGER - currentLimit;
+        
+        if (delta > maxAddable) {
+          setError(`لا يمكن إضافة أكثر من ${maxAddable.toLocaleString('ar-SA')} (الحد الأقصى: ${MAX_INTEGER.toLocaleString('ar-SA')})`);
+          setSaving(false);
+          return;
+        }
+      }
+
       // For 'add' mode, we need to pass the delta (input value), not the final calculated limit
       // Only update queuesQuota, keep messagesQuota unchanged
       const quotaToSave: Partial<ModeratorQuota> = {
@@ -79,7 +105,13 @@ export default function ModeratorQueuesQuotaModal({
         queuesQuota: { ...formData.queuesQuota },
       };
       
-      if (mode === 'add' && inputValue !== '' && quota.queuesQuota.limit !== -1) {
+      if (mode === 'unlimited') {
+        // For 'unlimited' mode, set limit to -1
+        quotaToSave.queuesQuota = {
+          ...formData.queuesQuota,
+          limit: -1,
+        };
+      } else if (mode === 'add' && inputValue !== '' && quota.queuesQuota.limit !== -1) {
         // Calculate delta from input value
         const delta = parseInt(inputValue, 10) || 0;
         if (delta > 0) {
@@ -93,9 +125,12 @@ export default function ModeratorQueuesQuotaModal({
           return;
         }
       } else if (mode === 'set') {
-        // For 'set' mode, use the calculated limit from formData
+        // For 'set' mode, use the calculated limit from formData (capped at MAX_INTEGER)
         quotaToSave.queuesQuota = {
           ...formData.queuesQuota,
+          limit: formData.queuesQuota.limit > MAX_INTEGER 
+            ? MAX_INTEGER 
+            : formData.queuesQuota.limit,
         };
       } else if (mode === 'add' && inputValue === '') {
         setError('يرجى إدخال قيمة للإضافة');
@@ -106,7 +141,7 @@ export default function ModeratorQueuesQuotaModal({
       // Pass mode information via a custom property
       const quotaWithMode = { ...quotaToSave, _mode: mode } as any;
       await onSave(quotaWithMode as ModeratorQuota);
-      onClose();
+      // Don't close modal here - let parent component handle closing after refreshing data
     } catch (err) {
       setError(err instanceof Error ? err.message : 'فشل حفظ الحصة');
     } finally {
@@ -115,21 +150,53 @@ export default function ModeratorQueuesQuotaModal({
   };
 
   const handleLimitChange = (value: string) => {
-    setInputValue(value); // Store raw input
-    const parsedValue = value === '' ? -1 : parseInt(value, 10) || -1;
-    const currentLimit = quota.queuesQuota.limit;
+    // Prevent changes when mode is 'unlimited' (input is disabled, but this is a safeguard)
+    if (mode === 'unlimited') {
+      return;
+    }
 
+    const currentLimit = quota.queuesQuota.limit;
+    
     if (mode === 'add' && currentLimit === -1) {
       return;
     }
+
+    const parsedValue = value === '' ? -1 : parseInt(value, 10) || -1;
+
+    // For 'add' mode, cap the input value itself at (MAX_INTEGER - currentLimit)
+    if (mode === 'add' && currentLimit !== -1 && parsedValue !== -1) {
+      const maxAddable = MAX_INTEGER - currentLimit;
+      
+      if (parsedValue > maxAddable) {
+        // Cap the input value at maxAddable
+        const cappedValue = String(maxAddable);
+        setInputValue(cappedValue);
+        const sum = currentLimit + maxAddable;
+        setFormData((prev) => ({
+          ...prev,
+          queuesQuota: {
+            ...prev.queuesQuota,
+            limit: sum > MAX_INTEGER ? MAX_INTEGER : sum,
+          },
+        }));
+        return;
+      }
+    }
+
+    setInputValue(value); // Store raw input
 
     let newLimit = parsedValue;
     if (mode === 'add' && parsedValue !== -1) {
       if (currentLimit === -1) {
         newLimit = -1;
       } else {
-        newLimit = currentLimit + parsedValue;
+        // Cap the addition result at MAX_INTEGER
+        const sum = currentLimit + parsedValue;
+        newLimit = sum > MAX_INTEGER ? MAX_INTEGER : sum;
       }
+    } else if (mode === 'set' && parsedValue !== -1 && parsedValue > MAX_INTEGER) {
+      // Cap 'set' mode values at MAX_INTEGER
+      newLimit = MAX_INTEGER;
     }
 
     setFormData((prev) => ({
@@ -143,7 +210,7 @@ export default function ModeratorQueuesQuotaModal({
 
   const calculateRemaining = (limit: number, used: number): number => {
     if (limit === -1) return -1;
-    return Math.max(0, limit - used);
+    return limit - used;
   };
 
   const remaining = calculateRemaining(formData.queuesQuota.limit, formData.queuesQuota.used);
@@ -209,10 +276,13 @@ export default function ModeratorQueuesQuotaModal({
           <div className="flex gap-2 items-end">
             <input
               type="number"
-              value={mode === 'add' ? inputValue : (formData.queuesQuota.limit === -1 ? '' : String(formData.queuesQuota.limit))}
+              value={mode === 'unlimited' ? '' : (mode === 'add' ? inputValue : (formData.queuesQuota.limit === -1 ? '' : String(formData.queuesQuota.limit)))}
               onChange={(e) => handleLimitChange(e.target.value)}
-              disabled={saving || isLoading || (mode === 'add' && wasUnlimited)}
-              placeholder={mode === 'add' ? 'أدخل الكمية المراد إضافتها (اتركه فارغاً لغير محدود)' : 'أدخل الحد الجديد (اتركه فارغاً لغير محدود)'}
+              disabled={saving || isLoading || (mode === 'add' && wasUnlimited) || mode === 'unlimited'}
+              placeholder={mode === 'unlimited' ? 'غير محدود' : (mode === 'add' ? 'أدخل الكمية المراد إضافتها' : 'أدخل الحد الجديد')}
+              max={mode === 'add' && quota.queuesQuota.limit !== -1 
+                ? MAX_INTEGER - quota.queuesQuota.limit 
+                : MAX_INTEGER}
               className="flex-1 px-3 py-1.5 text-right text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <select
@@ -220,11 +290,29 @@ export default function ModeratorQueuesQuotaModal({
               onChange={(e) => {
                 const newMode = e.target.value as QuotaMode | 'unlimited';
                 if (newMode === 'unlimited') {
-                  setMode('set');
+                  setMode('unlimited');
                   setInputValue('');
-                  handleLimitChange(''); // Set to unlimited
+                  // Set formData limit to -1
+                  setFormData((prev) => ({
+                    ...prev,
+                    queuesQuota: {
+                      ...prev.queuesQuota,
+                      limit: -1,
+                    },
+                  }));
                 } else {
                   setMode(newMode);
+                  // If switching from unlimited to set/add, clear the input
+                  if (mode === 'unlimited') {
+                    setInputValue('');
+                    setFormData((prev) => ({
+                      ...prev,
+                      queuesQuota: {
+                        ...prev.queuesQuota,
+                        limit: quota.queuesQuota.limit === -1 ? 0 : quota.queuesQuota.limit,
+                      },
+                    }));
+                  }
                 }
               }}
               disabled={saving || isLoading}
@@ -237,7 +325,11 @@ export default function ModeratorQueuesQuotaModal({
           </div>
 
           {/* Mode Description */}
-          {mode === 'add' && wasUnlimited ? (
+          {mode === 'unlimited' ? (
+            <p className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg p-2">
+              ✓ سيتم تعيين الحصة كغير محدودة
+            </p>
+          ) : mode === 'add' && wasUnlimited ? (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
               ⚠️ لا يمكن إضافة قيم عندما تكون الحصة غير محدودة. اختر "تعيين الحد" لتحديد حد جديد.
             </p>

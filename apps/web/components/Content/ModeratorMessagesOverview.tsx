@@ -15,6 +15,8 @@ import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
 import logger from '@/utils/logger';
 import type { MessageCondition } from '@/types/messageCondition';
+import { useUserManagement } from '@/hooks/useUserManagement';
+import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
 // Mock data removed - using API data instead
 
 /**
@@ -47,8 +49,9 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function ModeratorMessagesOverview() {
-  const { moderators, queues, messageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
-  const { addToast } = useUI();
+  const { moderators: queueBasedModerators, queues, messageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
+  const [userManagementState] = useUserManagement();
+  const { addToast, setCurrentPanel } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
@@ -145,15 +148,6 @@ export default function ModeratorMessagesOverview() {
     });
   }, []);
 
-  // Toggle all moderators
-  const toggleAllModerators = useCallback(() => {
-    if (expandedModerators.size === moderators.length) {
-      setExpandedModerators(new Set());
-    } else {
-      setExpandedModerators(new Set(moderators.map((m) => m.moderatorId)));
-    }
-  }, [expandedModerators.size, moderators.length]);
-
   /**
    * Check for condition intersections in a queue (same logic as MessagesPanel)
    */
@@ -241,6 +235,88 @@ export default function ModeratorMessagesOverview() {
   };
 
   /**
+   * Merge queue-based moderators with user management moderators
+   * Prioritize firstName first, then fall back to username or ID
+   */
+  const moderators = useMemo(() => {
+    // Create a map of queue-based moderators by ID
+    const queueModeratorMap = new Map<string | number, typeof queueBasedModerators[0]>();
+    queueBasedModerators.forEach(mod => {
+      const normalizedId = String(mod.moderatorId);
+      queueModeratorMap.set(normalizedId, mod);
+      if (typeof mod.moderatorId === 'number') {
+        queueModeratorMap.set(String(mod.moderatorId), mod);
+      }
+    });
+    
+    // Merge with all moderators from user management
+    const mergedModerators: ModeratorWithStats[] = [];
+    const processedIds = new Set<string>();
+    
+    // Helper function to get moderator display name following priority:
+    // 1. firstName + lastName (if both exist)
+    // 2. firstName (if lastName is null/empty)
+    // 3. المشرف #${modId} (ID-based fallback)
+    // 4. username (last fallback)
+    const getModeratorDisplayName = (userMod: typeof userManagementState.moderators[0], modId: string): string => {
+      if (userMod.firstName && userMod.lastName) {
+        return `${userMod.firstName} ${userMod.lastName}`;
+      }
+      if (userMod.firstName) {
+        return userMod.firstName;
+      }
+      if (modId) {
+        return `المشرف #${modId}`;
+      }
+      return userMod.username || `المشرف #${modId}`;
+    };
+
+    // First, add all moderators from user management
+    userManagementState.moderators.forEach(userMod => {
+      const modId = String(userMod.id || userMod.username);
+      processedIds.add(modId);
+      
+      // Check if this moderator has queues
+      const queueMod = queueModeratorMap.get(modId) || 
+                       (typeof userMod.id === 'number' ? queueModeratorMap.get(String(userMod.id)) : undefined);
+      
+      if (queueMod) {
+        // Use queue-based data but update moderatorName from user data following priority
+        const updatedQueueMod = {
+          ...queueMod,
+          moderatorName: getModeratorDisplayName(userMod, modId),
+        };
+        mergedModerators.push(updatedQueueMod);
+      } else {
+        // Moderator exists but has no queues
+        const moderatorName = getModeratorDisplayName(userMod, modId);
+        
+        mergedModerators.push({
+          moderatorId: modId,
+          moderatorName: moderatorName,
+          moderatorUsername: userMod.username || `moderator_${modId}`,
+          queuesCount: 0,
+          templatesCount: 0,
+          conflictCount: 0,
+          queues: [],
+        });
+      }
+    });
+    
+    // Also include any queue-based moderators that might not be in user management (edge case)
+    queueBasedModerators.forEach(queueMod => {
+      const normalizedId = String(queueMod.moderatorId);
+      if (!processedIds.has(normalizedId)) {
+        mergedModerators.push(queueMod);
+        processedIds.add(normalizedId);
+      }
+    });
+    
+    // Sort by moderator ID
+    return mergedModerators.sort((a, b) => Number(a.moderatorId) - Number(b.moderatorId));
+  }, [queueBasedModerators, userManagementState.moderators]);
+
+  /**
    * Filter moderators by search term
    */
   const filteredModerators = useMemo(() => {
@@ -253,16 +329,31 @@ export default function ModeratorMessagesOverview() {
     );
   }, [moderators, searchTerm]);
 
+  // Toggle all moderators - must be defined after moderators useMemo
+  const toggleAllModerators = useCallback(() => {
+    if (expandedModerators.size === moderators.length) {
+      setExpandedModerators(new Set());
+    } else {
+      setExpandedModerators(new Set(moderators.map((m) => m.moderatorId)));
+    }
+  }, [expandedModerators.size, moderators]);
+
   /**
    * Role-based stats for admin view showing system-wide quota
    */
   const getAdminStats = useMemo(() => {
     // Use API data if available, fallback to default values
     const quotaData = userQuota || { limit: 0, used: 0 };
+    
     const baseStats = {
       total: quotaData.limit,
       used: quotaData.used,
-      remaining: quotaData.limit - quotaData.used,
+      remaining: quotaData.limit === -1 ? -1 : quotaData.limit - quotaData.used,
+    };
+
+    // Format value for display: show "غير محدود" for -1
+    const formatQuotaValue = (value: number): string => {
+      return value === -1 ? 'غير محدود' : value.toLocaleString('ar-SA');
     };
 
     return [
@@ -274,19 +365,19 @@ export default function ModeratorMessagesOverview() {
       },
       {
         label: 'إجمالي الرسائل في النظام',
-        value: baseStats.total.toString(),
+        value: formatQuotaValue(baseStats.total),
         color: 'blue' as const,
         info: 'مجموع رسائل جميع الفرق'
       },
       {
         label: 'الرسائل المستخدمة',
-        value: baseStats.used.toString(),
+        value: baseStats.used.toLocaleString('ar-SA'),
         color: 'yellow' as const,
         info: 'من المجموع الكلي للنظام'
       },
       {
         label: 'الرسائل المتبقية',
-        value: baseStats.remaining.toString(),
+        value: formatQuotaValue(baseStats.remaining),
         color: 'green' as const,
         info: ''
       },
@@ -342,7 +433,9 @@ export default function ModeratorMessagesOverview() {
             message="لم يتم العثور على أي مشرفين في النظام"
             actionLabel="اذهب إلى لوحة التحكم"
             onAction={() => {
-              window.location.href = '#/management';
+              // Navigation now handled by UIContext router
+              // Use setCurrentPanel('management') instead of window.location
+              setCurrentPanel('management');
             }}
           />
         ) : moderators.length === 0 ? (
@@ -352,7 +445,9 @@ export default function ModeratorMessagesOverview() {
             message="لم يتم العثور على أي مشرفين في النظام"
             actionLabel="اذهب إلى لوحة التحكم"
             onAction={() => {
-              window.location.href = '#/management';
+              // Navigation now handled by UIContext router
+              // Use setCurrentPanel('management') instead of window.location
+              setCurrentPanel('management');
             }}
           />
         ) : filteredModerators.length === 0 ? (
@@ -573,8 +668,8 @@ export default function ModeratorMessagesOverview() {
                                                   return 0;
                                                 })
                                                 .map((template) => {
-                                                  // TODO: Replace with operator-driven condition from template.condition
-                                                  const condition = null;
+                                                  // Resolve condition from embedded template.condition
+                                                  const condition = template.condition;
 
                                                   return (
                                                     <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">
@@ -585,6 +680,8 @@ export default function ModeratorMessagesOverview() {
                                                         {condition ? (
                                                           condition.operator === 'DEFAULT' ? (
                                                             <span className="text-green-600 text-xs font-medium">✓ افتراضي</span>
+                                                          ) : condition.operator === 'UNCONDITIONED' ? (
+                                                            <span className="text-gray-600 text-xs font-medium">بدون شرط</span>
                                                           ) : (
                                                             <span className="text-sm font-semibold text-blue-600">
                                                               {condition.operator === 'EQUAL' && 'يساوي'}

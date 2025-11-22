@@ -95,6 +95,7 @@ export function patientDtoToModel(dto: QueuePatientDto): Patient {
     name: `${dto.firstName} ${dto.lastName}`,
     phone: dto.phoneNumber,
     countryCode: dto.countryCode || '+20', // Use real countryCode from backend, fallback to default
+    isValidWhatsAppNumber: dto.isValidWhatsAppNumber,
     queueId: dto.queueId.toString(),
     position: dto.position,
     status: statusMap[dto.status] || dto.status,

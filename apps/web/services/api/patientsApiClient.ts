@@ -10,6 +10,7 @@ export interface PatientDto {
   fullName: string;
   phoneNumber: string;
   countryCode?: string;
+  isValidWhatsAppNumber?: boolean | null;
   position: number;
   status: string;
   createdAt?: string;
@@ -31,6 +32,7 @@ export interface UpdatePatientRequest {
   phoneNumber?: string;
   countryCode?: string;
   status?: string;
+  isValidWhatsAppNumber?: boolean | null;
 }
 
 export interface ReorderPatientsRequest {

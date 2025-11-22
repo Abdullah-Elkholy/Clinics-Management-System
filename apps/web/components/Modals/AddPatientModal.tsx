@@ -6,9 +6,10 @@ import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validatePhone, ValidationError, validateCountryCode, MAX_PHONE_DIGITS } from '@/utils/validation';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import Modal from './Modal';
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
-import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
+import { getEffectiveCountryCode } from '@/utils/core.utils';
 import logger from '@/utils/logger';
 
 interface PatientField {
@@ -32,6 +33,7 @@ export default function AddPatientModal() {
   const [errors, setErrors] = useState<PatientErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [expandedPatients, setExpandedPatients] = useState<Set<number>>(new Set([0])); // Track expanded patients
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isOpen = openModals.has('addPatient');
   const modalData = getModalData('addPatient');
@@ -212,7 +214,7 @@ export default function AddPatientModal() {
       let addedCount = 0;
       for (const p of validPatients) {
         try {
-          const phoneNumber = normalizePhoneNumber(p.phone.trim(), p.effectiveCountryCode);
+          const phoneNumber = p.phone.trim(); // Store phone number as-is, no normalization
           await patientsApiClient.createPatient({
             queueId: qidNum,
             fullName: p.name.trim(),
@@ -221,7 +223,16 @@ export default function AddPatientModal() {
           });
           addedCount++;
         } catch (err) {
-          logger.error(`Failed to add patient: ${p.name}`, err);
+          const errorMessage = err instanceof Error 
+            ? err.message 
+            : (err && typeof err === 'object' && 'message' in err)
+              ? String((err as { message?: unknown }).message || 'Unknown error')
+              : 'Unknown error';
+          logger.error(`Failed to add patient: ${p.name}`, {
+            error: errorMessage,
+            statusCode: (err && typeof err === 'object' && 'statusCode' in err) ? (err as { statusCode?: unknown }).statusCode : undefined,
+            fullError: err,
+          });
         }
       }
       
@@ -248,12 +259,32 @@ export default function AddPatientModal() {
         window.dispatchEvent(new CustomEvent('patientDataUpdated'));
       }, 100);
     } catch (error) {
-      logger.error('Failed to add patients:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error && typeof error === 'object' && 'message' in error)
+          ? String((error as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Failed to add patients:', {
+        error: errorMessage,
+        statusCode: (error && typeof error === 'object' && 'statusCode' in error) ? (error as { statusCode?: unknown }).statusCode : undefined,
+        fullError: error,
+      });
       addToast('حدث خطأ أثناء إضافة المرضى', 'error');
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
 
   if (!isOpen) return null;
 
@@ -268,7 +299,7 @@ export default function AddPatientModal() {
       title="إضافة مرضى جدد"
       size="xl"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col h-full space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col h-full space-y-4">
         {/* Info Section */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-sm text-blue-700 flex items-center gap-2">
@@ -341,23 +372,23 @@ export default function AddPatientModal() {
                     : 'border-gray-200 bg-white hover:border-blue-300'
                 }`}
               >
-                {/* Patient Card Header - Fully Clickable */}
-                <button
-                  type="button"
-                  onClick={() => togglePatientExpanded(index)}
-                  disabled={isLoading}
-                  className={`w-full px-4 py-3 border-b text-right flex items-center justify-between transition-all ${
-                    patientError ? 'bg-red-100' : 'bg-gradient-to-r from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-150'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  title={isExpanded ? "طي القسم" : "توسيع القسم"}
-                >
-                  <div className="flex items-center gap-2 flex-1">
+                {/* Patient Card Header */}
+                <div className={`px-4 py-3 border-b text-right flex items-center justify-between transition-all ${
+                  patientError ? 'bg-red-100' : 'bg-gradient-to-r from-blue-50 to-blue-100'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => togglePatientExpanded(index)}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 flex-1 text-right transition-all hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isExpanded ? "طي القسم" : "توسيع القسم"}
+                  >
                     <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-gray-600 transition-transform`}></i>
                     <span className="text-sm font-semibold text-gray-700">
                       <i className="fas fa-user-circle text-blue-600 ml-2"></i>
                       المريض #{index + 1}
                     </span>
-                  </div>
+                  </button>
                   {patients.length > 1 && (
                     <button
                       type="button"
@@ -372,7 +403,7 @@ export default function AddPatientModal() {
                       حذف
                     </button>
                   )}
-                </button>
+                </div>
 
                 {/* Patient Form Fields - Collapsible */}
                 {isExpanded && (
@@ -394,6 +425,7 @@ export default function AddPatientModal() {
                         onBlur={() => handleFieldBlur(index, 'name')}
                         placeholder="مثال: أحمد محمد علي"
                         disabled={isLoading}
+                        autoComplete="name"
                         className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:border-transparent transition-all ${
                           patientError?.name
                             ? 'border-red-500 bg-red-50 focus:ring-red-500'
@@ -446,6 +478,7 @@ export default function AddPatientModal() {
                             disabled={isLoading}
                             maxLength={4}
                             title="الصيغة: + متبوعة بـ 1-4 أرقام"
+                            autoComplete="tel-country-code"
                             className={`w-20 px-2 py-2 border-2 rounded-lg text-sm focus:outline-none focus:ring-2 transition-all text-center font-mono ${
                               patientError?.customCountryCode
                                 ? 'border-red-500 bg-red-50 focus:ring-red-500'
@@ -473,6 +506,7 @@ export default function AddPatientModal() {
                           maxLength={MAX_PHONE_DIGITS}
                           inputMode="numeric"
                           pattern="[0-9]*"
+                          autoComplete="tel"
                           className={`min-w-40 flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all font-mono ${
                             patientError?.phone
                               ? 'border-red-500 bg-red-50 focus:ring-red-500'

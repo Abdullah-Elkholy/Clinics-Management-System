@@ -25,7 +25,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("login")]
-        // [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] LoginRequest? req)
         {
             try
@@ -90,7 +90,7 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, errors = new[] { new { code = "MissingCredentials", message = "Username and password are required" } } });
                 }
 
-                var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username);
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username && !u.IsDeleted);
                 if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
 
                 // For scaffold: PasswordHash may be null (seeded). Accept 'admin' without hash for demo
@@ -112,8 +112,18 @@ namespace Clinics.Api.Controllers
                 // Use Role property directly (now stores the role name string)
                 var token = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FirstName, user.LastName);
                 // create refresh token and set cookie
+                // Align SameSite/Secure behavior with refresh endpoint logic: allow cross-origin (frontend dev server) in Development
                 var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
-                Response.Cookies.Append("refreshToken", refreshToken, new CookieOptions { HttpOnly = true, Secure = !_env.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = DateTime.UtcNow.AddDays(7) });
+                var isTestEnv = _env.IsEnvironment("Test");
+                var cookieOptions = new CookieOptions
+                {
+                    HttpOnly = true,
+                    // In Test use Strict to simplify; in other envs (Dev/Prod) use None to allow cross-site (Dev: port 3000 -> 5000)
+                    SameSite = isTestEnv ? SameSiteMode.Strict : SameSiteMode.None,
+                    Secure = !isTestEnv, // Secure required when SameSite=None (Chrome enforcement)
+                    Expires = DateTime.UtcNow.AddDays(7)
+                };
+                Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
 
                 return Ok(new { success = true, data = new { accessToken = token } });
             }
@@ -145,10 +155,10 @@ namespace Clinics.Api.Controllers
                 return Unauthorized();
             }
 
-            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
             if (user == null)
             {
-                return NotFound();
+                return Unauthorized(new { success = false, error = "User account has been deleted" });
             }
 
             var roleDisplayName = Clinics.Domain.UserRoleExtensions.GetDisplayNameFromRoleName(user.Role);
@@ -177,8 +187,8 @@ namespace Clinics.Api.Controllers
             var session = _db.Sessions.FirstOrDefault(s => s.Id == sessionId);
             if (session == null || session.ExpiresAt <= DateTime.UtcNow) return Unauthorized(new { success = false });
 
-            var user = _db.Users.FirstOrDefault(u => u.Id == session.UserId);
-            if (user == null) return Unauthorized(new { success = false });
+            var user = _db.Users.FirstOrDefault(u => u.Id == session.UserId && !u.IsDeleted);
+            if (user == null) return Unauthorized(new { success = false, error = "User account has been deleted" });
 
             // rotate refresh token: revoke old session and create a new one
             _sessionService.RevokeSession(session.Id);
@@ -200,6 +210,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPost("logout")]
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         public IActionResult Logout()
         {
             if (Request.Cookies.TryGetValue("refreshToken", out var token))

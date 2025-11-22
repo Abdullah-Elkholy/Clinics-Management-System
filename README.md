@@ -628,7 +628,7 @@ The system integrates with WhatsApp Web via a separate service for automated mes
 
 **Three-Service Architecture**:
 1. **Main API** (`src/Api`) - Runs on port 5000, handles business logic, queue management, message queuing ✅ Ready
-2. **WhatsApp Service** (`ClinicsManagementService`) - Runs on port 5100, handles WhatsApp Web automation and message delivery ✅ Ready
+2. **WhatsApp Service** (`ClinicsManagementService`) - Runs on port 5185, handles WhatsApp Web automation and message delivery ✅ Ready
 3. **Frontend** (`apps/web`) - Runs on port 3000, Next.js React application with full UI for queue and message management ✅ Ready
 
 ### Integration Readiness Status
@@ -705,8 +705,8 @@ The system integrates with WhatsApp Web via a separate service for automated mes
 4. **Send Message** (WhatsApp Service Integration):
    - Main API calls `IMessageSender.SendAsync(message)` (currently `SimulatedMessageSender` for testing)
    - **Integration Point**: Replace `SimulatedMessageSender` with `WhatsAppServiceSender` that calls:
-     - `POST http://localhost:5100/Messaging/send?phone={phone}&message={content}`
-     - Or `POST http://localhost:5100/BulkMessaging/send-single` with JSON body
+     - `POST http://localhost:5185/Messaging/send?phone={phone}&message={content}`
+     - Or `POST http://localhost:5185/BulkMessaging/send-single` with JSON body
    - WhatsApp service uses Playwright to automate WhatsApp Web
    - Checks internet connectivity (`NetworkService`)
    - Navigates to WhatsApp Web chat for phone number
@@ -718,7 +718,7 @@ The system integrates with WhatsApp Web via a separate service for automated mes
 **⚠️ Integration Note**: Currently using `SimulatedMessageSender` for testing. To enable real WhatsApp automation:
 1. Implement `WhatsAppServiceSender` that calls the WhatsApp service HTTP endpoints
 2. Replace `SimulatedMessageSender` registration in `Program.cs`: `services.AddScoped<IMessageSender, WhatsAppServiceSender>()`
-3. Configure WhatsApp service URL in `appsettings.json`: `"WhatsAppServiceUrl": "http://localhost:5100"`
+3. Configure WhatsApp service URL in `appsettings.json`: `"WhatsAppServiceUrl": "http://localhost:5185"`
 
 5. **Update Status** (Main API):
    - If successful: Status → `"sent"`, `SentAt` timestamp set, `ProviderMessageId` stored
@@ -2171,7 +2171,7 @@ POST /api/quotas/1/add
 
 ### WhatsApp Messaging Service Endpoints
 
-The separate WhatsApp service (runs on port 5100) provides:
+The separate WhatsApp service (runs on port 5185) provides:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -2526,7 +2526,7 @@ This project is licensed under the MIT License.
 This repository contains three main runnable parts:
 
 - Backend API: `src/Api` (runs on http://localhost:5000)
-- WhatsApp service: `ClinicsManagementService` (runs on http://localhost:5100)
+- WhatsApp service: `ClinicsManagementService` (runs on http://localhost:5185)
 - Frontend: `apps/web` (Next.js, runs on http://localhost:3000)
 
 ### Quick Start (PowerShell)
@@ -2553,7 +2553,7 @@ dotnet run --project src/Api/Clinics.Api.csproj
 
 # Step 5: Start WhatsApp service (Terminal 3)
 dotnet run --project ClinicsManagementService/WhatsAppMessagingService.csproj
-# WhatsApp Service: http://localhost:5100
+# WhatsApp Service: http://localhost:5185
 ```
 
 ### Environment Configuration
@@ -2564,7 +2564,7 @@ dotnet run --project ClinicsManagementService/WhatsAppMessagingService.csproj
 - Alternatively, use `dotnet user-secrets` for secure per-developer secrets
 
 **WhatsApp Service Configuration**:
-- Ensure WhatsApp service can access port 5100
+- Ensure WhatsApp service can access port 5185
 - Browser automation requires Playwright installed: `playwright install`
 - WhatsApp Web sessions stored in `whatsapp-session/` directory per moderator
 
@@ -2572,7 +2572,7 @@ dotnet run --project ClinicsManagementService/WhatsAppMessagingService.csproj
 
 **Before Testing WhatsApp Integration**:
 - ✅ Backend API running on port 5000
-- ✅ WhatsApp service running on port 5100  
+- ✅ WhatsApp service running on port 5185  
 - ✅ Frontend running on port 3000
 - ✅ Database migrations applied (including `AddTemplateIdForeignKeyToMessageCondition`)
 - ✅ At least one moderator/user created with quota

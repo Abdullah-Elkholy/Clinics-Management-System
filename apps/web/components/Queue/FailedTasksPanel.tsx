@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createBulkDeleteConfirmation, createDeleteConfirmation } from '@/utils/confirmationHelpers';
+import { UserRole } from '@/types/roles';
 // Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
@@ -47,9 +50,13 @@ const FAILED_TASKS_GUIDE_ITEMS = [
 ];
 
 export default function FailedTasksPanel() {
+  const { user, isAuthenticated } = useAuth();
   const { openModal } = useModal();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
+  const router = useRouter();
+  
+  // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
@@ -58,6 +65,24 @@ export default function FailedTasksPanel() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
+
+  // Authentication guard - ensure user has token and valid role
+  useEffect(() => {
+    // Check for token
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    
+    // If no token or not authenticated, redirect to login
+    if (!token || !isAuthenticated || !user) {
+      router.replace('/');
+      return;
+    }
+
+    // Ensure user has a valid role
+    if (!user.role || !Object.values(UserRole).includes(user.role)) {
+      router.replace('/');
+      return;
+    }
+  }, [isAuthenticated, user, router]);
 
   /**
    * Load failed tasks from API on component mount

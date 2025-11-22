@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 interface FormSectionProps {
   title?: string;
@@ -93,6 +94,9 @@ interface TextInputProps {
   error?: boolean;
   icon?: string;
   className?: string;
+  id?: string;
+  name?: string;
+  autoComplete?: string;
 }
 
 export function TextInput({
@@ -104,7 +108,12 @@ export function TextInput({
   error = false,
   icon,
   className = '',
+  id,
+  name,
+  autoComplete,
 }: TextInputProps) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
   return (
     <div className="relative">
       {icon && (
@@ -113,11 +122,15 @@ export function TextInput({
         </div>
       )}
       <input
+        ref={inputRef}
+        id={id}
+        name={name}
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
+        autoComplete={autoComplete}
         className={`
           w-full px-4 py-2.5 rounded-lg border-2 transition-all duration-200
           text-gray-800 placeholder-gray-400
@@ -155,6 +168,9 @@ interface SelectFieldProps {
   disabled?: boolean;
   error?: boolean;
   className?: string;
+  id?: string;
+  name?: string;
+  autoComplete?: string;
 }
 
 export function SelectField({
@@ -165,12 +181,18 @@ export function SelectField({
   disabled = false,
   error = false,
   className = '',
+  id,
+  name,
+  autoComplete,
 }: SelectFieldProps) {
   return (
     <select
+      id={id}
+      name={name}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
+      autoComplete={autoComplete}
       className={`
         w-full px-4 py-2.5 rounded-lg border-2 transition-all duration-200
         text-gray-800 bg-white
@@ -211,6 +233,9 @@ interface TextAreaProps {
   disabled?: boolean;
   error?: boolean;
   className?: string;
+  id?: string;
+  name?: string;
+  autoComplete?: string;
 }
 
 export function TextArea({
@@ -221,14 +246,20 @@ export function TextArea({
   disabled = false,
   error = false,
   className = '',
+  id,
+  name,
+  autoComplete,
 }: TextAreaProps) {
   return (
     <textarea
+      id={id}
+      name={name}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={rows}
       disabled={disabled}
+      autoComplete={autoComplete}
       className={`
         w-full px-4 py-2.5 rounded-lg border-2 transition-all duration-200
         text-gray-800 placeholder-gray-400 resize-vertical

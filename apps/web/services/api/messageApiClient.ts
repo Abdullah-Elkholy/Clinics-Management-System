@@ -4,6 +4,7 @@
  * Centralizes all API calls with automatic auth header handling
  */
 import logger from '@/utils/logger';
+import { translateNetworkError } from '@/utils/errorUtils';
 
 // ============================================
 // DTOs (matching backend DTOs exactly)
@@ -222,28 +223,51 @@ export async function fetchAPI<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
 
-  // Handle non-JSON responses
-  let data: unknown;
-  const contentType = response.headers.get('content-type');
-  if (contentType?.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
+    // Handle non-JSON responses
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
 
-  if (!response.ok) {
+    if (!response.ok) {
+      const apiError = {
+        message: extractErrorMessage(data),
+        statusCode: response.status,
+      } as ApiError;
+
+      // Handle auth errors globally
+      if (response.status === 401 || response.status === 403) {
+        const { handleApiError } = require('@/utils/apiInterceptor');
+        handleApiError(apiError);
+      }
+
+      throw apiError;
+    }
+
+    return data as T;
+  } catch (error) {
+    // Translate network errors to Arabic
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      // This is already an ApiError, re-throw it
+      throw error;
+    }
+    
+    // This is a network/fetch error, translate it
+    const translatedMessage = translateNetworkError(error);
     throw {
-      message: extractErrorMessage(data),
-      statusCode: response.status,
+      message: translatedMessage,
+      statusCode: 0, // Network errors don't have status codes
     } as ApiError;
   }
-
-  return data as T;
 }
 
 // ============================================

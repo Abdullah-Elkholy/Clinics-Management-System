@@ -21,16 +21,13 @@ namespace Clinics.Api.Controllers
         private readonly IUserContext _userContext;
         private readonly Clinics.Api.Services.IPatientCascadeService _patientCascadeService;
         private readonly IPatientPositionService _patientPositionService;
-        private readonly IPhoneNormalizationService _phoneNormalizationService;
-
         public PatientsController(
             ApplicationDbContext db,
             ILogger<PatientsController> logger,
             IGenericUnitOfWork unitOfWork,
             IUserContext userContext,
             Clinics.Api.Services.IPatientCascadeService patientCascadeService,
-            IPatientPositionService patientPositionService,
-            IPhoneNormalizationService phoneNormalizationService)
+            IPatientPositionService patientPositionService)
         {
             _db = db;
             _logger = logger;
@@ -38,7 +35,6 @@ namespace Clinics.Api.Controllers
             _userContext = userContext;
             _patientCascadeService = patientCascadeService;
             _patientPositionService = patientPositionService;
-            _phoneNormalizationService = phoneNormalizationService;
         }
 
         /// <summary>
@@ -59,6 +55,7 @@ namespace Clinics.Api.Controllers
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
                         CountryCode = p.CountryCode,
+                        IsValidWhatsAppNumber = p.IsValidWhatsAppNumber,
                         Position = p.Position,
                         Status = p.Status,
                         CreatedAt = p.CreatedAt,
@@ -103,6 +100,7 @@ namespace Clinics.Api.Controllers
                         FullName = p.FullName,
                         PhoneNumber = p.PhoneNumber,
                         CountryCode = p.CountryCode,
+                        IsValidWhatsAppNumber = p.IsValidWhatsAppNumber,
                         Position = p.Position,
                         Status = p.Status,
                         CreatedAt = p.CreatedAt,
@@ -174,42 +172,34 @@ namespace Clinics.Api.Controllers
                     // Handle spaces in country code (remove them instead of rejecting)
                     var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
                         ? req.CountryCode.Replace(" ", "") 
-                        : req.CountryCode;
+                        : "+20"; // Default to Egypt if not provided
 
-                    // Normalize phone number with country-specific rules if country code provided
-                    string? normalizedPhone;
-                    string? countryCode;
-
-                    if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
+                    // Validate country code format
+                    if (!countryCodeCleaned.StartsWith("+"))
                     {
-                        // Use country-specific normalization
-                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
-                        {
-                            return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
-                        }
-                        countryCode = countryCodeCleaned;
-                    }
-                    else
-                    {
-                        // Use generic normalization (for "OTHER" or no country code)
-                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
-                        {
-                            return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
-                        }
-                        // Extract country code from normalized phone number
-                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
+                        return BadRequest(new { success = false, error = "Country code must start with + (e.g., +20)" });
                     }
 
                     // Get current user ID for audit using IUserContext
-                    var userId = _userContext.GetUserId();
+                    int userId;
+                    try
+                    {
+                        userId = _userContext.GetUserId();
+                    }
+                    catch (InvalidOperationException authEx)
+                    {
+                        _logger.LogError(authEx, "Authentication error: User ID not found in claims");
+                        return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+                    }
 
                     // No shift needed: new patients always inserted at end (maxPos + 1)
+                    // Store phone number and country code separately - NO NORMALIZATION
                     var patient = new Patient
                     {
                         QueueId = req.QueueId,
                         FullName = req.FullName,
-                        PhoneNumber = normalizedPhone ?? phoneNumberCleaned,
-                        CountryCode = countryCode,
+                        PhoneNumber = phoneNumberCleaned, // Store as-is, no normalization
+                        CountryCode = countryCodeCleaned,
                         Position = insertPos,
                         Status = "waiting",
                         CreatedBy = userId
@@ -224,6 +214,7 @@ namespace Clinics.Api.Controllers
                         FullName = patient.FullName,
                         PhoneNumber = patient.PhoneNumber,
                         CountryCode = patient.CountryCode,
+                        IsValidWhatsAppNumber = patient.IsValidWhatsAppNumber,
                         Position = patient.Position,
                         Status = patient.Status,
                         CreatedAt = patient.CreatedAt,
@@ -240,6 +231,11 @@ namespace Clinics.Api.Controllers
                     return StatusCode(400, new { success = false, error = "Invalid data or constraint violation", details = dbEx.InnerException?.Message });
                 }
             }
+            catch (InvalidOperationException authEx) when (authEx.Message.Contains("User ID") || authEx.Message.Contains("HttpContext"))
+            {
+                _logger.LogError(authEx, "Authentication error creating patient");
+                return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+            }
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database constraint error creating patient");
@@ -247,7 +243,8 @@ namespace Clinics.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating patient");
+                _logger.LogError(ex, "Error creating patient: {ErrorMessage}", ex.Message);
+                _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
                 return StatusCode(500, new { success = false, error = "Error creating patient", details = ex.Message });
             }
         }
@@ -294,13 +291,41 @@ namespace Clinics.Api.Controllers
         {
             try
             {
+                _logger.LogInformation("Update patient request: PatientId={PatientId}, FullName={FullName}, PhoneNumber={PhoneNumber}, CountryCode={CountryCode}, Status={Status}, IsValidWhatsAppNumber={IsValidWhatsAppNumber}", 
+                    id, req?.FullName, req?.PhoneNumber, req?.CountryCode, req?.Status, req?.IsValidWhatsAppNumber);
+                
                 var patient = await _db.Patients.FindAsync(id);
                 if (patient == null)
+                {
+                    _logger.LogWarning("Patient not found: PatientId={PatientId}", id);
                     return NotFound(new { message = "Patient not found" });
+                }
+
+                // Validate request is not null
+                if (req == null)
+                {
+                    _logger.LogWarning("Update request body is null for patient {PatientId}", id);
+                    return BadRequest(new { success = false, error = "Request body is required" });
+                }
+
+                // Check ModelState validation (for data annotations like [Phone], [StringLength])
+                if (!ModelState.IsValid)
+                {
+                    var validationErrors = ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .ToList();
+                    _logger.LogWarning("ModelState validation failed for patient {PatientId}: {Errors}", id, string.Join(", ", validationErrors));
+                    return BadRequest(new { success = false, error = "Validation failed", errors = validationErrors });
+                }
 
                 if (!string.IsNullOrEmpty(req.FullName))
                     patient.FullName = req.FullName;
 
+                // Track if phone number or country code changed to reset WhatsApp validation
+                bool phoneOrCountryCodeChanged = false;
+
+                // Update phone number if provided - NO NORMALIZATION, store as-is
                 if (!string.IsNullOrEmpty(req.PhoneNumber))
                 {
                     // Handle spaces in phone number (remove them instead of rejecting)
@@ -309,41 +334,66 @@ namespace Clinics.Api.Controllers
                     // Handle spaces in country code (remove them instead of rejecting)
                     var countryCodeCleaned = !string.IsNullOrWhiteSpace(req.CountryCode) 
                         ? req.CountryCode.Replace(" ", "") 
-                        : req.CountryCode;
+                        : patient.CountryCode ?? "+20"; // Use existing or default
 
-                    // Normalize phone number with country-specific rules if country code provided
-                    string? normalizedPhone;
-                    string? countryCode;
-
-                    if (!string.IsNullOrWhiteSpace(countryCodeCleaned) && !countryCodeCleaned.Equals("OTHER", StringComparison.OrdinalIgnoreCase))
+                    // Validate country code format
+                    if (!countryCodeCleaned.StartsWith("+"))
                     {
-                        // Use country-specific normalization
-                        if (!_phoneNormalizationService.TryNormalizeWithCountryCode(phoneNumberCleaned, countryCodeCleaned, out normalizedPhone))
-                        {
-                            return BadRequest(new { success = false, error = $"Invalid phone number format for {countryCodeCleaned}. Please check the number of digits." });
-                        }
-                        countryCode = countryCodeCleaned;
-                    }
-                    else
-                    {
-                        // Use generic normalization (for "OTHER" or no country code)
-                        if (!_phoneNormalizationService.TryNormalize(phoneNumberCleaned, out normalizedPhone))
-                        {
-                            return BadRequest(new { success = false, error = "Invalid phone number format. Use format: +20101234567" });
-                        }
-                        // Extract country code from normalized phone number
-                        countryCode = _phoneNormalizationService.ExtractCountryCode(normalizedPhone ?? phoneNumberCleaned);
+                        return BadRequest(new { success = false, error = "Country code must start with + (e.g., +20)" });
                     }
 
-                    patient.PhoneNumber = normalizedPhone ?? phoneNumberCleaned;
-                    patient.CountryCode = countryCode;
+                    // Check if phone number or country code actually changed
+                    if (patient.PhoneNumber != phoneNumberCleaned || patient.CountryCode != countryCodeCleaned)
+                    {
+                        phoneOrCountryCodeChanged = true;
+                    }
+
+                    patient.PhoneNumber = phoneNumberCleaned; // Store as-is, no normalization
+                    patient.CountryCode = countryCodeCleaned;
+                }
+                else if (!string.IsNullOrWhiteSpace(req.CountryCode))
+                {
+                    // Only country code changed (phone number not provided in request)
+                    var countryCodeCleaned = req.CountryCode.Replace(" ", "");
+                    
+                    // Validate country code format
+                    if (!countryCodeCleaned.StartsWith("+"))
+                    {
+                        return BadRequest(new { success = false, error = "Country code must start with + (e.g., +20)" });
+                    }
+                    
+                    if (patient.CountryCode != countryCodeCleaned)
+                    {
+                        phoneOrCountryCodeChanged = true;
+                        patient.CountryCode = countryCodeCleaned;
+                    }
+                }
+
+                // Reset WhatsApp validation if phone number or country code changed
+                if (phoneOrCountryCodeChanged)
+                {
+                    patient.IsValidWhatsAppNumber = null;
+                }
+                // Otherwise, allow updating IsValidWhatsAppNumber if provided in request
+                else if (req.IsValidWhatsAppNumber.HasValue)
+                {
+                    patient.IsValidWhatsAppNumber = req.IsValidWhatsAppNumber.Value;
                 }
 
                 if (!string.IsNullOrEmpty(req.Status))
                     patient.Status = req.Status;
 
                 // Get current user ID for audit using IUserContext
-                var userId = _userContext.GetUserId();
+                int userId;
+                try
+                {
+                    userId = _userContext.GetUserId();
+                }
+                catch (InvalidOperationException authEx)
+                {
+                    _logger.LogError(authEx, "Authentication error: User ID not found in claims");
+                    return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+                }
 
                 // Set UpdatedAt and UpdatedBy for audit trail
                 patient.UpdatedAt = DateTime.UtcNow;
@@ -351,26 +401,47 @@ namespace Clinics.Api.Controllers
 
                 await _db.SaveChangesAsync();
 
-                var dto = new PatientDto
+                try
                 {
-                    Id = patient.Id,
-                    FullName = patient.FullName,
-                    PhoneNumber = patient.PhoneNumber,
-                    CountryCode = patient.CountryCode,
-                    Position = patient.Position,
-                    Status = patient.Status,
+                    var dto = new PatientDto
+                    {
+                        Id = patient.Id,
+                        FullName = patient.FullName,
+                        PhoneNumber = patient.PhoneNumber,
+                        CountryCode = patient.CountryCode,
+                        IsValidWhatsAppNumber = patient.IsValidWhatsAppNumber,
+                        Position = patient.Position,
+                        Status = patient.Status,
                         CreatedAt = patient.CreatedAt,
                         UpdatedAt = patient.UpdatedAt,
                         CreatedBy = patient.CreatedBy,
                         UpdatedBy = patient.UpdatedBy
-                };
+                    };
 
-                return Ok(dto);
+                    _logger.LogInformation("Patient updated successfully: PatientId={PatientId}", id);
+                    return Ok(new { success = true, data = dto });
+                }
+                catch (Exception dtoEx)
+                {
+                    _logger.LogError(dtoEx, "Error creating DTO for patient {PatientId}", id);
+                    return StatusCode(500, new { success = false, error = "Error creating response", details = dtoEx.Message });
+                }
+            }
+            catch (InvalidOperationException authEx) when (authEx.Message.Contains("User ID") || authEx.Message.Contains("HttpContext"))
+            {
+                _logger.LogError(authEx, "Authentication error updating patient");
+                return Unauthorized(new { success = false, error = "Authentication failed. Please log in again." });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error updating patient");
+                return StatusCode(400, new { success = false, error = "Invalid data or constraint violation", details = dbEx.InnerException?.Message });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating patient");
-                return StatusCode(500, new { message = "Error updating patient" });
+                _logger.LogError(ex, "Error updating patient: {ErrorMessage}", ex.Message);
+                _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
+                return StatusCode(500, new { success = false, error = "Error updating patient", details = ex.Message });
             }
         }
 

@@ -37,20 +37,33 @@ namespace ClinicsManagementService.Services
             _sessionManager = sessionManager;
         }
 
-        public async Task<OperationResult<string?>> SendMessageWithIconTypeAsync(string phoneNumber, string message, IBrowserSession browserSession)
+        public async Task<OperationResult<string?>> SendMessageWithIconTypeAsync(string phoneNumber, string message, IBrowserSession browserSession, CancellationToken cancellationToken = default)
         {
             try
             {
+                // Check cancellation before starting
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Initialize session/page
                 await browserSession.InitializeAsync();
+
+                // Check cancellation after initialization
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // Navigate to send URL for the phone number
                 var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
                 _notifier.Notify($"🔗 Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
 
+                // Check cancellation after navigation
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Wait for chat UI (handles progressbars, auth and network via WaitForPageLoadAsync)
                 var uiLoad = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                
+                // Check cancellation after page load wait
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (uiLoad.IsPendingNet())
                 {
                     _notifier.Notify($"❌ Network unavailable during navigation: {uiLoad.ResultMessage}");
@@ -67,12 +80,18 @@ namespace ClinicsManagementService.Services
                     return OperationResult<string?>.Waiting(uiLoad.ResultMessage ?? "Waiting for page load");
                 }
 
+                // Check cancellation before error dialog check
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Check for WhatsApp error dialog (e.g., number not registered) before attempting to type/send
                 var hasWhatsApp = await _retryService.ExecuteWithRetryAsync(
                     () => CheckForWhatsAppErrorDialog(browserSession),
                     maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
                     shouldRetryResult: r => r?.IsWaiting() == true,
                     isRetryable: null);
+
+                // Check cancellation after error dialog check
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (hasWhatsApp.IsWaiting())
                 {
@@ -95,8 +114,15 @@ namespace ClinicsManagementService.Services
                     return OperationResult<string?>.Failure(hasWhatsApp.ResultMessage ?? $"Number {phoneNumber} does not have WhatsApp.");
                 }
 
+                // Check cancellation before input field wait
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Ensure input field exists (use WaitForPageLoadAsync so progressbars/auth/network are observed)
                 var inputWait = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.InputFieldSelectors, WhatsAppConfiguration.DefaultSelectorTimeoutMs, WhatsAppConfiguration.defaultChecksFrequencyDelayMs);
+                
+                // Check cancellation after input field wait
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (inputWait.IsPendingNet())
                 {
                     _notifier.Notify($"❌ Network lost while waiting for input field: {inputWait.ResultMessage}");
@@ -113,10 +139,16 @@ namespace ClinicsManagementService.Services
                     return OperationResult<string?>.Waiting(inputWait.ResultMessage ?? "Waiting for input field");
                 }
 
+                // Check cancellation before finding input element
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Find input element
                 IElementHandle? input = null;
                 foreach (var selector in WhatsAppConfiguration.InputFieldSelectors)
                 {
+                    // Check cancellation in loop
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     try
                     {
                         input = await browserSession.QuerySelectorAsync(selector);
@@ -139,13 +171,25 @@ namespace ClinicsManagementService.Services
                     return OperationResult<string?>.Failure("Message input box not found.");
                 }
 
+                // Check cancellation before typing
+                cancellationToken.ThrowIfCancellationRequested();
+
                 await input.FocusAsync();
                 await input.FillAsync(message);
+
+                // Check cancellation after typing
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Check cancellation before finding send button
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // Try to find send button
                 IElementHandle? sendButton = null;
                 foreach (var sendSelector in WhatsAppConfiguration.SendButtonSelectors)
                 {
+                    // Check cancellation in loop
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     try
                     {
                         sendButton = await browserSession.QuerySelectorAsync(sendSelector);
@@ -165,6 +209,9 @@ namespace ClinicsManagementService.Services
                     }
                 }
 
+                // Check cancellation before sending
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (sendButton != null)
                 {
                     await sendButton.ClickAsync();
@@ -181,6 +228,9 @@ namespace ClinicsManagementService.Services
                     return OperationResult<string?>.Waiting("Send button not found and no Enter key configured.");
                 }
 
+                // Check cancellation after sending
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Wait for message status icon
                 var maxWaitMs = WhatsAppConfiguration.DefaultSelectorTimeoutMs;
                 var pollIntervalMs = WhatsAppConfiguration.defaultChecksFrequencyDelayMs;
@@ -188,6 +238,9 @@ namespace ClinicsManagementService.Services
 
                 while (elapsed < maxWaitMs)
                 {
+                    // Check cancellation at start of each polling iteration
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     // Run continuous monitoring to detect progressbars/auth/network
                     var mon = await _uiService.ContinuousMonitoringAsync(browserSession, pollIntervalMs);
                     if (mon != null)
@@ -227,19 +280,25 @@ namespace ClinicsManagementService.Services
                         else
                         {
                             _notifier.Notify($"⚠️ Unexpected iconType: {iconType}");
-                            var path = $"Screenshots/unexpected_icon_{iconType}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.png";
+                            var path = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
                             await TakeScreenshotAsync(browserSession, path);
                             _notifier.Notify($"Screenshot taken: {path}");
                         }
                     }
 
-                    await Task.Delay(pollIntervalMs);
+                    // Use cancellation token for delay
+                    await Task.Delay(pollIntervalMs, cancellationToken);
                     elapsed += pollIntervalMs;
                 }
 
                 // If we reach here without success, return Waiting so higher-level retry logic can act
                 _notifier.Notify("⚠️ Message status not confirmed within timeout");
                 return OperationResult<string?>.Waiting("No status icon found after polling");
+            }
+            catch (OperationCanceledException)
+            {
+                _notifier.Notify($"⚠️ Operation cancelled while sending message to {phoneNumber}");
+                return OperationResult<string?>.Failure("Operation was cancelled");
             }
             catch (Exception ex)
             {
@@ -292,30 +351,44 @@ namespace ClinicsManagementService.Services
         }
 
 
-        public Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession)
+        public Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession, CancellationToken cancellationToken = default)
         {
             // Apply full-operation retry at the public entry point so callers get retries on Waiting results
             // and Playwright/browser-closed exceptions. This keeps the internal method single-pass and
             // simpler to reason about.
             return _retryService.ExecuteWithRetryAsync<bool>(
-                () => CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession),
+                () => CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession, cancellationToken),
                 maxAttempts: Math.Max(1, WhatsAppConfiguration.DefaultMaxRetryAttempts),
                 shouldRetryResult: r => r?.IsWaiting() == true,
                 isRetryable: ex => _retryService.IsBrowserClosedException(ex));
         }
 
-        private async Task<OperationResult<bool>> CheckWhatsAppNumberInternalAsync(string phoneNumber, IBrowserSession browserSession)
+        private async Task<OperationResult<bool>> CheckWhatsAppNumberInternalAsync(string phoneNumber, IBrowserSession browserSession, CancellationToken cancellationToken)
         {
             try
             {
+                // Check cancellation before starting
+                cancellationToken.ThrowIfCancellationRequested();
+
                 await browserSession.InitializeAsync();
+                
+                // Check cancellation after initialization
+                cancellationToken.ThrowIfCancellationRequested();
+                
                 // Navigate directly to the WhatsApp send URL for the phone number
                 var url = WhatsAppConfiguration.WhatsAppSendUrl + phoneNumber;
                 _notifier.Notify($"🔗 Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
+                
+                // Check cancellation after navigation
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // WaitForPageLoadAsync handles connectivity/auth/progress monitoring
                 var navRes = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                
+                // Check cancellation after page load wait
+                cancellationToken.ThrowIfCancellationRequested();
+                
                 if (navRes == null)
                 {
                     _notifier.Notify("Navigation result was null - treating as waiting state");
@@ -346,12 +419,18 @@ namespace ClinicsManagementService.Services
                     _notifier.Notify($"Navigation/page-load status: State={normalizedNav.State}, Success={normalizedNav.IsSuccess}, Message={normalizedNav.ResultMessage} - continuing to error-dialog check.");
                 }
 
+                // Check cancellation before error dialog check
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Only check error dialog after success page load
                 var hasWhatsApp = await _retryService.ExecuteWithRetryAsync<bool>(
                     () => CheckForWhatsAppErrorDialog(browserSession),
                     maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
                     shouldRetryResult: r => r?.IsWaiting() == true,
                     isRetryable: null);
+                
+                // Check cancellation after error dialog check
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (hasWhatsApp.IsWaiting())
                 {
@@ -376,6 +455,11 @@ namespace ClinicsManagementService.Services
 
                 _notifier.Notify($"✅ Number {phoneNumber} has WhatsApp.");
                 return OperationResult<bool>.Success(true);
+            }
+            catch (OperationCanceledException)
+            {
+                _notifier.Notify($"⚠️ Operation cancelled while checking WhatsApp number {phoneNumber}");
+                return OperationResult<bool>.Failure("Operation was cancelled", false);
             }
             catch (Exception ex)
             {

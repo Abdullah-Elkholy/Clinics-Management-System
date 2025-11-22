@@ -3,6 +3,7 @@ using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
 using Clinics.Api.Services;
+using Clinics.Api.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace Clinics.Api.Controllers
@@ -43,9 +44,9 @@ namespace Clinics.Api.Controllers
                 var dtos = quotas.Select(q => new QuotaDto
                 {
                     Id = q.Id,
-                    Limit = q.MessagesQuota,
-                    Used = q.ConsumedMessages,
-                    QueuesLimit = q.QueuesQuota,
+                    Limit = QuotaHelper.ToApiMessagesQuota(q.MessagesQuota),
+                    Used = (int)q.ConsumedMessages, // Convert long to int for API
+                    QueuesLimit = QuotaHelper.ToApiQueuesQuota(q.QueuesQuota),
                     QueuesUsed = q.ConsumedQueues,
                     UpdatedAt = q.UpdatedAt
                 }).ToList();
@@ -81,18 +82,18 @@ namespace Clinics.Api.Controllers
                 {
                     return Ok(new MyQuotaDto
                     {
-                        Limit = 0,
+                        Limit = -1, // Unlimited
                         Used = 0,
-                        QueuesLimit = 0,
+                        QueuesLimit = -1, // Unlimited
                         QueuesUsed = 0
                     });
                 }
 
                 return Ok(new MyQuotaDto
                 {
-                    Limit = quota.MessagesQuota,
-                    Used = quota.ConsumedMessages,
-                    QueuesLimit = quota.QueuesQuota,
+                    Limit = QuotaHelper.ToApiMessagesQuota(quota.MessagesQuota),
+                    Used = (int)quota.ConsumedMessages, // Convert long to int for API
+                    QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota.QueuesQuota),
                     QueuesUsed = quota.ConsumedQueues
                 });
             }
@@ -146,9 +147,9 @@ namespace Clinics.Api.Controllers
                 return Ok(new QuotaDto
                 {
                     Id = quota.Id,
-                    Limit = quota.MessagesQuota,
-                    Used = quota.ConsumedMessages,
-                    QueuesLimit = quota.QueuesQuota,
+                    Limit = QuotaHelper.ToApiMessagesQuota(quota.MessagesQuota),
+                    Used = (int)quota.ConsumedMessages, // Convert long to int for API
+                    QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota.QueuesQuota),
                     QueuesUsed = quota.ConsumedQueues,
                     UpdatedAt = quota.UpdatedAt
                 });
@@ -169,8 +170,8 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                if (request.Limit <= 0 || request.QueuesLimit <= 0)
-                    return BadRequest(new { message = "Limit and QueuesLimit must be greater than 0" });
+                if ((request.Limit <= 0 && request.Limit != -1) || (request.QueuesLimit <= 0 && request.QueuesLimit != -1))
+                    return BadRequest(new { message = "Limit and QueuesLimit must be greater than 0 or -1 for unlimited" });
 
                 var existing = await _db.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
                 
@@ -180,9 +181,9 @@ namespace Clinics.Api.Controllers
                 var quota = new Quota
                 {
                     ModeratorUserId = moderatorId,
-                    MessagesQuota = request.Limit,
+                    MessagesQuota = QuotaHelper.ToDbMessagesQuota(request.Limit),
                     ConsumedMessages = 0,
-                    QueuesQuota = request.QueuesLimit,
+                    QueuesQuota = QuotaHelper.ToDbQueuesQuota(request.QueuesLimit),
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -192,9 +193,9 @@ namespace Clinics.Api.Controllers
 
                 return Ok(new MyQuotaDto
                 {
-                    Limit = quota.MessagesQuota,
-                    Used = quota.ConsumedMessages,
-                    QueuesLimit = quota.QueuesQuota,
+                    Limit = QuotaHelper.ToApiMessagesQuota(quota.MessagesQuota),
+                    Used = (int)quota.ConsumedMessages, // Convert long to int for API
+                    QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota.QueuesQuota),
                     QueuesUsed = quota.ConsumedQueues
                 });
             }
@@ -220,11 +221,17 @@ namespace Clinics.Api.Controllers
                     return NotFound(new { message = "Quota not found for this moderator" });
 
                 // Update only provided fields
-                if (request.Limit.HasValue && request.Limit.Value > 0)
-                    existing.MessagesQuota = request.Limit.Value;
+                if (request.Limit.HasValue)
+                {
+                    if (request.Limit.Value == -1 || request.Limit.Value > 0)
+                        existing.MessagesQuota = QuotaHelper.ToDbMessagesQuota(request.Limit.Value);
+                }
                 
-                if (request.QueuesLimit.HasValue && request.QueuesLimit.Value > 0)
-                    existing.QueuesQuota = request.QueuesLimit.Value;
+                if (request.QueuesLimit.HasValue)
+                {
+                    if (request.QueuesLimit.Value == -1 || request.QueuesLimit.Value > 0)
+                        existing.QueuesQuota = QuotaHelper.ToDbQueuesQuota(request.QueuesLimit.Value);
+                }
                 
                 existing.UpdatedAt = DateTime.UtcNow;
                 
@@ -232,9 +239,9 @@ namespace Clinics.Api.Controllers
                 
                 return Ok(new MyQuotaDto
                 {
-                    Limit = existing.MessagesQuota,
-                    Used = existing.ConsumedMessages,
-                    QueuesLimit = existing.QueuesQuota,
+                    Limit = QuotaHelper.ToApiMessagesQuota(existing.MessagesQuota),
+                    Used = (int)existing.ConsumedMessages, // Convert long to int for API
+                    QueuesLimit = QuotaHelper.ToApiQueuesQuota(existing.QueuesQuota),
                     QueuesUsed = existing.ConsumedQueues
                 });
             }

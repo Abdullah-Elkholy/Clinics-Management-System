@@ -7,6 +7,7 @@ namespace Clinics.Api.Controllers
     public class HealthController : ControllerBase
     {
         [HttpGet]
+        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
         public IActionResult Get() => Ok(new { status = "healthy", time = System.DateTime.UtcNow });
     }
 }

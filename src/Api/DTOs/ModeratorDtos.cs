@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace Clinics.Api.DTOs
@@ -61,31 +62,34 @@ namespace Clinics.Api.DTOs
         
         /// <summary>
         /// Maximum messages quota.
+        /// Uses long to support large values up to JavaScript's MAX_SAFE_INTEGER (9007199254740991).
         /// </summary>
-        public int Limit { get; set; }
+        public long Limit { get; set; }
         
         /// <summary>
         /// Messages consumed so far.
+        /// Uses long to match the database schema and support large values.
         /// </summary>
-        public int Used { get; set; }
+        public long Used { get; set; }
         
         /// <summary>
-        /// Remaining messages (calculated).
+        /// Remaining messages (calculated). Returns -1 if Limit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int Remaining => Limit - Used;
+        public long Remaining => Limit == -1 ? -1 : Limit - Used;
         
         /// <summary>
-        /// Percentage of messages quota consumed (0-100).
+        /// Percentage of messages quota consumed (0-100). Returns 0 if Limit is -1 (unlimited).
         /// </summary>
-        public decimal Percentage => Limit > 0 ? (decimal)(Used * 100) / Limit : 0;
+        public decimal Percentage => Limit == -1 || Limit <= 0 ? 0 : (decimal)(Used * 100) / Limit;
         
         /// <summary>
-        /// Whether messages quota is low (> 80% consumed).
+        /// Whether messages quota is low (> 80% consumed). Returns false if Limit is -1 (unlimited).
         /// </summary>
-        public bool IsLow => Percentage > 80;
+        public bool IsLow => Limit != -1 && Limit > 0 && Percentage > 80;
         
         /// <summary>
-        /// Maximum queues quota.
+        /// Maximum queues quota. Use -1 for unlimited.
         /// </summary>
         public int QueuesLimit { get; set; }
         
@@ -95,9 +99,10 @@ namespace Clinics.Api.DTOs
         public int QueuesUsed { get; set; }
         
         /// <summary>
-        /// Remaining queues (calculated).
+        /// Remaining queues (calculated). Returns -1 if QueuesLimit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int QueuesRemaining => QueuesLimit - QueuesUsed;
+        public int QueuesRemaining => QueuesLimit == -1 ? -1 : QueuesLimit - QueuesUsed;
         
         public DateTime UpdatedAt { get; set; }
     }
@@ -204,24 +209,35 @@ namespace Clinics.Api.DTOs
     /// </summary>
     public class AddQuotaRequest
     {
+        /// <summary>
+        /// Messages quota limit. Use -1 for unlimited, or a positive number for a specific limit.
+        /// Uses long to support large values up to JavaScript's MAX_SAFE_INTEGER (9007199254740991).
+        /// </summary>
         [Required(ErrorMessage = "Limit (messages quota) is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "Limit must be at least 1")]
-        public int Limit { get; set; }
+        public long Limit { get; set; }
 
+        /// <summary>
+        /// Queues quota limit. Use -1 for unlimited, or a positive number for a specific limit.
+        /// </summary>
         [Required(ErrorMessage = "Queues limit is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "Queues limit must be at least 1")]
         public int QueuesLimit { get; set; }
     }
 
     /// <summary>
     /// Request to update quota.
+    /// Use -1 for unlimited, or a positive number for a specific limit.
     /// </summary>
     public class UpdateQuotaRequest
     {
-        [Range(1, int.MaxValue, ErrorMessage = "Limit must be at least 1")]
-        public int? Limit { get; set; }
+        /// <summary>
+        /// Messages quota limit. Use -1 for unlimited, or a positive number for a specific limit.
+        /// Uses long to support large values up to JavaScript's MAX_SAFE_INTEGER (9007199254740991).
+        /// </summary>
+        public long? Limit { get; set; }
 
-        [Range(1, int.MaxValue, ErrorMessage = "Queues limit must be at least 1")]
+        /// <summary>
+        /// Queues quota limit. Use -1 for unlimited, or a positive number for a specific limit.
+        /// </summary>
         public int? QueuesLimit { get; set; }
     }
 
@@ -232,31 +248,34 @@ namespace Clinics.Api.DTOs
     {
         /// <summary>
         /// Maximum messages this moderator can send.
+        /// Uses long to support large values up to JavaScript's MAX_SAFE_INTEGER (9007199254740991).
         /// </summary>
-        public int Limit { get; set; }
+        public long Limit { get; set; }
 
         /// <summary>
         /// Messages consumed so far.
+        /// Uses long to match the database schema and support large values.
         /// </summary>
-        public int Used { get; set; }
+        public long Used { get; set; }
 
         /// <summary>
-        /// Remaining messages.
+        /// Remaining messages. Returns -1 if Limit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int Remaining => Limit - Used;
+        public long Remaining => Limit == -1 ? -1 : Limit - Used;
 
         /// <summary>
-        /// Percentage of quota consumed (0-100).
+        /// Percentage of quota consumed (0-100). Returns 0 if Limit is -1 (unlimited).
         /// </summary>
-        public decimal Percentage => Limit > 0 ? (decimal)(Used * 100) / Limit : 0;
+        public decimal Percentage => Limit == -1 || Limit <= 0 ? 0 : (decimal)(Used * 100) / Limit;
 
         /// <summary>
-        /// Whether quota is low (> 80% consumed).
+        /// Whether quota is low (> 80% consumed). Returns false if Limit is -1 (unlimited).
         /// </summary>
-        public bool IsLowQuota => Percentage > 80;
+        public bool IsLowQuota => Limit != -1 && Limit > 0 && Percentage > 80;
 
         /// <summary>
-        /// Maximum queues.
+        /// Maximum queues. Use -1 for unlimited.
         /// </summary>
         public int QueuesLimit { get; set; }
 
@@ -266,8 +285,9 @@ namespace Clinics.Api.DTOs
         public int QueuesUsed { get; set; }
 
         /// <summary>
-        /// Remaining queues.
+        /// Remaining queues. Returns -1 if QueuesLimit is -1 (unlimited).
+        /// Can be negative if used exceeds limit.
         /// </summary>
-        public int QueuesRemaining => QueuesLimit - QueuesUsed;
+        public int QueuesRemaining => QueuesLimit == -1 ? -1 : QueuesLimit - QueuesUsed;
     }
 }

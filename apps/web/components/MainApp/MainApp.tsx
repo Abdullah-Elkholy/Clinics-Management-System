@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import { UIProvider, useUI } from '../../contexts/UIContext';
-import { QueueProvider, useQueue } from '../../contexts/QueueContext';
+import { useUI } from '../../contexts/UIContext';
+import { useQueue } from '../../contexts/QueueContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { ModalProvider } from '../../contexts/ModalContext';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import Header from '../Layout/Header';
@@ -19,9 +20,21 @@ import * as Modals from '../Modals';
 
 function MainAppContent() {
   const { selectedQueueId } = useQueue();
-  const { currentPanel } = useUI();
+  const { currentPanel, isTransitioning } = useUI();
+  const { isNavigatingToHome, clearNavigationFlag } = useAuth();
   const { isCollapsed } = useSidebarCollapse();
   const [customSidebarWidth, setCustomSidebarWidth] = React.useState<number | null>(null);
+
+  // Clear navigation flag once MainApp renders (home page is ready)
+  React.useEffect(() => {
+    if (isNavigatingToHome) {
+      // Give a brief moment for rendering to complete, then clear flag
+      const timer = setTimeout(() => {
+        clearNavigationFlag();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isNavigatingToHome, clearNavigationFlag]);
 
   // Listen for sidebar custom width changes and respond to collapse state
   React.useEffect(() => {
@@ -87,12 +100,20 @@ function MainAppContent() {
         />
         
         <div className="flex-1 bg-white overflow-y-auto">
-          {isQueueSelected ? (
+          {/* Show loading during panel transitions to prevent glitchy UI */}
+          {isTransitioning ? (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-gray-600">جاري التحميل...</p>
+              </div>
+            </div>
+          ) : isQueueSelected ? (
             currentPanel === 'ongoing' ? (
               <OngoingTasksPanel />
             ) : currentPanel === 'failed' ? (
               <FailedTasksPanel />
-            ) : currentPanel === 'done' ? (
+            ) : currentPanel === 'completed' ? (
               <CompletedTasksPanel />
             ) : (
               <QueueDashboard />
@@ -100,6 +121,7 @@ function MainAppContent() {
           ) : currentPanel === 'messages' ? (
             <MessagesPanel />
           ) : currentPanel === 'management' ? (
+            // ManagementPanel has its own authentication guard
             <ManagementPanel />
           ) : (
             <WelcomeScreen />
@@ -112,29 +134,26 @@ function MainAppContent() {
 }
 
 export default function MainApp() {
+  // Providers are already in app/layout.tsx, so we don't need to wrap here
   return (
-    <UIProvider>
-      <QueueProvider>
-        <ModalProvider>
-          <MainAppContent />
-          <Modals.AddQueueModal />
-          <Modals.AddPatientModal />
-          <Modals.UploadModal />
-          <Modals.AddTemplateModal />
-          <Modals.EditTemplateModal />
-          <Modals.AccountInfoModal />
-          <Modals.WhatsAppAuthModal />
-          <Modals.EditQueueModal />
-          <Modals.EditUserModal />
-          <Modals.AddUserModal />
-          <Modals.EditPatientModal />
-          <Modals.MessageSelectionModal />
-          <Modals.MessagePreviewModal />
-          <Modals.ManageConditionsModal />
-          <Modals.RetryPreviewModal />
-          <Modals.QuotaManagementModal />
-        </ModalProvider>
-      </QueueProvider>
-    </UIProvider>
+    <ModalProvider>
+      <MainAppContent />
+      <Modals.AddQueueModal />
+      <Modals.AddPatientModal />
+      <Modals.UploadModal />
+      <Modals.AddTemplateModal />
+      <Modals.EditTemplateModal />
+      <Modals.AccountInfoModal />
+      <Modals.WhatsAppAuthModal />
+      <Modals.EditQueueModal />
+      <Modals.EditUserModal />
+      <Modals.AddUserModal />
+      <Modals.EditPatientModal />
+      <Modals.MessageSelectionModal />
+      <Modals.MessagePreviewModal />
+      <Modals.ManageConditionsModal />
+      <Modals.RetryPreviewModal />
+      <Modals.QuotaManagementModal />
+    </ModalProvider>
   );
 }

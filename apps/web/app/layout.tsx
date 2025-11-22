@@ -8,6 +8,7 @@ import { ModalProvider } from '../contexts/ModalContext';
 import { ConfirmationProvider } from '../contexts/ConfirmationContext';
 import { InputDialogProvider } from '../contexts/InputDialogContext';
 import { SelectDialogProvider } from '../contexts/SelectDialogContext';
+import WhatsAppSessionWrapper from '../components/Providers/WhatsAppSessionWrapper';
 import ToastContainer from '../components/Common/ToastContainer';
 
 export const metadata: Metadata = {
@@ -32,18 +33,20 @@ export default function RootLayout({
         {/** Provider order adjusted: UIProvider now wraps AuthProvider so AuthContext can trigger global toasts */}
         <UIProvider>
           <AuthProvider>
-            <QueueProvider>
-              <ModalProvider>
-                <ConfirmationProvider>
-                  <InputDialogProvider>
-                    <SelectDialogProvider>
-                      {children}
-                      <ToastContainer />
-                    </SelectDialogProvider>
-                  </InputDialogProvider>
-                </ConfirmationProvider>
-              </ModalProvider>
-            </QueueProvider>
+            <WhatsAppSessionWrapper>
+              <QueueProvider>
+                <ModalProvider>
+                  <ConfirmationProvider>
+                    <InputDialogProvider>
+                      <SelectDialogProvider>
+                        {children}
+                        <ToastContainer />
+                      </SelectDialogProvider>
+                    </InputDialogProvider>
+                  </ConfirmationProvider>
+                </ModalProvider>
+              </QueueProvider>
+            </WhatsAppSessionWrapper>
           </AuthProvider>
         </UIProvider>
       </body>

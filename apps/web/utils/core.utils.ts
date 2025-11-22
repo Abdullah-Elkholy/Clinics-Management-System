@@ -39,66 +39,20 @@ export const isOtherCountryCode = (countryCode: string): boolean => {
 // ============================================================================
 
 /**
- * Normalize phone numbers to standard international format
- * Handles various input formats and adds country code if missing
- * @param phone - Raw phone number input
- * @param countryCode - Country code to use if phone doesn't have one
- * @returns Normalized phone number in +CCNNNNNNNNN format
+ * Format phone number for display with country code
+ * @param phone - Phone number (national format, e.g., "1018542431")
+ * @param countryCode - Country code (e.g., "+20")
+ * @returns Formatted phone number for display (e.g., "+20 1018542431")
  */
-export const normalizePhoneNumber = (
-  phone: string,
-  countryCode: string
-): string => {
-  // Remove all non-numeric characters except + at the start
-  let normalized = phone.replace(/[^\d+]/g, '');
-
-  // Remove leading 0 if it exists and country code doesn't start with +
-  if (normalized.startsWith('0') && countryCode) {
-    normalized = normalized.substring(1);
+export const formatPhoneForDisplay = (phone: string, countryCode?: string): string => {
+  if (!phone) return '';
+  
+  // If country code provided, format as "+CC PHONE"
+  if (countryCode) {
+    return `${countryCode} ${phone}`;
   }
-
-  // Add country code if not already present
-  if (!normalized.startsWith('+')) {
-    normalized = countryCode + normalized;
-  }
-
-  return normalized;
-};
-
-/**
- * Format phone number for display
- * @param phone - Phone number to format
- * @returns Formatted phone number
- */
-export const formatPhoneForDisplay = (phone: string): string => {
-  const cleaned = phone.replace(/\D/g, '');
-
-  if (cleaned.startsWith('20')) {
-    return `+${cleaned}`;
-  } else if (cleaned.startsWith('0')) {
-    return `+20${cleaned.substring(1)}`;
-  }
-
+  
   return phone;
-};
-
-/**
- * Normalize phone number for API submission
- * @param phone - Phone number to normalize
- * @returns Normalized phone number for API
- */
-export const normalizePhoneForAPI = (phone: string): string => {
-  const cleaned = phone.replace(/\D/g, '');
-
-  if (cleaned.startsWith('20')) {
-    return `+${cleaned}`;
-  } else if (cleaned.startsWith('0')) {
-    return `+20${cleaned.substring(1)}`;
-  } else if (cleaned.startsWith('1')) {
-    return `+201${cleaned.substring(1)}`;
-  }
-
-  return `+20${cleaned}`;
 };
 
 // ============================================================================

@@ -64,9 +64,9 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function MessagesPanel() {
-  const { selectedQueueId: _selectedQueueId, queues, messageTemplates, refreshQueueData } = useQueue();
+  const { selectedQueueId: _selectedQueueId, queues, messageTemplates, messageConditions, refreshQueueData } = useQueue();
   const { user } = useAuth();
-  const { addToast } = useUI();
+  const { addToast, setCurrentPanel, setSelectedQueueId } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
@@ -172,11 +172,20 @@ export default function MessagesPanel() {
    * Check for condition intersections in a queue
    */
   const checkConditionIntersections = (queueId: string) => {
-    // Get all conditions from message templates for this queue (exclude only DEFAULT as it's a sentinel, but include UNCONDITIONED)
+    // Get all conditions from messageConditions array (authoritative source) or fall back to template.condition
+    // This matches the logic in EditTemplateModal and the template rendering to ensure consistency
     const queueConditions: MessageCondition[] = messageTemplates
-      .filter((t) => t.queueId === String(queueId) && t.condition && t.condition.operator && t.condition.operator !== 'DEFAULT')
-      .map((t) => t.condition)
-      .filter((c): c is MessageCondition => c !== null && c !== undefined);
+      .filter((t) => t.queueId === String(queueId))
+      .map((t) => {
+        // Find condition from messageConditions array first, then fall back to template.condition
+        return messageConditions.find((c) => c.templateId === t.id) ?? t.condition ?? null;
+      })
+      .filter((c): c is MessageCondition => 
+        c !== null && 
+        c !== undefined && 
+        c.operator !== undefined && 
+        c.operator !== 'DEFAULT' // Exclude DEFAULT as it's a sentinel
+      );
 
     if (queueConditions.length < 2) return [];
 
@@ -220,7 +229,7 @@ export default function MessagesPanel() {
     });
     
     return conflictingIds;
-  }, []);
+  }, [messageConditions, messageTemplates]);
 
   /**
    * Get range representation of a condition
@@ -367,7 +376,9 @@ export default function MessagesPanel() {
             message="يرجى إنشاء طابور أولاً من لوحة التحكم"
             actionLabel="اذهب إلى لوحة التحكم"
             onAction={() => {
-              window.location.href = '#/queue';
+              // Navigate to welcome screen (dashboard)
+              setCurrentPanel('welcome');
+              setSelectedQueueId(null);
             }}
           />
         ) : (
@@ -493,7 +504,12 @@ export default function MessagesPanel() {
                                   return 0;
                                 })
                                 .map((template) => {
-                                const condition = template.condition || null;
+                                // Find condition from messageConditions array (authoritative source) or fall back to template.condition
+                                // This matches the logic in EditTemplateModal to ensure consistency
+                                const condition = 
+                                  messageConditions.find((c) => c.templateId === template.id) ??
+                                  template.condition ??
+                                  null;
                                 
                                 // Check if this template's condition is conflicting
                                 const conflictingIds = getConflictingConditionIds(String(queue.id));

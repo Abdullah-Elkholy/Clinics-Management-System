@@ -14,8 +14,16 @@ function formatTimeDisplay(minutes: number): string {
 }
 
 function matchesCondition(offset: number, cond: MessageCondition): boolean {
-  if (!cond.enabled) return false;
+  if (cond.enabled === false) return false;
+  
   switch (cond.operator) {
+    case 'UNCONDITIONED':
+      // UNCONDITIONED always matches (no criteria)
+      return true;
+    case 'DEFAULT':
+      // DEFAULT should not be matched here - it's handled separately as fallback
+      // But if it's in the conditions array, it should match when no other condition matches
+      return false; // Will be handled as fallback after all conditions are checked
     case 'EQUAL':
       return typeof cond.value === 'number' && offset === cond.value;
     case 'GREATER':
@@ -72,13 +80,21 @@ export function resolvePatientMessage(
   const etrMinutes = offset * ets;
   const etrDisplay = formatTimeDisplay(etrMinutes);
 
-  // sort conditions by priority ascending
-  const sorted = [...(config.conditions || [])]
-    .filter((c) => c.enabled !== false)
-    .sort((a, b) => a.priority - b.priority);
+  // Separate conditions into active conditions and DEFAULT condition
+  const allConditions = [...(config.conditions || [])].filter((c) => c.enabled !== false);
+  const defaultCondition = allConditions.find(c => c.operator === 'DEFAULT');
+  const activeConditions = allConditions.filter(c => c.operator !== 'DEFAULT' && c.operator !== 'UNCONDITIONED');
+  const unconditionedConditions = allConditions.filter(c => c.operator === 'UNCONDITIONED');
+  
+  // Sort active conditions by priority ascending (1 = highest priority, checked first)
+  const sortedActive = activeConditions.sort((a, b) => a.priority - b.priority);
+  
+  // Sort UNCONDITIONED conditions by priority (they always match, but priority determines order)
+  const sortedUnconditioned = unconditionedConditions.sort((a, b) => a.priority - b.priority);
 
-  for (const cond of sorted) {
-    if (matchesCondition(offset, cond)) {
+  // First, check UNCONDITIONED conditions (they always match, highest priority first)
+  for (const cond of sortedUnconditioned) {
+    if (cond.template) {
       const text = replacePlaceholders(cond.template, {
         PN: patientName,
         PQP: patientPosition,
@@ -98,7 +114,48 @@ export function resolvePatientMessage(
     }
   }
 
-  // No condition matched, apply default if exists
+  // Then check active conditions (EQUAL, GREATER, LESS, RANGE)
+  for (const cond of sortedActive) {
+    if (matchesCondition(offset, cond) && cond.template) {
+      const text = replacePlaceholders(cond.template, {
+        PN: patientName,
+        PQP: patientPosition,
+        ETR: etrDisplay,
+        DN: config.queueName,
+      });
+
+      return {
+        patientId,
+        patientName,
+        patientPosition,
+        offset,
+        matchedConditionId: cond.id,
+        resolvedTemplate: text,
+        reason: 'CONDITION',
+      };
+    }
+  }
+
+  // No active condition matched, check DEFAULT condition
+  if (defaultCondition && defaultCondition.template) {
+    const text = replacePlaceholders(defaultCondition.template, {
+      PN: patientName,
+      PQP: patientPosition,
+      ETR: etrDisplay,
+      DN: config.queueName,
+    });
+    return {
+      patientId,
+      patientName,
+      patientPosition,
+      offset,
+      matchedConditionId: defaultCondition.id,
+      resolvedTemplate: text,
+      reason: 'DEFAULT',
+    };
+  }
+
+  // Fallback to config.defaultTemplate if DEFAULT condition not found
   if (config.defaultTemplate) {
     const text = replacePlaceholders(config.defaultTemplate, {
       PN: patientName,

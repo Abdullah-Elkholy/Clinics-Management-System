@@ -8,6 +8,8 @@ interface CustomCountryCodeInputProps {
   size?: 'sm' | 'md' | 'lg';
   placeholder?: string;
   showFullInfo?: boolean;
+  id?: string;
+  name?: string;
 }
 
 /**
@@ -22,7 +24,9 @@ export default function CustomCountryCodeInput({
   hasError = false,
   size = 'md',
   placeholder = 'مثال: +44 أو +1 أو +33 (ابدأ بـ +)',
-  showFullInfo = false
+  showFullInfo = false,
+  id,
+  name,
 }: CustomCountryCodeInputProps) {
   const sizeClasses = {
     sm: 'px-2 py-1 text-xs',
@@ -34,11 +38,14 @@ export default function CustomCountryCodeInput({
   if (!showFullInfo) {
     return (
       <input
+        id={id}
+        name={name}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
+        autoComplete="tel-country-code"
         className={`flex-1 border-2 rounded-lg focus:outline-none focus:ring-2 transition-all ${sizeClasses[size]} ${
           hasError
             ? 'border-red-400 bg-red-50 focus:ring-red-500'
@@ -56,11 +63,14 @@ export default function CustomCountryCodeInput({
         <span>أدخل كود الدولة المخصص:</span>
       </div>
       <input
+        id={id}
+        name={name}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
+        autoComplete="tel-country-code"
         className={`w-full border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white transition-all ${sizeClasses[size]}`}
       />
       <div className="flex gap-2 text-xs text-blue-700">

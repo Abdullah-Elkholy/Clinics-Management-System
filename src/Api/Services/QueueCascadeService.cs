@@ -168,7 +168,8 @@ public class QueueCascadeService : IQueueCascadeService
                     .FirstOrDefaultAsync(q => q.ModeratorUserId == queue.ModeratorId);
                 
                 // If quota exists and restoring would exceed limit, block the restore
-                if (quota != null)
+                // Skip check if quota is unlimited (-1)
+                if (quota != null && quota.QueuesQuota != -1)
                 {
                     // After restore, active count will be +1
                     if (activeQueuesCount + 1 > quota.QueuesQuota)

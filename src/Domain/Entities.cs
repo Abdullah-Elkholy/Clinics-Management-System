@@ -173,6 +173,13 @@ namespace Clinics.Domain
         [StringLength(10)]
         public string CountryCode { get; set; } = "+20";
 
+        /// <summary>
+        /// Indicates whether the phone number has been validated for WhatsApp.
+        /// null = not checked yet, true = valid WhatsApp number, false = invalid WhatsApp number.
+        /// Automatically reset to null when PhoneNumber or CountryCode changes.
+        /// </summary>
+        public bool? IsValidWhatsAppNumber { get; set; }
+
         [Required]
         public int Position { get; set; }
 
@@ -427,11 +434,19 @@ namespace Clinics.Domain
         [ForeignKey(nameof(ModeratorUserId))]
         public User? Moderator { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
+        /// <summary>
+        /// Messages quota limit. Use -1 for unlimited, or a positive number for a specific limit.
+        /// Stored as bigint in database to support very large values.
+        /// </summary>
         [Required]
-        public int MessagesQuota { get; set; }
+        public long MessagesQuota { get; set; }
 
+        /// <summary>
+        /// Total messages consumed (accumulative, never resets).
+        /// Stored as bigint in database to support very large values.
+        /// </summary>
         [Required]
-        public int ConsumedMessages { get; set; }
+        public long ConsumedMessages { get; set; }
 
         [Required]
         public int QueuesQuota { get; set; }
@@ -443,25 +458,30 @@ namespace Clinics.Domain
         public DateTime UpdatedAt { get; set; }
 
         /// <summary>
-        /// Remaining messages quota
+        /// Remaining messages quota. Returns -1 if MessagesQuota is -1 (unlimited).
+        /// Can be negative if consumed exceeds limit.
         /// </summary>
         [NotMapped]
-        public int RemainingMessages => MessagesQuota - ConsumedMessages;
+        public long RemainingMessages => MessagesQuota == -1 ? -1 : MessagesQuota - ConsumedMessages;
 
         /// <summary>
-        /// Remaining queues quota
+        /// Remaining queues quota. Returns -1 if QueuesQuota is -1 (unlimited).
+        /// Can be negative if consumed exceeds limit.
         /// </summary>
         [NotMapped]
-        public int RemainingQueues => QueuesQuota - ConsumedQueues;
+        public long RemainingQueues => QueuesQuota == -1 ? -1 : QueuesQuota - ConsumedQueues;
 
         /// <summary>
-        /// Check if quota is low (less than 10%)
+        /// Check if quota is low (less than 10%). Returns false if quota is unlimited (-1).
         /// </summary>
         [NotMapped]
-        public bool IsMessagesQuotaLow => MessagesQuota > 0 && (RemainingMessages * 100.0 / MessagesQuota) < 10;
+        public bool IsMessagesQuotaLow => MessagesQuota != -1 && MessagesQuota > 0 && (RemainingMessages * 100.0 / MessagesQuota) < 10;
 
+        /// <summary>
+        /// Check if queues quota is low (less than 10%). Returns false if quota is unlimited (-1).
+        /// </summary>
         [NotMapped]
-        public bool IsQueuesQuotaLow => QueuesQuota > 0 && (RemainingQueues * 100.0 / QueuesQuota) < 10;
+        public bool IsQueuesQuotaLow => QueuesQuota != -1 && QueuesQuota > 0 && (RemainingQueues * 100.0 / QueuesQuota) < 10;
 
         // Audit fields
         [Required]
@@ -633,8 +653,7 @@ namespace Clinics.Domain
         /// Note: The relationship is owned by MessageTemplate (MessageTemplate.MessageConditionId -> MessageCondition.Id),
         /// but this foreign key provides reverse lookup capability for easier queries.
         /// </summary>
-        [Required]
-        public int TemplateId { get; set; }
+        public int? TemplateId { get; set; }
 
         /// <summary>
         /// Navigation property to the one-to-one REQUIRED relationship with MessageTemplate.

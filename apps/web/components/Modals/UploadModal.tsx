@@ -8,7 +8,7 @@ import { validateCellValue, validateExcelRow, sanitizeInput, validateCountryCode
 import { COUNTRY_CODES } from '@/constants';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
 import CustomCountryCodeInput from '@/components/Common/CustomCountryCodeInput';
-import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import { getEffectiveCountryCode } from '@/utils/core.utils';
 import { FILE_UPLOAD_CONFIG } from '@/config/app.config';
 
 interface FileError {
@@ -90,7 +90,7 @@ export default function UploadModal() {
         // Normalize phone numbers
         if (phoneColIdx >= 0 && processedRow[phoneColIdx]) {
           const countryCode = countryColIdx >= 0 ? processedRow[countryColIdx]?.toString() : effectiveCountryCode;
-          processedRow[phoneColIdx] = normalizePhoneNumber(processedRow[phoneColIdx]?.toString() || '', countryCode || effectiveCountryCode);
+          processedRow[phoneColIdx] = processedRow[phoneColIdx]?.toString().trim() || ''; // Store phone number as-is, no normalization
         }
         
         return processedRow;
@@ -103,9 +103,9 @@ export default function UploadModal() {
       for (let i = 1; i < Math.min(processedData.length, 6); i++) {
         const row = processedData[i];
         
-        // Validate phone number format if exists
+        // Validate phone number format if exists (national number only, no country code)
         if (phoneColIdx >= 0 && row[phoneColIdx]) {
-          const phoneRegex = /^\+\d{2,3}\d{8,12}$/;
+          const phoneRegex = /^\d{5,15}$/; // 5-15 digits for national phone number
           if (!phoneRegex.test(row[phoneColIdx]?.toString() || '')) {
             newCellErrors[`${i}-${phoneColIdx}`] = 'صيغة هاتف غير صحيحة';
             validationWarnings++;
@@ -180,13 +180,13 @@ export default function UploadModal() {
         rowCountryCode = rowCustomCountries[`${rowIdx}-${countryCodeIdx}`] || getEffectiveCountryCode(selectedCountryCode, customCountryCode);
       }
       
-      processedValue = normalizePhoneNumber(value, rowCountryCode || getEffectiveCountryCode(selectedCountryCode, customCountryCode));
+      processedValue = value.trim(); // Store phone number as-is, no normalization
       
-      // Validate phone format
-      const phoneRegex = /^\+\d{2,3}\d{8,12}$/;
+      // Validate phone format (national number only, no country code)
+      const phoneRegex = /^\d{5,15}$/; // 5-15 digits for national phone number
       if (!phoneRegex.test(processedValue)) {
         setCellErrors({...cellErrors, [cellKey]: 'صيغة الهاتف غير صحيحة'});
-        addToast('صيغة الهاتف غير صحيحة. يجب أن تكون: +كود الدولة + الرقم', 'error');
+        addToast('صيغة الهاتف غير صحيحة. يجب أن يكون الرقم بين 5 و 15 رقم', 'error');
         return;
       }
     }
@@ -549,6 +549,8 @@ export default function UploadModal() {
                   اختر كود الدولة الافتراضي:
                 </label>
                 <CountryCodeSelector
+                  id="uploadModal-defaultCountryCode"
+                  name="defaultCountryCode"
                   value={selectedCountryCode}
                   onChange={setSelectedCountryCode}
                   size="md"
@@ -563,6 +565,8 @@ export default function UploadModal() {
               {/* Custom Country Code Input */}
               {selectedCountryCode === 'OTHER' && (
                 <CustomCountryCodeInput
+                  id="uploadModal-customCountryCode"
+                  name="customCountryCode"
                   value={customCountryCode}
                   onChange={setCustomCountryCode}
                   size="md"
@@ -606,6 +610,8 @@ export default function UploadModal() {
                                 <div className="flex flex-col gap-1">
                                   {/* Country Code Selector */}
                                   <CountryCodeSelector
+                                    id={`countryCode-${actualRowIdx}-${cellIdx}`}
+                                    name={`countryCode-${actualRowIdx}-${cellIdx}`}
                                     value={isOtherCountry ? 'OTHER' : String(cell)}
                                     onChange={(value) => {
                                       if (value === 'OTHER') {
@@ -628,6 +634,8 @@ export default function UploadModal() {
                                   {/* Custom Country Code Input - Show for 'OTHER' or unknown codes */}
                                   {isOtherCountry && (
                                     <CustomCountryCodeInput
+                                      id={`customCountryCode-${actualRowIdx}-${cellIdx}`}
+                                      name={`customCountryCode-${actualRowIdx}-${cellIdx}`}
                                       value={cell === 'OTHER' ? (rowCustomCountries[cellKey] || '') : String(cell)}
                                       onChange={(value) => {
                                         if (cell === 'OTHER') {
@@ -654,10 +662,12 @@ export default function UploadModal() {
                                 // Text Input
                                 <div className="relative">
                                   <input
+                                    id={`cell-${actualRowIdx}-${cellIdx}`}
                                     type="text"
                                     name={`cell-${actualRowIdx}-${cellIdx}`}
                                     value={cell}
                                     onChange={(e) => handleCellEdit(actualRowIdx, cellIdx, e.target.value)}
+                                    autoComplete={isPhoneCol ? 'tel' : 'off'}
                                     className={`w-full px-2 py-1 border rounded text-gray-700 focus:outline-none focus:ring-2 text-sm ${
                                       hasError 
                                         ? 'border-red-400 bg-red-50 focus:ring-red-400'

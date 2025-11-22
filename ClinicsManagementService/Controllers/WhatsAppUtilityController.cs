@@ -5,6 +5,7 @@ using ClinicsManagementService.Services.Domain;
 using ClinicsManagementService.Services.Infrastructure;
 using ClinicsManagementService.Configuration;
 using System.Net;
+using System.Threading;
 
 namespace ClinicsManagementService.Controllers
 {
@@ -21,6 +22,8 @@ namespace ClinicsManagementService.Controllers
         private readonly Func<IBrowserSession> _browserSessionFactory;
         private readonly IWhatsAppUIService _whatsAppUIService;
         private readonly IRetryService _retryService;
+        private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
+        private readonly IWhatsAppSessionSyncService _sessionSyncService;
 
 
         public WhatsAppUtilityController(
@@ -29,7 +32,9 @@ namespace ClinicsManagementService.Controllers
             IWhatsAppSessionManager sessionManager,
             Func<IBrowserSession> browserSessionFactory,
             IWhatsAppUIService whatsAppUIService,
-            IRetryService retryService)
+            IRetryService retryService,
+            IWhatsAppSessionOptimizer sessionOptimizer,
+            IWhatsAppSessionSyncService sessionSyncService)
         {
             _whatsAppService = whatsAppService;
             _notifier = notifier;
@@ -37,6 +42,8 @@ namespace ClinicsManagementService.Controllers
             _browserSessionFactory = browserSessionFactory;
             _whatsAppUIService = whatsAppUIService;
             _retryService = retryService;
+            _sessionOptimizer = sessionOptimizer;
+            _sessionSyncService = sessionSyncService;
         }
 
         /// <summary>
@@ -73,17 +80,40 @@ namespace ClinicsManagementService.Controllers
         /// Checks if a phone number has WhatsApp
         /// </summary>
         /// <param name="phoneNumber">Phone number to check</param>
+        /// <param name="cancellationToken">Cancellation token to detect client disconnection</param>
         /// <returns>WhatsApp availability status</returns>
         [HttpGet("check-whatsapp/{phoneNumber}")]
-        public async Task<ActionResult<OperationResult<bool>>> CheckWhatsAppNumber(string phoneNumber)
+        public async Task<ActionResult<OperationResult<bool>>> CheckWhatsAppNumber(
+            string phoneNumber,
+            CancellationToken cancellationToken = default)
         {
             try
             {
+                // Check if request was already cancelled
+                cancellationToken.ThrowIfCancellationRequested();
+
                 _notifier.Notify($"🔍 Checking if {phoneNumber} has WhatsApp...");
+
+                // Check and auto-restore if session size exceeds threshold
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
 
                 // Create a direct browser session for this simple check
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync();
-                var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession);
+                
+                // Check cancellation before starting operation
+                cancellationToken.ThrowIfCancellationRequested();
+                
+                var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession, cancellationToken);
+
+                // Check cancellation before disposing
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // Dispose the session after use
                 await browserSession.DisposeAsync();
@@ -115,7 +145,21 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"❌ Unable to determine WhatsApp status for {phoneNumber}.");
                 }
+                // Check and auto-restore if session size exceeds threshold
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
                 return Ok(result);
+            }
+            catch (OperationCanceledException)
+            {
+                _notifier.Notify($"⚠️ Request cancelled while checking WhatsApp number {phoneNumber}");
+                return Ok(OperationResult<bool>.Failure("Request was cancelled", false));
             }
             catch (TimeoutException tex)
             {
@@ -134,36 +178,68 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>WhatsApp authentication status</returns>
         [HttpGet("check-authentication")]
-        public async Task<ActionResult<OperationResult<bool>>> CheckAuthentication()
+        public async Task<ActionResult<OperationResult<bool>>> CheckAuthentication([FromQuery] int? moderatorUserId = null)
         {
+            // Check and auto-restore if session size exceeds threshold
             try
             {
-                _notifier.Notify("🔐 Checking WhatsApp authentication status...");
+                await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+            }
+            catch (Exception optimizeEx)
+            {
+                _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+            }
+            try
+            {
+                // Use provided moderatorUserId or fallback to 3
+                int effectiveModeratorId = moderatorUserId ?? 3;
+                _notifier.Notify($"🔐 [AUTH CHECK] Starting - ModeratorUserId: {effectiveModeratorId} (provided: {moderatorUserId?.ToString() ?? "null"})");
 
                 // Get the session and run the full authentication check for consistent results
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync();
                 await browserSession.InitializeAsync();
                 // Navigate directly to the WhatsApp base URL for the phone number
                 var url = WhatsAppConfiguration.WhatsAppBaseUrl;
-                _notifier.Notify($"🔗 Navigating to {url}...");
+                _notifier.Notify($"🔗 [AUTH CHECK] Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
 
                 var waitUIResult = await _whatsAppUIService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                _notifier.Notify($"📊 [AUTH CHECK] UI Result - Success: {waitUIResult.IsSuccess}, State: {waitUIResult.State}");
 
+                // Sync database status based on authentication result
                 if (waitUIResult.IsSuccess == true && waitUIResult.State == OperationState.Success)
                 {
-                    _notifier.Notify("✅ WhatsApp is authenticated and ready.");
+                    _notifier.Notify($"✅ [AUTH CHECK] WhatsApp authenticated - Updating DB for moderator {effectiveModeratorId}");
+                    
+                    // Update database: connected
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
+                    _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected");
+                    
+                    // Check and auto-restore if session size exceeds threshold
+                    try
+                    {
+                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                    }
+                    catch (Exception optimizeEx)
+                    {
+                        _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                    }
                 }
                 else if (waitUIResult.IsPendingQr())
                 {
-                    _notifier.Notify("❌ WhatsApp is not authenticated.");
+                    _notifier.Notify($"❌ [AUTH CHECK] WhatsApp NOT authenticated - Updating DB for moderator {effectiveModeratorId}");
+                    
+                    // Update database: pending
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending");
+                    _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=pending");
                 }
                 // Return the unified OperationResult<bool> from the UI service
                 return Ok(waitUIResult);
             }
             catch (Exception ex)
             {
-                _notifier.Notify($"❌ Exception checking WhatsApp authentication: {ex.Message}");
+                _notifier.Notify($"❌ [AUTH CHECK] Exception: {ex.Message}");
+                _notifier.Notify($"❌ [AUTH CHECK] Stack trace: {ex.StackTrace}");
                 return Ok(OperationResult<bool>.Failure($"Authentication check failed: {ex.Message}"));
             }
         }
@@ -173,25 +249,53 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>WhatsApp authentication result</returns>
         [HttpPost("authenticate")]
-        public async Task<ActionResult<OperationResult<bool>>> Authenticate()
+        public async Task<ActionResult<OperationResult<bool>>> Authenticate([FromQuery] int? moderatorUserId = null)
         {
+            // Check and auto-restore if session size exceeds threshold
             try
             {
-                _notifier.Notify("🔐 Starting WhatsApp authentication process...");
+                await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+            }
+            catch (Exception optimizeEx)
+            {
+                _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+            }
+            try
+            {
+                // Use provided moderatorUserId or fallback to 1
+                int effectiveModeratorId = moderatorUserId ?? 1;
+                _notifier.Notify($"🔐 [AUTHENTICATE] Starting - ModeratorUserId: {effectiveModeratorId} (provided: {moderatorUserId?.ToString() ?? "null"})");
 
                 // Use the session manager so we operate on the shared/persistent session
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync();
                 await browserSession.InitializeAsync();
 
                 var url = WhatsAppConfiguration.WhatsAppBaseUrl;
-                _notifier.Notify($"🔗 Navigating to {url}...");
+                _notifier.Notify($"🔗 [AUTHENTICATE] Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
 
                 // First quick pass: check if already authenticated (ChatUI present)
                 var initial = await _whatsAppUIService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                _notifier.Notify($"📊 [AUTHENTICATE] Initial check - Success: {initial.IsSuccess}, State: {initial.State}");
+                
                 if (initial.IsSuccess == true)
                 {
-                    _notifier.Notify("✅ WhatsApp already authenticated.");
+                    _notifier.Notify($"✅ [AUTHENTICATE] Already authenticated - Updating DB for moderator {effectiveModeratorId}");
+                    
+                    // Update database: connected
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
+                    _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected");
+                    
+                    // Check and auto-restore if session size exceeds threshold
+                    try
+                    {
+                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                    }
+                    catch (Exception optimizeEx)
+                    {
+                        _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                    }
+                    
                     return Ok(OperationResult<bool>.Success(true));
                 }
 
@@ -226,7 +330,22 @@ namespace ClinicsManagementService.Controllers
                                     var element = await browserSession.QuerySelectorAsync(selector);
                                     if (element != null)
                                     {
-                                        _notifier.Notify("✅ Authentication completed: Chat UI detected after QR scan.");
+                                        _notifier.Notify($"✅ [AUTHENTICATE] QR scanned successfully - Chat UI detected - Updating DB for moderator {effectiveModeratorId}");
+                                        
+                                        // Update database: connected
+                                        await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
+                                        _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected");
+                                        
+                                        // Optimize session after successful authentication
+                                        try
+                                        {
+                                            await _sessionOptimizer.OptimizeAuthenticatedSessionAsync();
+                                        }
+                                        catch (Exception optimizeEx)
+                                        {
+                                            _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
+                                        }
+                                        
                                         return Ok(OperationResult<bool>.Success(true));
                                     }
                                 }
@@ -273,6 +392,17 @@ namespace ClinicsManagementService.Controllers
                                 else if (monitoringResult.IsSuccess == true)
                                 {
                                     _notifier.Notify("✅ Authentication completed (monitoring detected success).");
+                                    
+                                    // Optimize session after successful authentication
+                                    try
+                                    {
+                                        await _sessionOptimizer.OptimizeAuthenticatedSessionAsync();
+                                    }
+                                    catch (Exception optimizeEx)
+                                    {
+                                        _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
+                                    }
+                                    
                                     return Ok(OperationResult<bool>.Success(true));
                                 }
                                 else if (monitoringResult.IsSuccess == false)
@@ -324,6 +454,17 @@ namespace ClinicsManagementService.Controllers
                 if (waitForAuth.IsSuccess == true)
                 {
                     _notifier.Notify("✅ Authentication completed: Chat UI detected.");
+                    
+                    // Optimize session after successful authentication
+                    try
+                    {
+                        await _sessionOptimizer.OptimizeAuthenticatedSessionAsync();
+                    }
+                    catch (Exception optimizeEx)
+                    {
+                        _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
+                    }
+                    
                     return Ok(OperationResult<bool>.Success(true));
                 }
 

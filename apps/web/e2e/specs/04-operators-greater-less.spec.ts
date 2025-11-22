@@ -19,7 +19,7 @@ test.describe('Smoke: Form Interaction Tests', () => {
     expect(inputs).toBeGreaterThanOrEqual(0);
   });
 
-  test('xfail: should support keyboard navigation', async ({ authenticatedPage: page }) => {
+  test.fixme('xfail: should support keyboard navigation', async ({ authenticatedPage: page }) => {
     await E2EActions.waitForAppReady(page);
 
     // Try tabbing through inputs

@@ -39,8 +39,8 @@ export default function QuotaManagementModal() {
   // Calculate used quotas from modal data or moderatorData
   const messagesUsed = moderatorData?.messagesUsed || 0;
   const queuesUsed = moderatorData?.queuesUsed || 0;
-  const messagesRemaining = currentMessagesQuota === -1 ? -1 : Math.max(0, currentMessagesQuota - messagesUsed);
-  const queuesRemaining = currentQueuesQuota === -1 ? -1 : Math.max(0, currentQueuesQuota - queuesUsed);
+  const messagesRemaining = currentMessagesQuota === -1 ? -1 : currentMessagesQuota - messagesUsed;
+  const queuesRemaining = currentQueuesQuota === -1 ? -1 : currentQueuesQuota - queuesUsed;
 
   const handleAddQuota = async (type: 'messages' | 'queues') => {
     if (!moderatorData?.id) {

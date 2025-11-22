@@ -1,11 +1,13 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useUI } from './UIContext';
 import type { User, AuthState } from '../types';
 import { UserRole } from '@/types/roles';
-import { login as loginApi, logout as logoutApi, getCurrentUser } from '@/services/api/authApiClient';
+import { login as loginApi, logout as logoutApi, getCurrentUser, refreshAccessToken } from '@/services/api/authApiClient';
 import logger from '@/utils/logger';
+import { registerAuthErrorHandler, unregisterAuthErrorHandler } from '@/utils/apiInterceptor';
 
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
@@ -15,21 +17,142 @@ interface AuthContextType extends AuthState {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  clearNavigationFlag: () => void;
+  hasToken: boolean;
+  isValidating: boolean;
+  isNavigatingToHome: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+/**
+ * Helper function to set auth presence cookie
+ * Used by middleware for server-side route protection
+ */
+function setAuthCookie(isAuthenticated: boolean) {
+  if (typeof document === 'undefined') return;
+  
+  if (isAuthenticated) {
+    // Set cookie with SameSite=Lax for navigation, expires in 7 days
+    document.cookie = 'auth=1; Path=/; SameSite=Lax; Max-Age=604800';
+  } else {
+    // Clear cookie by setting Max-Age=0
+    document.cookie = 'auth=; Path=/; SameSite=Lax; Max-Age=0';
+  }
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     isAuthenticated: false,
   });
+  const [isValidating, setIsValidating] = useState(true);
+  const [hasToken, setHasToken] = useState(false);
+  const [isNavigatingToHome, setIsNavigatingToHome] = useState(false);
 
   const { addToast } = useUI();
+  const router = useRouter();
 
   // Refs for managing retry/backoff and preemption
   const attemptIdRef = useRef(0); // Incremented on each new login attempt
   const lastToastMessageRef = useRef<string>(''); // Track last toast to avoid duplicates
+  const isInitializingRef = useRef(false); // Prevent multiple initialization attempts
+
+  // Restore authentication state from localStorage on mount
+  useEffect(() => {
+    // Only run once on mount
+    if (isInitializingRef.current) return;
+    isInitializingRef.current = true;
+
+    const restoreAuth = async () => {
+      setIsValidating(true);
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        setHasToken(!!token);
+        
+        if (!token) {
+          // No access token - attempt refresh using HttpOnly cookie (if available)
+          try {
+            const refreshed = await refreshAccessToken();
+            if (refreshed?.accessToken) {
+              localStorage.setItem('token', refreshed.accessToken);
+              setHasToken(true);
+            } else {
+              // Still no token, user is not authenticated
+              setAuthCookie(false);
+              setIsValidating(false);
+              return;
+            }
+          } catch {
+            setAuthCookie(false);
+            setIsValidating(false);
+            return;
+          }
+        }
+
+        // Verify token is valid by fetching current user
+        try {
+          const userData = await getCurrentUser();
+          if (userData) {
+            // Extract role from user data
+            const role = userData.role as UserRole;
+            
+            // Debug log in development
+            if (process.env.NODE_ENV === 'development') {
+              logger.info('[Auth Restore] User data from API:', userData);
+              logger.info('[Auth Restore] Extracted role:', role);
+            }
+            
+            // Store complete user data from API response
+            setAuthState({
+              user: {
+                id: userData.id,
+                username: userData.username,
+                firstName: userData.firstName || '',
+                lastName: userData.lastName || '',
+                role: role,
+                isActive: userData.isActive ?? true,
+                createdAt: userData.createdAt || new Date(),
+                updatedAt: userData.updatedAt || new Date(),
+                lastLogin: userData.lastLogin,
+                assignedModerator: userData.assignedModerator,
+                moderatorQuota: userData.moderatorQuota,
+                createdBy: userData.createdBy,
+                isDeleted: userData.isDeleted,
+                deletedAt: userData.deletedAt,
+              },
+              isAuthenticated: true,
+            });
+            setAuthCookie(true);
+            logger.info('[Auth] Restored authentication state from localStorage');
+          }
+        } catch (error) {
+          // Token is invalid or expired, clear it
+          logger.warn('[Auth] Token validation failed, clearing localStorage');
+          localStorage.removeItem('token');
+          localStorage.removeItem('selectedQueueId');
+          setHasToken(false);
+          setAuthCookie(false);
+          setAuthState({
+            user: null,
+            isAuthenticated: false,
+          });
+        }
+      } catch (error) {
+        logger.error('[Auth] Failed to restore authentication:', error);
+        setAuthCookie(false);
+        // On error, assume not authenticated
+        setAuthState({
+          user: null,
+          isAuthenticated: false,
+        });
+      } finally {
+        setIsValidating(false);
+      }
+    };
+
+    restoreAuth();
+  }, []); // Empty deps - only run on mount
 
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     // Increment attempt ID to enable preemption of older retry loops
@@ -183,6 +306,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 user,
                 isAuthenticated: true,
               });
+              setHasToken(true);
+              setAuthCookie(true);
+              
+              // Clean URL of any sensitive parameters after successful login
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('username') || url.searchParams.has('password')) {
+                  url.searchParams.delete('username');
+                  url.searchParams.delete('password');
+                  // Replace URL without sensitive params (don't add to history)
+                  window.history.replaceState({}, '', url.pathname + (url.search || ''));
+                }
+              }
+              
+              // Redirect to home after successful login
+              setIsNavigatingToHome(true);
+              router.replace('/home');
+              
               return { success: true };
             } catch (e) {
               logger.warn('Failed to decode JWT:', e);
@@ -200,6 +341,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 },
                 isAuthenticated: true,
               });
+              setHasToken(true);
+              setAuthCookie(true);
+              
+              // Clean URL of any sensitive parameters after successful login
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                if (url.searchParams.has('username') || url.searchParams.has('password')) {
+                  url.searchParams.delete('username');
+                  url.searchParams.delete('password');
+                  // Replace URL without sensitive params (don't add to history)
+                  window.history.replaceState({}, '', url.pathname + (url.search || ''));
+                }
+              }
+              
+              // Redirect to home after successful login
+              setIsNavigatingToHome(true);
+              router.replace('/home');
+              
               return { success: true };
             }
           }
@@ -291,13 +450,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: false, error: 'فشل تسجيل الدخول' };
   }, [addToast]);
 
-  const logout = useCallback(() => {
-    logoutApi();
+  const clearNavigationFlag = useCallback(() => {
+    setIsNavigatingToHome(false);
+  }, []);
+
+  const logout = useCallback(async () => {
+    // Clear auth state first (immediate UI feedback)
     setAuthState({
       user: null,
       isAuthenticated: false,
     });
-  }, []);
+    setHasToken(false);
+    setAuthCookie(false);
+    
+    // Clear any stored state immediately
+    if (typeof window !== 'undefined') {
+      // Remove authentication token
+      localStorage.removeItem('token');
+      
+      // Remove user-specific data
+      localStorage.removeItem('selectedQueueId');
+      
+      // Clear any session storage
+      sessionStorage.clear();
+      
+      // Clean URL of any parameters
+      const url = new URL(window.location.href);
+      url.search = '';
+      
+      // Use replaceState to update URL without reload
+      window.history.replaceState({}, '', url.pathname);
+    }
+    
+    // Call backend to revoke refresh token (async, but don't block UI)
+    // This happens in background - user sees immediate logout
+    logoutApi().catch(() => {
+      // Ignore errors - client-side cleanup already done
+    });
+    
+    // Redirect to login page
+    router.replace('/login');
+  }, [router]);
+
+  // Register global auth error handler
+  useEffect(() => {
+    registerAuthErrorHandler((error) => {
+      logger.warn('[Auth] Global auth error detected, logging out:', error);
+      logout();
+    });
+
+    return () => {
+      unregisterAuthErrorHandler();
+    };
+  }, [logout]);
 
   /**
    * Refresh current user data from backend
@@ -315,10 +520,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ...prev,
             user: {
               ...prev.user,
+              id: freshUserData.id || prev.user.id,
+              username: freshUserData.username || prev.user.username,
               firstName: freshUserData.firstName || prev.user.firstName,
               lastName: freshUserData.lastName || prev.user.lastName,
-              username: freshUserData.username || prev.user.username,
-              // Preserve other fields that might not be in getCurrentUser response
+              role: freshUserData.role || prev.user.role,
+              isActive: freshUserData.isActive ?? prev.user.isActive,
+              createdAt: freshUserData.createdAt || prev.user.createdAt,
+              updatedAt: freshUserData.updatedAt || prev.user.updatedAt,
+              lastLogin: freshUserData.lastLogin || prev.user.lastLogin,
+              assignedModerator: freshUserData.assignedModerator || prev.user.assignedModerator,
+              moderatorQuota: freshUserData.moderatorQuota || prev.user.moderatorQuota,
+              createdBy: freshUserData.createdBy || prev.user.createdBy,
+              isDeleted: freshUserData.isDeleted || prev.user.isDeleted,
+              deletedAt: freshUserData.deletedAt || prev.user.deletedAt,
             },
           };
         });
@@ -332,7 +547,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []); // No dependencies - uses functional setState to access current state
 
   return (
-    <AuthContext.Provider value={{ ...authState, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ ...authState, login, logout, refreshUser, clearNavigationFlag, hasToken, isValidating, isNavigatingToHome }}>
       {children}
     </AuthContext.Provider>
   );

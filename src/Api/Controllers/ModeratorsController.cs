@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
+using Clinics.Api.Helpers;
 using System.Security.Claims;
 
 namespace Clinics.Api.Controllers
@@ -32,7 +33,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 var moderators = await _db.Users
-                    .Where(u => u.Role == "moderator")
+                    .Where(u => u.Role == "moderator" && !u.IsDeleted)
                     .Select(u => new ModeratorDto
                     {
                         Id = u.Id,
@@ -69,7 +70,9 @@ namespace Clinics.Api.Controllers
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
                 
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == currentUserId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
 
                 // Moderators can only view their own details, admins can view any
                 if (currentUser?.Role != "primary_admin" && currentUser?.Role != "secondary_admin" && currentUserId != id)
@@ -78,14 +81,14 @@ namespace Clinics.Api.Controllers
                 }
 
                 var moderator = await _db.Users
-                    .Where(u => u.Id == id && u.Role == "moderator")
+                    .Where(u => u.Id == id && u.Role == "moderator" && !u.IsDeleted)
                     .FirstOrDefaultAsync();
 
                 if (moderator == null)
                     return NotFound(new { success = false, error = "Moderator not found" });
 
                 var managedUsers = await _db.Users
-                    .Where(u => u.ModeratorId == id)
+                    .Where(u => u.ModeratorId == id && !u.IsDeleted)
                     .CountAsync();
 
                 var queues = await _db.Queues
@@ -115,9 +118,9 @@ namespace Clinics.Api.Controllers
                     Quota = quota != null ? new QuotaDto
                     {
                         Id = quota.Id,
-                        Limit = quota.MessagesQuota,
-                        Used = quota.ConsumedMessages,
-                        QueuesLimit = quota.QueuesQuota,
+                        Limit = QuotaHelper.ToApiMessagesQuota(quota.MessagesQuota),
+                        Used = (int)quota.ConsumedMessages, // Convert long to int for API
+                        QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota.QueuesQuota),
                         QueuesUsed = quota.ConsumedQueues,
                         UpdatedAt = quota.UpdatedAt
                     } : null
@@ -186,13 +189,13 @@ namespace Clinics.Api.Controllers
 
                 _db.ModeratorSettings.Add(settings);
 
-                // Create default quota (unlimited messages and queues)
+                // Create default quota (unlimited messages and queues: -1 = unlimited)
                 var quota = new Quota
                 {
                     ModeratorUserId = moderator.Id,
-                    MessagesQuota = int.MaxValue,
+                    MessagesQuota = -1, // -1 = unlimited
                     ConsumedMessages = 0,
-                    QueuesQuota = int.MaxValue,
+                    QueuesQuota = -1, // -1 = unlimited
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -347,14 +350,14 @@ namespace Clinics.Api.Controllers
             try
             {
                 var moderator = await _db.Users
-                    .Where(u => u.Id == id && u.Role == "moderator")
+                    .Where(u => u.Id == id && u.Role == "moderator" && !u.IsDeleted)
                     .FirstOrDefaultAsync();
 
                 if (moderator == null)
                     return NotFound(new { success = false, error = "Moderator not found" });
 
                 var users = await _db.Users
-                    .Where(u => u.ModeratorId == id)
+                    .Where(u => u.ModeratorId == id && !u.IsDeleted)
                     .Select(u => new UserWithModeratorDto
                     {
                         Id = u.Id,
@@ -448,10 +451,55 @@ namespace Clinics.Api.Controllers
 
                 return Ok(new { success = true, data = result });
             }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogError(dbEx, "Database error adding user to moderator");
+                var innerMessage = dbEx.InnerException?.Message ?? dbEx.Message;
+                
+                // Check for unique constraint violation on Username
+                if (innerMessage.Contains("IX_Users_Username", StringComparison.OrdinalIgnoreCase) ||
+                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) && 
+                    (innerMessage.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
+                     innerMessage.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
+                     innerMessage.Contains("unique constraint", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return BadRequest(new 
+                    { 
+                        success = false, 
+                        error = $"Username '{req.Username}' is already taken. Please choose a different username.",
+                        message = $"Username '{req.Username}' is already taken. Please choose a different username."
+                    });
+                }
+                
+                // Other database constraint violations
+                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) || 
+                    innerMessage.Contains("constraint", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new 
+                    { 
+                        success = false, 
+                        error = "Unable to create user due to invalid data or constraint violation.",
+                        message = "Unable to create user due to invalid data or constraint violation."
+                    });
+                }
+                
+                // Generic database error
+                return StatusCode(500, new 
+                { 
+                    success = false, 
+                    error = "An error occurred while adding the user. Please try again.",
+                    message = "An error occurred while adding the user. Please try again."
+                });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding user to moderator");
-                return StatusCode(500, new { success = false, error = "Error adding user to moderator" });
+                return StatusCode(500, new 
+                { 
+                    success = false, 
+                    error = "An unexpected error occurred while adding the user. Please try again.",
+                    message = "An unexpected error occurred while adding the user. Please try again."
+                });
             }
         }
 
@@ -470,14 +518,24 @@ namespace Clinics.Api.Controllers
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
                 
-                var currentUser = await _db.Users.FindAsync(currentUserId);
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == currentUserId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
 
-                // Users can only view their moderator's session, moderators can view their own
-                if (currentUser?.Role == "user" && currentUser.ModeratorId != id)
-                    return Forbid();
+                // Permission checks:
+                // - Admins can view any moderator's session
+                // - Moderators can only view their own session
+                // - Users can only view their assigned moderator's session
+                var isAdmin = currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin";
+                
+                if (!isAdmin)
+                {
+                    if (currentUser?.Role == "user" && currentUser.ModeratorId != id)
+                        return Forbid();
 
-                if (currentUser?.Role == "moderator" && currentUserId != id)
-                    return Forbid();
+                    if (currentUser?.Role == "moderator" && currentUserId != id)
+                        return Forbid();
+                }
 
                 var session = await _db.WhatsAppSessions
                     .Where(s => s.ModeratorUserId == id)

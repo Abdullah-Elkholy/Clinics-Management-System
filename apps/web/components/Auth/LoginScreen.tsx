@@ -1,17 +1,40 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type React from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { TEST_CREDENTIALS } from '../../constants';
 import logger from '@/utils/logger';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isNavigatingToHome } = useAuth();
+  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Clean URL of any sensitive parameters on mount
+  useEffect(() => {
+    if (searchParams.has('username') || searchParams.has('password')) {
+      // DO NOT use credentials from URL - this is a security risk
+      // Just clean the URL
+      const newSearchParams = new URLSearchParams(searchParams.toString());
+      newSearchParams.delete('username');
+      newSearchParams.delete('password');
+      
+      const newUrl = newSearchParams.toString() 
+        ? `/?${newSearchParams.toString()}`
+        : '/';
+      
+      // Use replace to avoid adding to history
+      router.replace(newUrl);
+    }
+  }, [searchParams, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +59,17 @@ export default function LoginScreen() {
       setIsLoading(false);
     }
   };
+
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
 
   const handleQuickLogin = async (username: string, password: string) => {
     setIsLoading(true);
@@ -74,45 +108,60 @@ export default function LoginScreen() {
         )}
 
         {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form 
+          ref={formRef} 
+          onSubmit={handleSubmit} 
+          method="post"
+          action="#"
+          className="space-y-6"
+          // Prevent any accidental GET submission
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
+              // Let the form handle Enter key properly
+            }
+          }}
+        >
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="login-username" className="block text-sm font-medium text-gray-700 mb-2">
               اسم المستخدم
             </label>
             <input
+              id="login-username"
+              name="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="أدخل اسم المستخدم"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              autoComplete="username"
               autoFocus
+              disabled={isLoading}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-2">
               كلمة المرور
             </label>
             <input
+              id="login-password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="أدخل كلمة المرور"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleSubmit(e as unknown as React.FormEvent<HTMLFormElement>);
-                }
-              }}
+              autoComplete="current-password"
+              disabled={isLoading}
             />
           </div>
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || isNavigatingToHome}
             className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
+            {isLoading || isNavigatingToHome ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
           </button>
         </form>
 
@@ -125,7 +174,7 @@ export default function LoginScreen() {
                 key={key}
                 type="button"
                 onClick={() => handleQuickLogin(cred.username, cred.password)}
-                disabled={isLoading}
+                disabled={isLoading || isNavigatingToHome}
                 className="w-full p-2 text-left bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center justify-between">

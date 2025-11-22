@@ -42,5 +42,6 @@ export const getRoleDisplayName = (role: UserRole | string): string => {
     'admin': 'المدير الأساسي',
     'admin2': 'المدير الثانوي',
   };
+  
   return names[role] || 'غير محدد';
 };

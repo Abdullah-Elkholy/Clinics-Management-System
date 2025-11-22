@@ -10,7 +10,7 @@ import {
   validatePhone,
   validateName,
 } from '@/utils/validation';
-import { getEffectiveCountryCode, normalizePhoneNumber, logError } from '@/utils/core.utils';
+import { getEffectiveCountryCode, logError } from '@/utils/core.utils';
 
 // ============================================================================
 // useFormValidation HOOK
@@ -156,7 +156,8 @@ export const usePhoneValidation = (
       countryCode,
       customCountryCode
     );
-    return normalizePhoneNumber(phone, effectiveCode);
+    // Return phone number as-is, no normalization (country code stored separately)
+    return phone;
   }, [phone, countryCode, customCountryCode]);
 
   const isValid = useCallback(() => {

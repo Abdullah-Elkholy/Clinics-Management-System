@@ -13,7 +13,7 @@ namespace Clinics.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+    [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
     public class TemplatesController : ControllerBase
     {
         private readonly ApplicationDbContext _db;
@@ -46,10 +46,29 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                var moderatorId = _userContext.GetModeratorId();
-                var isAdmin = _userContext.IsAdmin();
+                var userId = _userContext.GetUserId();
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == userId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
+
+                if (currentUser == null)
+                    return Unauthorized(new { message = "User not found" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+                
+                // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+                int? moderatorId = null;
+                if (currentUser.Role == "moderator")
+                {
+                    moderatorId = currentUser.Id;
+                }
+                else if (currentUser.Role == "user" && currentUser.ModeratorId.HasValue)
+                {
+                    moderatorId = currentUser.ModeratorId.Value;
+                }
 
                 IQueryable<MessageTemplate> query = _db.MessageTemplates
+                    .Include(t => t.Condition) // IMPORTANT: Include the Condition navigation property
                     .Where(t => !t.IsDeleted) // Only show non-deleted templates (active = !IsDeleted)
                     .AsQueryable();
 
@@ -58,12 +77,17 @@ namespace Clinics.Api.Controllers
                 {
                     // Verify moderator owns this queue
                     var queue = await _db.Queues.FindAsync(queueId.Value);
-                    if (queue == null)
+                    if (queue == null || queue.IsDeleted)
                         return NotFound(new { message = "Queue not found" });
 
                     // Check ownership
-                    if (!isAdmin && queue.ModeratorId != moderatorId)
-                        return Forbid();
+                    if (!isAdmin)
+                    {
+                        if (currentUser.Role == "moderator" && queue.ModeratorId != userId)
+                            return Forbid();
+                        if (currentUser.Role == "user" && queue.ModeratorId != moderatorId)
+                            return Forbid();
+                    }
 
                     query = query.Where(t => t.QueueId == queueId.Value);
                 }
@@ -130,21 +154,43 @@ namespace Clinics.Api.Controllers
             try
             {
                 var template = await _db.MessageTemplates
+                    .Include(t => t.Condition) // Include the Condition navigation property
                     .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
                 
                 if (template == null)
                     return NotFound(new { message = "Template not found" });
 
-                var moderatorId = _userContext.GetModeratorId();
-                var isAdmin = _userContext.IsAdmin();
+                var userId = _userContext.GetUserId();
+                var currentUser = await _db.Users
+                    .Where(u => u.Id == userId && !u.IsDeleted)
+                    .FirstOrDefaultAsync();
+
+                if (currentUser == null)
+                    return Unauthorized(new { message = "User not found" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+
+                // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+                int? moderatorId = null;
+                if (currentUser.Role == "moderator")
+                {
+                    moderatorId = currentUser.Id;
+                }
+                else if (currentUser.Role == "user" && currentUser.ModeratorId.HasValue)
+                {
+                    moderatorId = currentUser.ModeratorId.Value;
+                }
 
                 // Verify ownership
-                if (!isAdmin && template.ModeratorId != moderatorId)
-                    return Forbid();
+                if (!isAdmin)
+                {
+                    if (currentUser.Role == "moderator" && template.ModeratorId != userId)
+                        return Forbid();
+                    if (currentUser.Role == "user" && template.ModeratorId != moderatorId)
+                        return Forbid();
+                }
 
-                // Load condition
-                await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
-
+                // Condition already loaded via Include
                 var dto = new TemplateDto
                 {
                     Id = template.Id,
@@ -185,9 +231,11 @@ namespace Clinics.Api.Controllers
         /// Create a new template for a specific queue.
         /// </summary>
         [HttpPost]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<TemplateDto>> Create([FromBody] CreateTemplateRequest req)
         {
-            // Use transaction to ensure template and condition are created atomically
+            // Use a normal transaction, but keep a single DateTime variable for all timestamps (acts as a logical snapshot)
+            var now = DateTime.UtcNow;
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
@@ -267,27 +315,12 @@ namespace Clinics.Api.Controllers
                     }
                 }
 
-                // Step 2: Create the template first (need template ID for condition.TemplateId)
-                var template = new MessageTemplate
-                {
-                    Title = req.Title,
-                    Content = req.Content,
-                    CreatedBy = userId,
-                    UpdatedBy = userId, // Set UpdatedBy on creation as well
-                    ModeratorId = queue.ModeratorId,
-                    QueueId = req.QueueId,
-                    MessageConditionId = 0, // Temporary, will be updated after condition creation
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
 
-                _db.MessageTemplates.Add(template);
-                await _db.SaveChangesAsync(); // Save to get the template ID
+                // Step 2: Create the condition first (TemplateId will be set after template is created)
 
-                // Step 3: Create the condition with TemplateId foreign key (one-to-one required relationship)
                 var condition = new MessageCondition
                 {
-                    TemplateId = template.Id, // Set foreign key to template
+                    TemplateId = null, // Will set after template is created
                     QueueId = req.QueueId,
                     Operator = conditionOperator,
                     Value = conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS" 
@@ -297,17 +330,35 @@ namespace Clinics.Api.Controllers
                     MaxValue = conditionOperator == "RANGE" ? req.ConditionMaxValue : null,
                     CreatedBy = userId,
                     UpdatedBy = userId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
 
                 _db.Set<MessageCondition>().Add(condition);
                 await _db.SaveChangesAsync(); // Save to get the condition ID
 
-                // Step 4: Update template with MessageConditionId (maintain bidirectional relationship)
-                template.MessageConditionId = condition.Id;
-                template.UpdatedAt = DateTime.UtcNow;
-                _db.MessageTemplates.Update(template);
+                // Step 3: Create the template referencing the new condition
+
+                var template = new MessageTemplate
+                {
+                    Title = req.Title,
+                    Content = req.Content,
+                    CreatedBy = userId,
+                    UpdatedBy = userId, // Set UpdatedBy on creation as well
+                    ModeratorId = queue.ModeratorId,
+                    QueueId = req.QueueId,
+                    MessageConditionId = condition.Id, // Reference the just-created condition
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+
+                _db.MessageTemplates.Add(template);
+                await _db.SaveChangesAsync(); // Save to get the template ID
+
+                // Step 4: Update the condition with the correct TemplateId
+                condition.TemplateId = template.Id;
+                condition.UpdatedAt = now;
+                _db.Set<MessageCondition>().Update(condition);
                 await _db.SaveChangesAsync();
 
                 // Commit transaction
@@ -348,11 +399,13 @@ namespace Clinics.Api.Controllers
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error creating template");
-                return StatusCode(500, new { message = "Error creating template" });
+                // Return error details for debugging
+                return StatusCode(500, new { message = "Error creating template", details = ex.ToString() });
             }
         }
 
         [HttpPut("{id}")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<TemplateDto>> Update(int id, [FromBody] UpdateTemplateRequest req)
         {
             try
@@ -382,6 +435,9 @@ namespace Clinics.Api.Controllers
                 existing.UpdatedBy = userId;
                 existing.UpdatedAt = DateTime.UtcNow;
                 await _db.SaveChangesAsync();
+
+                // Reload template with condition for DTO (ensures condition is included in response)
+                await _db.Entry(existing).Reference(t => t.Condition).LoadAsync();
 
                 var dto = new TemplateDto
                 {
@@ -419,6 +475,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<IActionResult> Delete(int id)
         {
             try
@@ -462,6 +519,7 @@ namespace Clinics.Api.Controllers
         /// - Atomically removes DEFAULT operator from all other templates in the same queue.
         /// </summary>
         [HttpPut("{id}/default")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
         public async Task<ActionResult<TemplateDto>> SetAsDefault(int id)
         {
             try

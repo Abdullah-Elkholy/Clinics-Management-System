@@ -27,15 +27,15 @@ class ModeratorQuotaService {
         messagesQuota: {
           limit: quotaDto.limit,
           used: quotaDto.used,
-          percentage: quotaDto.percentage,
-          isLow: quotaDto.isLowQuota,
+          percentage: quotaDto.limit === -1 ? 0 : quotaDto.percentage,
+          isLow: quotaDto.limit === -1 ? false : quotaDto.isLowQuota,
           warningThreshold: 80,
         },
         queuesQuota: {
           limit: quotaDto.queuesLimit,
           used: quotaDto.queuesUsed,
-          percentage: Math.round((quotaDto.queuesUsed / quotaDto.queuesLimit) * 100),
-          isLow: (quotaDto.queuesUsed / quotaDto.queuesLimit) >= 0.8,
+          percentage: quotaDto.queuesLimit === -1 ? 0 : Math.round((quotaDto.queuesUsed / quotaDto.queuesLimit) * 100),
+          isLow: quotaDto.queuesLimit === -1 ? false : (quotaDto.queuesUsed / quotaDto.queuesLimit) >= 0.8,
           warningThreshold: 80,
         },
         createdAt: new Date(),
@@ -64,15 +64,15 @@ class ModeratorQuotaService {
         messagesQuota: {
           limit: quotaDto.limit,
           used: quotaDto.used,
-          percentage: quotaDto.percentage,
-          isLow: quotaDto.isLow,
+          percentage: quotaDto.limit === -1 ? 0 : quotaDto.percentage,
+          isLow: quotaDto.limit === -1 ? false : quotaDto.isLow,
           warningThreshold: 80,
         },
         queuesQuota: {
           limit: quotaDto.queuesLimit,
           used: quotaDto.queuesUsed,
-          percentage: Math.round((quotaDto.queuesUsed / quotaDto.queuesLimit) * 100),
-          isLow: (quotaDto.queuesUsed / quotaDto.queuesLimit) >= 0.8,
+          percentage: quotaDto.queuesLimit === -1 ? 0 : Math.round((quotaDto.queuesUsed / quotaDto.queuesLimit) * 100),
+          isLow: quotaDto.queuesLimit === -1 ? false : (quotaDto.queuesUsed / quotaDto.queuesLimit) >= 0.8,
           warningThreshold: 80,
         },
         createdAt: new Date(),
@@ -125,7 +125,7 @@ class ModeratorQuotaService {
   async updateQuota(
     moderatorId: string,
     updates: Partial<ModeratorQuota>,
-    mode: 'set' | 'add' = 'set'
+    mode: 'set' | 'add' | 'unlimited' = 'set'
   ): Promise<QuotaServiceResponse<ModeratorQuota>> {
     try {
       if (mode === 'add') {
@@ -134,6 +134,7 @@ class ModeratorQuotaService {
           queuesLimit: updates.queuesQuota?.limit || 0,
         });
       } else {
+        // For 'set' or 'unlimited' mode, use updateQuota endpoint
         // Build payload with only defined values that are >= 1 or -1 (unlimited)
         const payload: { limit?: number; queuesLimit?: number } = {};
         if (updates.messagesQuota?.limit !== undefined) {
@@ -247,15 +248,15 @@ class ModeratorQuotaService {
           messagesQuota: {
             limit: dto.limit,
             used: dto.used,
-            percentage: dto.percentage,
-            isLow: dto.isLow,
+            percentage: dto.limit === -1 ? 0 : dto.percentage,
+            isLow: dto.limit === -1 ? false : dto.isLow,
             warningThreshold: 80,
           },
           queuesQuota: {
             limit: dto.queuesLimit,
             used: dto.queuesUsed,
-            percentage: Math.round((dto.queuesUsed / dto.queuesLimit) * 100),
-            isLow: (dto.queuesUsed / dto.queuesLimit) >= 0.8,
+            percentage: dto.queuesLimit === -1 ? 0 : Math.round((dto.queuesUsed / dto.queuesLimit) * 100),
+            isLow: dto.queuesLimit === -1 ? false : (dto.queuesUsed / dto.queuesLimit) >= 0.8,
             warningThreshold: 80,
           },
           createdAt: new Date(),

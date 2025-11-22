@@ -6,6 +6,7 @@ using Microsoft.Playwright;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace ClinicsManagementService.Services.Application
 {
@@ -155,8 +156,11 @@ namespace ClinicsManagementService.Services.Application
             return results;
         }
 
-        public async Task<bool> SendMessageAsync(string phoneNumber, string message)
+        public async Task<bool> SendMessageAsync(string phoneNumber, string message, CancellationToken cancellationToken = default)
         {
+            // Check cancellation before starting
+            cancellationToken.ThrowIfCancellationRequested();
+
             var browserSession = _browserSessionFactory();
             // browserSession = await _sessionManager.GetOrCreateSessionAsync();
             MessageSendResult result;
@@ -165,14 +169,24 @@ namespace ClinicsManagementService.Services.Application
                 var deliveryResult = await _retryService.ExecuteWithRetryAsync(
                     async () =>
                     {
+                        // Check cancellation before getting session
+                        cancellationToken.ThrowIfCancellationRequested();
+
                         browserSession = await _sessionManager.GetOrCreateSessionAsync();
                         try
                         {
-                            return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
+                            // Check cancellation before sending
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession, cancellationToken);
                         }
                         finally
                         {
-                            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                            // Check cancellation before disposing
+                            if (!cancellationToken.IsCancellationRequested)
+                            {
+                                await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                            }
                         }
                     },
                     maxAttempts: WhatsAppConfiguration.DefaultMaxRetryAttempts,
@@ -188,6 +202,11 @@ namespace ClinicsManagementService.Services.Application
                     IconType = deliveryResult.Data,
                     Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
                 };
+            }
+            catch (OperationCanceledException)
+            {
+                _notifier.Notify($"⚠️ Operation cancelled while sending message to {phoneNumber}");
+                result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Operation was cancelled", IconType = null, Status = MessageOperationStatus.Failure };
             }
             catch (Exception ex)
             {

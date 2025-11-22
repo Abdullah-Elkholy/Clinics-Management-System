@@ -10,6 +10,8 @@ import { patientsApiClient, type PatientDto } from '@/services/api/patientsApiCl
 import { queueDtoToModel, templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/useToast';
+import { useUI } from '@/contexts/UIContext';
+import { useUserManagement } from '@/hooks/useUserManagement';
 import logger from '@/utils/logger';
 
 interface QueueContextType {
@@ -39,12 +41,14 @@ interface QueueContextType {
   addMessageTemplate: (template: Omit<MessageTemplate, 'id'>) => void;
   updateMessageTemplate: (id: string, template: Partial<MessageTemplate>) => void;
   deleteMessageTemplate: (id: string) => void;
+  setMessageTemplates: React.Dispatch<React.SetStateAction<MessageTemplate[]>>;
   selectedMessageTemplateId: string;
   setSelectedMessageTemplateId: (id: string) => void;
   messageConditions: MessageCondition[];
   addMessageCondition: (condition: Omit<MessageCondition, 'id'>) => void;
   removeMessageCondition: (id: string) => void;
   updateMessageCondition: (id: string, condition: Partial<MessageCondition>) => void;
+  setMessageConditions: React.Dispatch<React.SetStateAction<MessageCondition[]>>;
   refreshQueueData: (queueId: string) => Promise<void>;  // NEW: Reload templates and conditions from backend
   moderators: ModeratorWithStats[];
   isLoadingTemplates: boolean;
@@ -59,10 +63,13 @@ export const QueueContext = createContext<QueueContextType | null>(null);
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+  // Use UIContext's selectedQueueId to keep them in sync with URL
+  const { selectedQueueId, setSelectedQueueId } = useUI();
+  // Get real moderator data from user management
+  const [userManagementState, userManagementActions] = useUserManagement();
   const [queues, setQueues] = useState<Queue[]>([]);
   const [queuesLoading, setQueuesLoading] = useState(false);
   const [queuesError, setQueuesError] = useState<string | null>(null);
-  const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [currentPosition, setCurrentPosition] = useState(3);
   const [estimatedTimePerSession, setEstimatedTimePerSession] = useState(15);
@@ -75,7 +82,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isMutatingTemplate, setIsMutatingTemplate] = useState(false);
   const [isMutatingCondition, setIsMutatingCondition] = useState(false);
 
-  // Load queues on mount (only if authenticated)
+  // Load queues and moderators on mount (only if authenticated)
   useEffect(() => {
     // Don't load if user is not authenticated
     if (!currentUser) {
@@ -84,7 +91,10 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     refreshQueues();
-  }, [currentUser]);
+    // Fetch moderators to ensure real data is available for aggregation
+    userManagementActions.fetchModerators();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]); // Only depend on user ID to avoid unnecessary re-fetches
 
   // Public: refresh queues list from backend
   const refreshQueues = useCallback(async () => {
@@ -112,9 +122,10 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   // Memoized list of moderators with aggregated stats
+  // Use real moderator data from backend instead of mock data
   const moderators = useMemo(
-    () => groupQueuesByModerator(queues, messageTemplates, messageConditions),
-    [queues, messageTemplates, messageConditions]
+    () => groupQueuesByModerator(queues, messageTemplates, messageConditions, userManagementState.moderators),
+    [queues, messageTemplates, messageConditions, userManagementState.moderators]
   );
 
   // Load patients from API when selected queue changes
@@ -193,6 +204,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: dto.fullName,
           phone: phone,
           countryCode: countryCode,
+          isValidWhatsAppNumber: dto.isValidWhatsAppNumber, // CRITICAL: Include database validation status
           position: dto.position,
           status: dto.status,
           selected: false,
@@ -246,31 +258,58 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         // Convert DTOs to models
+        let templates: MessageTemplate[] = [];
         if (templateDtos.length > 0) {
-          const templates: MessageTemplate[] = templateDtos.map((dto: TemplateDto) =>
+          templates = templateDtos.map((dto: TemplateDto) =>
             templateDtoToModel(dto, selectedQueueId)
           );
-          setMessageTemplates(templates);
+          // Replace templates for this queue only, keep templates from other queues
+          setMessageTemplates((prevTemplates) => {
+            const templatesForOtherQueues = prevTemplates.filter(t => String(t.queueId) !== String(selectedQueueId));
+            return [...templatesForOtherQueues, ...templates];
+          });
           if (templates.length > 0) {
             setSelectedMessageTemplateId(templates[0].id);
           }
         } else {
-          setMessageTemplates([]);
+          // Remove templates for this queue only
+          setMessageTemplates((prevTemplates) => 
+            prevTemplates.filter(t => String(t.queueId) !== String(selectedQueueId))
+          );
         }
 
         if (conditionDtos.length > 0) {
-          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) =>
-            conditionDtoToModel(dto, idx)
-          );
-          setMessageConditions(conditions);
+          // Convert conditions and populate template content from templates
+          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) => {
+            const condition = conditionDtoToModel(dto, idx);
+            // Populate template content from templateId if available
+            if (condition.templateId && templates.length > 0) {
+              // Match template by ID using simple equality (same as EditTemplateModal)
+              const template = templates.find(t => t.id === condition.templateId);
+              if (template) {
+                condition.template = template.content;
+              }
+            }
+            return condition;
+          });
+          // Replace conditions for this queue only, keep conditions from other queues
+          setMessageConditions((prevConditions) => {
+            const conditionsForOtherQueues = prevConditions.filter(c => String(c.queueId) !== String(selectedQueueId));
+            return [...conditionsForOtherQueues, ...conditions];
+          });
         } else {
-          setMessageConditions([]);
+          // Remove conditions for this queue only
+          setMessageConditions((prevConditions) => 
+            prevConditions.filter(c => String(c.queueId) !== String(selectedQueueId))
+          );
         }
       } catch (error) {
         logger.error('Unexpected error loading templates/conditions:', error);
         setTemplateError('An unexpected error occurred');
-        setMessageTemplates([]);
-        setMessageConditions([]);
+        // Only clear templates/conditions for this queue on error, not all queues
+        const queueIdStr = String(selectedQueueId);
+        setMessageTemplates((prev) => prev.filter(t => String(t.queueId) !== queueIdStr));
+        setMessageConditions((prev) => prev.filter(c => String(c.queueId) !== queueIdStr));
       } finally {
         setIsLoadingTemplates(false);
       }
@@ -517,6 +556,13 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // Replace optimistic with real condition
         const realCondition = conditionDtoToModel(dto, messageConditions.length);
+        // Populate template content from templateId if available
+        if (realCondition.templateId && messageTemplates.length > 0) {
+          const template = messageTemplates.find(t => String(t.id) === String(realCondition.templateId));
+          if (template) {
+            realCondition.template = template.content;
+          }
+        }
         setMessageConditions((prev) =>
           prev.map((c) => (c.id === tempId ? realCondition : c))
         );
@@ -575,9 +621,26 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const conditionToUpdate = messageConditions.find((c) => c.id === id);
       if (!conditionToUpdate) return;
 
-      // Update optimistically
+      // Update optimistically - preserve template content if not being updated
       setMessageConditions((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, ...conditionUpdates } : c))
+        prev.map((c) => {
+          if (c.id === id) {
+            const updated = { ...c, ...conditionUpdates };
+            // If template content is not in updates, preserve existing template content
+            if (!('template' in conditionUpdates) && c.template) {
+              updated.template = c.template;
+            }
+            // If templateId changed, try to find new template content
+            if (conditionUpdates.templateId && !updated.template && messageTemplates.length > 0) {
+              const template = messageTemplates.find(t => String(t.id) === String(conditionUpdates.templateId));
+              if (template) {
+                updated.template = template.content;
+              }
+            }
+            return updated;
+          }
+          return c;
+        })
       );
       setIsMutatingCondition(true);
 
@@ -647,14 +710,15 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // Convert DTOs to models and update templates for this queue
         // Replace templates for this queue to ensure condition updates are reflected
+        let newTemplates: MessageTemplate[] = [];
         if (templateDtos.length > 0) {
-          const newTemplates: MessageTemplate[] = templateDtos.map((dto: TemplateDto) =>
+          newTemplates = templateDtos.map((dto: TemplateDto) =>
             templateDtoToModel(dto, queueId)
           );
           
           // Update templates: replace templates for this queue, keep others
           setMessageTemplates((prevTemplates) => {
-            const templatesForOtherQueues = prevTemplates.filter(t => t.queueId !== queueId);
+            const templatesForOtherQueues = prevTemplates.filter(t => String(t.queueId) !== String(queueId));
             return [...templatesForOtherQueues, ...newTemplates];
           });
           
@@ -664,23 +728,37 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } else {
           // If no templates for this queue, remove them
           setMessageTemplates((prevTemplates) => 
-            prevTemplates.filter(t => t.queueId !== queueId)
+            prevTemplates.filter(t => String(t.queueId) !== String(queueId))
           );
         }
 
         // Update conditions: replace conditions for this queue
+        // Use newTemplates (just created above) instead of stale messageTemplates from closure
         if (conditionDtos.length > 0) {
-          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) =>
-            conditionDtoToModel(dto, idx)
-          );
+          // Convert conditions and populate template content from templates
+          const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) => {
+            const condition = conditionDtoToModel(dto, idx);
+            // Populate template content from templateId if available
+            // Use newTemplates (just created) instead of stale messageTemplates
+            if (condition.templateId && newTemplates.length > 0) {
+              // Match template by ID using simple equality (same as EditTemplateModal)
+              const template = newTemplates.find(t => t.id === condition.templateId);
+              if (template) {
+                condition.template = template.content;
+              }
+            }
+            return condition;
+          });
+          
+          // Update conditions state: replace conditions for this queue, keep others
           setMessageConditions((prevConditions) => {
-            const conditionsForOtherQueues = prevConditions.filter(c => c.queueId !== queueId);
+            const conditionsForOtherQueues = prevConditions.filter(c => String(c.queueId) !== String(queueId));
             return [...conditionsForOtherQueues, ...conditions];
           });
         } else {
           // If no conditions for this queue, remove them
           setMessageConditions((prevConditions) => 
-            prevConditions.filter(c => c.queueId !== queueId)
+            prevConditions.filter(c => String(c.queueId) !== String(queueId))
           );
         }
       } catch (error) {
@@ -722,12 +800,14 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addMessageTemplate,
         updateMessageTemplate,
         deleteMessageTemplate,
+        setMessageTemplates,
         selectedMessageTemplateId,
         setSelectedMessageTemplateId,
         messageConditions,
         addMessageCondition,
         removeMessageCondition,
         updateMessageCondition,
+        setMessageConditions,
         refreshQueueData,  // NEW
         moderators,
         isLoadingTemplates,

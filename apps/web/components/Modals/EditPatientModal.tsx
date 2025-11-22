@@ -1,16 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { COUNTRY_CODES } from '@/constants';
 import { validateCountryCode, validateName, validatePhone, ValidationError, MAX_PHONE_DIGITS } from '@/utils/validation';
 import Modal from './Modal';
 import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
-import { getEffectiveCountryCode, normalizePhoneNumber } from '@/utils/core.utils';
+import { getEffectiveCountryCode } from '@/utils/core.utils';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import { useQueue } from '@/contexts/QueueContext';
 import logger from '@/utils/logger';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 export default function EditPatientModal() {
   const { openModals, closeModal, getModalData } = useModal();
@@ -34,6 +35,7 @@ export default function EditPatientModal() {
 
   const isOpen = openModals.has('editPatient');
   const [freshPatientData, setFreshPatientData] = useState<any>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   
   // Fetch fresh patient data when modal opens
   useEffect(() => {
@@ -222,9 +224,12 @@ export default function EditPatientModal() {
       return;
     }
 
+    // Declare patientIdNum outside try block so it's accessible in catch
+    let patientIdNum: number | undefined;
+    
     try {
       setIsLoading(true);
-      const patientIdNum = Number(data?.patient?.id);
+      patientIdNum = Number(data?.patient?.id);
       if (isNaN(patientIdNum)) {
         throw new Error('معرّف المريض غير صالح');
       }
@@ -235,10 +240,13 @@ export default function EditPatientModal() {
       if (updatePayload.phone || updatePayload.countryCode) {
         const effectiveCode = getEffectiveCountryCode(countryCode, customCountryCode);
         const phoneRaw = updatePayload.phone || data?.patient?.phone || '';
-        apiPayload.phoneNumber = normalizePhoneNumber(phoneRaw, effectiveCode);
+        apiPayload.phoneNumber = phoneRaw.trim(); // Store phone number as-is, no normalization
         // Send countryCode explicitly (backend will extract it if not provided, but better to send it)
         apiPayload.countryCode = effectiveCode;
       }
+
+      // Log the payload for debugging
+      logger.debug('Updating patient:', { patientId: patientIdNum, payload: apiPayload });
 
       await patientsApiClient.updatePatient(patientIdNum, apiPayload);
 
@@ -263,11 +271,46 @@ export default function EditPatientModal() {
         window.dispatchEvent(new CustomEvent('patientDataUpdated'));
       }, 100);
     } catch (err) {
-      addToast('حدث خطأ أثناء تحديث البيانات', 'error');
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : (err && typeof err === 'object' && 'message' in err)
+          ? String((err as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      
+      const statusCode = (err && typeof err === 'object' && 'statusCode' in err) 
+        ? (err as { statusCode?: unknown }).statusCode 
+        : undefined;
+      
+      logger.error('Failed to update patient:', {
+        error: errorMessage,
+        statusCode,
+        patientId: patientIdNum ?? data?.patient?.id ?? 'unknown',
+        fullError: err,
+      });
+      
+      // Show more specific error message if available
+      const displayMessage = errorMessage.includes('Authentication') 
+        ? 'فشل المصادقة. يرجى تسجيل الدخول مرة أخرى'
+        : errorMessage.includes('Invalid phone') || errorMessage.includes('phone number')
+        ? 'رقم الهاتف غير صحيح'
+        : 'حدث خطأ أثناء تحديث البيانات';
+      
+      addToast(displayMessage, 'error');
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
 
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0;
@@ -286,7 +329,7 @@ export default function EditPatientModal() {
       title="تعديل بيانات المريض"
       size="md"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Disclaimer */}
         <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
           <p className="text-blue-800 text-sm font-medium flex items-center gap-2">
@@ -306,6 +349,7 @@ export default function EditPatientModal() {
             onBlur={handleFieldBlur}
             placeholder="أدخل الاسم الكامل"
             disabled={isLoading}
+            autoComplete="name"
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
               errors.name
                 ? 'border-red-500 focus:ring-red-500'
@@ -352,6 +396,7 @@ export default function EditPatientModal() {
                 disabled={isLoading}
                 maxLength={4}
                 title="الصيغة: + متبوعة بـ 1-4 أرقام"
+                autoComplete="tel-country-code"
                 className={`w-20 px-2 py-2.5 border-2 rounded-lg focus:ring-2 focus:border-transparent transition-all text-center font-mono text-sm ${
                   errors.customCountryCode
                     ? 'border-red-500 focus:ring-red-500'
@@ -379,6 +424,7 @@ export default function EditPatientModal() {
               maxLength={MAX_PHONE_DIGITS}
               inputMode="numeric"
               pattern="[0-9]*"
+              autoComplete="tel"
               className={`min-w-40 flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all font-mono ${
                 errors.phone
                   ? 'border-red-500 focus:ring-red-500'

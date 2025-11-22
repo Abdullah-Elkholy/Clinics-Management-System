@@ -21,6 +21,7 @@ export interface Patient {
   name: string;                // Patient full name
   phone: string;               // E.164 format with country code
   countryCode?: string;
+  isValidWhatsAppNumber?: boolean | null; // null = not checked, true = valid, false = invalid
   position?: number;
   status?: string;             // 'pending' | 'active' | 'completed' | 'failed'
   failedReason?: string;

@@ -143,7 +143,7 @@ namespace Clinics.Infrastructure.Services
                     $"Template soft-deleted with {conditions.Length} conditions",
                     new { ConditionsCascaded = conditions.Length, ReplacementTemplateId = replacementTemplateId });
 
-                return (true, null);
+                return (true, (string?)null);
             });
         }
 
@@ -200,16 +200,23 @@ namespace Clinics.Infrastructure.Services
                 // Capture operation snapshot timestamp to ensure consistency across all transaction operations
                 var operationTimestamp = DateTime.UtcNow;
 
+                // IMPORTANT: Capture template.DeletedAt BEFORE restoring the template
+                // because RestoreAsync sets DeletedAt to null, and we need this value
+                // to identify related records that were deleted in the same cascade operation
+                var templateDeletedAt = template.DeletedAt;
+
                 // Restore the template with snapshot timestamp
                 await templateRepo.RestoreAsync(template, restoredBy, operationTimestamp);
 
-                // Restore soft-deleted condition for this template (one-to-one relationship)
+                // Restore soft-deleted condition for this template that was deleted in the same cascade operation
+                // Use the captured templateDeletedAt value (not template.DeletedAt which is now null)
                 var conditionRepo = _unitOfWork.Repository<MessageCondition>();
                 var condition = template.Condition;
-                var conditions = condition != null && condition.IsDeleted ? new[] { condition } : Array.Empty<MessageCondition>();
-                foreach (var cond in conditions)
+                int restoredConditionsCount = 0;
+                if (condition != null && condition.IsDeleted && condition.DeletedAt.HasValue && templateDeletedAt.HasValue && condition.DeletedAt >= templateDeletedAt.Value)
                 {
-                    await conditionRepo.RestoreAsync(cond, restoredBy, operationTimestamp);
+                    await conditionRepo.RestoreAsync(condition, restoredBy, operationTimestamp);
+                    restoredConditionsCount = 1;
                 }
 
                 // Save changes
@@ -222,7 +229,7 @@ namespace Clinics.Infrastructure.Services
                     template.Id,
                     restoredBy,
                     new { template.Id, template.QueueId },
-                    $"Template and {conditions.Count(c => c.IsDeleted)} conditions restored");
+                    $"Template and {restoredConditionsCount} conditions restored");
 
                 return RestoreResult.SuccessResult();
             });

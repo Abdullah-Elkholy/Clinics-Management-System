@@ -9,6 +9,8 @@ interface CountryCodeSelectorProps {
   hasError?: boolean;
   showOptgroups?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  id?: string;
+  name?: string;
 }
 
 /**
@@ -22,7 +24,9 @@ export default function CountryCodeSelector({
   disabled = false,
   hasError = false,
   showOptgroups = true,
-  size = 'md'
+  size = 'md',
+  id,
+  name,
 }: CountryCodeSelectorProps) {
   // Vertical padding and font-size by control size (horizontal padding handled separately for RTL)
   const sizeClasses = {
@@ -41,10 +45,13 @@ export default function CountryCodeSelector({
   return (
     <div className="relative flex-shrink-0 group">
       <select
+        id={id}
+        name={name}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         dir="rtl"
+        autoComplete="tel-country-code"
         className={`${sizeClasses[size]} ${paddingRightBySize[size]} pl-2 text-right border-2 rounded-lg font-medium transition-all appearance-none focus:outline-none focus:ring-2 focus:ring-offset-0 cursor-pointer max-h-60 overflow-y-auto ${
           hasError
             ? 'border-red-400 bg-red-50 text-red-900 focus:ring-red-500'

@@ -29,9 +29,10 @@ export const FILE_UPLOAD_CONFIG = {
 // ============================================================================
 export const PHONE_CONFIG = {
   DEFAULT_COUNTRY_CODE: '+20',
-  PHONE_REGEX: /^\+\d{2,3}\d{8,12}$/,
-  COUNTRY_CODE_REGEX: /^\+\d{2,3}$/,
-  PHONE_INPUT_REGEX: /^(\+2|002)?01[0-2]\d{7}$/,
+  // Phone numbers stored separately from country codes (national format only)
+  PHONE_REGEX: /^\d{5,15}$/, // National phone number: 5-15 digits
+  COUNTRY_CODE_REGEX: /^\+\d{1,4}$/, // Country code: + followed by 1-4 digits
+  // PHONE_INPUT_REGEX removed - phone numbers no longer include country code
 } as const;
 
 // ============================================================================

@@ -134,8 +134,8 @@ namespace Clinics.Api.Controllers
                     // Ensure quota exists for this moderator (create if missing with unlimited values)
                     var quota = await _quotaService.GetOrCreateQuotaForModeratorAsync(moderatorId);
 
-                    // Check if moderator has sufficient queue quota
-                    var hasQuota = quota.RemainingQueues >= 1;
+                    // Check if moderator has sufficient queue quota (unlimited (-1) always has enough)
+                    var hasQuota = quota.QueuesQuota == -1 || quota.RemainingQueues >= 1;
                     if (!hasQuota)
                     {
                         _logger.LogWarning("Admin {UserId} attempted to create queue for moderator {ModeratorId} but insufficient quota", userId, moderatorId);
@@ -179,7 +179,8 @@ namespace Clinics.Api.Controllers
                 }
                 else
                 {
-                    // Non-admin flow: use the effective moderator mapping from the user
+                    // Non-admin flow: moderators and users can create queues under their moderator's quota
+                    // Users create queues related to their assigned moderator (ModeratorId)
                     moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
 
                     _logger.LogInformation("CreateQueue(User/mod): userId={UserId}, effectiveModeratorId={ModeratorId}, doctorName={DoctorName}", userId, moderatorId, req.DoctorName);
@@ -188,15 +189,33 @@ namespace Clinics.Api.Controllers
                     var targetModerator = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == moderatorId && u.Role == "moderator" && !u.IsDeleted);
                     if (targetModerator == null)
                     {
-                        _logger.LogWarning("Effective moderator {ModeratorId} for user {UserId} not found", moderatorId, userId);
+                        // Check if moderator exists but is deleted or has wrong role
+                        var moderatorCheck = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == moderatorId);
+                        if (moderatorCheck == null)
+                        {
+                            _logger.LogError("Effective moderator {ModeratorId} for user {UserId} does not exist in database", moderatorId, userId);
+                            return BadRequest(new { success = false, error = "المشرف المرتبط غير موجود في قاعدة البيانات" });
+                        }
+                        else if (moderatorCheck.IsDeleted)
+                        {
+                            _logger.LogWarning("Effective moderator {ModeratorId} for user {UserId} is soft-deleted", moderatorId, userId);
+                            return BadRequest(new { success = false, error = "المشرف المرتبط تم حذفه" });
+                        }
+                        else if (moderatorCheck.Role != "moderator")
+                        {
+                            _logger.LogWarning("Effective moderator {ModeratorId} for user {UserId} has role {Role} instead of 'moderator'", moderatorId, userId, moderatorCheck.Role);
+                            return BadRequest(new { success = false, error = "المستخدم المرتبط ليس مشرفاً" });
+                        }
+                        
+                        _logger.LogWarning("Effective moderator {ModeratorId} for user {UserId} not found (unknown reason)", moderatorId, userId);
                         return BadRequest(new { success = false, error = "لا يمكن تحديد المشرف المرتبط بالمستخدم" });
                     }
 
                     // Ensure quota exists for this moderator (create if missing with unlimited values)
                     var quota = await _quotaService.GetOrCreateQuotaForModeratorAsync(moderatorId);
 
-                    // Check if user has sufficient queue quota
-                    var hasQuota = quota.RemainingQueues >= 1;
+                    // Check if user has sufficient queue quota (unlimited (-1) always has enough)
+                    var hasQuota = quota.QueuesQuota == -1 || quota.RemainingQueues >= 1;
 
                     if (!hasQuota)
                     {

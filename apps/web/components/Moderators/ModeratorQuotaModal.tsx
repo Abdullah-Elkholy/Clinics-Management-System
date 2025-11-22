@@ -137,7 +137,7 @@ export default function ModeratorQuotaModal({
 
   const calculateRemaining = (limit: number, used: number): number => {
     if (limit === -1) return -1;
-    return Math.max(0, limit - used);
+    return limit - used;
   };
 
   const renderQuotaSection = (

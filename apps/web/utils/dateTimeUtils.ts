@@ -99,12 +99,23 @@ export function formatLocalDateTime(date: string | Date | undefined | null): str
   for (const part of parts) {
     if (part.type === 'month') {
       result += monthNames[part.value] || part.value;
+    } else if (part.type === 'dayPeriod') {
+      // Replace AM/PM with Arabic equivalents
+      result += part.value === 'AM' ? 'ص' : 'م';
+    } else if (part.type === 'literal' && part.value.toLowerCase().includes('at')) {
+      // Replace "at" with Arabic "في"
+      result += ' في ';
     } else {
       result += part.value;
     }
   }
   // Convert all Western numerals to Arabic-Indic numerals
-  return toArabicNumerals(result);
+  // Also replace any remaining "at", "AM", "PM" that might be in the formatted string
+  let formatted = toArabicNumerals(result);
+  formatted = formatted.replace(/\bat\b/gi, 'في');
+  formatted = formatted.replace(/\bAM\b/g, 'ص');
+  formatted = formatted.replace(/\bPM\b/g, 'م');
+  return formatted;
 }
 
 /**

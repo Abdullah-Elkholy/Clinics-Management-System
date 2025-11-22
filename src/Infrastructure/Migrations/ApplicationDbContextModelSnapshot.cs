@@ -479,6 +479,9 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool?>("IsValidWhatsAppNumber")
+                        .HasColumnType("bit");
+
                     b.Property<string>("PhoneNumber")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -580,8 +583,8 @@ namespace Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("ConsumedMessages")
-                        .HasColumnType("int");
+                    b.Property<long>("ConsumedMessages")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("ConsumedQueues")
                         .HasColumnType("int");
@@ -601,8 +604,8 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<int>("MessagesQuota")
-                        .HasColumnType("int");
+                    b.Property<long>("MessagesQuota")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("ModeratorUserId")
                         .HasColumnType("int");
@@ -840,8 +843,7 @@ namespace Infrastructure.Migrations
                     b.HasOne("Clinics.Domain.MessageTemplate", null)
                         .WithMany()
                         .HasForeignKey("TemplateId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Queue");
                 });

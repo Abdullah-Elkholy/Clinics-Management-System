@@ -218,6 +218,52 @@ namespace ClinicsManagementService.Configuration
         public const string SessionDirectory = "whatsapp-session";
         #endregion
 
+        #region Session Optimization
+        /// <summary>
+        /// Maximum session size before auto-restore (10 MB)
+        /// </summary>
+        public const long MaxSessionSizeBytes = 10 * 1024 * 1024;
+
+        /// <summary>
+        /// Backup file name
+        /// </summary>
+        public const string BackupFileName = "whatsapp-session.zip";
+
+        /// <summary>
+        /// Folders to clean during optimization (non-essential caches)
+        /// </summary>
+        public static readonly string[] CacheFoldersToClean = new[]
+        {
+            "BrowserMetrics", // in root folder
+            "Cache", // in "Default/" folder
+            "Code Cache", // in "Default/" folder
+            "DawnGraphiteCache", // in "Default/" folder
+            "DawnWebGPUCache", // in "Default/" folder
+            "GPUCache", // in "Default/" folder
+            "CacheStorage", // in "Default/Service Worker/" folder
+            "ScriptCache", // in "Default/Service Worker/" folder
+            "GraphiteDawnCache", // in root folder
+            "extensions_crx_cache", // in root folder
+            "GrShaderCache", // in root folder
+            "ShaderCache", // in root folder
+        };
+
+        /// <summary>
+        /// Delay to ensure file handles are released (milliseconds)
+        /// </summary>
+        public const int FileReleasedDelayMs = 3000;
+
+        /// <summary>
+        /// Maximum retries for file lock operations
+        /// </summary>
+        public const int MaxFileLockRetries = 5;
+
+        /// <summary>
+        /// Delay between file lock retries (milliseconds)
+        /// </summary>
+        public const int FileLockRetryDelayMs = 2000;
+        #endregion
+
         #region URLs
         public const string WhatsAppBaseUrl = "https://web.whatsapp.com/";
         public const string WhatsAppSendUrl = WhatsAppBaseUrl + "send?phone=";

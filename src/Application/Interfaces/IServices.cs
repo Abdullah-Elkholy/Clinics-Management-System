@@ -50,7 +50,7 @@ namespace Clinics.Application.Interfaces
     {
         Task<(bool allowed, string message)> CanSendMessageAsync(int userId, int count = 1);
         Task<(bool allowed, string message)> CanCreateQueueAsync(int userId);
-        Task<bool> ConsumeMessageQuotaAsync(int userId, int count = 1);
+        Task<bool> ConsumeMessageQuotaAsync(int userId, int count);
         Task<bool> ConsumeQueueQuotaAsync(int userId);
     }
 }

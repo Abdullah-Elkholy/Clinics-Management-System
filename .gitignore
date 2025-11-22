@@ -7,6 +7,8 @@ obj/
 
 # WhatsApp session login data
 whatsapp-session/
+whatsapp-session.zip
+ClinicsManagementServiceNewOutdated/
 
 # Debugging screenshot from inside whatsapp to ensure message is sent successfully or not
 Screenshots/
@@ -94,3 +96,9 @@ docs/
 
 test-results
 playwright-report
+
+# Playwright
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

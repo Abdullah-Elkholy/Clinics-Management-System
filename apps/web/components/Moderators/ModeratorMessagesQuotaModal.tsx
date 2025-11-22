@@ -15,6 +15,11 @@ interface ModeratorMessagesQuotaModalProps {
 
 type QuotaMode = 'set' | 'add';
 
+// Maximum safe integer value for long (Int64) - JavaScript's MAX_SAFE_INTEGER
+// This is 2^53 - 1 = 9007199254740991, which is safe for JavaScript number operations
+// The database supports up to 2^63 - 1, but JavaScript can't safely represent larger values
+const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER; // 9007199254740991
+
 /**
  * ModeratorMessagesQuotaModal - Edit moderator messages quota
  * Features:
@@ -22,6 +27,7 @@ type QuotaMode = 'set' | 'add';
  * - Handle empty field as unlimited (-1)
  * - Three-column breakdown display
  * - Messages-specific button styling
+ * - Long integer validation with maximum value capping
  */
 export default function ModeratorMessagesQuotaModal({
   quota,
@@ -33,7 +39,7 @@ export default function ModeratorMessagesQuotaModal({
   isLoading = false,
 }: ModeratorMessagesQuotaModalProps) {
   const [formData, setFormData] = useState<ModeratorQuota>(quota);
-  const [mode, setMode] = useState<QuotaMode>('set');
+  const [mode, setMode] = useState<QuotaMode | 'unlimited'>('set');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [inputValue, setInputValue] = useState<string>(''); // Store raw input for 'add' mode
@@ -42,7 +48,8 @@ export default function ModeratorMessagesQuotaModal({
   useEffect(() => {
     if (isOpen && quota) {
       setFormData(quota);
-      setMode('set');
+      // If quota is already unlimited, set mode to 'unlimited'
+      setMode(quota.messagesQuota.limit === -1 ? 'unlimited' : 'set');
       setError(null);
       setInputValue(''); // Reset input value
     }
@@ -50,12 +57,47 @@ export default function ModeratorMessagesQuotaModal({
 
   if (!isOpen) return null;
 
+  // Helper function to safely parse large integers
+  const parseLargeInteger = (value: string): number => {
+    if (value === '' || value.trim() === '') {
+      return -1;
+    }
+    
+    // Remove any non-numeric characters except minus sign at the start
+    const cleaned = value.trim().replace(/[^\d-]/g, '');
+    if (cleaned === '' || cleaned === '-') {
+      return -1;
+    }
+    
+    // Use Number() for better handling of large numbers
+    const num = Number(cleaned);
+    
+    // Check if it's a valid number and not NaN or Infinity
+    if (isNaN(num) || !isFinite(num)) {
+      return -1;
+    }
+    
+    // Ensure it's an integer
+    if (num % 1 !== 0) {
+      return Math.floor(num);
+    }
+    
+    return num;
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
       if (formData.messagesQuota.limit < -1) {
         setError('الحد يجب أن يكون موجب أو غير محدود');
+        setSaving(false);
+        return;
+      }
+
+      // Validate long integer maximum for messages quota
+      if (formData.messagesQuota.limit !== -1 && formData.messagesQuota.limit > MAX_SAFE_INTEGER) {
+        setError(`القيمة القصوى المسموحة هي ${MAX_SAFE_INTEGER.toLocaleString('ar-SA')}`);
         setSaving(false);
         return;
       }
@@ -72,6 +114,19 @@ export default function ModeratorMessagesQuotaModal({
         return;
       }
 
+      // For 'add' mode, validate that adding won't exceed MAX_SAFE_INTEGER
+      if (mode === 'add' && inputValue !== '' && quota.messagesQuota.limit !== -1) {
+        const currentLimit = quota.messagesQuota.limit;
+        const delta = parseLargeInteger(inputValue);
+        const maxAddable = MAX_SAFE_INTEGER - currentLimit;
+        
+        if (delta > maxAddable || delta <= 0) {
+          setError(`لا يمكن إضافة أكثر من ${maxAddable.toLocaleString('ar-SA')} (الحد الأقصى: ${MAX_SAFE_INTEGER.toLocaleString('ar-SA')})`);
+          setSaving(false);
+          return;
+        }
+      }
+
       // For 'add' mode, we need to pass the delta (input value), not the final calculated limit
       // Only update messagesQuota, keep queuesQuota unchanged
       const quotaToSave: Partial<ModeratorQuota> = {
@@ -79,10 +134,16 @@ export default function ModeratorMessagesQuotaModal({
         queuesQuota: { ...quota.queuesQuota }, // Keep original queues quota
       };
       
-      if (mode === 'add' && inputValue !== '' && quota.messagesQuota.limit !== -1) {
-        // Calculate delta from input value
-        const delta = parseInt(inputValue, 10) || 0;
-        if (delta > 0) {
+      if (mode === 'unlimited') {
+        // For 'unlimited' mode, set limit to -1
+        quotaToSave.messagesQuota = {
+          ...formData.messagesQuota,
+          limit: -1,
+        };
+      } else if (mode === 'add' && inputValue !== '' && quota.messagesQuota.limit !== -1) {
+        // Calculate delta from input value using safe parsing
+        const delta = parseLargeInteger(inputValue);
+        if (delta > 0 && delta <= MAX_SAFE_INTEGER) {
           quotaToSave.messagesQuota = {
             ...formData.messagesQuota,
             limit: delta, // Pass delta for 'add' mode
@@ -93,9 +154,12 @@ export default function ModeratorMessagesQuotaModal({
           return;
         }
       } else if (mode === 'set') {
-        // For 'set' mode, use the calculated limit from formData
+        // For 'set' mode, use the calculated limit from formData (capped at MAX_SAFE_INTEGER)
         quotaToSave.messagesQuota = {
           ...formData.messagesQuota,
+          limit: formData.messagesQuota.limit > MAX_SAFE_INTEGER 
+            ? MAX_SAFE_INTEGER 
+            : formData.messagesQuota.limit,
         };
       } else if (mode === 'add' && inputValue === '') {
         setError('يرجى إدخال قيمة للإضافة');
@@ -106,7 +170,7 @@ export default function ModeratorMessagesQuotaModal({
       // Pass mode information via a custom property
       const quotaWithMode = { ...quotaToSave, _mode: mode } as any;
       await onSave(quotaWithMode as ModeratorQuota);
-      onClose();
+      // Don't close modal here - let parent component handle closing after refreshing data
     } catch (err) {
       setError(err instanceof Error ? err.message : 'فشل حفظ الحصة');
     } finally {
@@ -115,20 +179,62 @@ export default function ModeratorMessagesQuotaModal({
   };
 
   const handleLimitChange = (value: string) => {
-    setInputValue(value); // Store raw input
-    const parsedValue = value === '' ? -1 : parseInt(value, 10) || -1;
-    const currentLimit = quota.messagesQuota.limit;
+    // Prevent changes when mode is 'unlimited' (input is disabled, but this is a safeguard)
+    if (mode === 'unlimited') {
+      return;
+    }
 
+    const currentLimit = quota.messagesQuota.limit;
+    
     if (mode === 'add' && currentLimit === -1) {
       return;
     }
 
+    // Store raw input first
+    setInputValue(value);
+
+    const parsedValue = parseLargeInteger(value);
+
+    // For 'add' mode, cap the input value itself at (MAX_SAFE_INTEGER - currentLimit)
+    if (mode === 'add' && currentLimit !== -1 && parsedValue !== -1 && parsedValue > 0) {
+      const maxAddable = MAX_SAFE_INTEGER - currentLimit;
+      
+      if (parsedValue > maxAddable) {
+        // Cap the input value at maxAddable
+        const cappedValue = String(maxAddable);
+        setInputValue(cappedValue);
+        const sum = currentLimit + maxAddable;
+        setFormData((prev) => ({
+          ...prev,
+          messagesQuota: {
+            ...prev.messagesQuota,
+            limit: sum > MAX_SAFE_INTEGER ? MAX_SAFE_INTEGER : sum,
+          },
+        }));
+        return;
+      }
+    }
+
     let newLimit = parsedValue;
-    if (mode === 'add' && parsedValue !== -1) {
+    if (mode === 'add' && parsedValue !== -1 && parsedValue > 0) {
       if (currentLimit === -1) {
         newLimit = -1;
       } else {
-        newLimit = currentLimit + parsedValue;
+        // Cap the addition result at MAX_SAFE_INTEGER
+        // Use safe arithmetic to prevent overflow
+        const sum = currentLimit + parsedValue;
+        newLimit = sum > MAX_SAFE_INTEGER ? MAX_SAFE_INTEGER : sum;
+      }
+    } else if (mode === 'set' && parsedValue !== -1) {
+      // Cap 'set' mode values at MAX_SAFE_INTEGER
+      if (parsedValue > MAX_SAFE_INTEGER) {
+        newLimit = MAX_SAFE_INTEGER;
+        // Update input to show capped value
+        setInputValue(String(MAX_SAFE_INTEGER));
+      } else if (parsedValue < 0 && parsedValue !== -1) {
+        // Don't allow negative values (except -1 for unlimited)
+        newLimit = 0;
+        setInputValue('0');
       }
     }
 
@@ -143,7 +249,7 @@ export default function ModeratorMessagesQuotaModal({
 
   const calculateRemaining = (limit: number, used: number): number => {
     if (limit === -1) return -1;
-    return Math.max(0, limit - used);
+    return limit - used;
   };
 
   const remaining = calculateRemaining(formData.messagesQuota.limit, formData.messagesQuota.used);
@@ -209,10 +315,13 @@ export default function ModeratorMessagesQuotaModal({
           <div className="flex gap-2 items-end">
             <input
               type="number"
-              value={mode === 'add' ? inputValue : (formData.messagesQuota.limit === -1 ? '' : String(formData.messagesQuota.limit))}
+              value={mode === 'unlimited' ? '' : (mode === 'add' ? inputValue : (formData.messagesQuota.limit === -1 ? '' : String(formData.messagesQuota.limit)))}
               onChange={(e) => handleLimitChange(e.target.value)}
-              disabled={saving || isLoading || (mode === 'add' && wasUnlimited)}
-              placeholder={mode === 'add' ? 'أدخل الكمية المراد إضافتها (اتركه فارغاً لغير محدود)' : 'أدخل الحد الجديد (اتركه فارغاً لغير محدود)'}
+              disabled={saving || isLoading || (mode === 'add' && wasUnlimited) || mode === 'unlimited'}
+              placeholder={mode === 'unlimited' ? 'غير محدود' : (mode === 'add' ? 'أدخل الكمية المراد إضافتها' : 'أدخل الحد الجديد')}
+              max={mode === 'add' && quota.messagesQuota.limit !== -1 
+                ? MAX_SAFE_INTEGER - quota.messagesQuota.limit 
+                : MAX_SAFE_INTEGER}
               className="flex-1 px-3 py-1.5 text-right text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
             <select
@@ -220,11 +329,29 @@ export default function ModeratorMessagesQuotaModal({
               onChange={(e) => {
                 const newMode = e.target.value as QuotaMode | 'unlimited';
                 if (newMode === 'unlimited') {
-                  setMode('set');
+                  setMode('unlimited');
                   setInputValue('');
-                  handleLimitChange(''); // Set to unlimited
+                  // Set formData limit to -1
+                  setFormData((prev) => ({
+                    ...prev,
+                    messagesQuota: {
+                      ...prev.messagesQuota,
+                      limit: -1,
+                    },
+                  }));
                 } else {
                   setMode(newMode);
+                  // If switching from unlimited to set/add, clear the input
+                  if (mode === 'unlimited') {
+                    setInputValue('');
+                    setFormData((prev) => ({
+                      ...prev,
+                      messagesQuota: {
+                        ...prev.messagesQuota,
+                        limit: quota.messagesQuota.limit === -1 ? 0 : quota.messagesQuota.limit,
+                      },
+                    }));
+                  }
                 }
               }}
               disabled={saving || isLoading}
@@ -237,7 +364,11 @@ export default function ModeratorMessagesQuotaModal({
           </div>
 
           {/* Mode Description */}
-          {mode === 'add' && wasUnlimited ? (
+          {mode === 'unlimited' ? (
+            <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-2">
+              ✓ سيتم تعيين الحصة كغير محدودة
+            </p>
+          ) : mode === 'add' && wasUnlimited ? (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
               ⚠️ لا يمكن إضافة قيم عندما تكون الحصة غير محدودة. اختر "تعيين الحد" لتحديد حد جديد.
             </p>

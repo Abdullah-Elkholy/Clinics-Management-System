@@ -90,7 +90,8 @@ namespace Clinics.Api.Services
                     FirstName = "مستخدم",
                     LastName = "عادي",
                     Role = "user",
-                    PasswordHash = hasher.HashPassword(null!, "user123")
+                    PasswordHash = hasher.HashPassword(null!, "user123"),
+                    ModeratorId = moderatorAhmed.Id  // Assign to first moderator (mod1)
                 };
 
                 // Add a second moderator for testing with multiple moderators
@@ -108,13 +109,13 @@ namespace Clinics.Api.Services
 
                 _logger.LogInformation("Created admin and moderator users.");
 
-                // Auto-create quotas for moderators with unlimited messages and queues
+                // Auto-create quotas for moderators with unlimited messages and queues (-1 = unlimited)
                 var quotaAhmed = new Quota
                 {
                     ModeratorUserId = moderatorAhmed.Id,
-                    MessagesQuota = int.MaxValue,
+                    MessagesQuota = -1, // -1 = unlimited
                     ConsumedMessages = 0,
-                    QueuesQuota = int.MaxValue,
+                    QueuesQuota = -1, // -1 = unlimited
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -122,9 +123,9 @@ namespace Clinics.Api.Services
                 var quotaSara = new Quota
                 {
                     ModeratorUserId = moderatorSara.Id,
-                    MessagesQuota = int.MaxValue,
+                    MessagesQuota = -1, // -1 = unlimited
                     ConsumedMessages = 0,
-                    QueuesQuota = int.MaxValue,
+                    QueuesQuota = -1, // -1 = unlimited
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -132,9 +133,9 @@ namespace Clinics.Api.Services
                 var quotaAdmin = new Quota
                 {
                     ModeratorUserId = adminModerator.Id,
-                    MessagesQuota = int.MaxValue,
+                    MessagesQuota = -1, // -1 = unlimited
                     ConsumedMessages = 0,
-                    QueuesQuota = int.MaxValue,
+                    QueuesQuota = -1, // -1 = unlimited
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };

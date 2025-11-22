@@ -8,18 +8,19 @@ import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
 import { messageApiClient, type TemplateDto } from '@/services/api/messageApiClient';
-import { templateDtoToModel } from '@/services/api/adapters';
+import { templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
 import logger from '@/utils/logger';
 import Modal from './Modal';
+import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 import ConfirmationModal from '@/components/Common/ConfirmationModal';
-import { useState, useEffect, useMemo, type FormEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import type { MessageTemplate } from '@/types/messageTemplate';
 import type { ConditionOperator } from '@/types/messageCondition';
 
 export default function EditTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions, refreshQueueData } = useQueue();
+  const { updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions, setMessageConditions, setMessageTemplates, refreshQueueData } = useQueue();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
@@ -34,6 +35,7 @@ export default function EditTemplateModal() {
   const [selectedValue, setSelectedValue] = useState<number | undefined>(undefined);
   const [selectedMinValue, setSelectedMinValue] = useState<number | undefined>(undefined);
   const [selectedMaxValue, setSelectedMaxValue] = useState<number | undefined>(undefined);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isOpen = openModals.has('editTemplate');
   const modalData = getModalData('editTemplate');
@@ -86,8 +88,16 @@ export default function EditTemplateModal() {
       setContent(freshTemplate.content || '');
 
       // Find condition from messageConditions array
+      // IMPORTANT: Filter by queueId first to ensure we only match conditions for this template's queue
       const templateConditionForTemplate =
-        messageConditions.find((condition) => condition.templateId === freshTemplate.id) ??
+        messageConditions.find((condition) => {
+          // First ensure condition belongs to this template's queue
+          if (freshTemplate.queueId && String(condition.queueId) !== String(freshTemplate.queueId)) {
+            return false;
+          }
+          // Then match by templateId using simple equality
+          return condition.templateId === freshTemplate.id;
+        }) ??
         freshTemplate.condition ??
         null;
 
@@ -117,8 +127,16 @@ export default function EditTemplateModal() {
   const templateCondition = useMemo(() => {
     if (!currentTemplate) return null;
     // Find condition from messageConditions array
+    // IMPORTANT: Filter by queueId first to ensure we only match conditions for this template's queue
     return (
-      messageConditions.find((condition) => condition.templateId === currentTemplate.id) ??
+      messageConditions.find((condition) => {
+        // First ensure condition belongs to this template's queue
+        if (currentTemplate.queueId && String(condition.queueId) !== String(currentTemplate.queueId)) {
+          return false;
+        }
+        // Then match by templateId using simple equality
+        return condition.templateId === currentTemplate.id;
+      }) ??
       currentTemplate.condition ??
       null
     );
@@ -265,8 +283,8 @@ export default function EditTemplateModal() {
       newErrors.content = contentError;
     }
 
-    // Validate condition if operator is selected
-    if (selectedOperator) {
+    // Validate condition if operator is selected (but not DEFAULT or null)
+    if (selectedOperator && selectedOperator !== 'DEFAULT') {
       if (selectedOperator === 'RANGE') {
         if (!selectedMinValue || selectedMinValue <= 0) {
           newErrors.minValue = 'الحد الأدنى مطلوب ويجب أن يكون > 0';
@@ -325,29 +343,15 @@ export default function EditTemplateModal() {
     try {
       setIsLoading(true);
 
-      // Call API to update template
-      await messageApiClient.updateTemplate(templateBackendId, {
-        title,
-        content,
-      });
-
-      // Handle DEFAULT operator separately - setTemplateAsDefault handles condition creation/update
+      // STEP 1: Handle condition update/create FIRST (before template update)
+      // This ensures condition is in correct state before template loads it
       if (conditionOperator === 'DEFAULT') {
-        try {
-          await messageApiClient.setTemplateAsDefault(templateBackendId);
-          // After successfully setting as default, refetch queue data
-          if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
-            await refreshQueueData(String(currentTemplate.queueId));
-          }
-        } catch (defaultError: any) {
-          logger.error('Failed to set template as default:', defaultError);
-          addToast(defaultError?.message || 'فشل تعيين القالب كافتراضي', 'error');
-          setIsLoading(false);
-          return;
-        }
+        // For DEFAULT operator, use dedicated endpoint
+        await messageApiClient.setTemplateAsDefault(templateBackendId);
       } else {
-        // For non-DEFAULT operators, update or create condition normally
+        // For other operators, update or create condition
         if (templateCondition) {
+          // Update existing condition
           const conditionIdNum = Number(templateCondition.id);
           if (!isNaN(conditionIdNum)) {
             await messageApiClient.updateCondition(conditionIdNum, {
@@ -358,6 +362,7 @@ export default function EditTemplateModal() {
             });
           }
         } else {
+          // Create new condition
           await messageApiClient.createCondition({
             templateId: templateBackendId,
             queueId: queueIdNum,
@@ -367,50 +372,18 @@ export default function EditTemplateModal() {
             maxValue: normalizedMaxValue,
           });
         }
-        
-        // Refetch queue data to ensure UI is in sync with backend
-        // Wait for refetch to complete before closing modal and dispatching event
-        if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
-          await refreshQueueData(String(currentTemplate.queueId));
-        }
       }
 
-      // Only proceed with fallback state update if DEFAULT was not handled above
-      if (conditionOperator !== 'DEFAULT') {
-        // Fallback: update local state if refreshQueueData is not available
-        // Note: updatedAt will be set by backend, but we provide default for test mocks
-        updateMessageTemplate(currentTemplate.id, {
-          title,
-          content,
-          updatedAt: new Date(), // Will be overwritten by backend value
-        });
+      // STEP 2: Update template (backend will load the updated condition)
+      const updatedTemplate = await messageApiClient.updateTemplate(templateBackendId, {
+        title,
+        content,
+      });
 
-        if (templateCondition) {
-          updateMessageCondition(templateCondition.id, {
-            operator: conditionOperator,
-            value: normalizedValue,
-            minValue: normalizedMinValue,
-            maxValue: normalizedMaxValue,
-            template: content,
-          });
-        } else {
-          const queueIdStr = String(currentTemplate.queueId);
-          const priority =
-            messageConditions.filter((condition) => String(condition.queueId) === queueIdStr).length + 1;
-
-          await addMessageCondition({
-            queueId: queueIdStr,
-            templateId: currentTemplate.id,
-            name: `${title} شرط`,
-            priority,
-            enabled: true,
-            operator: conditionOperator,
-            value: normalizedValue,
-            minValue: normalizedMinValue,
-            maxValue: normalizedMaxValue,
-            template: content,
-          });
-        }
+      // STEP 3: Refetch all queue data to ensure consistency
+      // This ensures we get the latest state from backend
+      if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
+        await refreshQueueData(String(currentTemplate.queueId));
       }
 
       // Clear form fields after successful update
@@ -429,23 +402,40 @@ export default function EditTemplateModal() {
 
       addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
 
-      // Close modal before dispatching events to ensure UI updates
-      closeModal('editTemplate');
+      // Trigger custom events to notify other components to refetch (immediate, no delay)
+      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+      window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
       
-      // Trigger custom events to notify other components to refetch
-      // Dispatch after a small delay to ensure refreshQueueData has updated the state
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-        window.dispatchEvent(new CustomEvent('conditionDataUpdated')); // Also dispatch condition update event
-      }, 100);
+      // Close modal after dispatching events to ensure UI updates
+      closeModal('editTemplate');
     } catch (error) {
-      logger.error('Failed to update template:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error && typeof error === 'object' && 'message' in error)
+          ? String((error as { message?: unknown }).message || 'Unknown error')
+          : 'Unknown error';
+      logger.error('Failed to update template:', {
+        error: errorMessage,
+        statusCode: (error && typeof error === 'object' && 'statusCode' in error) ? (error as { statusCode?: unknown }).statusCode : undefined,
+        fullError: error,
+      });
       addToast('حدث خطأ أثناء تحديث القالب', 'error');
     } finally {
       // Always reset loading state, even if an error occurred
       setIsLoading(false);
     }
   };
+
+  // Setup keyboard navigation (after handleSubmit is defined)
+  useFormKeyboardNavigation({
+    formRef,
+    onEnterSubmit: () => {
+      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      handleSubmit(fakeEvent);
+    },
+    enableEnterSubmit: true,
+    disabled: isLoading,
+  });
 
   // Validation errors check
   const hasValidationErrors = Object.keys(errors).length > 0 || !title.trim() || !content.trim();
@@ -474,7 +464,7 @@ export default function EditTemplateModal() {
       title="تحرير قالب رسالة"
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {/* Required Fields Disclaimer */}
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
           <p className="flex items-center gap-2">

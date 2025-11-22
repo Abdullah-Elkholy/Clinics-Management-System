@@ -76,6 +76,7 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
 
   if (!response.ok) {
     const message = (typeof data === 'string' ? data : ((data as Record<string, unknown>)?.errors as Array<{message: string}>)?.[0]?.message || (data as Record<string, unknown>)?.message as string) || response.statusText || 'Login failed';
+    // Don't trigger global auth handler for login endpoint - these are expected errors
     throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
   }
 
@@ -112,18 +113,122 @@ export async function getCurrentUser(): Promise<User> {
 
   if (!response.ok) {
     const message = (typeof data === 'string' ? data : (data as Record<string, unknown>)?.message as string) || response.statusText || 'Failed to get current user';
-    throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
+    const error = new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
+    
+    // Handle auth errors globally
+    if (response.status === 401 || response.status === 403) {
+      const { handleApiError } = require('@/utils/apiInterceptor');
+      handleApiError({ statusCode: response.status, message });
+    }
+    
+    throw error;
   }
 
+  // Backend returns { success: true, data: { Id, Username, FirstName, LastName, Role, ... } }
+  // Need to unwrap and convert PascalCase to camelCase
+  const responseData = data as { success: boolean; data: any };
+  if (responseData.success && responseData.data) {
+    const userData = responseData.data;
+    
+    // Debug log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[getCurrentUser] Backend response data:', userData);
+      console.log('[getCurrentUser] Role value:', userData.Role || userData.role);
+    }
+    
+    // Backend only returns minimal fields from /auth/me endpoint
+    // Provide sensible defaults for required User interface fields
+    const user = {
+      id: String(userData.Id || userData.id || ''),
+      username: userData.Username || userData.username || '',
+      firstName: userData.FirstName || userData.firstName || '',
+      lastName: userData.LastName || userData.lastName || '',
+      role: userData.Role || userData.role,
+      // Fields not returned by backend - use sensible defaults
+      isActive: true, // User must be active to be authenticated
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      // Optional fields
+      lastLogin: undefined,
+      assignedModerator: userData.AssignedModerator || userData.assignedModerator || userData.ModeratorId || userData.moderatorId,
+      moderatorQuota: userData.ModeratorQuota || userData.moderatorQuota,
+      createdBy: undefined,
+      isDeleted: false,
+      deletedAt: undefined,
+    } as User;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[getCurrentUser] Mapped user object:', user);
+    }
+    
+    return user;
+  }
+
+  // Fallback: try to use data directly (shouldn't happen with current backend)
   return data as User;
 }
 
 /**
- * Logout by clearing token
- * (Backend uses HttpOnly cookies for refresh tokens, so no logout call needed)
+ * Logout by clearing token and revoking refresh token session on backend
  */
-export function logout(): void {
+export async function logout(): Promise<void> {
   if (typeof window !== 'undefined') {
+    // Clear token from localStorage first
     localStorage.removeItem('token');
+    
+    // Call backend to revoke refresh token session
+    try {
+      const API_BASE_URL = getApiBaseUrl();
+      const url = `${API_BASE_URL}/auth/logout`;
+      
+      await fetch(url, {
+        method: 'POST',
+        credentials: 'include', // Include HttpOnly refresh token cookie
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      // Ignore response - logout should succeed even if backend call fails
+    } catch (error) {
+      // Ignore errors - logout is best-effort on backend
+      // Client-side cleanup is most important
+    }
+  }
+}
+
+// ============================================
+// Token Refresh API
+// ============================================
+
+/**
+ * Attempt to refresh the access token using the HttpOnly refresh cookie.
+ * Returns the new access token on success, or null on failure.
+ */
+export async function refreshAccessToken(): Promise<{ accessToken: string } | null> {
+  const API_BASE_URL = getApiBaseUrl();
+  const url = `${API_BASE_URL}/auth/refresh`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include', // Include HttpOnly refresh token cookie
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await response.json() : await response.text();
+
+    if (!response.ok) {
+      return null;
+    }
+
+    // Expected: { success: true, data: { accessToken, expiresIn } }
+    const token = (data && (data as any).data && (data as any).data.accessToken) as string | undefined;
+    if (token && typeof token === 'string') {
+      return { accessToken: token };
+    }
+    return null;
+  } catch {
+    return null;
   }
 }

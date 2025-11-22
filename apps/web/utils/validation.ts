@@ -228,20 +228,7 @@ export const formatPhoneDisplay = (phone: string): string => {
   return phone;
 };
 
-// Normalize phone number for API
-export const normalizePhoneNumber = (phone: string): string => {
-  const cleaned = phone.replace(/\D/g, '');
-  
-  if (cleaned.startsWith('20')) {
-    return `+${cleaned}`;
-  } else if (cleaned.startsWith('0')) {
-    return `+20${cleaned.substring(1)}`;
-  } else if (cleaned.startsWith('1')) {
-    return `+201${cleaned.substring(1)}`;
-  }
-  
-  return `+20${cleaned}`;
-};
+// Phone number normalization removed - phone numbers are stored separately from country codes
 
 // Validation rules templates for common use cases
 export const validationRules = {

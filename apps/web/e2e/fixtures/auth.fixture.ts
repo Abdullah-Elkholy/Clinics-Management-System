@@ -4,8 +4,8 @@ import { test as base, Page } from '@playwright/test';
 // Phase 2: Replace selectors/credentials with real values or API-based login
 export const test = base.extend<{ authenticatedPage: Page }>({
   authenticatedPage: async ({ page }, provideAuthenticatedPage) => {
-    // Read baseURL from Playwright config
-    await page.goto('/login', { waitUntil: 'domcontentloaded' });
+    // Navigate to root page (login is shown when not authenticated)
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     // Try Arabic placeholders first (preferred, matches UI), fallback to type selectors
     const usernameSelector = 'input[placeholder="أدخل اسم المستخدم"], input[type="text"]';
@@ -25,12 +25,12 @@ export const test = base.extend<{ authenticatedPage: Page }>({
     // Submit
     await page.click(submitSelector);
 
-    // Wait for redirect away from /login if possible
+    // Wait for main app content to appear (login screen should be replaced)
     await page.waitForLoadState('networkidle').catch(() => {});
     try {
-      await page.waitForURL(url => !url.toString().includes('/login'), { timeout: 10000 });
+      await page.waitForSelector('header, nav, [role="main"]', { timeout: 10000 });
     } catch {
-      // Keep going; some flows may keep user on /login in test env
+      // Keep going; some flows may take longer to load
     }
 
     await provideAuthenticatedPage(page);
