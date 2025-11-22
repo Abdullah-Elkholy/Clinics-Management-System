@@ -64,18 +64,20 @@ export function useFormKeyboardNavigation(options: UseFormKeyboardNavigationOpti
     disabled = false,
   } = options;
 
-  // Helper to get current form element synchronously
-  // This is called when events fire, so formRef.current should be available if form is mounted
-  const getFormElement = useCallback((): HTMLFormElement | null => {
+  // Cache the resolved form element to avoid repeated lookups
+  const formElementRef = useRef<HTMLFormElement | null>(null);
+
+  // Resolve and cache the form element
+  useEffect(() => {
     if (typeof formRef === 'string') {
-      // If formRef is a string, treat it as an ID
-      return document.getElementById(formRef) as HTMLFormElement;
+      // If formRef is a string, treat it as an ID and look it up
+      formElementRef.current = document.getElementById(formRef) as HTMLFormElement;
     } else if (formRef && 'current' in formRef) {
-      // If formRef is a ref object, check current directly
-      // When event fires, if form is mounted, formRef.current will be set
-      return formRef.current;
+      // If formRef is a ref object, use its current value
+      formElementRef.current = formRef.current;
+    } else {
+      formElementRef.current = null;
     }
-    return null;
   }, [formRef]);
 
   // Handle Enter key in inputs
@@ -84,9 +86,8 @@ export function useFormKeyboardNavigation(options: UseFormKeyboardNavigationOpti
 
     const target = e.target as HTMLElement;
     
-    // Get form element synchronously when event fires
-    // If form is mounted, formRef.current should be available
-    const formElement = getFormElement();
+    // Use cached form element instead of calling getFormElement() repeatedly
+    const formElement = formElementRef.current;
     
     // Determine the form we should handle events for
     let form: HTMLFormElement | null = null;
@@ -160,7 +161,7 @@ export function useFormKeyboardNavigation(options: UseFormKeyboardNavigationOpti
         onEscape();
       }
     }
-  }, [disabled, enableEnterSubmit, enableEscape, onEnterSubmit, onEscape, submitInputSelector, getFormElement]);
+  }, [disabled, enableEnterSubmit, enableEscape, onEnterSubmit, onEscape, submitInputSelector, formRef]);
 
   // Attach event listeners
   // Listen on document with capture phase to catch events from dynamically mounted forms (e.g., modals)
