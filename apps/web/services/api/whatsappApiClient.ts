@@ -110,12 +110,15 @@ export async function checkWhatsAppNumber(
   signal?: AbortSignal
 ): Promise<OperationResult<boolean>> {
   try {
-    // URL encode the phone number to handle special characters
-    const encodedPhoneNumber = encodeURIComponent(phoneNumber);
+    // Send phone number in request body for privacy
     const result = await fetchAPI<OperationResult<boolean>>(
-      `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}`,
+      `/api/WhatsAppUtility/check-whatsapp`,
       {
-        method: 'GET',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phoneNumber }),
         signal, // Pass abort signal to fetch
       }
     );
