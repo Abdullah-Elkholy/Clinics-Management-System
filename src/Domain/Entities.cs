@@ -384,6 +384,38 @@ namespace Clinics.Domain
         public DateTime? RestoredAt { get; set; }
 
         public int? RestoredBy { get; set; }
+
+        /// <summary>
+        /// Indicates if this message is paused and should not be processed.
+        /// When true, MessageProcessor will skip this message.
+        /// Automatically set to true when PendingQR is detected.
+        /// </summary>
+        [Required]
+        public bool IsPaused { get; set; } = false;
+
+        /// <summary>
+        /// Timestamp when message was paused (for audit)
+        /// </summary>
+        public DateTime? PausedAt { get; set; }
+
+        /// <summary>
+        /// User who paused this message (for audit)
+        /// </summary>
+        public int? PausedBy { get; set; }
+
+        /// <summary>
+        /// Reason for pausing (e.g., "PendingQR", "UserPaused", "SessionPaused")
+        /// </summary>
+        [StringLength(100)]
+        public string? PauseReason { get; set; }
+
+        /// <summary>
+        /// Session identifier for grouping related messages.
+        /// Messages sent together in a batch share the same SessionId.
+        /// Links to MessageSession entity for unified session management per moderator.
+        /// </summary>
+        [StringLength(100)]
+        public string? SessionId { get; set; }
     }
 
     [Table("FailedTasks")]
@@ -582,12 +614,29 @@ namespace Clinics.Domain
         [ForeignKey(nameof(QueueId))]
         public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
 
+        /// <summary>
+        /// The moderator who owns this session.
+        /// All users under this moderator share the same WhatsApp session.
+        /// </summary>
+        [Required]
+        public int ModeratorId { get; set; }
+
+        [ForeignKey(nameof(ModeratorId))]
+        public User? Moderator { get; set; }
+
         [Required]
         public int UserId { get; set; }
 
         [Required]
         [StringLength(20)]
         public string Status { get; set; } = "active"; // active, paused, completed, cancelled
+
+        /// <summary>
+        /// Indicates if this session is paused.
+        /// When true, all messages in this session are paused.
+        /// </summary>
+        [Required]
+        public bool IsPaused { get; set; } = false;
 
         [Required]
         public int TotalMessages { get; set; }
@@ -601,6 +650,22 @@ namespace Clinics.Domain
         public DateTime? EndTime { get; set; }
 
         public DateTime? LastUpdated { get; set; }
+
+        /// <summary>
+        /// Timestamp when session was paused (for audit)
+        /// </summary>
+        public DateTime? PausedAt { get; set; }
+
+        /// <summary>
+        /// User who paused this session (for audit)
+        /// </summary>
+        public int? PausedBy { get; set; }
+
+        /// <summary>
+        /// Reason for pausing (e.g., "PendingQR", "UserPaused")
+        /// </summary>
+        [StringLength(100)]
+        public string? PauseReason { get; set; }
     }
 
     /// <summary>

@@ -50,6 +50,8 @@ export default function MessagePreviewModal() {
   }>>({});
   const [isValidating, setIsValidating] = useState(false);
   const [validationProgress, setValidationProgress] = useState({ current: 0, total: 0 });
+  const [validationPaused, setValidationPaused] = useState(false);
+  const [shouldResumeValidation, setShouldResumeValidation] = useState(false);
   
   // Abort controller to actually cancel fetch requests
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -403,8 +405,21 @@ export default function MessagePreviewModal() {
         window.dispatchEvent(new CustomEvent('messageDataUpdated'));
       }, 100);
     } catch (err: any) {
+      // Handle PendingQR errors (authentication required)
+      if (err?.error === 'PendingQR' || err?.code === 'AUTHENTICATION_REQUIRED' || err?.message?.includes('المصادقة')) {
+        addToast(
+          err?.message || 'جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.',
+          'error'
+        );
+        // Dispatch event to notify WhatsApp session context
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
+            detail: { moderatorUserId: moderatorUserId, source: 'sendMessages' }
+          }));
+        }
+      }
       // Handle WhatsApp validation errors specifically
-      if (err?.error === 'WhatsAppValidationRequired' || err?.message?.includes('أرقام واتساب غير محققة')) {
+      else if (err?.error === 'WhatsAppValidationRequired' || err?.message?.includes('أرقام واتساب غير محققة')) {
         const invalidCount = err?.invalidPatients?.length || 0;
         const details = invalidCount > 0 
           ? ` (${invalidCount} ${invalidCount === 1 ? 'مريض' : 'مرضى'})`
@@ -941,6 +956,17 @@ export default function MessagePreviewModal() {
 
   // Retry validation for a specific patient (always re-validates, even if value exists)
   const handleRetryValidation = useCallback(async (patientId: string) => {
+    // If batch validation is running, pause it
+    if (isValidating) {
+      // Abort current validation
+      abortControllerRef.current?.abort();
+      setValidationPaused(true);
+      addToast('جاري إيقاف التحقق الحالي مؤقتاً... برجاء الانتظار من دقيقة لدقيقتين... سيتم التحقق من الرقم بعد الانتهاء', 'info');
+      
+      // Wait for abort to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
     // First, refresh patient data to get latest from database
     if (queueId) {
       try {
@@ -966,11 +992,8 @@ export default function MessagePreviewModal() {
     const patientToUse = patient || contextPatients.find(p => String(p.id) === patientId);
     if (!patientToUse || !patientToUse.phone) return;
 
-    // ALWAYS re-validate by calling API, regardless of existing database value
-    // Create new AbortController if one doesn't exist
-    if (!abortControllerRef.current) {
-      abortControllerRef.current = new AbortController();
-    }
+    // Create new AbortController for this single validation
+    abortControllerRef.current = new AbortController();
     
     const countryCode = patientToUse.countryCode || '+20';
     // Combine country code and phone number: +20 1018542431 -> +201018542431
@@ -1080,8 +1103,15 @@ export default function MessagePreviewModal() {
           attempts: 0,
         }
       }));
+    } finally {
+      // If validation was paused, resume it after this retry completes
+      if (validationPaused) {
+        setValidationPaused(false);
+        setShouldResumeValidation(true);
+        addToast('استئناف التحقق من أرقام الواتساب...', 'success');
+      }
     }
-  }, [sortedPatients, contextPatients, checkPhoneNumber, queueId, refreshPatients, addToast]);
+  }, [sortedPatients, contextPatients, checkPhoneNumber, queueId, refreshPatients, addToast, isValidating, validationPaused]);
 
   // Handle modal close with confirmation if validating
   const handleCloseModal = () => {
@@ -1133,8 +1163,19 @@ export default function MessagePreviewModal() {
       setValidationProgress({ current: 0, total: 0 });
       setRemovedPatients([]);
       setIsSending(false);
+      setValidationPaused(false);
+      setShouldResumeValidation(false);
     }
   }, [isOpen]);
+
+  // Resume validation after single patient retry completes
+  useEffect(() => {
+    if (shouldResumeValidation && !isValidating && !validationPaused) {
+      setShouldResumeValidation(false);
+      // Resume batch validation
+      validateAllPatients();
+    }
+  }, [shouldResumeValidation, isValidating, validationPaused, validateAllPatients]);
 
   if (!isOpen) return null;
 

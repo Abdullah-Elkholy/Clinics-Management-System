@@ -80,6 +80,20 @@ namespace ClinicsManagementService.Controllers
 
                 int effectiveModeratorId = moderatorUserId;
 
+                // Check if WhatsApp session is paused due to PendingQR (unified session per moderator)
+                // This check prevents operations when authentication is required
+                var hasPausedMessages = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(effectiveModeratorId);
+                if (hasPausedMessages)
+                {
+                    _notifier.Notify($"❌ [Moderator {effectiveModeratorId}] Cannot send message - session requires authentication (PendingQR)");
+                    return BadRequest(new 
+                    { 
+                        error = "PendingQR",
+                        code = "AUTHENTICATION_REQUIRED",
+                        message = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل."
+                    });
+                }
+
                 var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
                 var messageValidation = _validationService.ValidateMessage(request.Message);
 

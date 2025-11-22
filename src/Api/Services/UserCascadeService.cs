@@ -130,6 +130,9 @@ public class UserCascadeService : IUserCascadeService
                 return (false, "restore_window_expired");
             }
 
+            // Capture the original DeletedAt timestamp before clearing it (for cascade window check)
+            var originalDeletedAt = user.DeletedAt.Value;
+
             // Capture operation snapshot timestamp to ensure consistency
             var operationTimestamp = DateTime.UtcNow;
 
@@ -145,12 +148,12 @@ public class UserCascadeService : IUserCascadeService
             // If user is a moderator, restore their WhatsAppSession (if deleted during same cascade)
             if (user.Role == "moderator")
             {
-                var deletedAtValue = user.DeletedAt ?? operationTimestamp;
                 var whatsappSession = await _db.Set<WhatsAppSession>()
+                    .IgnoreQueryFilters() // Must bypass soft-delete filter to find deleted sessions
                     .FirstOrDefaultAsync(s => s.ModeratorUserId == userId 
                         && s.IsDeleted 
                         && s.DeletedAt.HasValue 
-                        && s.DeletedAt >= deletedAtValue);
+                        && s.DeletedAt >= originalDeletedAt);
                 
                 if (whatsappSession != null)
                 {

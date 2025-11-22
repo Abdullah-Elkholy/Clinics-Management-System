@@ -23,5 +23,13 @@ namespace ClinicsManagementService.Services.Interfaces
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <returns>WhatsApp session or null if not found</returns>
         Task<WhatsAppSession?> GetSessionStatusAsync(int moderatorUserId);
+
+        /// <summary>
+        /// Check if session is paused due to PendingQR (authentication required)
+        /// Returns true if there are paused messages or sessions with PendingQR reason
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>True if session is paused due to PendingQR</returns>
+        Task<bool> CheckIfSessionPausedDueToPendingQRAsync(int moderatorUserId);
     }
 }

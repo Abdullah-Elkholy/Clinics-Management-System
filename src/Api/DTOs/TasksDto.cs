@@ -26,6 +26,8 @@ public class FailedTaskDto
     public int Id { get; set; }
     public int QueueId { get; set; }
     public string QueueName { get; set; } = string.Empty;
+    public int ModeratorId { get; set; }
+    public string ModeratorName { get; set; } = string.Empty;
     public string PatientPhone { get; set; } = string.Empty;
     public string MessageContent { get; set; } = string.Empty;
     public int Attempts { get; set; }

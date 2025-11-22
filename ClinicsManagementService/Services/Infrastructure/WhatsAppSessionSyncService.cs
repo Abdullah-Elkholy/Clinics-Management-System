@@ -121,5 +121,54 @@ namespace ClinicsManagementService.Services.Infrastructure
                 return null;
             }
         }
+
+        /// <summary>
+        /// Check if session is paused due to PendingQR (authentication required)
+        /// Checks both WhatsAppSession status and paused messages/sessions
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>True if session is paused due to PendingQR</returns>
+        public async Task<bool> CheckIfSessionPausedDueToPendingQRAsync(int moderatorUserId)
+        {
+            try
+            {
+                // Check WhatsAppSession status
+                var whatsappSession = await _dbContext.WhatsAppSessions
+                    .FirstOrDefaultAsync(s => s.ModeratorUserId == moderatorUserId && !s.IsDeleted);
+                
+                if (whatsappSession != null && whatsappSession.Status == "pending")
+                {
+                    return true; // Session requires authentication
+                }
+
+                // Check if there are paused messages with PendingQR reason
+                var hasPausedMessages = await _dbContext.Messages
+                    .AnyAsync(m => m.ModeratorId == moderatorUserId 
+                        && m.IsPaused 
+                        && m.PauseReason == "PendingQR"
+                        && (m.Status == "queued" || m.Status == "sending")
+                        && !m.IsDeleted);
+                
+                if (hasPausedMessages)
+                {
+                    return true; // Messages are paused due to PendingQR
+                }
+
+                // Check if there are paused MessageSessions with PendingQR reason
+                var hasPausedSessions = await _dbContext.MessageSessions
+                    .AnyAsync(s => s.ModeratorId == moderatorUserId 
+                        && s.IsPaused 
+                        && s.PauseReason == "PendingQR"
+                        && s.Status == "paused");
+                
+                return hasPausedSessions; // Return true if any session is paused due to PendingQR
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error checking PendingQR pause state: {ex.Message}");
+                // On error, assume not paused to allow operations (fail-safe)
+                return false;
+            }
+        }
     }
 }

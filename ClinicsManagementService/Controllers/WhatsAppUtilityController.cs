@@ -103,6 +103,21 @@ namespace ClinicsManagementService.Controllers
                 }
 
                 int effectiveModeratorId = moderatorUserId.Value;
+
+                // Check if WhatsApp session is paused due to PendingQR (unified session per moderator)
+                // This check prevents operations when authentication is required
+                var hasPausedMessages = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(effectiveModeratorId);
+                if (hasPausedMessages)
+                {
+                    _notifier.Notify($"❌ [Moderator {effectiveModeratorId}] Cannot check WhatsApp - session requires authentication (PendingQR)");
+                    return BadRequest(new 
+                    { 
+                        error = "PendingQR",
+                        code = "AUTHENTICATION_REQUIRED",
+                        message = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل التحقق من الأرقام."
+                    });
+                }
+
                 _notifier.Notify($"🔍 [Moderator {effectiveModeratorId}] Checking if {phoneNumber} has WhatsApp...");
 
                 // Use the moderator-specific browser session

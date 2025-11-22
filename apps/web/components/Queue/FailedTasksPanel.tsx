@@ -92,7 +92,12 @@ export default function FailedTasksPanel() {
       try {
         setIsLoading(true);
         setError(null);
+        
+        // Get moderator ID: for moderators use their own ID, for users use assignedModerator
+        const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+        
         const response = await messageApiClient.getFailedTasks({
+          moderatorUserId: moderatorId,
           pageNumber: page,
           pageSize: pageSize,
         });
@@ -113,7 +118,7 @@ export default function FailedTasksPanel() {
     };
 
     loadFailedTasks();
-  }, [page, pageSize]);
+  }, [page, pageSize, user]);
 
   /**
    * Listen for data updates and refetch
@@ -124,7 +129,12 @@ export default function FailedTasksPanel() {
       try {
         setIsLoading(true);
         setError(null);
+        
+        // Get moderator ID: for moderators use their own ID, for users use assignedModerator
+        const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+        
         const response = await messageApiClient.getFailedTasks({
+          moderatorUserId: moderatorId,
           pageNumber: page,
           pageSize: pageSize,
         });

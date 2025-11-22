@@ -59,6 +59,14 @@ namespace Clinics.Infrastructure
                 .WithMany()
                 .HasForeignKey(s => s.QueueId)
                 .OnDelete(DeleteBehavior.Restrict);
+            
+            modelBuilder.Entity<MessageSession>()
+                .HasOne(s => s.Moderator)
+                .WithMany()
+                .HasForeignKey(s => s.ModeratorId)
+                .OnDelete(DeleteBehavior.Restrict);
+            
+            modelBuilder.Entity<MessageSession>().HasIndex(s => s.ModeratorId);
 
             modelBuilder.Entity<Queue>()
                 .HasOne(q => q.Moderator)
@@ -76,6 +84,8 @@ namespace Clinics.Infrastructure
 
             modelBuilder.Entity<Message>().HasIndex(m => new { m.Status, m.CreatedAt });
             modelBuilder.Entity<Message>().HasIndex(m => m.ModeratorId);
+            modelBuilder.Entity<Message>().HasIndex(m => m.SessionId);
+            modelBuilder.Entity<Message>().HasIndex(m => new { m.IsPaused, m.Status });
             modelBuilder.Entity<Message>()
                 .HasOne(m => m.Moderator)
                 .WithMany()

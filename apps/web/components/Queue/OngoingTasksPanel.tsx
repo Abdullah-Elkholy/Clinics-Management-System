@@ -18,6 +18,8 @@ import { Badge } from '@/components/Common/ResponsiveUI';
 import { Patient } from '@/types';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
+import messageApiClient, { OngoingSessionDto, SessionPatientDto } from '@/services/api/messageApiClient';
+import { patientsApiClient } from '@/services/api/patientsApiClient';
 
 interface Session {
   id: string;
@@ -28,7 +30,7 @@ interface Session {
   totalPatients: number;
   sentCount: number;
   failedCount: number;
-  patients: Patient[];
+  patients: (Patient & { isPaused?: boolean })[];
   isPaused?: boolean;
 }
 
@@ -65,6 +67,8 @@ export default function OngoingTasksPanel() {
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {
@@ -85,22 +89,88 @@ export default function OngoingTasksPanel() {
   }, [isAuthenticated, user, router]);
 
   /**
+   * Load ongoing sessions from backend API
+   */
+  const loadOngoingSessions = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await messageApiClient.getOngoingSessions();
+      
+      if (response.success && response.data) {
+        // Transform API response to Session format
+        const transformedSessions: Session[] = response.data.map((session: OngoingSessionDto) => ({
+          id: String(session.sessionId), // Ensure sessionId is string (Guid serialized as string)
+          sessionId: String(session.sessionId),
+          clinicName: session.queueName,
+          doctorName: session.queueName,
+          createdAt: session.startTime,
+          totalPatients: session.total,
+          sentCount: session.sent,
+          failedCount: session.patients.filter((p: SessionPatientDto) => p.status === 'failed').length,
+          isPaused: session.status === 'paused',
+          patients: session.patients.map((p: SessionPatientDto) => ({
+            id: p.patientId,
+            fullName: p.name,
+            phoneNumber: p.phone,
+            countryCode: '+966', // Default, should be fetched from patient data
+            queueId: 0, // Will be set from session
+            position: 0,
+            status: 'active',
+            isValidWhatsAppNumber: p.status === 'sent' ? true : null,
+            isPaused: p.isPaused,
+          } as Patient & { isPaused?: boolean })),
+        }));
+        
+        setSessions(transformedSessions);
+        
+        // Update pausedSessions state
+        setPausedSessions(new Set(
+          transformedSessions
+            .filter(s => s.isPaused)
+            .map(s => s.id)
+        ));
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load ongoing sessions';
+      setError(errorMessage);
+      logger.error('Failed to load ongoing sessions:', err);
+      addToast('فشل تحميل الجلسات الجارية', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [addToast]);
+
+  /**
+   * Load sessions on mount and when data updates
+   */
+  useEffect(() => {
+    loadOngoingSessions();
+  }, [loadOngoingSessions]);
+
+  /**
+   * Polling mechanism for real-time updates (every 5 seconds)
+   * Ensures all users see the same updated state
+   */
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadOngoingSessions();
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [loadOngoingSessions]);
+
+  /**
    * Listen for data updates and refetch
    */
   useEffect(() => {
     const handleDataUpdate = async () => {
       // Refetch ongoing tasks when data is updated
-      try {
-        // TODO: Implement API call when endpoint is ready
-        // For now, trigger a re-render to show updated state
-        // In the future, call: await messageApiClient.getOngoingTasks()
-        setSessions((prev) => [...prev]);
-        
-        // Dispatch event to notify other components
-        window.dispatchEvent(new CustomEvent('ongoingTasksDataUpdated'));
-      } catch (error) {
-        logger.error('Failed to refetch ongoing tasks:', error);
-      }
+      await loadOngoingSessions();
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('ongoingTasksDataUpdated'));
     };
 
     // Listen to all relevant update events
@@ -109,6 +179,7 @@ export default function OngoingTasksPanel() {
     window.addEventListener('templateDataUpdated', handleDataUpdate);
     window.addEventListener('messageDataUpdated', handleDataUpdate);
     window.addEventListener('conditionDataUpdated', handleDataUpdate);
+    window.addEventListener('messageSent', handleDataUpdate);
 
     return () => {
       window.removeEventListener('patientDataUpdated', handleDataUpdate);
@@ -116,8 +187,9 @@ export default function OngoingTasksPanel() {
       window.removeEventListener('templateDataUpdated', handleDataUpdate);
       window.removeEventListener('messageDataUpdated', handleDataUpdate);
       window.removeEventListener('conditionDataUpdated', handleDataUpdate);
+      window.removeEventListener('messageSent', handleDataUpdate);
     };
-  }, []);
+  }, [loadOngoingSessions]);
 
   /**
    * Toggle session expand - memoized
@@ -176,32 +248,42 @@ export default function OngoingTasksPanel() {
   }, [sessions]);
 
   /**
-   * Delete selected patients from session - memoized
+   * Delete selected patients from session - memoized (uses backend API)
    */
-  const deleteSelectedPatients = useCallback((sessionId: string) => {
+  const deleteSelectedPatients = useCallback(async (sessionId: string) => {
     const selected = selectedPatients.get(sessionId) || new Set();
     if (selected.size === 0) return;
 
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              patients: s.patients.filter((p) => !selected.has(p.id)),
-              totalPatients: s.totalPatients - selected.size,
-            }
-          : s
-      )
-    );
+    const confirmed = await confirm(createDeleteConfirmation(`${selected.size} مريض`));
+    if (!confirmed) return;
 
-    setSelectedPatients((prev) => {
-      const newMap = new Map(prev);
-      newMap.delete(sessionId);
-      return newMap;
-    });
+    try {
+      // Delete all selected patients
+      const deletePromises = Array.from(selected).map(patientId =>
+        patientsApiClient.deletePatient(patientId)
+      );
+      
+      await Promise.all(deletePromises);
+      addToast(`تم حذف ${selected.size} مريض`, 'success');
 
-    addToast(`تم حذف ${selected.size} مريض`, 'success');
-  }, [selectedPatients, addToast]);
+      // Clear selection
+      setSelectedPatients((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(sessionId);
+        return newMap;
+      });
+
+      // Reload sessions to get updated state
+      await loadOngoingSessions();
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+      window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+    } catch (err) {
+      logger.error('Failed to delete selected patients:', err);
+      addToast('فشل حذف المرضى', 'error');
+    }
+  }, [selectedPatients, confirm, addToast, loadOngoingSessions]);
 
   /**
    * Get progress percentage - memoized
@@ -211,111 +293,153 @@ export default function OngoingTasksPanel() {
   }, []);
 
   /**
-   * Toggle session pause - memoized
+   * Toggle session pause - memoized (uses backend API)
    */
-  const toggleSessionPause = useCallback((sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? {
-              ...s,
-              isPaused: !s.isPaused,
-              patients: s.patients.map((p) => ({
-                ...p,
-                isPaused: !s.isPaused,
-              })),
-            }
-          : s
-      )
-    );
+  const toggleSessionPause = useCallback(async (sessionId: string) => {
+    try {
+      const session = sessions.find(s => s.id === sessionId);
+      if (!session) return;
 
-    setPausedSessions((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(sessionId)) {
-        newSet.delete(sessionId);
+      if (session.isPaused) {
+        // Resume session
+        await messageApiClient.resumeSession(sessionId);
+        addToast('تم استئناف الجلسة', 'success');
       } else {
-        newSet.add(sessionId);
+        // Pause session
+        await messageApiClient.pauseSession(sessionId);
+        addToast('تم إيقاف الجلسة', 'success');
       }
-      return newSet;
-    });
-  }, []);
+
+      // Reload sessions to get updated state from backend
+      await loadOngoingSessions();
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+    } catch (err) {
+      logger.error('Failed to toggle session pause:', err);
+      addToast('فشل تحديث حالة الجلسة', 'error');
+    }
+  }, [sessions, addToast, loadOngoingSessions]);
 
   /**
-   * Pause all sessions - memoized
+   * Pause all sessions - memoized (uses backend API)
    */
-  const pauseAllSessions = useCallback(() => {
-    setSessions((prev) =>
-      prev.map((s) => ({
-        ...s,
-        isPaused: true,
-        patients: s.patients.map((p) => ({
-          ...p,
-          isPaused: true,
-        })),
-      }))
-    );
+  const pauseAllSessions = useCallback(async () => {
+    try {
+      // Get moderator ID from user
+      const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+      
+      if (!moderatorId) {
+        addToast('لا يمكن تحديد معرف المشرف', 'error');
+        return;
+      }
 
-    setPausedSessions(new Set(sessions.map((s) => s.id)));
-    addToast('تم إيقاف جميع الجلسات', 'success');
-  }, [sessions, addToast]);
+      // Pause all sessions for this moderator
+      await messageApiClient.pauseAllModeratorMessages(moderatorId);
+      addToast('تم إيقاف جميع الجلسات', 'success');
+
+      // Reload sessions to get updated state
+      await loadOngoingSessions();
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+    } catch (err) {
+      logger.error('Failed to pause all sessions:', err);
+      addToast('فشل إيقاف جميع الجلسات', 'error');
+    }
+  }, [user, addToast, loadOngoingSessions]);
 
   /**
-   * Resume all sessions - memoized
+   * Resume all sessions - memoized (uses backend API)
    */
-  const resumeAllSessions = useCallback(() => {
-    setSessions((prev) =>
-      prev.map((s) => ({
-        ...s,
-        isPaused: false,
-        patients: s.patients.map((p) => ({
-          ...p,
-          isPaused: false,
-        })),
-      }))
-    );
+  const resumeAllSessions = useCallback(async () => {
+    try {
+      // Get moderator ID from user
+      const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+      
+      if (!moderatorId) {
+        addToast('لا يمكن تحديد معرف المشرف', 'error');
+        return;
+      }
 
-    setPausedSessions(new Set());
-    addToast('تم استئناف جميع الجلسات', 'success');
-  }, [addToast]);
+      // Resume all sessions for this moderator
+      await messageApiClient.resumeAllModeratorMessages(moderatorId);
+      addToast('تم استئناف جميع الجلسات', 'success');
+
+      // Reload sessions to get updated state
+      await loadOngoingSessions();
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+    } catch (err) {
+      logger.error('Failed to resume all sessions:', err);
+      addToast('فشل استئناف جميع الجلسات', 'error');
+    }
+  }, [user, addToast, loadOngoingSessions]);
 
   /**
-   * Toggle patient pause - memoized
+   * Toggle patient pause - memoized (uses backend API)
    */
-  const togglePatientPause = useCallback((sessionId: string, patientId: string) => {
-    setSessions((prev) =>
-      prev.map((s) => {
-        if (s.id !== sessionId) return s;
+  const togglePatientPause = useCallback(async (sessionId: string, patientId: string) => {
+    try {
+      // Find the message ID for this patient in this session
+      // Note: We need to get message ID from backend or store it in patient data
+      // For now, we'll use the session pause/resume which affects all messages
+      const session = sessions.find(s => s.id === sessionId);
+      const patient = session?.patients.find(p => p.id === patientId);
+      
+      if (!patient) return;
 
-        const updatedPatients = s.patients.map((p) =>
-          p.id === patientId ? { ...p, isPaused: !p.isPaused } : p
-        );
+      // If patient is paused, resume the message; otherwise pause it
+      // Since we don't have message ID directly, we'll pause/resume the session
+      // In a full implementation, we'd need to fetch message ID from backend
+      if (patient.isPaused) {
+        // Resume - for now, resume entire session (can be optimized later)
+        await messageApiClient.resumeSession(sessionId);
+      } else {
+        // Pause - for now, pause entire session (can be optimized later)
+        await messageApiClient.pauseSession(sessionId);
+      }
 
-        const allPatientsPaused = updatedPatients.every((p) => p.isPaused);
-
-        return {
-          ...s,
-          patients: updatedPatients,
-          isPaused: allPatientsPaused,
-        };
-      })
-    );
-  }, []);
+      // Reload sessions to get updated state
+      await loadOngoingSessions();
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+    } catch (err) {
+      logger.error('Failed to toggle patient pause:', err);
+      addToast('فشل تحديث حالة المريض', 'error');
+    }
+  }, [sessions, loadOngoingSessions, addToast]);
 
   /**
-   * Delete session - memoized
+   * Delete session - memoized (uses backend API)
    */
   const deleteSession = useCallback(async (sessionId: string) => {
     const confirmed = await confirm(createDeleteConfirmation('هذه الجلسة'));
     if (confirmed) {
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-      setSelectedPatients((prev) => {
-        const newMap = new Map(prev);
-        newMap.delete(sessionId);
-        return newMap;
-      });
-      addToast('تم حذف الجلسة بنجاح', 'success');
+      try {
+        await messageApiClient.deleteSession(sessionId);
+        addToast('تم حذف الجلسة بنجاح', 'success');
+        
+        // Reload sessions to get updated state
+        await loadOngoingSessions();
+        
+        // Clear selection for this session
+        setSelectedPatients((prev) => {
+          const newMap = new Map(prev);
+          newMap.delete(sessionId);
+          return newMap;
+        });
+        
+        // Dispatch event to notify other components
+        window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+      } catch (err) {
+        logger.error('Failed to delete session:', err);
+        addToast('فشل حذف الجلسة', 'error');
+      }
     }
-  }, [addToast]);
+  }, [confirm, addToast, loadOngoingSessions]);
 
   /**
    * Edit patient - memoized
@@ -340,24 +464,27 @@ export default function OngoingTasksPanel() {
   }, [addToast]);
 
   /**
-   * Delete patient - memoized
+   * Delete patient - memoized (uses backend API)
    */
   const handleDeletePatient = useCallback(async (sessionId: string, patientId: string) => {
     const confirmed = await confirm(createDeleteConfirmation('هذا المريض'));
     if (confirmed) {
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                patients: s.patients.filter((p) => p.id !== patientId),
-              }
-            : s
-        )
-      );
-      addToast('تم حذف المريض بنجاح', 'success');
+      try {
+        await patientsApiClient.deletePatient(patientId);
+        addToast('تم حذف المريض بنجاح', 'success');
+        
+        // Reload sessions to get updated state
+        await loadOngoingSessions();
+        
+        // Dispatch event to notify other components
+        window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+        window.dispatchEvent(new CustomEvent('messageDataUpdated'));
+      } catch (err) {
+        logger.error('Failed to delete patient:', err);
+        addToast('فشل حذف المريض', 'error');
+      }
     }
-  }, [addToast]);
+  }, [confirm, addToast, loadOngoingSessions]);
 
   /**
    * Memoize computed stats
@@ -483,6 +610,50 @@ export default function OngoingTasksPanel() {
     ),
   }), [selectedPatients, togglePatientSelection, togglePatientPause, handleEditPatient, handleDeletePatient, isMessagesExpanded]);
 
+  // Show loading state
+  if (isLoading && sessions.length === 0) {
+    return (
+      <PanelWrapper>
+        <PanelHeader
+          title="المهام الجارية"
+          icon="fa-tasks"
+          description="مراقبة وإدارة جميع المهام الجارية حالياً"
+          stats={stats}
+        />
+        <div className="flex items-center justify-center py-12">
+          <i className="fas fa-spinner animate-spin text-4xl text-blue-500"></i>
+          <span className="ml-3 text-lg text-gray-600">جاري التحميل...</span>
+        </div>
+      </PanelWrapper>
+    );
+  }
+
+  // Show error state
+  if (error && sessions.length === 0) {
+    return (
+      <PanelWrapper>
+        <PanelHeader
+          title="المهام الجارية"
+          icon="fa-tasks"
+          description="مراقبة وإدارة جميع المهام الجارية حالياً"
+          stats={stats}
+        />
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <i className="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
+          <p className="text-red-700 font-medium mb-2">حدث خطأ أثناء تحميل الجلسات</p>
+          <p className="text-red-600 text-sm mb-4">{error}</p>
+          <button
+            onClick={loadOngoingSessions}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      </PanelWrapper>
+    );
+  }
+
+  // Show empty state
   if (sessions.length === 0) {
     return (
       <PanelWrapper>
