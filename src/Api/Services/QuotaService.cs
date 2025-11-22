@@ -33,8 +33,8 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         if (user == null)
             throw new InvalidOperationException($"User with ID {userId} not found");
 
-        // IMPORTANT: Check if user is a moderator FIRST, before checking ModeratorId
-        // This ensures moderators always use their own ID, even if ModeratorId is incorrectly set
+        // Check if user is a moderator first
+        // Moderators use their own ID for quota tracking
         if (user.Role == "moderator")
             return user.Id;
 
@@ -356,6 +356,10 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         
         if (moderator == null || moderator.Role != "moderator")
             throw new InvalidOperationException("Invalid moderator");
+
+        // Prevent assigning moderators or admins to other moderators
+        if (user.Role != "user")
+            throw new InvalidOperationException("Only users with 'user' role can be assigned to a moderator");
 
         user.ModeratorId = moderatorId;
         await _context.SaveChangesAsync();

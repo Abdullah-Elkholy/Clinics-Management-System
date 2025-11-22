@@ -242,6 +242,10 @@ namespace Clinics.Api.Controllers
                 if (desiredRoleName == "user" && !req.ModeratorId.HasValue)
                     return BadRequest(new { success = false, error = "ModeratorId required for user role" });
 
+                // Moderators and admins should not have ModeratorId set
+                if (desiredRoleName != "user" && req.ModeratorId.HasValue)
+                    return BadRequest(new { success = false, error = "ModeratorId must not be set for moderator or admin roles" });
+
                 // Validate moderator exists if specified
                 if (req.ModeratorId.HasValue)
                 {
