@@ -236,12 +236,12 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
       
       const id = `${now}-${++toastCounterRef.current}`;
-      const toast: Toast = { id, message, type, debugData };
-      
+    const toast: Toast = { id, message, type, debugData };
+
       // Auto-remove toast after 3 seconds
-      setTimeout(() => {
-        removeToast(id);
-      }, 3000);
+    setTimeout(() => {
+      removeToast(id);
+    }, 3000);
       
       return [...prev, toast];
     });
@@ -320,9 +320,9 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (pendingPanelRef.current === panel) {
         setCurrentPanel(panel);
         pendingPanelRef.current = null;
-        setIsTransitioning(false);
+      setIsTransitioning(false);
         isNavigatingProgrammatically.current = false;
-        isUpdatingFromUrl.current = false;
+      isUpdatingFromUrl.current = false;
       }
     }, 1000);
     
@@ -403,9 +403,9 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (pendingPanelRef.current === targetPanel) {
         setCurrentPanel(targetPanel);
         pendingPanelRef.current = null;
-        setIsTransitioning(false);
+      setIsTransitioning(false);
         isNavigatingProgrammatically.current = false;
-        isUpdatingFromUrl.current = false;
+      isUpdatingFromUrl.current = false;
       }
     }, 1000);
   }, [router, selectedQueueId, pathname, currentPanel, getPathForPanel]);

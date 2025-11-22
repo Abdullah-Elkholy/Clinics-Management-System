@@ -582,9 +582,9 @@ namespace ClinicsManagementService.Controllers
                 try
                 {
                     currentUrl = await session.GetUrlAsync();
+                    // Only check for blank pages, not URL content (WhatsApp may show base URL even when on chat)
                     isHealthy = !string.IsNullOrWhiteSpace(currentUrl) 
-                        && currentUrl != "about:blank" 
-                        && currentUrl.Contains("web.whatsapp.com");
+                        && currentUrl != "about:blank";
                     
                     // Check authentication status by looking for ChatUI selectors
                     foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
@@ -666,9 +666,9 @@ namespace ClinicsManagementService.Controllers
                             try
                             {
                                 currentUrl = await session.GetUrlAsync();
+                                // Only check for blank pages, not URL content (WhatsApp may show base URL even when on chat)
                                 isHealthy = !string.IsNullOrWhiteSpace(currentUrl) 
-                                    && currentUrl != "about:blank" 
-                                    && currentUrl.Contains("web.whatsapp.com");
+                                    && currentUrl != "about:blank";
                                 
                                 // Check authentication status
                                 foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)

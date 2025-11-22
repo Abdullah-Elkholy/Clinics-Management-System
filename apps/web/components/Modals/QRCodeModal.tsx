@@ -1,36 +1,45 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWhatsAppSession } from '@/contexts/WhatsAppSessionContext';
 import { whatsappApiClient } from '@/services/api/whatsappApiClient';
 import Modal from './Modal';
 
 /**
  * QRCodeModal - Displays QR code for WhatsApp authentication
+ * Auto-refreshes QR code every 10 seconds
+ * Auto-closes when authenticated
  */
 export default function QRCodeModal() {
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
   const { user } = useAuth();
+  const { checkAuthentication } = useWhatsAppSession();
   const isOpen = openModals.has('qrCode');
 
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const authCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const moderatorId = user?.assignedModerator 
     ? parseInt(user.assignedModerator) 
     : (user?.role === 'moderator' ? user.id : null);
 
-  const loadQRCode = useCallback(async () => {
+  const loadQRCode = useCallback(async (silent = false) => {
     if (!moderatorId) {
       setError('لا يوجد مشرف مخصص');
       return;
     }
 
-    setIsLoading(true);
+    if (!silent) {
+      setIsLoading(true);
+    }
     setError(null);
     setQrCodeImage(null);
 
@@ -41,26 +50,80 @@ export default function QRCodeModal() {
         setQrCodeImage(`data:${response.data.format};base64,${response.data.qrCodeImage}`);
       } else {
         setError(response.error || 'فشل تحميل رمز QR');
-        addToast(response.error || 'فشل تحميل رمز QR', 'error');
+        if (!silent) {
+          addToast(response.error || 'فشل تحميل رمز QR', 'error');
+        }
       }
     } catch (err: any) {
       const errorMsg = err?.message || 'فشل تحميل رمز QR';
       setError(errorMsg);
-      addToast(errorMsg, 'error');
+      if (!silent) {
+        addToast(errorMsg, 'error');
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, [moderatorId, addToast]);
 
+  // Check authentication status periodically
+  const checkAuthStatus = useCallback(async () => {
+    if (!moderatorId || !isOpen) return;
+
+    try {
+      const result = await checkAuthentication();
+      if (result.isSuccess === true || result.state === 'Success') {
+        // Authenticated! Close modal and show success
+        addToast('تم المصادقة بنجاح!', 'success');
+        closeModal('qrCode');
+      }
+    } catch (err) {
+      // Silently fail - don't show error for auth checks
+      console.error('Auth check error:', err);
+    }
+  }, [moderatorId, isOpen, checkAuthentication, addToast, closeModal]);
+
   useEffect(() => {
     if (isOpen) {
+      // Initial load
       loadQRCode();
+
+      // Auto-refresh QR code every 10 seconds
+      refreshIntervalRef.current = setInterval(() => {
+        loadQRCode(true); // Silent refresh
+      }, 10000); // 10 seconds
+
+      // Check authentication status every 3 seconds
+      authCheckIntervalRef.current = setInterval(() => {
+        checkAuthStatus();
+      }, 3000); // 3 seconds
     } else {
       // Reset state when modal closes
       setQrCodeImage(null);
       setError(null);
+      
+      // Clear intervals
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+      if (authCheckIntervalRef.current) {
+        clearInterval(authCheckIntervalRef.current);
+        authCheckIntervalRef.current = null;
+      }
     }
-  }, [isOpen, loadQRCode]);
+
+    // Cleanup on unmount
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+      if (authCheckIntervalRef.current) {
+        clearInterval(authCheckIntervalRef.current);
+      }
+    };
+  }, [isOpen, loadQRCode, checkAuthStatus]);
 
   const handleClose = useCallback(() => {
     closeModal('qrCode');
