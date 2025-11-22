@@ -27,6 +27,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const toastCounterRef = React.useRef(0);
   const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const navigationTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const pendingPanelRef = React.useRef<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | null>(null);
 
   // Restore selectedQueueId from localStorage on mount
   useEffect(() => {
@@ -51,11 +52,77 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const lastPathnameRef = React.useRef<string | null>(null);
   const isNavigatingProgrammatically = React.useRef(false);
   
+  // Helper function to get path for a panel (defined before useEffect that uses it)
+  const getPathForPanel = React.useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed'): string => {
+    switch (panel) {
+      case 'messages':
+        return '/messages';
+      case 'management':
+        return '/management';
+      case 'welcome':
+        return '/queues/dashboard';
+      case 'ongoing':
+        return '/queues/ongoing';
+      case 'failed':
+        return '/queues/failed';
+      case 'completed':
+        return '/queues/completed';
+      default:
+        return '/home';
+    }
+  }, []);
+  
   useEffect(() => {
     // Skip if already updating or pathname hasn't changed
     // Also skip if we're in the middle of programmatic navigation
-    if (!pathname || isUpdatingFromUrl.current || isNavigatingProgrammatically.current || lastPathnameRef.current === pathname) {
+    if (!pathname || lastPathnameRef.current === pathname) {
+      // If we have a pending panel and URL matches, activate it
+      if (pendingPanelRef.current && !isUpdatingFromUrl.current && !isNavigatingProgrammatically.current) {
+        const targetPath = getPathForPanel(pendingPanelRef.current);
+        if (pathname === targetPath) {
+          setCurrentPanel(pendingPanelRef.current);
+          pendingPanelRef.current = null;
+          setIsTransitioning(false);
+        }
+      }
       return;
+    }
+    
+    // If we're navigating programmatically, let the navigation handler manage state
+    if (isNavigatingProgrammatically.current) {
+      lastPathnameRef.current = pathname;
+      // Check if URL matches pending panel
+      if (pendingPanelRef.current) {
+        const targetPath = getPathForPanel(pendingPanelRef.current);
+        if (pathname === targetPath) {
+          // URL matches pending panel - activate it
+          setCurrentPanel(pendingPanelRef.current);
+          pendingPanelRef.current = null;
+          setIsTransitioning(false);
+          // Reset flags
+          isNavigatingProgrammatically.current = false;
+          isUpdatingFromUrl.current = false;
+        } else {
+          // URL doesn't match pending panel - this might be browser navigation
+          // Clear pending panel and let normal URL sync handle it
+          pendingPanelRef.current = null;
+          isNavigatingProgrammatically.current = false;
+        }
+      } else {
+        // No pending panel but navigating programmatically - might be browser navigation
+        // Reset flag and let normal URL sync handle it
+        isNavigatingProgrammatically.current = false;
+      }
+      // If we still have the flag set, return early
+      if (isNavigatingProgrammatically.current) {
+        return;
+      }
+    }
+    
+    // Browser navigation (back/forward) or direct URL access
+    // Clear any pending panel since this is not programmatic navigation
+    if (pendingPanelRef.current) {
+      pendingPanelRef.current = null;
     }
     
     lastPathnameRef.current = pathname;
@@ -140,17 +207,33 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         clearTimeout(transitionTimeoutRef.current);
       }
     };
-  }, [pathname]); // Only depend on pathname to prevent loops
+  }, [pathname, selectedQueueId, getPathForPanel]); // Only depend on pathname to prevent loops
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => {
-    const id = `${Date.now()}-${++toastCounterRef.current}`;
-    const toast: Toast = { id, message, type, debugData };
-    setToasts((prev) => [...prev, toast]);
-
-    setTimeout(() => {
-      removeToast(id);
-    }, 3000);
-  }, []);
+    setToasts((prev) => {
+      const now = Date.now();
+      // Prevent duplicate toasts with the same message and type within 1 second
+      const recentDuplicate = prev.find(
+        (t) => t.message === message && t.type === type && 
+        (now - parseInt(t.id.split('-')[0])) < 1000
+      );
+      
+      if (recentDuplicate) {
+        // Toast already exists, don't add duplicate
+        return prev;
+      }
+      
+      const id = `${now}-${++toastCounterRef.current}`;
+      const toast: Toast = { id, message, type, debugData };
+      
+      // Auto-remove toast after 3 seconds
+      setTimeout(() => {
+        removeToast(id);
+      }, 3000);
+      
+      return [...prev, toast];
+    });
+  }, [removeToast]);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -172,25 +255,8 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     const panelsWithoutQueue = ['messages', 'management'];
     const shouldClearQueue = panelsWithoutQueue.includes(panel) && selectedQueueId !== null;
     
-    // Calculate target path first to check if URL needs updating
-    // New route structure: /home, /messages, /management, /queues/{dashboard|ongoing|failed|completed}
-    let targetPath = '/home';
-    if (panel === 'messages') {
-      targetPath = '/messages';
-    } else if (panel === 'management') {
-      targetPath = '/management';
-    } else if (panel === 'welcome') {
-      // Welcome panel always navigates to /queues/dashboard
-      targetPath = '/queues/dashboard';
-    } else if (panel === 'ongoing') {
-      targetPath = '/queues/ongoing';
-    } else if (panel === 'failed') {
-      targetPath = '/queues/failed';
-    } else if (panel === 'completed') {
-      targetPath = '/queues/completed';
-    } else {
-      targetPath = '/home';
-    }
+    // Calculate target path
+    const targetPath = getPathForPanel(panel);
     
     // Prevent updates only if both panel state AND URL are already at target AND queue state is correct
     // This ensures URL always stays in sync with panel state
@@ -202,14 +268,20 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (transitionTimeoutRef.current) {
       clearTimeout(transitionTimeoutRef.current);
     }
+    if (navigationTimeoutRef.current) {
+      clearTimeout(navigationTimeoutRef.current);
+    }
     
     // Mark that we're about to navigate - prevent URL sync effect from running
-    lastPathnameRef.current = targetPath;
+    lastPathnameRef.current = pathname; // Keep current pathname to prevent immediate sync
     isUpdatingFromUrl.current = true;
     isNavigatingProgrammatically.current = true;
     
-    // Show loading during navigation
+    // Show loading during navigation - this prevents panel from rendering before URL is ready
     setIsTransitioning(true);
+    
+    // Store pending panel - will be activated when URL matches
+    pendingPanelRef.current = panel;
     
     // Clear queue selection if needed (for panels that don't use queues)
     if (shouldClearQueue) {
@@ -219,53 +291,58 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       });
     }
     
-    // Update panel state immediately (only if different)
-    if (currentPanel !== panel) {
-      setCurrentPanel(panel);
-    }
-    
-    // Navigate to target path if needed
+    // Navigate to target path FIRST - don't update panel state yet
     if (pathname !== targetPath) {
       router.push(targetPath);
-    }
-    
-    // Clear any existing navigation timeout
-    if (navigationTimeoutRef.current) {
-      clearTimeout(navigationTimeoutRef.current);
-    }
-    
-    // Hide loading after navigation completes and component renders
-    navigationTimeoutRef.current = setTimeout(() => {
+    } else {
+      // URL already matches - activate panel immediately
+      setCurrentPanel(panel);
+      pendingPanelRef.current = null;
       setIsTransitioning(false);
-    }, 400);
-    
-    // Reset flags after a longer delay to ensure URL has propagated
-    transitionTimeoutRef.current = setTimeout(() => {
-      isUpdatingFromUrl.current = false;
       isNavigatingProgrammatically.current = false;
-    }, 200);
-  }, [router, selectedQueueId, currentPanel, pathname]);
+      isUpdatingFromUrl.current = false;
+    }
+    
+    // Fallback timeout - if URL doesn't update within 1 second, activate panel anyway
+    navigationTimeoutRef.current = setTimeout(() => {
+      if (pendingPanelRef.current === panel) {
+        setCurrentPanel(panel);
+        pendingPanelRef.current = null;
+        setIsTransitioning(false);
+        isNavigatingProgrammatically.current = false;
+        isUpdatingFromUrl.current = false;
+      }
+    }, 1000);
+    
+    // Reset flags after URL sync completes (handled by URL sync effect)
+  }, [router, selectedQueueId, currentPanel, pathname, getPathForPanel]);
 
   // Enhanced setSelectedQueueId that updates URL
   const handleSetSelectedQueueId = useCallback((id: string | null) => {
     // Calculate target path based on current panel and new queue selection
     let targetPath = '/home';
+    let targetPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' = currentPanel;
     
     if (id !== null) {
       // Queue selected - determine which queue panel to show based on current panel
       if (currentPanel === 'ongoing') {
         targetPath = '/queues/ongoing';
+        targetPanel = 'ongoing';
       } else if (currentPanel === 'failed') {
         targetPath = '/queues/failed';
+        targetPanel = 'failed';
       } else if (currentPanel === 'completed') {
         targetPath = '/queues/completed';
+        targetPanel = 'completed';
       } else {
         // Default to dashboard for queue
         targetPath = '/queues/dashboard';
+        targetPanel = 'welcome';
       }
     } else {
       // No queue selected - go to home
       targetPath = '/home';
+      targetPanel = 'welcome';
     }
     
     // Prevent updates only if both state AND URL are already at target
@@ -277,54 +354,49 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (transitionTimeoutRef.current) {
       clearTimeout(transitionTimeoutRef.current);
     }
+    if (navigationTimeoutRef.current) {
+      clearTimeout(navigationTimeoutRef.current);
+    }
     
     // Mark that we're about to navigate - prevent URL sync effect from running
-    lastPathnameRef.current = targetPath;
+    lastPathnameRef.current = pathname; // Keep current pathname to prevent immediate sync
     isUpdatingFromUrl.current = true;
     isNavigatingProgrammatically.current = true;
     
     // Show loading during queue selection navigation
     setIsTransitioning(true);
     
-    // When selecting a queue, also set panel to 'welcome' (queue dashboard) if not already on a queue panel
-    if (id !== null) {
-      const queuePanels = ['welcome', 'ongoing', 'failed', 'completed'];
-      if (!queuePanels.includes(currentPanel)) {
-        setCurrentPanel('welcome');
-      }
-    } else {
-      // Clearing queue selection - return to welcome home panel
-      if (currentPanel !== 'messages' && currentPanel !== 'management') {
-        setCurrentPanel('welcome');
-      }
-    }
+    // Store pending panel - will be activated when URL matches
+    pendingPanelRef.current = targetPanel;
     
-    // Update state immediately (only if different)
+    // Update queue selection state immediately
     if (selectedQueueId !== id) {
       setSelectedQueueId(id);
     }
     
-    // Navigate to target path if needed
+    // Navigate to target path FIRST - don't update panel state yet
     if (pathname !== targetPath) {
       router.push(targetPath);
-    }
-    
-    // Clear any existing navigation timeout
-    if (navigationTimeoutRef.current) {
-      clearTimeout(navigationTimeoutRef.current);
-    }
-    
-    // Hide loading after navigation completes
-    navigationTimeoutRef.current = setTimeout(() => {
+    } else {
+      // URL already matches - activate panel immediately
+      setCurrentPanel(targetPanel);
+      pendingPanelRef.current = null;
       setIsTransitioning(false);
-    }, 400);
-    
-    // Reset flags after a longer delay to ensure URL has propagated
-    transitionTimeoutRef.current = setTimeout(() => {
-      isUpdatingFromUrl.current = false;
       isNavigatingProgrammatically.current = false;
-    }, 200);
-  }, [router, selectedQueueId, pathname, currentPanel]);
+      isUpdatingFromUrl.current = false;
+    }
+    
+    // Fallback timeout - if URL doesn't update within 1 second, activate panel anyway
+    navigationTimeoutRef.current = setTimeout(() => {
+      if (pendingPanelRef.current === targetPanel) {
+        setCurrentPanel(targetPanel);
+        pendingPanelRef.current = null;
+        setIsTransitioning(false);
+        isNavigatingProgrammatically.current = false;
+        isUpdatingFromUrl.current = false;
+      }
+    }, 1000);
+  }, [router, selectedQueueId, pathname, currentPanel, getPathForPanel]);
 
   // Cleanup transition timeout on unmount
   useEffect(() => {

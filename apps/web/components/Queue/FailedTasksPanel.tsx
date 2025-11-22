@@ -18,6 +18,7 @@ import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 interface Session {
   id: string;
@@ -592,7 +593,7 @@ export default function FailedTasksPanel() {
                       </div>
                       <div className="text-sm text-gray-600 mt-2">
                         <span>جلسة: <strong>{session.sessionId}</strong></span>
-                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt}</strong></span>
+                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
                       </div>
                     </div>
                   </div>

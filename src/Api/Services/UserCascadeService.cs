@@ -102,7 +102,7 @@ public class UserCascadeService : IUserCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error soft-deleting user {UserId}", userId);
-            return (false, "An error occurred while deleting the user");
+            return (false, "حدث خطأ أثناء حذف المستخدم");
         }
     }
 
@@ -115,19 +115,19 @@ public class UserCascadeService : IUserCascadeService
 
             if (user == null)
             {
-                return (false, "Deleted user not found");
+                return (false, "المستخدم المحذوف غير موجود");
             }
 
             // Check if within 30-day window
             if (!user.DeletedAt.HasValue)
             {
-                return (false, "Deletion timestamp missing");
+                return (false, "طابع زمني للحذف مفقود");
             }
 
             var daysDeleted = (DateTime.UtcNow - user.DeletedAt.Value).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
-                return (false, "restore_window_expired");
+                return (false, "انتهت فترة الاستعادة");
             }
 
             // Capture the original DeletedAt timestamp before clearing it (for cascade window check)
@@ -183,7 +183,7 @@ public class UserCascadeService : IUserCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error restoring user {UserId}", userId);
-            return (false, "An error occurred while restoring the user");
+            return (false, "حدث خطأ أثناء استعادة المستخدم");
         }
     }
 

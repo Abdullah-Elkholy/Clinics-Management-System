@@ -83,7 +83,7 @@ public class PatientCascadeService : IPatientCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error soft-deleting patient {PatientId}", patientId);
-            return (false, "An error occurred while deleting the patient");
+            return (false, "حدث خطأ أثناء حذف المريض");
         }
     }
 
@@ -96,19 +96,19 @@ public class PatientCascadeService : IPatientCascadeService
 
             if (patient == null)
             {
-                return (false, "Deleted patient not found");
+                return (false, "المريض المحذوف غير موجود");
             }
 
             // Check if within 30-day window
             if (!patient.DeletedAt.HasValue)
             {
-                return (false, "Deletion timestamp missing");
+                return (false, "طابع زمني للحذف مفقود");
             }
 
             var daysDeleted = (DateTime.UtcNow - patient.DeletedAt.Value).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
-                return (false, "restore_window_expired");
+                return (false, "انتهت فترة الاستعادة");
             }
 
             // Capture operation snapshot timestamp to ensure consistency
@@ -134,7 +134,7 @@ public class PatientCascadeService : IPatientCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error restoring patient {PatientId}", patientId);
-            return (false, "An error occurred while restoring the patient");
+            return (false, "حدث خطأ أثناء استعادة المريض");
         }
     }
 

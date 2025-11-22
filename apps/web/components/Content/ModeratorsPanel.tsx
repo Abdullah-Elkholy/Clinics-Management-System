@@ -10,6 +10,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import WhatsAppAuthTabContent from '@/components/Content/WhatsAppAuthTabContent';
+import { formatLocalDate } from '@/utils/dateTimeUtils';
 
 interface ModeratorsState {
   moderators: ModeratorDetails[];
@@ -96,14 +97,14 @@ export default function ModeratorsPanel() {
         setState((prev) => ({
           ...prev,
           loading: false,
-          error: response.error || 'Failed to fetch moderators',
+          error: response.error || 'فشل جلب المشرفين',
         }));
       }
     } catch (error) {
       setState((prev) => ({
         ...prev,
         loading: false,
-        error: 'Failed to fetch moderators',
+        error: 'فشل جلب المشرفين',
       }));
     }
   }, []);
@@ -112,7 +113,7 @@ export default function ModeratorsPanel() {
     if (!formData.firstName || !formData.lastName || !formData.username) {
       setState((prev) => ({
         ...prev,
-        error: 'Please fill in all required fields',
+          error: 'يرجى ملء جميع الحقول المطلوبة',
       }));
       return;
     }
@@ -136,13 +137,13 @@ export default function ModeratorsPanel() {
       } else {
         setState((prev) => ({
           ...prev,
-          error: response.error || 'Failed to create moderator',
+          error: response.error || 'فشل إنشاء المشرف',
         }));
       }
     } catch (error) {
       setState((prev) => ({
         ...prev,
-        error: 'Failed to create moderator',
+        error: 'فشل إنشاء المشرف',
       }));
     }
   }, [formData, fetchModerators]);
@@ -166,13 +167,13 @@ export default function ModeratorsPanel() {
       } else {
         setState((prev) => ({
           ...prev,
-          error: response.error || 'Failed to update moderator',
+          error: response.error || 'فشل تحديث المشرف',
         }));
       }
     } catch (error) {
       setState((prev) => ({
         ...prev,
-        error: 'Failed to update moderator',
+        error: 'فشل تحديث المشرف',
       }));
     }
   }, [state.selectedModerator, editFormData, fetchModerators]);
@@ -196,13 +197,13 @@ export default function ModeratorsPanel() {
       } else {
         setState((prev) => ({
           ...prev,
-          error: response.error || 'Failed to delete moderator',
+          error: response.error || 'فشل حذف المشرف',
         }));
       }
     } catch (error) {
       setState((prev) => ({
         ...prev,
-        error: 'Failed to delete moderator',
+        error: 'فشل حذف المشرف',
       }));
     }
   }, [fetchModerators, confirm]);
@@ -211,7 +212,7 @@ export default function ModeratorsPanel() {
     if (!state.selectedModerator || !userFormData.firstName || !userFormData.lastName || !userFormData.username) {
       setState((prev) => ({
         ...prev,
-        error: 'Please fill in all required fields',
+          error: 'يرجى ملء جميع الحقول المطلوبة',
       }));
       return;
     }
@@ -234,13 +235,13 @@ export default function ModeratorsPanel() {
       } else {
         setState((prev) => ({
           ...prev,
-          error: response.error || 'Failed to add user',
+          error: response.error || 'فشل إضافة المستخدم',
         }));
       }
     } catch (error) {
       setState((prev) => ({
         ...prev,
-        error: 'Failed to add user',
+        error: 'فشل إضافة المستخدم',
       }));
     }
   }, [state.selectedModerator, userFormData, fetchModerators]);
@@ -457,13 +458,13 @@ export default function ModeratorsPanel() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-600">تاريخ الإنشاء:</span>
                       <span className="text-sm font-medium text-gray-900">
-                        {new Date(moderator.createdAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        {moderator.createdAt ? formatLocalDate(moderator.createdAt) : 'غير محدد'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-600">آخر تحديث:</span>
                       <span className="text-sm font-medium text-gray-900">
-                        {new Date(moderator.updatedAt).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        {moderator.updatedAt ? formatLocalDate(moderator.updatedAt) : 'غير محدد'}
                       </span>
                     </div>
                   </div>
@@ -562,7 +563,7 @@ export default function ModeratorsPanel() {
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">الرسائل</span>
                       <span className="text-sm font-semibold">
-                        {moderator.quota.messagesQuota.used} / {moderator.quota.messagesQuota.limit === -1 ? 'غير محدود' : moderator.quota.messagesQuota.limit}
+                        {moderator.quota.messagesQuota.used} / {moderator.quota.messagesQuota.limit === -1 ? 'غير محدود' : moderator.quota.messagesQuota.limit.toLocaleString('ar-SA')}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
@@ -584,7 +585,7 @@ export default function ModeratorsPanel() {
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">الطوابير</span>
                       <span className="text-sm font-semibold">
-                        {moderator.quota.queuesQuota.used} / {moderator.quota.queuesQuota.limit === -1 ? 'غير محدود' : moderator.quota.queuesQuota.limit}
+                        {moderator.quota.queuesQuota.used} / {moderator.quota.queuesQuota.limit === -1 ? 'غير محدود' : moderator.quota.queuesQuota.limit.toLocaleString('ar-SA')}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">

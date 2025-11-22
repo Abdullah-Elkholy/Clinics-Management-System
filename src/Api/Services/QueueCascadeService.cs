@@ -123,7 +123,7 @@ public class QueueCascadeService : IQueueCascadeService
         {
             await transaction.RollbackAsync();
             _logger.LogError(ex, "Error soft-deleting queue {QueueId}", queueId);
-            return (false, "An error occurred while deleting the queue");
+            return (false, "حدث خطأ أثناء حذف الطابور");
         }
     }
 
@@ -136,20 +136,20 @@ public class QueueCascadeService : IQueueCascadeService
 
             if (queue == null)
             {
-                return (false, "Deleted queue not found");
+                return (false, "الطابور المحذوف غير موجود");
             }
 
             // Check if within 30-day window
             if (!queue.DeletedAt.HasValue)
             {
-                return (false, "Deletion timestamp missing");
+                return (false, "طابع زمني للحذف مفقود");
             }
 
             var deletedAtValue = queue.DeletedAt.Value;
             var daysDeleted = (DateTime.UtcNow - deletedAtValue).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
-                return (false, "restore_window_expired");
+                return (false, "انتهت فترة الاستعادة");
             }
 
             // Capture operation snapshot timestamp to ensure consistency across all transaction operations
@@ -178,7 +178,7 @@ public class QueueCascadeService : IQueueCascadeService
                         _logger.LogWarning(
                             "Restore blocked for queue {QueueId}: would exceed quota. Active: {Active}, Limit: {Limit}",
                             queueId, activeQueuesCount, quota.QueuesQuota);
-                        return (false, "quota_exceeded");
+                        return (false, "تم تجاوز الحصة");
                     }
                 }
 
@@ -269,7 +269,7 @@ public class QueueCascadeService : IQueueCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error restoring queue {QueueId}", queueId);
-            return (false, "An error occurred while restoring the queue");
+            return (false, "حدث خطأ أثناء استعادة الطابور");
         }
     }
 

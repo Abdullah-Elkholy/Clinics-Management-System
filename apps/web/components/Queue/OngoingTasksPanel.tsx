@@ -20,6 +20,7 @@ import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
 import messageApiClient, { OngoingSessionDto, SessionPatientDto } from '@/services/api/messageApiClient';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 interface Session {
   id: string;
@@ -751,7 +752,7 @@ export default function OngoingTasksPanel() {
                       </div>
                       <div className="text-sm text-gray-600 mt-2">
                         <span>جلسة: <strong>{session.sessionId}</strong></span>
-                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt}</strong></span>
+                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
                       </div>
                     </div>
                   </div>

@@ -35,13 +35,21 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setIsLoading(true);
-    if (resolveConfirmRef.current) {
-      resolveConfirmRef.current(true);
-      resolveConfirmRef.current = null;
+    try {
+      // Resolve the promise first to allow async operations to proceed
+      if (resolveConfirmRef.current) {
+        resolveConfirmRef.current(true);
+        resolveConfirmRef.current = null;
+      }
+      // Keep dialog open briefly to show loading state, then close
+      // This prevents flickering if the async operation completes quickly
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } finally {
+      setIsOpen(false);
+      setIsLoading(false);
     }
-    setIsOpen(false);
   };
 
   const handleCancel = () => {

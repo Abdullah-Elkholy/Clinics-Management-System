@@ -195,6 +195,7 @@ namespace Clinics.Api.Controllers
                 {
                     await transaction.RollbackAsync();
                     _logger.LogError(ex, "Error queueing messages");
+                    return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إضافة الرسائل إلى قائمة الانتظار", message = "حدث خطأ أثناء إضافة الرسائل إلى قائمة الانتظار." });
                     throw;
                 }
             }
@@ -256,7 +257,7 @@ namespace Clinics.Api.Controllers
                     return NotFound(new { success = false, error = "Message not found" });
 
                 if (message.Status != "queued" && message.Status != "sending")
-                    return BadRequest(new { success = false, error = "Can only pause queued or sending messages" });
+                    return BadRequest(new { success = false, error = "يمكن إيقاف الرسائل في حالة الانتظار أو الإرسال فقط", message = "يمكن إيقاف الرسائل في حالة الانتظار أو الإرسال فقط." });
 
                 message.IsPaused = true;
                 message.PausedAt = DateTime.UtcNow;

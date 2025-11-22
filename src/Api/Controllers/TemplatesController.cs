@@ -78,7 +78,7 @@ namespace Clinics.Api.Controllers
                     // Verify moderator owns this queue
                     var queue = await _db.Queues.FindAsync(queueId.Value);
                     if (queue == null || queue.IsDeleted)
-                        return NotFound(new { message = "Queue not found" });
+                        return NotFound(new { message = "الطابور غير موجود" });
 
                     // Check ownership
                     if (!isAdmin)
@@ -140,7 +140,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching templates");
-                return StatusCode(500, new { message = "Error fetching templates" });
+                return StatusCode(500, new { message = "حدث خطأ أثناء جلب القوالب" });
             }
         }
 
@@ -222,7 +222,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching template {TemplateId}", id);
-                return StatusCode(500, new { message = "Error fetching template" });
+                return StatusCode(500, new { message = "حدث خطأ أثناء جلب القالب" });
             }
         }
 

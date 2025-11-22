@@ -65,7 +65,7 @@ namespace Clinics.Api.Controllers
                 if (!int.TryParse(userIdClaim.Value, out var currentUserId))
                 {
                     _logger.LogError($"Invalid user ID format: {userIdClaim.Value}");
-                    return BadRequest(new { error = "Invalid user ID format" });
+                    return BadRequest(new { error = "تنسيق معرف المستخدم غير صالح", message = "تنسيق معرف المستخدم غير صالح." });
                 }
 
                 var currentUser = await _db.Users
@@ -128,7 +128,7 @@ namespace Clinics.Api.Controllers
                 _logger.LogError($"Exception message: {ex.Message}");
                 _logger.LogError($"Inner exception: {ex.InnerException?.Message}");
                 _logger.LogError($"Stack trace: {ex.StackTrace}");
-                return StatusCode(500, new { success = false, error = "Error fetching users", details = ex.Message, innerException = ex.InnerException?.Message });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب المستخدمين", message = "حدث خطأ أثناء جلب قائمة المستخدمين.", details = ex.Message, innerException = ex.InnerException?.Message });
             }
         }
 
@@ -180,7 +180,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching user");
-                return StatusCode(500, new { success = false, error = "Error fetching user" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب بيانات المستخدم", message = "حدث خطأ أثناء جلب بيانات المستخدم." });
             }
         }
 
@@ -206,7 +206,7 @@ namespace Clinics.Api.Controllers
                     .FirstOrDefaultAsync();
 
                 if (existingUser != null)
-                    return BadRequest(new { success = false, error = "Username already exists" });
+                    return BadRequest(new { success = false, error = "اسم المستخدم موجود بالفعل", message = "اسم المستخدم موجود بالفعل. يرجى اختيار اسم مستخدم آخر." });
 
                 // Get current user to check permissions
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
@@ -288,8 +288,8 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new 
                     { 
                         success = false, 
-                        error = $"Username '{req.Username}' is already taken. Please choose a different username.",
-                        message = $"Username '{req.Username}' is already taken. Please choose a different username."
+                        error = "اسم المستخدم موجود بالفعل",
+                        message = $"اسم المستخدم '{req.Username}' موجود بالفعل. يرجى اختيار اسم مستخدم آخر."
                     });
                 }
                 
@@ -300,8 +300,8 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new 
                     { 
                         success = false, 
-                        error = "Unable to create user due to invalid data or constraint violation.",
-                        message = "Unable to create user due to invalid data or constraint violation."
+                        error = "تعذر إنشاء المستخدم",
+                        message = "تعذر إنشاء المستخدم بسبب بيانات غير صالحة أو انتهاك قيد قاعدة البيانات."
                     });
                 }
                 
@@ -309,8 +309,8 @@ namespace Clinics.Api.Controllers
                 return StatusCode(500, new 
                 { 
                     success = false, 
-                    error = "An error occurred while creating the user. Please try again.",
-                    message = "An error occurred while creating the user. Please try again.",
+                    error = "حدث خطأ أثناء إنشاء المستخدم",
+                    message = "حدث خطأ أثناء إنشاء المستخدم. يرجى المحاولة مرة أخرى.",
                     details = _env?.IsDevelopment() == true ? innerMessage : null
                 });
             }
@@ -320,8 +320,8 @@ namespace Clinics.Api.Controllers
                 return StatusCode(500, new 
                 { 
                     success = false, 
-                    error = "An unexpected error occurred while creating the user. Please try again.",
-                    message = "An unexpected error occurred while creating the user. Please try again.",
+                    error = "حدث خطأ غير متوقع أثناء إنشاء المستخدم",
+                    message = "حدث خطأ غير متوقع أثناء إنشاء المستخدم. يرجى المحاولة مرة أخرى.",
                     details = _env?.IsDevelopment() == true ? ex.Message : null
                 });
             }
@@ -390,7 +390,7 @@ namespace Clinics.Api.Controllers
                     // Check if username is already taken (by a different user)
                     var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Username == trimmedUsername && u.Id != id);
                     if (existingUser != null)
-                        return BadRequest(new { success = false, error = "Username already exists" });
+                        return BadRequest(new { success = false, error = "اسم المستخدم موجود بالفعل", message = "اسم المستخدم موجود بالفعل. يرجى اختيار اسم مستخدم آخر." });
                     
                     targetUser.Username = trimmedUsername;
                 }

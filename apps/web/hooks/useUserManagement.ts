@@ -26,6 +26,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 import {
   userManagementService,
@@ -66,6 +68,7 @@ export interface UseUserManagementActions {
 export function useUserManagement(): readonly [UseUserManagementState, UseUserManagementActions] {
   const { user: currentUser } = useAuth();
   const { addToast } = useUI();
+  const { confirm } = useConfirmDialog();
 
   const [users, setUsers] = useState<User[]>([]);
   const [moderators, setModerators] = useState<User[]>([]);
@@ -304,7 +307,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const deleteUser = useCallback(
     async (id: string): Promise<boolean> => {
-      const confirmed = window.confirm('هل أنت متأكد من حذف هذا المستخدم؟');
+      const confirmed = await confirm(createDeleteConfirmation('هذا المستخدم'));
       if (!confirmed) return false;
 
       setLoading(true);

@@ -385,6 +385,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting queue {QueueId}", id);
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء حذف الطابور", message = "حدث خطأ أثناء حذف الطابور." });
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء حذف الطابور" });
             }
         }
@@ -458,7 +459,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching trash queues");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المحذوفة" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المحذوفة", message = "حدث خطأ أثناء جلب الطوابير المحذوفة." });
             }
         }
 
@@ -496,7 +497,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching archived queues");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المؤرشفة" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المؤرشفة", message = "حدث خطأ أثناء جلب الطوابير المؤرشفة." });
             }
         }
 
@@ -512,11 +513,11 @@ namespace Clinics.Api.Controllers
             {
                 var queue = await _db.Queues.IgnoreQueryFilters().FirstOrDefaultAsync(q => q.Id == id);
                 if (queue == null) 
-                    return NotFound(new { success = false, error = "Queue not found", statusCode = 404 });
+                    return NotFound(new { success = false, error = "الطابور غير موجود", message = "الطابور غير موجود.", statusCode = 404 });
 
                 // Check if queue is deleted
                 if (!queue.IsDeleted)
-                    return BadRequest(new { success = false, error = "Queue is not in trash", statusCode = 400 });
+                    return BadRequest(new { success = false, error = "الطابور غير موجود في سلة المحذوفات", message = "الطابور غير موجود في سلة المحذوفات.", statusCode = 400 });
 
                 // Check TTL - only allow restore for items in trash (within 30 days)
                 if (!_ttlQueries.IsRestoreAllowed(queue, 30))
@@ -569,6 +570,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error restoring queue {QueueId}", id);
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استعادة الطابور", message = "حدث خطأ أثناء استعادة الطابور." });
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استعادة الطابور" });
             }
         }
