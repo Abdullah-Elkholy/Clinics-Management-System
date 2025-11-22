@@ -262,6 +262,26 @@ namespace ClinicsManagementService.Services
             });
         }
 
+        public async Task<byte[]?> ScreenshotElementAsync(IElementHandle element)
+        {
+            return await WithPageRetryAsync(async () =>
+            {
+                await EnsurePageInitializedAsync();
+                if (_page == null)
+                    throw new InvalidOperationException("Browser session not initialized");
+
+                try
+                {
+                    return await element.ScreenshotAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Error taking element screenshot: {ex.Message}");
+                    return null;
+                }
+            });
+        }
+
         public async ValueTask DisposeAsync()
         {
             await _lock.WaitAsync();

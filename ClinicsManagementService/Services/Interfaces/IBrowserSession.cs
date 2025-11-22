@@ -13,5 +13,6 @@ namespace ClinicsManagementService.Services.Interfaces
         Task<IElementHandle?> QuerySelectorAsync(string selector);
         Task<IReadOnlyList<IElementHandle>> QuerySelectorAllAsync(string selector);
         Task<string> GetUrlAsync();
+        Task<byte[]?> ScreenshotElementAsync(IElementHandle element);
     }
 }

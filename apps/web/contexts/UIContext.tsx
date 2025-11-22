@@ -8,8 +8,8 @@ interface UIContextType {
   toasts: Toast[];
   addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => void;
   removeToast: (id: string) => void;
-  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed';
-  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed') => void;
+  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus';
+  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus') => void;
   selectedQueueId: string | null;
   setSelectedQueueId: (id: string | null) => void;
   isTransitioning: boolean;
@@ -21,13 +21,13 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const pathname = usePathname();
   const router = useRouter();
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed'>('welcome');
+  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus'>('welcome');
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const toastCounterRef = React.useRef(0);
   const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const navigationTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  const pendingPanelRef = React.useRef<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | null>(null);
+  const pendingPanelRef = React.useRef<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus' | null>(null);
 
   // Restore selectedQueueId from localStorage on mount
   useEffect(() => {
@@ -53,7 +53,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const isNavigatingProgrammatically = React.useRef(false);
   
   // Helper function to get path for a panel (defined before useEffect that uses it)
-  const getPathForPanel = React.useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed'): string => {
+  const getPathForPanel = React.useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus'): string => {
     switch (panel) {
       case 'messages':
         return '/messages';
@@ -67,6 +67,8 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         return '/queues/failed';
       case 'completed':
         return '/queues/completed';
+      case 'browserStatus':
+        return '/browser/status';
       default:
         return '/home';
     }
@@ -166,6 +168,16 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         if (prev !== null) return null;
         return prev;
       });
+    } else if (pathname === '/browser/status') {
+      setCurrentPanel(prev => {
+        if (prev !== 'browserStatus') return 'browserStatus';
+        return prev;
+      });
+      // Clear queue selection when on browser status
+      setSelectedQueueId(prev => {
+        if (prev !== null) return null;
+        return prev;
+      });
     } else if (pathname.startsWith('/queues/')) {
       // Queue routes: /queues/dashboard, /queues/ongoing, /queues/failed, /queues/completed
       const match = pathname.match(/^\/queues\/(dashboard|ongoing|failed|completed)$/);
@@ -240,7 +252,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   // Enhanced setCurrentPanel that updates URL
-  const handleSetCurrentPanel = useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed') => {
+  const handleSetCurrentPanel = useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus') => {
     // Authentication check for management panel
     if (panel === 'management') {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -252,7 +264,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     
     // Panels that don't require a queue - clear queue selection first
     // Note: 'welcome' panel represents queue dashboard, so it DOES require a queue
-    const panelsWithoutQueue = ['messages', 'management'];
+    const panelsWithoutQueue = ['messages', 'management', 'browserStatus'];
     const shouldClearQueue = panelsWithoutQueue.includes(panel) && selectedQueueId !== null;
     
     // Calculate target path
@@ -321,7 +333,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const handleSetSelectedQueueId = useCallback((id: string | null) => {
     // Calculate target path based on current panel and new queue selection
     let targetPath = '/home';
-    let targetPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' = currentPanel;
+    let targetPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus' = currentPanel;
     
     if (id !== null) {
       // Queue selected - determine which queue panel to show based on current panel

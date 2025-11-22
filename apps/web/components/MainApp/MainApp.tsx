@@ -16,14 +16,19 @@ import FailedTasksPanel from '../Queue/FailedTasksPanel';
 import CompletedTasksPanel from '../Queue/CompletedTasksPanel';
 import MessagesPanel from '../Content/MessagesPanel';
 import ManagementPanel from '../Content/ManagementPanel';
+import BrowserStatusPanel from '../Content/BrowserStatusPanel';
+import BrowserStatusOverview from '../Content/BrowserStatusOverview';
 import * as Modals from '../Modals';
 
 function MainAppContent() {
   const { selectedQueueId } = useQueue();
   const { currentPanel, isTransitioning } = useUI();
-  const { isNavigatingToHome, clearNavigationFlag } = useAuth();
+  const { isNavigatingToHome, clearNavigationFlag, user } = useAuth();
   const { isCollapsed } = useSidebarCollapse();
   const [customSidebarWidth, setCustomSidebarWidth] = React.useState<number | null>(null);
+  
+  // Check if user is admin
+  const isAdmin = user?.role === 'primary_admin' || user?.role === 'secondary_admin';
 
   // Clear navigation flag once MainApp renders (home page is ready)
   React.useEffect(() => {
@@ -123,6 +128,12 @@ function MainAppContent() {
           ) : currentPanel === 'management' ? (
             // ManagementPanel has its own authentication guard
             <ManagementPanel />
+          ) : currentPanel === 'browserStatus' ? (
+            isAdmin ? (
+              <BrowserStatusOverview />
+            ) : (
+              <BrowserStatusPanel />
+            )
           ) : (
             <WelcomeScreen />
           )}
@@ -154,6 +165,7 @@ export default function MainApp() {
       <Modals.ManageConditionsModal />
       <Modals.RetryPreviewModal />
       <Modals.QuotaManagementModal />
+      <Modals.QRCodeModal />
     </ModalProvider>
   );
 }
