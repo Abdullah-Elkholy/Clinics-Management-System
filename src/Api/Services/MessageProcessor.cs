@@ -27,8 +27,12 @@ namespace Clinics.Api.Services
 
         public async Task ProcessQueuedMessagesAsync(int maxBatch = 50)
         {
-            // Fetch ALL queued messages (no limit) - maxBatch parameter is ignored
-            var msgs = await _db.Messages.Where(m => m.Status == "queued").OrderBy(m => m.CreatedAt).ToListAsync();
+            // Fetch up to maxBatch queued messages
+            var msgs = await _db.Messages
+                .Where(m => m.Status == "queued")
+                .OrderBy(m => m.CreatedAt)
+                .Take(maxBatch)
+                .ToListAsync();
             var totalMessages = msgs.Count;
             var processedCount = 0;
             
