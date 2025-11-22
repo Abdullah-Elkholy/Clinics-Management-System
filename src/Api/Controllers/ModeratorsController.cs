@@ -145,7 +145,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.FirstName))
-                    return BadRequest(new { success = false, error = "Username and FirstName are required" });
+                    return BadRequest(new { success = false, error = "اسم المستخدم والاسم الأول مطلوبان", message = "اسم المستخدم والاسم الأول مطلوبان." });
 
                 // Check if username already exists
                 var existingUser = await _db.Users
@@ -153,7 +153,7 @@ namespace Clinics.Api.Controllers
                     .FirstOrDefaultAsync();
 
                 if (existingUser != null)
-                    return BadRequest(new { success = false, error = "Username already exists" });
+                    return BadRequest(new { success = false, error = "اسم المستخدم موجود بالفعل", message = "اسم المستخدم موجود بالفعل. يرجى اختيار اسم مستخدم آخر." });
 
                 var moderator = new User
                 {
@@ -466,8 +466,8 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new 
                     { 
                         success = false, 
-                        error = $"Username '{req.Username}' is already taken. Please choose a different username.",
-                        message = $"Username '{req.Username}' is already taken. Please choose a different username."
+                        error = "اسم المستخدم موجود بالفعل",
+                        message = $"اسم المستخدم '{req.Username}' موجود بالفعل. يرجى اختيار اسم مستخدم آخر."
                     });
                 }
                 
@@ -478,8 +478,8 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new 
                     { 
                         success = false, 
-                        error = "Unable to create user due to invalid data or constraint violation.",
-                        message = "Unable to create user due to invalid data or constraint violation."
+                        error = "تعذر إنشاء المستخدم",
+                        message = "تعذر إنشاء المستخدم بسبب بيانات غير صالحة أو انتهاك قيد قاعدة البيانات."
                     });
                 }
                 
@@ -487,8 +487,8 @@ namespace Clinics.Api.Controllers
                 return StatusCode(500, new 
                 { 
                     success = false, 
-                    error = "An error occurred while adding the user. Please try again.",
-                    message = "An error occurred while adding the user. Please try again."
+                    error = "حدث خطأ أثناء إضافة المستخدم",
+                    message = "حدث خطأ أثناء إضافة المستخدم. يرجى المحاولة مرة أخرى."
                 });
             }
             catch (Exception ex)
@@ -497,8 +497,8 @@ namespace Clinics.Api.Controllers
                 return StatusCode(500, new 
                 { 
                     success = false, 
-                    error = "An unexpected error occurred while adding the user. Please try again.",
-                    message = "An unexpected error occurred while adding the user. Please try again."
+                    error = "حدث خطأ غير متوقع أثناء إضافة المستخدم",
+                    message = "حدث خطأ غير متوقع أثناء إضافة المستخدم. يرجى المحاولة مرة أخرى."
                 });
             }
         }
@@ -551,7 +551,11 @@ namespace Clinics.Api.Controllers
                     SessionName = session.SessionName,
                     Status = session.Status,
                     LastSyncAt = session.LastSyncAt,
-                    CreatedAt = session.CreatedAt
+                    CreatedAt = session.CreatedAt,
+                    ProviderSessionId = session.ProviderSessionId,
+                    CreatedByUserId = session.CreatedByUserId,
+                    LastActivityUserId = session.LastActivityUserId,
+                    LastActivityAt = session.LastActivityAt
                 };
 
                 return Ok(new { success = true, data = result });

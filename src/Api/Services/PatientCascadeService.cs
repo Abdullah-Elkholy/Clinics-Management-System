@@ -64,23 +64,26 @@ public class PatientCascadeService : IPatientCascadeService
                 return (false, "Patient not found");
             }
 
-            // Mark patient as deleted
+            // Capture operation snapshot timestamp to ensure consistency
+            var operationTimestamp = DateTime.UtcNow;
+
+            // Mark patient as deleted with snapshot timestamp
             patient.IsDeleted = true;
-            patient.DeletedAt = DateTime.UtcNow;
+            patient.DeletedAt = operationTimestamp;
             patient.DeletedBy = deletedByUserId;
 
             await _db.SaveChangesAsync();
 
             _logger.LogInformation(
                 "Patient {PatientId} soft-deleted by user {UserId} at {Timestamp}",
-                patientId, deletedByUserId, DateTime.UtcNow);
+                patientId, deletedByUserId, operationTimestamp);
 
             return (true, "");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error soft-deleting patient {PatientId}", patientId);
-            return (false, "An error occurred while deleting the patient");
+            return (false, "حدث خطأ أثناء حذف المريض");
         }
     }
 
@@ -93,19 +96,19 @@ public class PatientCascadeService : IPatientCascadeService
 
             if (patient == null)
             {
-                return (false, "Deleted patient not found");
+                return (false, "المريض المحذوف غير موجود");
             }
 
             // Check if within 30-day window
             if (!patient.DeletedAt.HasValue)
             {
-                return (false, "Deletion timestamp missing");
+                return (false, "طابع زمني للحذف مفقود");
             }
 
             var daysDeleted = (DateTime.UtcNow - patient.DeletedAt.Value).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
-                return (false, "restore_window_expired");
+                return (false, "انتهت فترة الاستعادة");
             }
 
             // Capture operation snapshot timestamp to ensure consistency
@@ -131,7 +134,7 @@ public class PatientCascadeService : IPatientCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error restoring patient {PatientId}", patientId);
-            return (false, "An error occurred while restoring the patient");
+            return (false, "حدث خطأ أثناء استعادة المريض");
         }
     }
 

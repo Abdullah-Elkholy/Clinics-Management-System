@@ -76,7 +76,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching patients");
-                return StatusCode(500, new { message = "Error fetching patients" });
+                return StatusCode(500, new { message = "حدث خطأ أثناء جلب المرضى" });
             }
         }
 
@@ -90,7 +90,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 if (id <= 0)
-                    return BadRequest(new { success = false, error = "Invalid patient ID" });
+                    return BadRequest(new { success = false, error = "معرف المريض غير صالح", message = "معرف المريض غير صالح." });
 
                 var patient = await _db.Patients
                     .Where(p => p.Id == id && !p.IsDeleted)
@@ -111,14 +111,14 @@ namespace Clinics.Api.Controllers
                     .FirstOrDefaultAsync();
 
                 if (patient == null)
-                    return NotFound(new { success = false, error = "Patient not found" });
+                    return NotFound(new { success = false, error = "المريض غير موجود", message = "المريض غير موجود." });
 
                 return Ok(new { success = true, data = patient });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching patient {PatientId}", id);
-                return StatusCode(500, new { success = false, error = "Error fetching patient" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب المريض", message = "حدث خطأ أثناء جلب بيانات المريض." });
             }
         }
 
@@ -146,7 +146,7 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, error = "Phone number is required" });
 
                 if (req.QueueId <= 0)
-                    return BadRequest(new { success = false, error = "Valid Queue ID is required" });
+                    return BadRequest(new { success = false, error = "معرف الطابور مطلوب", message = "معرف الطابور مطلوب وصحيح." });
 
                 if (!ModelState.IsValid)
                     return BadRequest(new { success = false, errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
@@ -154,7 +154,7 @@ namespace Clinics.Api.Controllers
                 // Verify queue exists
                 var queueExists = await _db.Queues.AnyAsync(q => q.Id == req.QueueId && !q.IsDeleted);
                 if (!queueExists)
-                    return BadRequest(new { success = false, error = "Queue does not exist" });
+                    return BadRequest(new { success = false, error = "الطابور غير موجود", message = "الطابور المحدد غير موجود." });
 
                 // Determine insertion position: max(active patients) + 1. Only count active (!IsDeleted) patients.
                 // Client-provided position is ignored per business rule (baseline always at end).
@@ -239,13 +239,13 @@ namespace Clinics.Api.Controllers
             catch (DbUpdateException ex)
             {
                 _logger.LogError(ex, "Database constraint error creating patient");
-                return StatusCode(400, new { success = false, error = "Invalid data or constraint violation", details = ex.InnerException?.Message });
+                return StatusCode(400, new { success = false, error = "بيانات غير صالحة أو انتهاك قيد", message = "بيانات غير صالحة أو انتهاك قيد قاعدة البيانات.", details = ex.InnerException?.Message });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating patient: {ErrorMessage}", ex.Message);
                 _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
-                return StatusCode(500, new { success = false, error = "Error creating patient", details = ex.Message });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء المريض", message = "حدث خطأ أثناء إنشاء المريض.", details = ex.Message });
             }
         }
 
@@ -268,8 +268,8 @@ namespace Clinics.Api.Controllers
                 if (!success)
                 {
                     return errorMessage == "patient_not_found"
-                        ? NotFound(new { error = "patient_not_found", message = "Patient not found" })
-                        : StatusCode(500, new { error = errorMessage, message = "Error updating patient position" });
+                        ? NotFound(new { error = "patient_not_found", message = "المريض غير موجود" })
+                        : StatusCode(500, new { error = errorMessage, message = "حدث خطأ أثناء تحديث موضع المريض" });
                 }
 
                 return Ok(new { success = true, message = "Patient position updated successfully" });
@@ -277,7 +277,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating patient position for patient {PatientId}", id);
-                return StatusCode(500, new { error = "error_updating_position", message = "An error occurred while updating patient position" });
+                return StatusCode(500, new { error = "error_updating_position", message = "حدث خطأ أثناء تحديث موضع المريض" });
             }
         }
 
@@ -298,7 +298,7 @@ namespace Clinics.Api.Controllers
                 if (patient == null)
                 {
                     _logger.LogWarning("Patient not found: PatientId={PatientId}", id);
-                    return NotFound(new { message = "Patient not found" });
+                    return NotFound(new { message = "المريض غير موجود" });
                 }
 
                 // Validate request is not null
@@ -457,7 +457,7 @@ namespace Clinics.Api.Controllers
             {
                 var patient = await _db.Patients.FindAsync(id);
                 if (patient == null)
-                    return NotFound(new { message = "Patient not found" });
+                    return NotFound(new { message = "المريض غير موجود" });
 
                 var userId = int.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "0");
                 
@@ -563,12 +563,12 @@ namespace Clinics.Api.Controllers
                 var isAdmin = _userContext.IsAdmin();
 
                 if (!queueId.HasValue)
-                    return BadRequest(new { success = false, error = "queueId is required", statusCode = 400 });
+                    return BadRequest(new { success = false, error = "معرف الطابور مطلوب", message = "معرف الطابور مطلوب.", statusCode = 400 });
 
                 // Verify queue access
                 var queue = await _db.Queues.FindAsync(queueId.Value);
                 if (queue == null)
-                    return NotFound(new { success = false, error = "Queue not found", statusCode = 404 });
+                    return NotFound(new { success = false, error = "الطابور غير موجود", message = "الطابور غير موجود.", statusCode = 404 });
 
                 if (!isAdmin && queue.ModeratorId != moderatorId)
                     return Forbid();
@@ -600,7 +600,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching trash patients");
-                return StatusCode(500, new { message = "Error fetching trash patients" });
+                return StatusCode(500, new { message = "حدث خطأ أثناء جلب المرضى المحذوفين" });
             }
         }
 
@@ -613,7 +613,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 if (!queueId.HasValue)
-                    return BadRequest(new { success = false, error = "queueId is required", statusCode = 400 });
+                    return BadRequest(new { success = false, error = "معرف الطابور مطلوب", message = "معرف الطابور مطلوب.", statusCode = 400 });
 
                 var query = _ttlQueries.QueryArchived(30)
                     .Where(p => p.QueueId == queueId.Value)
@@ -643,7 +643,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching archived patients");
-                return StatusCode(500, new { message = "Error fetching archived patients" });
+                return StatusCode(500, new { message = "حدث خطأ أثناء جلب المرضى المؤرشفين" });
             }
         }
 
@@ -667,7 +667,7 @@ namespace Clinics.Api.Controllers
                 // Verify queue access
                 var queue = await _db.Queues.FindAsync(patient.QueueId);
                 if (queue == null)
-                    return NotFound(new { success = false, error = "Patient's queue not found", statusCode = 404 });
+                    return NotFound(new { success = false, error = "طابور المريض غير موجود", message = "طابور المريض غير موجود.", statusCode = 404 });
 
                 if (!isAdmin && queue.ModeratorId != moderatorId)
                     return Forbid();
@@ -685,8 +685,9 @@ namespace Clinics.Api.Controllers
                     return Conflict(new
                     {
                         success = false,
-                        error = $"Restore window has expired. Patient was deleted {daysElapsed} days ago; restore is allowed within 30 days.",
+                        error = "انتهت فترة الاستعادة",
                         errorCode = "restore_window_expired",
+                        message = $"تم حذف المريض منذ {daysElapsed} يومًا. يمكن الاستعادة خلال 30 يومًا فقط.",
                         statusCode = 409,
                         metadata = new { daysElapsed, ttlDays = 30 }
                     });
@@ -712,7 +713,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error restoring patient {PatientId}", id);
-                return StatusCode(500, new { message = "Error restoring patient" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استعادة المريض", message = "حدث خطأ أثناء استعادة المريض." });
             }
         }
     }

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Clinics.Api.DTOs;
 using Clinics.Infrastructure;
+using Clinics.Api.Services;
+using System.Security.Claims;
 
 namespace Clinics.Api.Controllers;
 
@@ -13,24 +15,40 @@ public class SessionsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<SessionsController> _logger;
+    private readonly QuotaService _quotaService;
 
-    public SessionsController(ApplicationDbContext context, ILogger<SessionsController> logger)
+    public SessionsController(ApplicationDbContext context, ILogger<SessionsController> logger, QuotaService quotaService)
     {
         _context = context;
         _logger = logger;
+        _quotaService = quotaService;
     }
 
     /// <summary>
-    /// Get all ongoing message sending sessions
+    /// Get all ongoing message sending sessions for current user's moderator (unified session per moderator)
     /// </summary>
     [HttpGet("ongoing")]
     public async Task<IActionResult> GetOngoingSessions()
     {
         try
         {
+            // Get current user ID
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("sub")?.Value
+                ?? User.FindFirst("userId")?.Value;
+            
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+            }
+
+            // Get effective moderator ID (unified session per moderator)
+            var moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+
+            // Get sessions for this moderator only
             var sessions = await _context.MessageSessions
                 .Include(s => s.Queue)
-                .Where(s => s.Status == "active" || s.Status == "paused")
+                .Where(s => s.ModeratorId == moderatorId && (s.Status == "active" || s.Status == "paused"))
                 .OrderByDescending(s => s.StartTime)
                 .ToListAsync();
 
@@ -38,18 +56,29 @@ public class SessionsController : ControllerBase
 
             foreach (var session in sessions)
             {
-                // Get patients associated with this session's queue
+                // Get messages linked to this session via SessionId
+                var sessionMessages = await _context.Messages
+                    .Where(m => m.SessionId == session.Id.ToString() && !m.IsDeleted)
+                    .ToListAsync();
+
+                // Get unique patient IDs from messages
+                var patientIds = sessionMessages
+                    .Where(m => m.PatientId.HasValue)
+                    .Select(m => m.PatientId!.Value)
+                    .Distinct()
+                    .ToList();
+
+                // Get patients with their message statuses
                 var patients = await _context.Patients
-                    .Where(p => p.QueueId == session.QueueId)
+                    .Where(p => patientIds.Contains(p.Id))
                     .Select(p => new
                     {
                         p.Id,
                         p.FullName,
                         p.PhoneNumber,
-                        MessageStatus = _context.Messages
-                            .Where(m => m.PatientId == p.Id && m.QueueId == session.QueueId)
+                        Message = sessionMessages
+                            .Where(m => m.PatientId == p.Id)
                             .OrderByDescending(m => m.CreatedAt)
-                            .Select(m => m.Status)
                             .FirstOrDefault()
                     })
                     .ToListAsync();
@@ -61,13 +90,14 @@ public class SessionsController : ControllerBase
                     StartTime = session.StartTime,
                     Total = session.TotalMessages,
                     Sent = session.SentMessages,
-                    Status = session.Status,
+                    Status = session.IsPaused ? "paused" : session.Status,
                     Patients = patients.Select(p => new SessionPatientDto
                     {
                         PatientId = p.Id,
                         Name = p.FullName,
                         Phone = p.PhoneNumber,
-                        Status = MapMessageStatus(p.MessageStatus)
+                        Status = MapMessageStatus(p.Message?.Status),
+                        IsPaused = p.Message?.IsPaused ?? false
                     }).ToList()
                 });
             }
@@ -82,30 +112,54 @@ public class SessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Pause an ongoing session
+    /// Pause an ongoing session (uses MessagesController session pause logic)
     /// </summary>
     [HttpPost("{id}/pause")]
     public async Task<IActionResult> PauseSession(Guid id)
     {
         try
         {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("sub")?.Value
+                ?? User.FindFirst("userId")?.Value;
+            
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+            }
+
+            // Pause all messages in this session
+            var messages = await _context.Messages
+                .Where(m => m.SessionId == id.ToString() && (m.Status == "queued" || m.Status == "sending") && !m.IsPaused)
+                .ToListAsync();
+
+            foreach (var msg in messages)
+            {
+                msg.IsPaused = true;
+                msg.PausedAt = DateTime.UtcNow;
+                msg.PausedBy = userId;
+                msg.PauseReason = "SessionPaused";
+                if (msg.Status == "sending")
+                {
+                    msg.Status = "queued";
+                }
+            }
+
+            // Also pause the session itself
             var session = await _context.MessageSessions.FindAsync(id);
             
-            if (session == null)
+            if (session != null)
             {
-                return NotFound(new { success = false, error = "الجلسة غير موجودة" });
+                session.IsPaused = true;
+                session.Status = "paused";
+                session.PausedAt = DateTime.UtcNow;
+                session.PausedBy = userId;
+                session.PauseReason = "UserPaused";
+                session.LastUpdated = DateTime.UtcNow;
             }
 
-            if (session.Status != "active")
-            {
-                return BadRequest(new { success = false, error = "لا يمكن إيقاف جلسة غير نشطة" });
-            }
-
-            session.Status = "paused";
-            session.LastUpdated = DateTime.UtcNow;
             await _context.SaveChangesAsync();
-
-            return Ok(new { success = true });
+            return Ok(new { success = true, pausedCount = messages.Count });
         }
         catch (Exception ex)
         {
@@ -115,30 +169,41 @@ public class SessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Resume a paused session
+    /// Resume a paused session (uses MessagesController session resume logic)
     /// </summary>
     [HttpPost("{id}/resume")]
     public async Task<IActionResult> ResumeSession(Guid id)
     {
         try
         {
+            // Resume all paused messages in this session
+            var messages = await _context.Messages
+                .Where(m => m.SessionId == id.ToString() && m.IsPaused)
+                .ToListAsync();
+
+            foreach (var msg in messages)
+            {
+                msg.IsPaused = false;
+                msg.PausedAt = null;
+                msg.PausedBy = null;
+                msg.PauseReason = null;
+            }
+
+            // Also resume the session itself
             var session = await _context.MessageSessions.FindAsync(id);
             
-            if (session == null)
+            if (session != null)
             {
-                return NotFound(new { success = false, error = "الجلسة غير موجودة" });
+                session.IsPaused = false;
+                session.Status = "active";
+                session.PausedAt = null;
+                session.PausedBy = null;
+                session.PauseReason = null;
+                session.LastUpdated = DateTime.UtcNow;
             }
 
-            if (session.Status != "paused")
-            {
-                return BadRequest(new { success = false, error = "لا يمكن استئناف جلسة غير متوقفة" });
-            }
-
-            session.Status = "active";
-            session.LastUpdated = DateTime.UtcNow;
             await _context.SaveChangesAsync();
-
-            return Ok(new { success = true });
+            return Ok(new { success = true, resumedCount = messages.Count });
         }
         catch (Exception ex)
         {
@@ -186,6 +251,7 @@ public class SessionsController : ControllerBase
             "sent" => "sent",
             "failed" => "failed",
             "queued" => "pending",
+            "sending" => "pending", // "sending" is also shown as "pending" in UI
             _ => "pending"
         };
     }

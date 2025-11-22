@@ -22,6 +22,7 @@ namespace ClinicsManagementService.Services
         private readonly IWhatsAppUIService _uiService;
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly CancellationTokenSource _cts = new();
+        private int? _lastModeratorId;
 
         public WhatsAppService(
             INotifier notifier,
@@ -422,6 +423,47 @@ namespace ClinicsManagementService.Services
                 // Check cancellation before error dialog check
                 cancellationToken.ThrowIfCancellationRequested();
 
+                // Check for blank or invalid pages after navigation (handle stuck states)
+                try
+                {
+                    var currentUrl = await browserSession.GetUrlAsync();
+                    
+                    // Check for blank or invalid pages
+                    if (string.IsNullOrWhiteSpace(currentUrl) || 
+                        currentUrl == "about:blank" || 
+                        currentUrl.Contains("data:text/html") ||
+                        currentUrl.Contains("chrome-error://") ||
+                        (!string.IsNullOrEmpty(currentUrl) && !currentUrl.Contains("web.whatsapp.com")))
+                    {
+                        _notifier.Notify("⚠️ Blank or invalid page detected - attempting recovery");
+                        
+                        // Recovery attempt 1: Reload page once
+                        await browserSession.NavigateToAsync(url);
+                        
+                        // Wait again after reload
+                        var retryNavRes = await _uiService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
+                        
+                        // Check URL again after retry
+                        currentUrl = await browserSession.GetUrlAsync();
+                        
+                        // If still blank or invalid, return waiting state (page may still be loading)
+                        if (string.IsNullOrWhiteSpace(currentUrl) || 
+                            currentUrl == "about:blank" || 
+                            (!string.IsNullOrEmpty(currentUrl) && !currentUrl.Contains("web.whatsapp.com")))
+                        {
+                            _notifier.Notify("⚠️ Still on blank or invalid page after recovery attempt");
+                            return OperationResult<bool>.Waiting("Blank page detected - page may still be loading. Please try again.", false);
+                        }
+                        
+                        _notifier.Notify("✅ Page recovered successfully after reload");
+                    }
+                }
+                catch (Exception urlEx)
+                {
+                    _notifier.Notify($"⚠️ Error checking URL after navigation: {urlEx.Message} - continuing with error-dialog check");
+                    // Continue with error dialog check even if URL check fails
+                }
+
                 // Only check error dialog after success page load
                 var hasWhatsApp = await _retryService.ExecuteWithRetryAsync<bool>(
                     () => CheckForWhatsAppErrorDialog(browserSession),
@@ -478,7 +520,11 @@ namespace ClinicsManagementService.Services
 
         public async Task<bool> CheckInternetConnectivityAsync() => await _networkService.CheckInternetConnectivityAsync();
 
-        public async Task<IBrowserSession> PrepareSessionAsync() => await _sessionManager.GetOrCreateSessionAsync();
+        public async Task<IBrowserSession> PrepareSessionAsync(int moderatorId)
+        {
+            _lastModeratorId = moderatorId;
+            return await _sessionManager.GetOrCreateSessionAsync(moderatorId);
+        }
 
         // Delegate retry logic to central IRetryService
         public async Task<OperationResult<string?>> ExecuteWithRetryAsync(
@@ -507,7 +553,11 @@ namespace ClinicsManagementService.Services
                     _notifier?.Notify($"⚠️ Error cancelling CTS during cleanup: {cancelEx.Message}");
                 }
 
-                var session = await _sessionManager.GetCurrentSessionAsync();
+                IBrowserSession? session = null;
+                if (_lastModeratorId.HasValue)
+                {
+                    session = await _sessionManager.GetCurrentSessionAsync(_lastModeratorId.Value);
+                }
                 if (session != null)
                 {
                     try { await DisposeBrowserSessionAsync(session); } catch (Exception disposeEx) { _notifier?.Notify($"⚠️ Error disposing browser session: {disposeEx.Message}"); }

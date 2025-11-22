@@ -13,7 +13,9 @@ namespace ClinicsManagementService.Services.Interfaces
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <param name="status">Status: 'connected', 'disconnected', 'pending'</param>
         /// <param name="lastSyncAt">Optional last sync timestamp</param>
-        Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null);
+        /// <param name="providerSessionId">Optional provider session identifier</param>
+        /// <param name="activityUserId">Optional user ID performing this operation for audit trail</param>
+        Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null, string? providerSessionId = null, int? activityUserId = null);
 
         /// <summary>
         /// Get WhatsApp session status from database
@@ -21,5 +23,13 @@ namespace ClinicsManagementService.Services.Interfaces
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <returns>WhatsApp session or null if not found</returns>
         Task<WhatsAppSession?> GetSessionStatusAsync(int moderatorUserId);
+
+        /// <summary>
+        /// Check if session is paused due to PendingQR (authentication required)
+        /// Returns true if there are paused messages or sessions with PendingQR reason
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>True if session is paused due to PendingQR</returns>
+        Task<bool> CheckIfSessionPausedDueToPendingQRAsync(int moderatorUserId);
     }
 }

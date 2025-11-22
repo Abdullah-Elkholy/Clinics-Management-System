@@ -157,6 +157,12 @@ namespace Clinics.Api.DTOs
         public string? Status { get; set; }
         public DateTime? LastSyncAt { get; set; }
         public DateTime CreatedAt { get; set; }
+        public string? ProviderSessionId { get; set; }
+        
+        // Audit trail fields
+        public int? CreatedByUserId { get; set; }
+        public int? LastActivityUserId { get; set; }
+        public DateTime? LastActivityAt { get; set; }
     }
 
     /// <summary>

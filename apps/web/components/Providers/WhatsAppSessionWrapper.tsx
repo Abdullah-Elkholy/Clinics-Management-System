@@ -20,9 +20,10 @@ export default function WhatsAppSessionWrapper({ children }: { children: ReactNo
     if (user.role === 'moderator') {
       // Moderators use their own ID
       moderatorId = userId;
-    } else if (user.role === 'user' && user.moderatorId) {
+    } else if (user.role === 'user') {
       // Regular users view their moderator's session
-      moderatorId = user.moderatorId;
+      // Type narrowing: when role is 'user', it's RegularUser which has moderatorId
+      moderatorId = (user as any).moderatorId;
     }
     // Admins (primary_admin, secondary_admin) get undefined
     // The UI should handle moderator selection separately for admins

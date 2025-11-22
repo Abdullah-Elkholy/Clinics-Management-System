@@ -4,6 +4,7 @@ using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251120230500_AddWhatsAppSessionAuditFields")]
+    partial class AddWhatsAppSessionAuditFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -163,9 +166,6 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<bool>("IsPaused")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime?>("LastAttemptAt")
                         .HasColumnType("datetime2");
 
@@ -179,16 +179,6 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("PauseReason")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime?>("PausedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("PausedBy")
-                        .HasColumnType("int");
 
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(100)
@@ -214,10 +204,6 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("SentAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("SessionId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -238,11 +224,7 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("QueueId");
 
-                    b.HasIndex("SessionId");
-
                     b.HasIndex("TemplateId");
-
-                    b.HasIndex("IsPaused", "Status");
 
                     b.HasIndex("Status", "CreatedAt");
 
@@ -324,24 +306,8 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("EndTime")
                         .HasColumnType("datetime2");
 
-                    b.Property<bool>("IsPaused")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime?>("LastUpdated")
                         .HasColumnType("datetime2");
-
-                    b.Property<int>("ModeratorId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PauseReason")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime?>("PausedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("PausedBy")
-                        .HasColumnType("int");
 
                     b.Property<int>("QueueId")
                         .HasColumnType("int");
@@ -366,8 +332,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ModeratorId");
 
                     b.HasIndex("QueueId");
 
@@ -795,15 +759,6 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("CreatedByUserId")
                         .HasColumnType("int");
 
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("DeletedBy")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
                     b.Property<DateTime?>("LastActivityAt")
                         .HasColumnType("datetime2");
 
@@ -820,12 +775,6 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<DateTime?>("RestoredAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("RestoredBy")
-                        .HasColumnType("int");
-
                     b.Property<string>("SessionName")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
@@ -834,16 +783,7 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("UpdatedBy")
-                        .HasColumnType("int");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("ModeratorUserId")
-                        .IsUnique();
 
                     b.ToTable("WhatsAppSessions");
                 });
@@ -921,19 +861,11 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Clinics.Domain.MessageSession", b =>
                 {
-                    b.HasOne("Clinics.Domain.User", "Moderator")
-                        .WithMany()
-                        .HasForeignKey("ModeratorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("Clinics.Domain.Queue", "Queue")
                         .WithMany()
                         .HasForeignKey("QueueId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Moderator");
 
                     b.Navigation("Queue");
                 });

@@ -29,6 +29,7 @@ namespace Clinics.Api.Controllers
         /// <summary>
         /// Get all quotas (admin only)
         /// Returns DTOs with renamed fields: limit, used, remaining, percentage
+        /// Used count is calculated from actual "sent" status messages only
         /// </summary>
         [HttpGet]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin")]
@@ -41,11 +42,23 @@ namespace Clinics.Api.Controllers
                     .OrderBy(q => q.ModeratorUserId)
                     .ToListAsync();
 
+                // Recalculate ConsumedMessages for all moderators from actual "sent" messages
+                foreach (var quota in quotas)
+                {
+                    await _quotaService.RecalculateMessageQuotaAsync(quota.ModeratorUserId);
+                }
+
+                // Refetch quotas after recalculation
+                quotas = await _db.Quotas
+                    .Include(q => q.Moderator)
+                    .OrderBy(q => q.ModeratorUserId)
+                    .ToListAsync();
+
                 var dtos = quotas.Select(q => new QuotaDto
                 {
                     Id = q.Id,
                     Limit = QuotaHelper.ToApiMessagesQuota(q.MessagesQuota),
-                    Used = (int)q.ConsumedMessages, // Convert long to int for API
+                    Used = (int)q.ConsumedMessages, // Convert long to int for API - now calculated from actual "sent" messages
                     QueuesLimit = QuotaHelper.ToApiQueuesQuota(q.QueuesQuota),
                     QueuesUsed = q.ConsumedQueues,
                     UpdatedAt = q.UpdatedAt
@@ -69,6 +82,7 @@ namespace Clinics.Api.Controllers
         /// <summary>
         /// Get quota for current user (their moderator's quota)
         /// Returns renamed fields: limit (messagesQuota), used (consumedMessages)
+        /// Used count is calculated from actual "sent" status messages only
         /// </summary>
         [HttpGet("me")]
         public async Task<ActionResult<MyQuotaDto>> GetMyQuota()
@@ -89,10 +103,17 @@ namespace Clinics.Api.Controllers
                     });
                 }
 
+                // Recalculate ConsumedMessages from actual "sent" messages to ensure accuracy
+                var moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+                await _quotaService.RecalculateMessageQuotaAsync(moderatorId);
+                
+                // Refetch quota after recalculation
+                quota = await _quotaService.GetQuotaForUserAsync(userId);
+
                 return Ok(new MyQuotaDto
                 {
                     Limit = QuotaHelper.ToApiMessagesQuota(quota.MessagesQuota),
-                    Used = (int)quota.ConsumedMessages, // Convert long to int for API
+                    Used = (int)quota.ConsumedMessages, // Convert long to int for API - now calculated from actual "sent" messages
                     QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota.QueuesQuota),
                     QueuesUsed = quota.ConsumedQueues
                 });
@@ -144,11 +165,18 @@ namespace Clinics.Api.Controllers
                     });
                 }
 
+                // Recalculate ConsumedMessages from actual "sent" messages to ensure accuracy
+                await _quotaService.RecalculateMessageQuotaAsync(moderatorId);
+                
+                // Refetch quota after recalculation
+                quota = await _db.Quotas
+                    .FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
+
                 return Ok(new QuotaDto
                 {
                     Id = quota.Id,
                     Limit = QuotaHelper.ToApiMessagesQuota(quota.MessagesQuota),
-                    Used = (int)quota.ConsumedMessages, // Convert long to int for API
+                    Used = (int)quota.ConsumedMessages, // Convert long to int for API - now calculated from actual "sent" messages
                     QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota.QueuesQuota),
                     QueuesUsed = quota.ConsumedQueues,
                     UpdatedAt = quota.UpdatedAt

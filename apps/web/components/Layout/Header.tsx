@@ -50,35 +50,37 @@ export default function Header() {
 
         {/* Right side - Status and User Menu */}
         <div className="flex items-center space-x-4 space-x-reverse">
-          {/* WhatsApp Status */}
-          <div className={`hidden sm:flex items-center space-x-2 space-x-reverse px-3 py-1 rounded-full ${
-            sessionStatus === 'connected' 
-              ? 'bg-green-100' 
-              : sessionStatus === 'pending' 
-              ? 'bg-yellow-100' 
-              : 'bg-red-100'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${
+          {/* WhatsApp Status - Hidden for admin, shown for moderator and user */}
+          {user.role !== 'primary_admin' && user.role !== 'secondary_admin' && (
+            <div className={`hidden sm:flex items-center space-x-2 space-x-reverse px-3 py-1 rounded-full ${
               sessionStatus === 'connected' 
-                ? 'bg-green-500 animate-pulse' 
+                ? 'bg-green-100' 
                 : sessionStatus === 'pending' 
-                ? 'bg-yellow-500 animate-pulse' 
-                : 'bg-red-500'
-            }`}></div>
-            <span className={`text-sm ${
-              sessionStatus === 'connected' 
-                ? 'text-green-700' 
-                : sessionStatus === 'pending' 
-                ? 'text-yellow-700' 
-                : 'text-red-700'
+                ? 'bg-yellow-100' 
+                : 'bg-red-100'
             }`}>
-              {sessionStatus === 'connected' 
-                ? 'واتساب متصل' 
-                : sessionStatus === 'pending' 
-                ? 'في انتظار المصادقة' 
-                : 'واتساب غير متصل'}
-            </span>
-          </div>
+              <div className={`w-2 h-2 rounded-full ${
+                sessionStatus === 'connected' 
+                  ? 'bg-green-500 animate-pulse' 
+                  : sessionStatus === 'pending' 
+                  ? 'bg-yellow-500 animate-pulse' 
+                  : 'bg-red-500'
+              }`}></div>
+              <span className={`text-sm ${
+                sessionStatus === 'connected' 
+                  ? 'text-green-700' 
+                  : sessionStatus === 'pending' 
+                  ? 'text-yellow-700' 
+                  : 'text-red-700'
+              }`}>
+                {sessionStatus === 'connected' 
+                  ? 'واتساب متصل' 
+                  : sessionStatus === 'pending' 
+                  ? 'في انتظار المصادقة' 
+                  : 'واتساب غير متصل'}
+              </span>
+            </div>
+          )}
 
           {/* User Info and Logout */}
           <div className="flex items-center space-x-3 space-x-reverse pl-4 border-l border-gray-200">

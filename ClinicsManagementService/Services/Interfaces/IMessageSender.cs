@@ -7,8 +7,8 @@ namespace ClinicsManagementService.Services.Interfaces
 {
     public interface IMessageSender
     {
-        Task<bool> SendMessageAsync(string phoneNumber, string message, CancellationToken cancellationToken = default);
-        Task<List<MessageSendResult>> SendMessagesAsync(string phoneNumber, IEnumerable<string> messages);
-        Task<List<MessageSendResult>> SendBulkWithThrottlingAsync(IEnumerable<(string Phone, string Message)> items, int minDelayMs, int maxDelayMs);
+        Task<bool> SendMessageAsync(int moderatorUserId, string phoneNumber, string message, CancellationToken cancellationToken = default);
+        Task<List<MessageSendResult>> SendMessagesAsync(int moderatorUserId, string phoneNumber, IEnumerable<string> messages);
+        Task<List<MessageSendResult>> SendBulkWithThrottlingAsync(int moderatorUserId, IEnumerable<(string Phone, string Message)> items, int minDelayMs, int maxDelayMs);
     }
 }

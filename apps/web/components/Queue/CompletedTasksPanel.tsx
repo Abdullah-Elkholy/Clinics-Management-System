@@ -13,6 +13,7 @@ import { Patient } from '@/types';
 import { UserRole } from '@/types/roles';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
+import { formatLocalDateTime, formatLocalDate } from '@/utils/dateTimeUtils';
 
 interface Session {
   id: string;
@@ -170,7 +171,7 @@ export default function CompletedTasksPanel() {
         {patient.messagePreview || 'لا توجد رسالة'}
       </div>
     ),
-    completedAt: patient.completedAt || 'غير معروف',
+    completedAt: patient.completedAt ? formatLocalDateTime(patient.completedAt) : 'غير معروف',
   }), [isMessagesExpanded]);
 
   if (sessions.length === 0) {
@@ -232,8 +233,8 @@ export default function CompletedTasksPanel() {
                       </div>
                       <div className="text-sm text-gray-600 mt-2">
                         <span>جلسة: <strong>{session.sessionId}</strong></span>
-                        <span className="mx-4">تاريخ الإنشاء: <strong>{session.createdAt}</strong></span>
-                        <span className="mx-4">تاريخ الإكمال: <strong>{session.completedAt}</strong></span>
+                        <span className="mx-4">تاريخ الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
+                        <span className="mx-4">تاريخ الإكمال: <strong>{session.completedAt ? formatLocalDateTime(session.completedAt) : 'غير محدد'}</strong></span>
                       </div>
                     </div>
                   </div>

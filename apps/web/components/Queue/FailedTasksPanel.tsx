@@ -18,6 +18,7 @@ import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 interface Session {
   id: string;
@@ -92,7 +93,12 @@ export default function FailedTasksPanel() {
       try {
         setIsLoading(true);
         setError(null);
+        
+        // Get moderator ID: for moderators use their own ID, for users use assignedModerator
+        const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+        
         const response = await messageApiClient.getFailedTasks({
+          moderatorUserId: moderatorId,
           pageNumber: page,
           pageSize: pageSize,
         });
@@ -113,7 +119,7 @@ export default function FailedTasksPanel() {
     };
 
     loadFailedTasks();
-  }, [page, pageSize]);
+  }, [page, pageSize, user]);
 
   /**
    * Listen for data updates and refetch
@@ -124,7 +130,12 @@ export default function FailedTasksPanel() {
       try {
         setIsLoading(true);
         setError(null);
+        
+        // Get moderator ID: for moderators use their own ID, for users use assignedModerator
+        const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+        
         const response = await messageApiClient.getFailedTasks({
+          moderatorUserId: moderatorId,
           pageNumber: page,
           pageSize: pageSize,
         });
@@ -582,7 +593,7 @@ export default function FailedTasksPanel() {
                       </div>
                       <div className="text-sm text-gray-600 mt-2">
                         <span>جلسة: <strong>{session.sessionId}</strong></span>
-                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt}</strong></span>
+                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
                       </div>
                     </div>
                   </div>

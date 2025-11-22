@@ -167,6 +167,52 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
     }
 
     /// <summary>
+    /// Recalculate ConsumedMessages from actual "sent" status messages.
+    /// This ensures quota is always accurate and only counts successfully sent messages.
+    /// Should be called periodically or when quota accuracy is critical.
+    /// </summary>
+    public async Task RecalculateMessageQuotaAsync(int moderatorId)
+    {
+        try
+        {
+            // Count only messages with status = "sent" for this moderator
+            var actualSentCount = await _context.Messages
+                .Where(m => m.ModeratorId == moderatorId && m.Status == "sent" && !m.IsDeleted)
+                .CountAsync();
+
+            var quota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
+            
+            if (quota == null)
+            {
+                // Create quota if doesn't exist
+                quota = new Quota
+                {
+                    ModeratorUserId = moderatorId,
+                    MessagesQuota = -1, // Unlimited by default
+                    ConsumedMessages = actualSentCount,
+                    QueuesQuota = -1,
+                    ConsumedQueues = 0,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.Quotas.Add(quota);
+            }
+            else
+            {
+                // Update ConsumedMessages to match actual sent count
+                quota.ConsumedMessages = actualSentCount;
+                quota.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't throw - quota recalculation is not critical for system operation
+            // This allows the system to continue functioning even if recalculation fails
+        }
+    }
+
+    /// <summary>
     /// Consume queue quota for user/moderator
     /// </summary>
     public async Task<bool> ConsumeQueueQuotaAsync(int userId)

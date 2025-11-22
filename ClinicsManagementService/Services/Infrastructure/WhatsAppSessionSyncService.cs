@@ -1,6 +1,7 @@
 using ClinicsManagementService.Services.Interfaces;
 using Clinics.Domain;
 using Clinics.Infrastructure;
+using ClinicsManagementService.Configuration;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClinicsManagementService.Services.Infrastructure
@@ -25,7 +26,9 @@ namespace ClinicsManagementService.Services.Infrastructure
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <param name="status">Status: 'connected', 'disconnected', 'pending'</param>
         /// <param name="lastSyncAt">Optional last sync timestamp</param>
-        public async Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null)
+        /// <param name="providerSessionId">Optional provider session identifier</param>
+        /// <param name="activityUserId">Optional user ID performing this operation for audit trail</param>
+        public async Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null, string? providerSessionId = null, int? activityUserId = null)
         {
             try
             {
@@ -53,7 +56,11 @@ namespace ClinicsManagementService.Services.Infrastructure
                         Status = status,
                         LastSyncAt = lastSyncAt ?? DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow,
-                        SessionName = $"WhatsApp-Moderator-{moderatorUserId}"
+                        SessionName = WhatsAppConfiguration.GetSessionDirectory(moderatorUserId),
+                        ProviderSessionId = providerSessionId,
+                        CreatedByUserId = activityUserId,
+                        LastActivityUserId = activityUserId,
+                        LastActivityAt = DateTime.UtcNow
                     };
                     _dbContext.WhatsAppSessions.Add(session);
                     _notifier.Notify($"✅ [DB SYNC] New session entity created - ModeratorUserId: {moderatorUserId}, Status: {status}, SessionName: {session.SessionName}");
@@ -71,7 +78,16 @@ namespace ClinicsManagementService.Services.Infrastructure
                     {
                         session.LastSyncAt = DateTime.UtcNow;
                     }
-                    _notifier.Notify($"✅ [DB SYNC] Session entity updated - ModeratorUserId: {moderatorUserId}, NewStatus: {status}, LastSyncAt: {session.LastSyncAt}");
+                    if (!string.IsNullOrWhiteSpace(providerSessionId))
+                    {
+                        session.ProviderSessionId = providerSessionId;
+                    }
+                    if (activityUserId.HasValue)
+                    {
+                        session.LastActivityUserId = activityUserId;
+                        session.LastActivityAt = DateTime.UtcNow;
+                    }
+                    _notifier.Notify($"✅ [DB SYNC] Session entity updated - ModeratorUserId: {moderatorUserId}, NewStatus: {status}, LastSyncAt: {session.LastSyncAt}, LastActivityUserId: {session.LastActivityUserId}");
                 }
 
                 _notifier.Notify($"💾 [DB SYNC] Calling SaveChangesAsync...");
@@ -103,6 +119,55 @@ namespace ClinicsManagementService.Services.Infrastructure
             {
                 _notifier.Notify($"❌ Error retrieving WhatsApp session status: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Check if session is paused due to PendingQR (authentication required)
+        /// Checks both WhatsAppSession status and paused messages/sessions
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>True if session is paused due to PendingQR</returns>
+        public async Task<bool> CheckIfSessionPausedDueToPendingQRAsync(int moderatorUserId)
+        {
+            try
+            {
+                // Check WhatsAppSession status
+                var whatsappSession = await _dbContext.WhatsAppSessions
+                    .FirstOrDefaultAsync(s => s.ModeratorUserId == moderatorUserId && !s.IsDeleted);
+                
+                if (whatsappSession != null && whatsappSession.Status == "pending")
+                {
+                    return true; // Session requires authentication
+                }
+
+                // Check if there are paused messages with PendingQR reason
+                var hasPausedMessages = await _dbContext.Messages
+                    .AnyAsync(m => m.ModeratorId == moderatorUserId 
+                        && m.IsPaused 
+                        && m.PauseReason == "PendingQR"
+                        && (m.Status == "queued" || m.Status == "sending")
+                        && !m.IsDeleted);
+                
+                if (hasPausedMessages)
+                {
+                    return true; // Messages are paused due to PendingQR
+                }
+
+                // Check if there are paused MessageSessions with PendingQR reason
+                var hasPausedSessions = await _dbContext.MessageSessions
+                    .AnyAsync(s => s.ModeratorId == moderatorUserId 
+                        && s.IsPaused 
+                        && s.PauseReason == "PendingQR"
+                        && s.Status == "paused");
+                
+                return hasPausedSessions; // Return true if any session is paused due to PendingQR
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error checking PendingQR pause state: {ex.Message}");
+                // On error, assume not paused to allow operations (fail-safe)
+                return false;
             }
         }
     }

@@ -55,7 +55,7 @@ export default function QueuesManagementView() {
       setTrashTotalCount(response.totalCount);
       setTrashPageNumber(page);
     } catch (error: any) {
-      setTrashError(error?.message || 'Failed to load trash queues');
+      setTrashError(error?.message || 'فشل تحميل الطوابير المحذوفة');
       logger.error('Error loading trash queues:', error);
     } finally {
       setIsLoadingTrash(false);
@@ -75,7 +75,7 @@ export default function QueuesManagementView() {
       setArchivedTotalCount(response.totalCount);
       setArchivedPageNumber(page);
     } catch (error: any) {
-      setArchivedError(error?.message || 'Failed to load archived queues');
+      setArchivedError(error?.message || 'فشل تحميل الطوابير المؤرشفة');
       logger.error('Error loading archived queues:', error);
     } finally {
       setIsLoadingArchived(false);
@@ -101,7 +101,7 @@ export default function QueuesManagementView() {
     async (queueId: string | number) => {
       try {
         await queuesApiClient.restoreQueue(Number(queueId));
-        addToast('Queue restored successfully', 'success');
+        addToast('تم استعادة الطابور بنجاح', 'success');
         // Reload trash list
         loadTrashQueues(trashPageNumber);
         // Refresh sidebar queues
@@ -111,7 +111,7 @@ export default function QueuesManagementView() {
         // Dispatch event for other components
         window.dispatchEvent(new CustomEvent('queueDataUpdated'));
       } catch (error: any) {
-        addToast(error?.message || 'Failed to restore queue', 'error');
+        addToast(error?.message || 'فشل استعادة الطابور', 'error');
         throw error;
       }
     },

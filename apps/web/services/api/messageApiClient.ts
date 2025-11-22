@@ -95,6 +95,8 @@ export interface FailedTaskDto {
   id: number;
   queueId: number;
   queueName: string;
+  moderatorId: number;
+  moderatorName: string;
   patientPhone: string;
   messageContent: string;
   attempts: number;
@@ -630,6 +632,116 @@ export async function retryMessage(messageId: number): Promise<{ status: string;
   });
 }
 
+/**
+ * Pause a single message
+ */
+export async function pauseMessage(messageId: number): Promise<{ success: boolean; message: string }> {
+  return fetchAPI(`/messages/${messageId}/pause`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Resume a paused message
+ */
+export async function resumeMessage(messageId: number): Promise<{ success: boolean; message: string }> {
+  return fetchAPI(`/messages/${messageId}/resume`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Pause all messages for a session
+ */
+export async function pauseSessionMessages(sessionId: string): Promise<{ success: boolean; pausedCount: number }> {
+  return fetchAPI(`/messages/session/${sessionId}/pause`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Resume all paused messages for a session
+ */
+export async function resumeSessionMessages(sessionId: string): Promise<{ success: boolean; resumedCount: number }> {
+  return fetchAPI(`/messages/session/${sessionId}/resume`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Pause all messages for a moderator (unified WhatsApp session)
+ */
+export async function pauseAllModeratorMessages(moderatorId: number): Promise<{ success: boolean; pausedMessages: number; pausedSessions: number }> {
+  return fetchAPI(`/messages/moderator/${moderatorId}/pause`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Resume all paused messages for a moderator
+ */
+export async function resumeAllModeratorMessages(moderatorId: number): Promise<{ success: boolean; resumedMessages: number; resumedSessions: number }> {
+  return fetchAPI(`/messages/moderator/${moderatorId}/resume`, {
+    method: 'POST',
+  });
+}
+
+// ============================================
+// Sessions API
+// ============================================
+
+export interface OngoingSessionDto {
+  sessionId: string; // Guid serialized as string
+  queueName: string;
+  startTime: string;
+  total: number;
+  sent: number;
+  status: string; // active, paused
+  patients: SessionPatientDto[];
+}
+
+export interface SessionPatientDto {
+  patientId: number;
+  name: string;
+  phone: string;
+  status: string; // sent, pending, failed
+  isPaused: boolean;
+}
+
+/**
+ * Get all ongoing sessions for current user's moderator
+ */
+export async function getOngoingSessions(): Promise<{ success: boolean; data: OngoingSessionDto[] }> {
+  return fetchAPI('/sessions/ongoing');
+}
+
+/**
+ * Pause a session
+ */
+export async function pauseSession(sessionId: string): Promise<{ success: boolean; pausedCount: number }> {
+  return fetchAPI(`/sessions/${sessionId}/pause`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Resume a paused session
+ */
+export async function resumeSession(sessionId: string): Promise<{ success: boolean; resumedCount: number }> {
+  return fetchAPI(`/sessions/${sessionId}/resume`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Delete/cancel a session
+ */
+export async function deleteSession(sessionId: string): Promise<{ success: boolean }> {
+  return fetchAPI(`/sessions/${sessionId}`, {
+    method: 'DELETE',
+  });
+}
+
 // ============================================
 // Failed Tasks API
 // ============================================
@@ -639,12 +751,16 @@ export async function retryMessage(messageId: number): Promise<{ status: string;
  */
 export async function getFailedTasks(options?: {
   queueId?: number;
+  moderatorUserId?: number;
   pageNumber?: number;
   pageSize?: number;
 }): Promise<PaginatedFailedTasksResponse> {
   const params = new URLSearchParams();
   if (options?.queueId !== undefined) {
     params.append('queueId', options.queueId.toString());
+  }
+  if (options?.moderatorUserId !== undefined) {
+    params.append('moderatorUserId', options.moderatorUserId.toString());
   }
   if (options?.pageNumber !== undefined) {
     params.append('pageNumber', options.pageNumber.toString());
@@ -733,6 +849,18 @@ export const messageApiClient = {
   sendMessage,
   sendMessages,
   retryMessage,
+  pauseMessage,
+  resumeMessage,
+  pauseSessionMessages,
+  resumeSessionMessages,
+  pauseAllModeratorMessages,
+  resumeAllModeratorMessages,
+  
+  // Sessions
+  getOngoingSessions,
+  pauseSession,
+  resumeSession,
+  deleteSession,
   
   // Failed Tasks
   getFailedTasks,

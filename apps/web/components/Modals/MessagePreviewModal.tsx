@@ -6,12 +6,14 @@
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatPositionDisplay } from '@/utils/queuePositionUtils';
 import { resolvePatientMessages } from '@/services/queueMessageService';
 import { QueueMessageConfig, MessageResolution } from '@/types/messageCondition';
 import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { whatsappApiClient } from '@/services/api/whatsappApiClient';
+import { useWhatsAppSession } from '@/contexts/WhatsAppSessionContext';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 // normalizePhoneNumber removed - phone numbers stored separately from country codes
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -22,6 +24,10 @@ export default function MessagePreviewModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
   const { queues, messageTemplates, messageConditions, patients: contextPatients, refreshPatients } = useQueue();
+  const { user } = useAuth();
+  const { sessionData } = useWhatsAppSession();
+  const moderatorUserId = sessionData?.moderatorUserId;
+  const userId = user?.id ? parseInt(user.id, 10) : undefined;
   const data = getModalData('messagePreview');
 
   const isOpen = openModals.has('messagePreview');
@@ -44,6 +50,8 @@ export default function MessagePreviewModal() {
   }>>({});
   const [isValidating, setIsValidating] = useState(false);
   const [validationProgress, setValidationProgress] = useState({ current: 0, total: 0 });
+  const [validationPaused, setValidationPaused] = useState(false);
+  const [shouldResumeValidation, setShouldResumeValidation] = useState(false);
   
   // Abort controller to actually cancel fetch requests
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -61,6 +69,46 @@ export default function MessagePreviewModal() {
   useEffect(() => {
     isOpenRef.current = isOpen;
   }, [isOpen]);
+
+  // Helper function to generate user-friendly error messages with actionable guidance
+  const getValidationErrorMessage = (status: typeof validationStatus[string] | undefined): string => {
+    if (!status || !status.error) return '';
+    
+    const error = status.error;
+    
+    // Service unavailable
+    if (error.includes('غير متاحة') || error.includes('ServiceUnavailable')) {
+      return 'خدمة الواتساب غير متاحة حالياً. تحقق من:\n• اتصال الإنترنت\n• حالة خادم الواتساب\n• يمكنك المتابعة بدون التحقق';
+    }
+    
+    // Cancelled
+    if (error.includes('إلغاء')) {
+      return 'تم إلغاء عملية التحقق. اضغط على زر إعادة المحاولة للتحقق مرة أخرى.';
+    }
+    
+    // Connection errors
+    if (error.includes('connection') || error.includes('اتصال') || error.includes('شبكة')) {
+      return 'فشل الاتصال بخادم الواتساب. تحقق من:\n• اتصال الإنترنت\n• إعدادات الشبكة\n• جدار الحماية';
+    }
+    
+    // Authentication required
+    if (error.includes('authentication') || error.includes('مصادقة') || error.includes('QR')) {
+      return 'يلزم المصادقة على جلسة الواتساب. انتقل إلى:\nالإعدادات ← إدارة الواتساب ← المصادقة';
+    }
+    
+    // Timeout errors
+    if (error.includes('timeout') || error.includes('انتهت المهلة')) {
+      return 'انتهت مهلة الطلب. جرّب:\n• إعادة المحاولة\n• التحقق من سرعة الإنترنت';
+    }
+    
+    // Session lock timeout
+    if (error.includes('lock') || error.includes('قفل')) {
+      return 'جلسة الواتساب مشغولة حالياً. انتظر قليلاً ثم أعد المحاولة.';
+    }
+    
+    // Default error
+    return error;
+  };
 
   // Get queue data from context as fallback
   const queue = useMemo(() => {
@@ -357,7 +405,47 @@ export default function MessagePreviewModal() {
         window.dispatchEvent(new CustomEvent('messageDataUpdated'));
       }, 100);
     } catch (err: any) {
-      addToast(err?.message || 'فشل إرسال الرسائل', 'error');
+      // Handle PendingQR errors (authentication required)
+      if (err?.error === 'PendingQR' || err?.code === 'AUTHENTICATION_REQUIRED' || err?.message?.includes('المصادقة')) {
+        addToast(
+          err?.message || 'جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.',
+          'error'
+        );
+        // Dispatch event to notify WhatsApp session context
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
+            detail: { moderatorUserId: moderatorUserId, source: 'sendMessages' }
+          }));
+        }
+      }
+      // Handle WhatsApp validation errors specifically
+      else if (err?.error === 'WhatsAppValidationRequired' || err?.message?.includes('أرقام واتساب غير محققة')) {
+        const invalidCount = err?.invalidPatients?.length || 0;
+        const details = invalidCount > 0 
+          ? ` (${invalidCount} ${invalidCount === 1 ? 'مريض' : 'مرضى'})`
+          : '';
+        addToast(
+          `لا يمكن إرسال الرسائل: بعض المرضى لديهم أرقام واتساب غير محققة${details}. يرجى التحقق من الأرقام أولاً باستخدام زر "التحقق من كافة الأرقام".`,
+          'error'
+        );
+        // Optionally: mark these patients in validation status
+        if (err?.invalidPatients && Array.isArray(err.invalidPatients)) {
+          const newStatus: Record<string, any> = {};
+          err.invalidPatients.forEach((patient: any) => {
+            newStatus[String(patient.patientId)] = {
+              isValid: patient.isValidWhatsAppNumber === true ? true : false,
+              isChecking: false,
+              error: patient.isValidWhatsAppNumber === null 
+                ? 'لم يتم التحقق من الرقم بعد' 
+                : 'رقم الواتساب غير صالح',
+              attempts: 0,
+            };
+          });
+          setValidationStatus(prev => ({ ...prev, ...newStatus }));
+        }
+      } else {
+        addToast(err?.message || 'فشل إرسال الرسائل', 'error');
+      }
     } finally {
       setIsSending(false);
     }
@@ -490,6 +578,8 @@ export default function MessagePreviewModal() {
       // Pass abort signal to actually cancel the fetch request
       const result = await whatsappApiClient.checkWhatsAppNumber(
         phoneNumber,
+        moderatorUserId,
+        userId,
         abortControllerRef.current?.signal
       );
       
@@ -866,6 +956,17 @@ export default function MessagePreviewModal() {
 
   // Retry validation for a specific patient (always re-validates, even if value exists)
   const handleRetryValidation = useCallback(async (patientId: string) => {
+    // If batch validation is running, pause it
+    if (isValidating) {
+      // Abort current validation
+      abortControllerRef.current?.abort();
+      setValidationPaused(true);
+      addToast('جاري إيقاف التحقق الحالي مؤقتاً... برجاء الانتظار من دقيقة لدقيقتين... سيتم التحقق من الرقم بعد الانتهاء', 'info');
+      
+      // Wait for abort to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
     // First, refresh patient data to get latest from database
     if (queueId) {
       try {
@@ -891,11 +992,8 @@ export default function MessagePreviewModal() {
     const patientToUse = patient || contextPatients.find(p => String(p.id) === patientId);
     if (!patientToUse || !patientToUse.phone) return;
 
-    // ALWAYS re-validate by calling API, regardless of existing database value
-    // Create new AbortController if one doesn't exist
-    if (!abortControllerRef.current) {
-      abortControllerRef.current = new AbortController();
-    }
+    // Create new AbortController for this single validation
+    abortControllerRef.current = new AbortController();
     
     const countryCode = patientToUse.countryCode || '+20';
     // Combine country code and phone number: +20 1018542431 -> +201018542431
@@ -916,6 +1014,8 @@ export default function MessagePreviewModal() {
     try {
       const result = await whatsappApiClient.checkWhatsAppNumber(
         phoneNumber,
+        moderatorUserId,
+        userId,
         abortControllerRef.current?.signal
       );
 
@@ -1003,8 +1103,15 @@ export default function MessagePreviewModal() {
           attempts: 0,
         }
       }));
+    } finally {
+      // If validation was paused, resume it after this retry completes
+      if (validationPaused) {
+        setValidationPaused(false);
+        setShouldResumeValidation(true);
+        addToast('استئناف التحقق من أرقام الواتساب...', 'success');
+      }
     }
-  }, [sortedPatients, contextPatients, checkPhoneNumber, queueId, refreshPatients, addToast]);
+  }, [sortedPatients, contextPatients, checkPhoneNumber, queueId, refreshPatients, addToast, isValidating, validationPaused]);
 
   // Handle modal close with confirmation if validating
   const handleCloseModal = () => {
@@ -1056,8 +1163,19 @@ export default function MessagePreviewModal() {
       setValidationProgress({ current: 0, total: 0 });
       setRemovedPatients([]);
       setIsSending(false);
+      setValidationPaused(false);
+      setShouldResumeValidation(false);
     }
   }, [isOpen]);
+
+  // Resume validation after single patient retry completes
+  useEffect(() => {
+    if (shouldResumeValidation && !isValidating && !validationPaused) {
+      setShouldResumeValidation(false);
+      // Resume batch validation
+      validateAllPatients();
+    }
+  }, [shouldResumeValidation, isValidating, validationPaused, validateAllPatients]);
 
   if (!isOpen) return null;
 
@@ -1202,13 +1320,19 @@ export default function MessagePreviewModal() {
                                   return <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>;
                                 }
                                 if (status?.isValid === true) {
-                                  return <i className="fas fa-check-circle text-green-500 text-xs"></i>;
+                                  return <i className="fas fa-check-circle text-green-500 text-xs" title="رقم واتساب صحيح"></i>;
                                 }
                                 if (status?.isValid === false) {
-                                  return <i className="fas fa-times-circle text-red-500 text-xs"></i>;
+                                  return <i className="fas fa-times-circle text-red-500 text-xs" title="رقم واتساب غير صحيح أو غير مفعّل"></i>;
                                 }
                                 if (status?.error) {
-                                  return <i className="fas fa-exclamation-triangle text-orange-500 text-xs"></i>;
+                                  const errorMsg = getValidationErrorMessage(status);
+                                  return (
+                                    <i 
+                                      className="fas fa-exclamation-triangle text-orange-500 text-xs cursor-help" 
+                                      title={errorMsg}
+                                    ></i>
+                                  );
                                 }
                                 return null;
                               })()}

@@ -137,7 +137,7 @@ namespace Clinics.Api.Controllers
                 // Could log here with ILogger if needed
                 Console.WriteLine(errorMsg);
                 
-                return StatusCode(500, new { success = false, errors = new[] { new { code = "InternalError", message = "An error occurred during login. Please try again later." } } });
+                return StatusCode(500, new { success = false, errors = new[] { new { code = "InternalError", message = "حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى لاحقاً." } } });
             }
         }
 

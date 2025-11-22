@@ -167,7 +167,7 @@ public class TemplateCascadeService : ITemplateCascadeService
         {
             await transaction.RollbackAsync();
             _logger.LogError(ex, "Error soft-deleting template {TemplateId}", templateId);
-            return (false, "An error occurred while deleting the template");
+            return (false, "حدث خطأ أثناء حذف القالب");
         }
     }
 
@@ -180,20 +180,20 @@ public class TemplateCascadeService : ITemplateCascadeService
 
             if (template == null)
             {
-                return (false, "Deleted template not found");
+                return (false, "القالب المحذوف غير موجود");
             }
 
             // Check if within 30-day window
             if (!template.DeletedAt.HasValue)
             {
-                return (false, "Deletion timestamp missing");
+                return (false, "طابع زمني للحذف مفقود");
             }
 
             var deletedAtValue = template.DeletedAt.Value;
             var daysDeleted = (DateTime.UtcNow - deletedAtValue).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
-                return (false, "restore_window_expired");
+                return (false, "انتهت فترة الاستعادة");
             }
 
             // Capture operation snapshot timestamp to ensure consistency across all transaction operations
@@ -279,7 +279,7 @@ public class TemplateCascadeService : ITemplateCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error restoring template {TemplateId}", templateId);
-            return (false, "An error occurred while restoring the template");
+            return (false, "حدث خطأ أثناء استعادة القالب");
         }
     }
 

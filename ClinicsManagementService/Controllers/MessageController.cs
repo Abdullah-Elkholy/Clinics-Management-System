@@ -18,7 +18,7 @@ namespace ClinicsManagementService.Controllers
         }
 
         [HttpPost("send")]
-        public async Task<IActionResult> Send([FromQuery] string phone, [FromQuery] string message)
+        public async Task<IActionResult> Send([FromQuery] string phone, [FromQuery] string message, [FromQuery] int moderatorUserId)
         {
             var phoneValidation = _validationService.ValidatePhoneNumber(phone);
             var messageValidation = _validationService.ValidateMessage(message);
@@ -32,7 +32,7 @@ namespace ClinicsManagementService.Controllers
             bool sent;
             try
             {
-                sent = await _messageSender.SendMessageAsync(phone, message);
+                sent = await _messageSender.SendMessageAsync(moderatorUserId, phone, message);
             }
             catch (Exception ex)
             {

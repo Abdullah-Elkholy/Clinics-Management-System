@@ -42,10 +42,20 @@ function matchesCondition(offset: number, cond: MessageCondition): boolean {
   }
 }
 
-function replacePlaceholders(template: string, params: { PN?: string; PQP?: number; ETR?: string; DN?: string; }): string {
+/**
+ * Replace placeholders in message templates with actual values.
+ * Supported variables:
+ * - {PN}: Patient Name
+ * - {PQP}: Patient Queue Position (the patient's position in the queue)
+ * - {CQP}: Current Queue Position (the position currently being served)
+ * - {ETR}: Estimated Time Remaining (formatted as "X ساعة و Y دقيقة")
+ * - {DN}: Department/Queue Name
+ */
+function replacePlaceholders(template: string, params: { PN?: string; PQP?: number; CQP?: number; ETR?: string; DN?: string; }): string {
   return template
     .replace(/{PN}/g, params.PN ?? '')
     .replace(/{PQP}/g, params.PQP !== undefined ? String(params.PQP) : '')
+    .replace(/{CQP}/g, params.CQP !== undefined ? String(params.CQP) : '')
     .replace(/{ETR}/g, params.ETR ?? '')
     .replace(/{DN}/g, params.DN ?? '');
 }
@@ -98,6 +108,7 @@ export function resolvePatientMessage(
       const text = replacePlaceholders(cond.template, {
         PN: patientName,
         PQP: patientPosition,
+        CQP: currentQueuePosition,
         ETR: etrDisplay,
         DN: config.queueName,
       });
@@ -120,6 +131,7 @@ export function resolvePatientMessage(
       const text = replacePlaceholders(cond.template, {
         PN: patientName,
         PQP: patientPosition,
+        CQP: currentQueuePosition,
         ETR: etrDisplay,
         DN: config.queueName,
       });
@@ -141,6 +153,7 @@ export function resolvePatientMessage(
     const text = replacePlaceholders(defaultCondition.template, {
       PN: patientName,
       PQP: patientPosition,
+      CQP: currentQueuePosition,
       ETR: etrDisplay,
       DN: config.queueName,
     });
@@ -160,6 +173,7 @@ export function resolvePatientMessage(
     const text = replacePlaceholders(config.defaultTemplate, {
       PN: patientName,
       PQP: patientPosition,
+      CQP: currentQueuePosition,
       ETR: etrDisplay,
       DN: config.queueName,
     });

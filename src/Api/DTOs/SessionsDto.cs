@@ -17,4 +17,5 @@ public class SessionPatientDto
     public string Name { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty; // sent, pending, failed
+    public bool IsPaused { get; set; } = false;
 }

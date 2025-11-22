@@ -160,7 +160,10 @@ dotnet run --project src/Api/Clinics.Api.csproj        # API: http://localhost:5
 dotnet ef database update --project src/Infrastructure --startup-project src/Api
 
 # Deploy when ready
-# Follow: docs/DEPLOYMENT.md
+# See deployment guides:
+# - DEPLOYMENT_SUMMARY.md (quick overview)
+# - QUICK_DEPLOY_GUIDE.md (step-by-step instructions)
+# - DEPLOYMENT_RESEARCH.md (complete research & details)
 ```
 
 ### Recent Changes (Phase: Operator-Driven System Refactor)
@@ -2504,6 +2507,43 @@ Pull requests are welcome! For major changes, open an issue first to discuss.
 - Use dependency injection
 - Maintain clean architecture
 - Document public APIs
+
+---
+
+## 🚀 Deployment
+
+Ready to deploy your Clinics Management System? We've created comprehensive deployment guides to help you get your system live.
+
+### 📚 Deployment Documentation
+
+| Document | Description | When to Use |
+|----------|-------------|-------------|
+| **[DEPLOYMENT_SUMMARY.md](./DEPLOYMENT_SUMMARY.md)** | Quick overview and recommendations | Start here for a high-level view |
+| **[QUICK_DEPLOY_GUIDE.md](./QUICK_DEPLOY_GUIDE.md)** | Step-by-step deployment instructions | Follow this for actual deployment |
+| **[DEPLOYMENT_RESEARCH.md](./DEPLOYMENT_RESEARCH.md)** | Complete research and detailed information | Reference for detailed requirements |
+
+### 🎯 Quick Start
+
+1. **Choose Hosting**: Railway.app (recommended) or Render.com
+2. **Read**: [QUICK_DEPLOY_GUIDE.md](./QUICK_DEPLOY_GUIDE.md)
+3. **Deploy**: Follow the step-by-step instructions
+4. **Test**: Verify all functionality works
+
+### 💡 Key Points
+
+- **Free Hosting Available**: Railway.app offers $5/month free credit (enough for testing)
+- **Database Migration**: Free hosting uses PostgreSQL (migration guide included)
+- **Free Domain**: Freenom provides free .tk/.ml/.ga domains
+- **Auto-Deploy**: Most platforms support GitHub auto-deployment
+
+### ⚠️ Important Notes
+
+- Your system uses SQL Server, but free hosting requires PostgreSQL migration
+- WhatsApp service needs Playwright browser support (may require Docker)
+- Environment variables must be configured for production
+- SSL/HTTPS is automatically provided by most hosting platforms
+
+**Start deploying**: [QUICK_DEPLOY_GUIDE.md](./QUICK_DEPLOY_GUIDE.md) 🚀
 
 ---
 

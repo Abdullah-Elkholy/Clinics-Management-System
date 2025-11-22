@@ -32,15 +32,17 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Get failed tasks with pagination
-        /// Optional: filter by queueId (if not provided, returns all failed tasks accessible to user)
+        /// Optional: filter by queueId or moderatorUserId (if not provided, returns all failed tasks accessible to user)
         /// </summary>
         /// <param name="queueId">Optional queue ID to filter by</param>
+        /// <param name="moderatorUserId">Optional moderator user ID to filter by</param>
         /// <param name="pageNumber">Page number (1-indexed), default 1</param>
         /// <param name="pageSize">Items per page, default 10, max 100</param>
         /// <returns>Paginated list of failed tasks</returns>
         [HttpGet]
         public async Task<ActionResult<PaginatedFailedTasksResponse>> GetFailedTasks(
             [FromQuery] int? queueId,
+            [FromQuery] int? moderatorUserId,
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10)
         {
@@ -62,6 +64,12 @@ namespace Clinics.Api.Controllers
                 if (queueId.HasValue)
                 {
                     query = query.Where(m => m.QueueId == queueId.Value);
+                }
+
+                // Filter by moderator if provided
+                if (moderatorUserId.HasValue)
+                {
+                    query = query.Where(m => m.ModeratorId == moderatorUserId.Value);
                 }
 
                 // Authorization: Check if user can access these tasks
@@ -86,6 +94,7 @@ namespace Clinics.Api.Controllers
                 var failedTasks = await query
                     .Include(m => m.Queue)
                     .Include(m => m.Template)
+                    .Include(m => m.Moderator)
                     .OrderByDescending(m => m.CreatedAt)
                     .ThenByDescending(m => m.LastAttemptAt)
                     .Skip((pageNumber - 1) * pageSize)
@@ -98,6 +107,8 @@ namespace Clinics.Api.Controllers
                     Id = (int)m.Id,
                     QueueId = m.QueueId ?? 0,
                     QueueName = m.Queue?.DoctorName ?? "Unknown",
+                    ModeratorId = m.ModeratorId ?? 0,
+                    ModeratorName = m.Moderator != null ? $"{m.Moderator.FirstName} {m.Moderator.LastName}".Trim() : "Unknown",
                     PatientPhone = m.PatientPhone ?? m.RecipientPhone,
                     MessageContent = m.Template?.Content ?? m.Content ?? "",
                     Attempts = m.Attempts,
@@ -135,6 +146,7 @@ namespace Clinics.Api.Controllers
                 var message = await _db.Messages
                     .Include(m => m.Queue)
                     .Include(m => m.Template)
+                    .Include(m => m.Moderator)
                     .FirstOrDefaultAsync(m => m.Id == id);
 
                 if (message == null)
@@ -154,6 +166,8 @@ namespace Clinics.Api.Controllers
                     Id = (int)message.Id,
                     QueueId = message.QueueId ?? 0,
                     QueueName = message.Queue?.DoctorName ?? "Unknown",
+                    ModeratorId = message.ModeratorId ?? 0,
+                    ModeratorName = message.Moderator != null ? $"{message.Moderator.FirstName} {message.Moderator.LastName}".Trim() : "Unknown",
                     PatientPhone = message.PatientPhone ?? message.RecipientPhone,
                     MessageContent = message.Template?.Content ?? message.Content ?? "",
                     Attempts = message.Attempts,
@@ -185,6 +199,7 @@ namespace Clinics.Api.Controllers
                 var message = await _db.Messages
                     .Include(m => m.Queue)
                     .Include(m => m.Template)
+                    .Include(m => m.Moderator)
                     .FirstOrDefaultAsync(m => m.Id == id);
 
                 if (message == null)
@@ -211,6 +226,8 @@ namespace Clinics.Api.Controllers
                     Id = (int)message.Id,
                     QueueId = message.QueueId ?? 0,
                     QueueName = message.Queue?.DoctorName ?? "Unknown",
+                    ModeratorId = message.ModeratorId ?? 0,
+                    ModeratorName = message.Moderator != null ? $"{message.Moderator.FirstName} {message.Moderator.LastName}".Trim() : "Unknown",
                     PatientPhone = message.PatientPhone ?? message.RecipientPhone,
                     MessageContent = message.Template?.Content ?? message.Content ?? "",
                     Attempts = message.Attempts,

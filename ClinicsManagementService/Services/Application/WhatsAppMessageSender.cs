@@ -15,12 +15,12 @@ namespace ClinicsManagementService.Services.Application
     public class WhatsAppMessageSender : IMessageSender
     {
         private readonly IWhatsAppService _whatsappService;
-        private readonly Func<IBrowserSession> _browserSessionFactory;
+        private readonly Func<int, IBrowserSession> _browserSessionFactory;
         private readonly INotifier _notifier;
         private readonly IRetryService _retryService;
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly IWhatsAppUIService _whatsappUIService;
-        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService, IWhatsAppSessionManager sessionManager, IWhatsAppUIService whatsappUIService)
+        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<int, IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService, IWhatsAppSessionManager sessionManager, IWhatsAppUIService whatsappUIService)
         {
             _whatsappService = whatsappService;
             _browserSessionFactory = browserSessionFactory;
@@ -31,7 +31,7 @@ namespace ClinicsManagementService.Services.Application
         }
 
         // Send multiple phone/message pairs with random throttling between each send, returning MessageSendResult for each.
-        public async Task<List<MessageSendResult>> SendBulkWithThrottlingAsync(IEnumerable<(string Phone, string Message)> items, int minDelayMs, int maxDelayMs)
+        public async Task<List<MessageSendResult>> SendBulkWithThrottlingAsync(int moderatorUserId, IEnumerable<(string Phone, string Message)> items, int minDelayMs, int maxDelayMs)
         {
             _notifier.Notify("Starting bulk send process...");
             var results = new List<MessageSendResult>();
@@ -40,8 +40,8 @@ namespace ClinicsManagementService.Services.Application
             int total = items.Count();
             int counter = 1;
 
-            var browserSession = _browserSessionFactory();
-            browserSession = await _sessionManager.GetOrCreateSessionAsync();
+            var browserSession = _browserSessionFactory(moderatorUserId);
+            browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
 
             foreach (var item in items)
             {
@@ -69,8 +69,8 @@ namespace ClinicsManagementService.Services.Application
                     var deliveryResult = await _retryService.ExecuteWithRetryAsync<string?>(
                         async () =>
                         {
-                            var session = _browserSessionFactory();
-                            session = await _sessionManager.GetOrCreateSessionAsync();
+                            var session = _browserSessionFactory(moderatorUserId);
+                            session = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
                             try
                             {
                                 return await _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, session);
@@ -156,12 +156,12 @@ namespace ClinicsManagementService.Services.Application
             return results;
         }
 
-        public async Task<bool> SendMessageAsync(string phoneNumber, string message, CancellationToken cancellationToken = default)
+        public async Task<bool> SendMessageAsync(int moderatorUserId, string phoneNumber, string message, CancellationToken cancellationToken = default)
         {
             // Check cancellation before starting
             cancellationToken.ThrowIfCancellationRequested();
 
-            var browserSession = _browserSessionFactory();
+            var browserSession = _browserSessionFactory(moderatorUserId);
             // browserSession = await _sessionManager.GetOrCreateSessionAsync();
             MessageSendResult result;
             try
@@ -172,7 +172,7 @@ namespace ClinicsManagementService.Services.Application
                         // Check cancellation before getting session
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        browserSession = await _sessionManager.GetOrCreateSessionAsync();
+                        browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
                         try
                         {
                             // Check cancellation before sending
@@ -221,9 +221,9 @@ namespace ClinicsManagementService.Services.Application
             return result.Sent;
         }
 
-        public async Task<List<MessageSendResult>> SendMessagesAsync(string phoneNumber, IEnumerable<string> messages)
+        public async Task<List<MessageSendResult>> SendMessagesAsync(int moderatorUserId, string phoneNumber, IEnumerable<string> messages)
         {
-            var browserSession = _browserSessionFactory();
+            var browserSession = _browserSessionFactory(moderatorUserId);
             // browserSession = await _sessionManager.GetOrCreateSessionAsync();
             var results = new List<MessageSendResult>();
             foreach (var message in messages)
@@ -234,7 +234,7 @@ namespace ClinicsManagementService.Services.Application
                     var deliveryResult = await _retryService.ExecuteWithRetryAsync(
                         async () =>
                         {
-                            browserSession = await _sessionManager.GetOrCreateSessionAsync();
+                            browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
                             try
                             {
                                 return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
