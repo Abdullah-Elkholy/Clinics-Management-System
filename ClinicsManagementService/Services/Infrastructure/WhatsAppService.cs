@@ -22,6 +22,7 @@ namespace ClinicsManagementService.Services
         private readonly IWhatsAppUIService _uiService;
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly CancellationTokenSource _cts = new();
+        private int? _lastModeratorId;
 
         public WhatsAppService(
             INotifier notifier,
@@ -478,7 +479,11 @@ namespace ClinicsManagementService.Services
 
         public async Task<bool> CheckInternetConnectivityAsync() => await _networkService.CheckInternetConnectivityAsync();
 
-        public async Task<IBrowserSession> PrepareSessionAsync() => await _sessionManager.GetOrCreateSessionAsync();
+        public async Task<IBrowserSession> PrepareSessionAsync(int moderatorId)
+        {
+            _lastModeratorId = moderatorId;
+            return await _sessionManager.GetOrCreateSessionAsync(moderatorId);
+        }
 
         // Delegate retry logic to central IRetryService
         public async Task<OperationResult<string?>> ExecuteWithRetryAsync(
@@ -507,7 +512,11 @@ namespace ClinicsManagementService.Services
                     _notifier?.Notify($"⚠️ Error cancelling CTS during cleanup: {cancelEx.Message}");
                 }
 
-                var session = await _sessionManager.GetCurrentSessionAsync();
+                IBrowserSession? session = null;
+                if (_lastModeratorId.HasValue)
+                {
+                    session = await _sessionManager.GetCurrentSessionAsync(_lastModeratorId.Value);
+                }
                 if (session != null)
                 {
                     try { await DisposeBrowserSessionAsync(session); } catch (Exception disposeEx) { _notifier?.Notify($"⚠️ Error disposing browser session: {disposeEx.Message}"); }

@@ -64,16 +64,19 @@ public class PatientCascadeService : IPatientCascadeService
                 return (false, "Patient not found");
             }
 
-            // Mark patient as deleted
+            // Capture operation snapshot timestamp to ensure consistency
+            var operationTimestamp = DateTime.UtcNow;
+
+            // Mark patient as deleted with snapshot timestamp
             patient.IsDeleted = true;
-            patient.DeletedAt = DateTime.UtcNow;
+            patient.DeletedAt = operationTimestamp;
             patient.DeletedBy = deletedByUserId;
 
             await _db.SaveChangesAsync();
 
             _logger.LogInformation(
                 "Patient {PatientId} soft-deleted by user {UserId} at {Timestamp}",
-                patientId, deletedByUserId, DateTime.UtcNow);
+                patientId, deletedByUserId, operationTimestamp);
 
             return (true, "");
         }

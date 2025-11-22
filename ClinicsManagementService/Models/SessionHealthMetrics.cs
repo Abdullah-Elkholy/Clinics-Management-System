@@ -13,6 +13,7 @@ namespace ClinicsManagementService.Models
         public DateTime? LastBackup { get; set; }
         public bool BackupExists { get; set; }
         public bool IsAuthenticated { get; set; }
+        public string? ProviderSessionId { get; set; }
         public double CompressionRatio => BackupSizeBytes > 0 ? Math.Round((double)CurrentSizeBytes / BackupSizeBytes, 2) : 0;
         public long ThresholdBytes { get; set; }
         public double ThresholdMB => Math.Round(ThresholdBytes / (1024.0 * 1024.0), 2);

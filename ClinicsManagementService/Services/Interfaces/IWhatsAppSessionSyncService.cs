@@ -13,7 +13,9 @@ namespace ClinicsManagementService.Services.Interfaces
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <param name="status">Status: 'connected', 'disconnected', 'pending'</param>
         /// <param name="lastSyncAt">Optional last sync timestamp</param>
-        Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null);
+        /// <param name="providerSessionId">Optional provider session identifier</param>
+        /// <param name="activityUserId">Optional user ID performing this operation for audit trail</param>
+        Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null, string? providerSessionId = null, int? activityUserId = null);
 
         /// <summary>
         /// Get WhatsApp session status from database

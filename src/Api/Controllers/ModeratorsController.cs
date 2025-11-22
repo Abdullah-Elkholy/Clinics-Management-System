@@ -551,7 +551,11 @@ namespace Clinics.Api.Controllers
                     SessionName = session.SessionName,
                     Status = session.Status,
                     LastSyncAt = session.LastSyncAt,
-                    CreatedAt = session.CreatedAt
+                    CreatedAt = session.CreatedAt,
+                    ProviderSessionId = session.ProviderSessionId,
+                    CreatedByUserId = session.CreatedByUserId,
+                    LastActivityUserId = session.LastActivityUserId,
+                    LastActivityAt = session.LastActivityAt
                 };
 
                 return Ok(new { success = true, data = result });

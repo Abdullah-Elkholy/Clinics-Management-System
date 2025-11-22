@@ -149,6 +149,16 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<Quota>().Property(q => q.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<Session>().Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<WhatsAppSession>().Property(w => w.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            
+            // WhatsAppSession unique constraint - one session per moderator
+            modelBuilder.Entity<WhatsAppSession>()
+                .HasIndex(w => w.ModeratorUserId)
+                .IsUnique();
+            
+            // WhatsAppSession soft-delete global query filter
+            modelBuilder.Entity<WhatsAppSession>()
+                .HasQueryFilter(w => !w.IsDeleted);
+            
             modelBuilder.Entity<MessageSession>().Property(s => s.StartTime).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<ModeratorSettings>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<ModeratorSettings>().Property(m => m.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");

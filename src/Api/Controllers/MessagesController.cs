@@ -70,6 +70,32 @@ namespace Clinics.Api.Controllers
                         .Where(p => req.PatientIds.Contains(p.Id))
                         .ToListAsync();
                     
+                    // Validate IsValidWhatsAppNumber for all patients
+                    var invalidPatients = patients.Where(p => !p.IsValidWhatsAppNumber.HasValue || p.IsValidWhatsAppNumber.Value == false).ToList();
+                    if (invalidPatients.Any())
+                    {
+                        await transaction.RollbackAsync();
+                        
+                        var invalidDetails = invalidPatients.Select(p => new
+                        {
+                            patientId = p.Id,
+                            name = p.FullName,
+                            phone = p.PhoneNumber,
+                            isValidWhatsAppNumber = p.IsValidWhatsAppNumber
+                        }).ToList();
+                        
+                        _logger.LogWarning("User {UserId} attempted to send messages to {Count} patients with unvalidated WhatsApp numbers", 
+                            userId, invalidPatients.Count);
+                        
+                        return BadRequest(new 
+                        { 
+                            success = false, 
+                            error = "WhatsAppValidationRequired",
+                            message = "بعض المرضى لديهم أرقام واتساب غير محققة. يرجى التحقق من الأرقام أولاً.",
+                            invalidPatients = invalidDetails
+                        });
+                    }
+                    
                     var messages = new List<Message>();
 
                     foreach (var p in patients)

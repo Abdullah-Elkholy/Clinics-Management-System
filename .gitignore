@@ -6,8 +6,8 @@ obj/
 [Ll]ogs/
 
 # WhatsApp session login data
-whatsapp-session/
-whatsapp-session.zip
+whatsapp-session-3/
+whatsapp-session-3.zip
 ClinicsManagementServiceNewOutdated/
 
 # Debugging screenshot from inside whatsapp to ensure message is sent successfully or not

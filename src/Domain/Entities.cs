@@ -533,7 +533,7 @@ namespace Clinics.Domain
     }
 
     [Table("WhatsAppSessions")]
-    public class WhatsAppSession
+    public class WhatsAppSession : ISoftDeletable
     {
         [Key]
         public int Id { get; set; }
@@ -554,6 +554,20 @@ namespace Clinics.Domain
 
         [Required]
         public DateTime CreatedAt { get; set; }
+
+        // Audit trail fields
+        public int? CreatedByUserId { get; set; }
+        public int? LastActivityUserId { get; set; }
+        public DateTime? LastActivityAt { get; set; }
+
+        // Soft-delete fields
+        public bool IsDeleted { get; set; } = false;
+        public DateTime? DeletedAt { get; set; }
+        public int? DeletedBy { get; set; }
+        public DateTime? RestoredAt { get; set; }
+        public int? RestoredBy { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+        public int? UpdatedBy { get; set; }
     }
 
     [Table("MessageSessions")]

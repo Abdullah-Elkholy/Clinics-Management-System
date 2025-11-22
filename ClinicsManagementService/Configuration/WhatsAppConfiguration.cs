@@ -215,7 +215,20 @@ namespace ClinicsManagementService.Configuration
         #endregion
 
         #region Session and Storage
-        public const string SessionDirectory = "whatsapp-session";
+        /// <summary>
+        /// Get session directory for a specific moderator
+        /// </summary>
+        /// <param name="moderatorId">Moderator ID</param>
+        /// <returns>Session directory path</returns>
+        public static string GetSessionDirectory(int moderatorId)
+        {
+            return $"whatsapp-session-{moderatorId}";
+        }
+
+        /// <summary>
+        /// Legacy session directory (for migration)
+        /// </summary>
+        public const string LegacySessionDirectory = "whatsapp-session";
         #endregion
 
         #region Session Optimization
@@ -225,9 +238,19 @@ namespace ClinicsManagementService.Configuration
         public const long MaxSessionSizeBytes = 10 * 1024 * 1024;
 
         /// <summary>
-        /// Backup file name
+        /// Get backup file name for a specific moderator
         /// </summary>
-        public const string BackupFileName = "whatsapp-session.zip";
+        /// <param name="moderatorId">Moderator ID</param>
+        /// <returns>Backup file name</returns>
+        public static string GetBackupFileName(int moderatorId)
+        {
+            return $"whatsapp-session-{moderatorId}.zip";
+        }
+
+        /// <summary>
+        /// Legacy backup file name (for migration)
+        /// </summary>
+        public const string LegacyBackupFileName = "whatsapp-session.zip";
 
         /// <summary>
         /// Folders to clean during optimization (non-essential caches)

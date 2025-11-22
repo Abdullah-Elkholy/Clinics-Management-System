@@ -3,78 +3,106 @@ using ClinicsManagementService.Services.Domain;
 using ClinicsManagementService.Models;
 using ClinicsManagementService.Configuration;
 using Microsoft.Playwright;
+using System.Collections.Concurrent;
 
 namespace ClinicsManagementService.Services.Infrastructure
 {
     public class WhatsAppSessionManager : IWhatsAppSessionManager
     {
         private readonly INotifier _notifier;
-        private readonly Func<IBrowserSession> _browserSessionFactory;
-        private IBrowserSession? _session;
-        private bool _isInitialized = false;
-        private readonly object _lock = new object();
+        private readonly Func<int, IBrowserSession> _browserSessionFactory;
+        
+        // Dictionary of sessions keyed by moderatorId
+        private readonly ConcurrentDictionary<int, IBrowserSession> _sessions = new();
+        
+        // Dictionary of initialization flags keyed by moderatorId
+        private readonly ConcurrentDictionary<int, bool> _isInitialized = new();
 
-        public Task<IBrowserSession?> GetCurrentSessionAsync()
+        // Provider session identifiers (GUID per session lifetime)
+        private readonly ConcurrentDictionary<int, string> _providerSessionIds = new();
+        
+        // Dictionary of semaphores per moderator for concurrency control
+        private readonly ConcurrentDictionary<int, SemaphoreSlim> _sessionLocks = new();
+        
+        // Global lock for dictionary operations
+        private readonly SemaphoreSlim _dictionaryLock = new(1, 1);
+
+        public Task<IBrowserSession?> GetCurrentSessionAsync(int moderatorId)
         {
-            return Task.FromResult(_session);
+            _sessions.TryGetValue(moderatorId, out var session);
+            return Task.FromResult(session);
         }
 
         public WhatsAppSessionManager(
             INotifier notifier,
-            Func<IBrowserSession> browserSessionFactory)
+            Func<int, IBrowserSession> browserSessionFactory)
         {
             _notifier = notifier;
             _browserSessionFactory = browserSessionFactory;
         }
 
-        public async Task<IBrowserSession> GetOrCreateSessionAsync()
+        public async Task<IBrowserSession> GetOrCreateSessionAsync(int moderatorId)
         {
-            if (_session != null && _isInitialized)
+            // Get or create moderator-specific lock
+            var moderatorLock = _sessionLocks.GetOrAdd(moderatorId, _ => new SemaphoreSlim(1, 1));
+            
+            // Acquire lock with timeout to prevent deadlock
+            bool lockAcquired = await moderatorLock.WaitAsync(TimeSpan.FromSeconds(60));
+            if (!lockAcquired)
             {
-                _notifier.Notify("🔄 Using existing WhatsApp session");
-                return _session;
-            }
-
-            lock (_lock)
-            {
-                if (_session != null && _isInitialized)
-                {
-                    return _session;
-                }
-
-                _notifier.Notify("🆕 Creating new WhatsApp session");
-                _session = _browserSessionFactory();
+                throw new TimeoutException($"Failed to acquire session lock for moderator {moderatorId} within 60 seconds");
             }
 
             try
             {
-                await InitializeSessionAsync();
-                return _session;
+                // Check if session exists and is initialized
+                if (_sessions.TryGetValue(moderatorId, out var existingSession) && 
+                    _isInitialized.TryGetValue(moderatorId, out var isInit) && isInit)
+                {
+                    _notifier.Notify($"🔄 [Moderator {moderatorId}] Using existing WhatsApp session");
+                    return existingSession;
+                }
+
+                _notifier.Notify($"🆕 [Moderator {moderatorId}] Creating new WhatsApp session");
+                var session = _browserSessionFactory(moderatorId);
+                _sessions[moderatorId] = session;
+                _providerSessionIds.TryAdd(moderatorId, Guid.NewGuid().ToString("N"));
+
+                try
+                {
+                    await InitializeSessionAsync(moderatorId, session);
+                    _isInitialized[moderatorId] = true;
+                    return session;
+                }
+                catch (Exception ex)
+                {
+                    _notifier.Notify($"❌ [Moderator {moderatorId}] Failed to initialize session: {ex.Message}");
+                    _sessions.TryRemove(moderatorId, out _);
+                    _isInitialized[moderatorId] = false;
+                    _providerSessionIds.TryRemove(moderatorId, out _);
+                    throw;
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                _notifier.Notify($"❌ Failed to initialize session: {ex.Message}");
-                _session = null;
-                _isInitialized = false;
-                throw;
+                moderatorLock.Release();
             }
         }
 
-        private async Task InitializeSessionAsync()
+        private async Task InitializeSessionAsync(int moderatorId, IBrowserSession session)
         {
-            if (_session == null) return;
+            _notifier.Notify($"🚀 [Moderator {moderatorId}] Initializing WhatsApp session...");
+            await session.InitializeAsync();
 
-            _notifier.Notify("🚀 Initializing WhatsApp session...");
-            await _session.InitializeAsync();
-
-            _notifier.Notify("🌐 Navigating to WhatsApp Web...");
-            await _session.NavigateToAsync(WhatsAppConfiguration.WhatsAppBaseUrl);
-            _notifier.Notify("✅ WhatsApp session initialized successfully");
+            _notifier.Notify($"🌐 [Moderator {moderatorId}] Navigating to WhatsApp Web...");
+            await session.NavigateToAsync(WhatsAppConfiguration.WhatsAppBaseUrl);
+            _notifier.Notify($"✅ [Moderator {moderatorId}] WhatsApp session initialized successfully");
         }
 
-        public async Task<bool> IsSessionReadyAsync()
+        public async Task<bool> IsSessionReadyAsync(int moderatorId)
         {
-            if (_session == null || !_isInitialized)
+            if (!_sessions.TryGetValue(moderatorId, out var session) || 
+                !_isInitialized.TryGetValue(moderatorId, out var isInit) || !isInit)
                 return false;
 
             try
@@ -85,7 +113,7 @@ namespace ClinicsManagementService.Services.Infrastructure
                 {
                     try
                     {
-                        var element = await _session.QuerySelectorAsync(selector);
+                        var element = await session.QuerySelectorAsync(selector);
                         if (element != null)
                         {
                             return true; // Found at least one UI element, session is ready
@@ -105,15 +133,45 @@ namespace ClinicsManagementService.Services.Infrastructure
             }
         }
 
-        public async Task DisposeSessionAsync()
+        public async Task DisposeSessionAsync(int moderatorId)
         {
-            if (_session != null)
+            var moderatorLock = _sessionLocks.GetOrAdd(moderatorId, _ => new SemaphoreSlim(1, 1));
+            await moderatorLock.WaitAsync();
+            
+            try
             {
-                _notifier.Notify("🗑️ Disposing WhatsApp session");
-                await _session.DisposeAsync();
-                _session = null;
-                _isInitialized = false;
+                if (_sessions.TryRemove(moderatorId, out var session))
+                {
+                    _notifier.Notify($"🗑️ [Moderator {moderatorId}] Disposing WhatsApp session");
+                    await session.DisposeAsync();
+                    _isInitialized[moderatorId] = false;
+                    _providerSessionIds.TryRemove(moderatorId, out _);
+                }
             }
+            finally
+            {
+                moderatorLock.Release();
+            }
+        }
+
+        public async Task DisposeAllSessionsAsync()
+        {
+            _notifier.Notify("🗑️ Disposing all WhatsApp sessions...");
+            
+            var disposeTasks = _sessions.Keys.Select(moderatorId => DisposeSessionAsync(moderatorId));
+            await Task.WhenAll(disposeTasks);
+            
+            _sessions.Clear();
+            _isInitialized.Clear();
+            _providerSessionIds.Clear();
+            
+            _notifier.Notify("✅ All WhatsApp sessions disposed");
+        }
+
+        public string? GetProviderSessionId(int moderatorId)
+        {
+            _providerSessionIds.TryGetValue(moderatorId, out var id);
+            return id;
         }
     }
 }

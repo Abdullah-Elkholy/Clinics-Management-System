@@ -27,12 +27,12 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>Session health metrics</returns>
         [HttpGet("health")]
-        public async Task<ActionResult<SessionHealthMetrics>> GetSessionHealth()
+        public async Task<ActionResult<SessionHealthMetrics>> GetSessionHealth([FromQuery] int moderatorUserId)
         {
             try
             {
                 _notifier.Notify("📊 Getting session health metrics...");
-                var metrics = await _sessionOptimizer.GetHealthMetricsAsync();
+                var metrics = await _sessionOptimizer.GetHealthMetricsAsync(moderatorUserId);
                 return Ok(metrics);
             }
             catch (Exception ex)
@@ -47,12 +47,12 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>Restoration result</returns>
         [HttpPost("restore")]
-        public async Task<ActionResult<OperationResult<bool>>> RestoreSession()
+        public async Task<ActionResult<OperationResult<bool>>> RestoreSession([FromQuery] int moderatorUserId)
         {
             try
             {
                 _notifier.Notify("🔄 Manual session restore requested...");
-                await _sessionOptimizer.RestoreFromBackupAsync();
+                await _sessionOptimizer.RestoreFromBackupAsync(moderatorUserId);
                 _notifier.Notify("✅ Session restored successfully from backup");
                 return Ok(OperationResult<bool>.Success(true));
             }
@@ -73,12 +73,12 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>Optimization result</returns>
         [HttpPost("optimize")]
-        public async Task<ActionResult<OperationResult<bool>>> OptimizeSession()
+        public async Task<ActionResult<OperationResult<bool>>> OptimizeSession([FromQuery] int moderatorUserId)
         {
             try
             {
                 _notifier.Notify("🔧 Manual session optimization requested...");
-                await _sessionOptimizer.OptimizeCurrentSessionOnlyAsync();
+                await _sessionOptimizer.OptimizeCurrentSessionOnlyAsync(moderatorUserId);
                 _notifier.Notify("✅ Session optimized successfully (no backup created)");
                 return Ok(OperationResult<bool>.Success(true));
             }
@@ -94,12 +94,12 @@ namespace ClinicsManagementService.Controllers
         /// </summary>
         /// <returns>Check and restore result</returns>
         [HttpPost("check-and-restore")]
-        public async Task<ActionResult<OperationResult<bool>>> CheckAndAutoRestore()
+        public async Task<ActionResult<OperationResult<bool>>> CheckAndAutoRestore([FromQuery] int moderatorUserId)
         {
             try
             {
                 _notifier.Notify("🔍 Checking session size and auto-restoring if needed...");
-                await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(moderatorUserId);
                 _notifier.Notify("✅ Session check completed");
                 return Ok(OperationResult<bool>.Success(true));
             }

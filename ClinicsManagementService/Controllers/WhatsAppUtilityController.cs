@@ -80,11 +80,15 @@ namespace ClinicsManagementService.Controllers
         /// Checks if a phone number has WhatsApp
         /// </summary>
         /// <param name="phoneNumber">Phone number to check</param>
+        /// <param name="moderatorUserId">Moderator user ID whose session to use</param>
+        /// <param name="userId">User ID performing this operation (for audit trail)</param>
         /// <param name="cancellationToken">Cancellation token to detect client disconnection</param>
         /// <returns>WhatsApp availability status</returns>
         [HttpGet("check-whatsapp/{phoneNumber}")]
         public async Task<ActionResult<OperationResult<bool>>> CheckWhatsAppNumber(
             string phoneNumber,
+            [FromQuery] int? moderatorUserId = null,
+            [FromQuery] int? userId = null,
             CancellationToken cancellationToken = default)
         {
             try
@@ -92,20 +96,17 @@ namespace ClinicsManagementService.Controllers
                 // Check if request was already cancelled
                 cancellationToken.ThrowIfCancellationRequested();
 
-                _notifier.Notify($"🔍 Checking if {phoneNumber} has WhatsApp...");
-
-                // Check and auto-restore if session size exceeds threshold
-                try
+                // Validate and use moderatorUserId (REQUIRED now)
+                if (!moderatorUserId.HasValue || moderatorUserId.Value <= 0)
                 {
-                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
-                }
-                catch (Exception optimizeEx)
-                {
-                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                    return BadRequest(new { error = "moderatorUserId is required and must be greater than 0" });
                 }
 
-                // Create a direct browser session for this simple check
-                var browserSession = await _sessionManager.GetOrCreateSessionAsync();
+                int effectiveModeratorId = moderatorUserId.Value;
+                _notifier.Notify($"🔍 [Moderator {effectiveModeratorId}] Checking if {phoneNumber} has WhatsApp...");
+
+                // Use the moderator-specific browser session
+                var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 
                 // Check cancellation before starting operation
                 cancellationToken.ThrowIfCancellationRequested();
@@ -114,9 +115,6 @@ namespace ClinicsManagementService.Controllers
 
                 // Check cancellation before disposing
                 cancellationToken.ThrowIfCancellationRequested();
-
-                // Dispose the session after use
-                await browserSession.DisposeAsync();
 
                 if (result != null)
                 {
@@ -145,10 +143,10 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"❌ Unable to determine WhatsApp status for {phoneNumber}.");
                 }
-                // Check and auto-restore if session size exceeds threshold
+                // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {
-                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
                 }
                 catch (Exception optimizeEx)
                 {
@@ -176,29 +174,35 @@ namespace ClinicsManagementService.Controllers
         /// <summary>
         /// Checks WhatsApp authentication status
         /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID whose session to check</param>
+        /// <param name="userId">User ID performing this operation (for audit trail)</param>
         /// <returns>WhatsApp authentication status</returns>
         [HttpGet("check-authentication")]
-        public async Task<ActionResult<OperationResult<bool>>> CheckAuthentication([FromQuery] int? moderatorUserId = null)
+        public async Task<ActionResult<OperationResult<bool>>> CheckAuthentication(
+            [FromQuery] int? moderatorUserId = null,
+            [FromQuery] int? userId = null)
         {
-            // Check and auto-restore if session size exceeds threshold
             try
             {
-                await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
-            }
-            catch (Exception optimizeEx)
-            {
-                _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
-            }
-            try
-            {
-                // Use provided moderatorUserId or fallback to 3
-                int effectiveModeratorId = moderatorUserId ?? 3;
-                _notifier.Notify($"🔐 [AUTH CHECK] Starting - ModeratorUserId: {effectiveModeratorId} (provided: {moderatorUserId?.ToString() ?? "null"})");
+                // Validate and use moderatorUserId (REQUIRED now)
+                if (!moderatorUserId.HasValue || moderatorUserId.Value <= 0)
+                {
+                    return BadRequest(new { error = "moderatorUserId is required and must be greater than 0" });
+                }
 
-                // Get the session and run the full authentication check for consistent results
-                var browserSession = await _sessionManager.GetOrCreateSessionAsync();
+                // Validate userId if provided
+                if (userId.HasValue && userId.Value <= 0)
+                {
+                    return BadRequest(new { error = "userId must be greater than 0 if provided" });
+                }
+
+                int effectiveModeratorId = moderatorUserId.Value;
+                _notifier.Notify($"🔐 [AUTH CHECK] Starting - ModeratorUserId: {effectiveModeratorId}");
+
+                // Get the moderator-specific session
+                var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 await browserSession.InitializeAsync();
-                // Navigate directly to the WhatsApp base URL for the phone number
+                
                 var url = WhatsAppConfiguration.WhatsAppBaseUrl;
                 _notifier.Notify($"🔗 [AUTH CHECK] Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
@@ -209,31 +213,21 @@ namespace ClinicsManagementService.Controllers
                 // Sync database status based on authentication result
                 if (waitUIResult.IsSuccess == true && waitUIResult.State == OperationState.Success)
                 {
-                    _notifier.Notify($"✅ [AUTH CHECK] WhatsApp authenticated - Updating DB for moderator {effectiveModeratorId}");
+                    _notifier.Notify($"✅ [AUTH CHECK] Already authenticated - Updating DB for moderator {effectiveModeratorId}");
                     
-                    // Update database: connected
-                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
-                    _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected");
-                    
-                    // Check and auto-restore if session size exceeds threshold
-                    try
-                    {
-                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
-                    }
-                    catch (Exception optimizeEx)
-                    {
-                        _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
-                    }
+                    // Update database: connected (track which user performed the check)
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
+                    _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
                 }
                 else if (waitUIResult.IsPendingQr())
                 {
-                    _notifier.Notify($"❌ [AUTH CHECK] WhatsApp NOT authenticated - Updating DB for moderator {effectiveModeratorId}");
+                    _notifier.Notify($"⚠️ [AUTH CHECK] Pending authentication - Updating DB for moderator {effectiveModeratorId}");
                     
-                    // Update database: pending
-                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending");
-                    _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=pending");
+                    // Update database: pending (track which user performed the check)
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
+                    _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=pending, ActivityUserId={userId ?? effectiveModeratorId}");
                 }
-                // Return the unified OperationResult<bool> from the UI service
+                
                 return Ok(waitUIResult);
             }
             catch (Exception ex)
@@ -247,27 +241,47 @@ namespace ClinicsManagementService.Controllers
         /// <summary>
         /// Authenticates WhatsApp session by waiting for QR code scan
         /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID whose session to use</param>
+        /// <param name="userId">User ID performing this operation (for audit trail)</param>
+        /// <param name="cancellationToken">Cancellation token to detect client disconnection</param>
         /// <returns>WhatsApp authentication result</returns>
         [HttpPost("authenticate")]
-        public async Task<ActionResult<OperationResult<bool>>> Authenticate([FromQuery] int? moderatorUserId = null)
+        public async Task<ActionResult<OperationResult<bool>>> Authenticate(
+            [FromQuery] int? moderatorUserId = null,
+            [FromQuery] int? userId = null,
+            CancellationToken cancellationToken = default)
         {
-            // Check and auto-restore if session size exceeds threshold
             try
             {
-                await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
-            }
-            catch (Exception optimizeEx)
-            {
-                _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
-            }
-            try
-            {
-                // Use provided moderatorUserId or fallback to 1
-                int effectiveModeratorId = moderatorUserId ?? 1;
-                _notifier.Notify($"🔐 [AUTHENTICATE] Starting - ModeratorUserId: {effectiveModeratorId} (provided: {moderatorUserId?.ToString() ?? "null"})");
+                // Check if request was already cancelled
+                cancellationToken.ThrowIfCancellationRequested();
 
-                // Use the session manager so we operate on the shared/persistent session
-                var browserSession = await _sessionManager.GetOrCreateSessionAsync();
+                // Validate and use moderatorUserId (REQUIRED now)
+                if (!moderatorUserId.HasValue || moderatorUserId.Value <= 0)
+                {
+                    return BadRequest(new { error = "moderatorUserId is required and must be greater than 0" });
+                }
+
+                // Validate userId if provided
+                if (userId.HasValue && userId.Value <= 0)
+                {
+                    return BadRequest(new { error = "userId must be greater than 0 if provided" });
+                }
+
+                int effectiveModeratorId = moderatorUserId.Value;
+                // Check and auto-restore if session size exceeds threshold for this moderator
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
+                _notifier.Notify($"🔐 [AUTHENTICATE] Starting - ModeratorUserId: {effectiveModeratorId}");
+
+                // Use the moderator-specific session
+                var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 await browserSession.InitializeAsync();
 
                 var url = WhatsAppConfiguration.WhatsAppBaseUrl;
@@ -282,19 +296,9 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"✅ [AUTHENTICATE] Already authenticated - Updating DB for moderator {effectiveModeratorId}");
                     
-                    // Update database: connected
-                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
-                    _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected");
-                    
-                    // Check and auto-restore if session size exceeds threshold
-                    try
-                    {
-                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
-                    }
-                    catch (Exception optimizeEx)
-                    {
-                        _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
-                    }
+                    // Update database: connected (track which user performed authentication)
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
+                    _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
                     
                     return Ok(OperationResult<bool>.Success(true));
                 }
@@ -312,6 +316,9 @@ namespace ClinicsManagementService.Controllers
                 // If initial state shows PendingQR, give the user some time to scan the QR
                 if (initial.IsPendingQr())
                 {
+                    // Check cancellation before long wait
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     var totalMs = WhatsAppConfiguration.DefaultAuthenticationWaitMs;
                     var intervalMs = WhatsAppConfiguration.defaultChecksFrequencyDelayMs;
                     _notifier.Notify($"🔔 Authentication pending - will wait up to {totalMs / 1000} seconds for user action.");
@@ -322,6 +329,9 @@ namespace ClinicsManagementService.Controllers
                     {
                         while (DateTime.UtcNow - start < timeout)
                         {
+                            // Check if cancelled during wait
+                            cancellationToken.ThrowIfCancellationRequested();
+
                             // Check success condition: any ChatUI selector is present
                             foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors ?? Array.Empty<string>())
                             {
@@ -332,14 +342,14 @@ namespace ClinicsManagementService.Controllers
                                     {
                                         _notifier.Notify($"✅ [AUTHENTICATE] QR scanned successfully - Chat UI detected - Updating DB for moderator {effectiveModeratorId}");
                                         
-                                        // Update database: connected
-                                        await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
-                                        _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected");
+                                        // Update database: connected (track which user completed authentication)
+                                        await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
+                                        _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
                                         
                                         // Optimize session after successful authentication
                                         try
                                         {
-                                            await _sessionOptimizer.OptimizeAuthenticatedSessionAsync();
+                                            await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
                                         }
                                         catch (Exception optimizeEx)
                                         {
@@ -396,7 +406,7 @@ namespace ClinicsManagementService.Controllers
                                     // Optimize session after successful authentication
                                     try
                                     {
-                                        await _sessionOptimizer.OptimizeAuthenticatedSessionAsync();
+                                        await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
                                     }
                                     catch (Exception optimizeEx)
                                     {
@@ -458,7 +468,7 @@ namespace ClinicsManagementService.Controllers
                     // Optimize session after successful authentication
                     try
                     {
-                        await _sessionOptimizer.OptimizeAuthenticatedSessionAsync();
+                        await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
                     }
                     catch (Exception optimizeEx)
                     {

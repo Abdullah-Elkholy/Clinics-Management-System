@@ -8,28 +8,28 @@ namespace ClinicsManagementService.Services.Interfaces
     public interface IWhatsAppSessionOptimizer
     {
         /// <summary>
-        /// Optimizes session after authentication by cleaning caches and creating backup
+        /// Optimizes a moderator's session after authentication by cleaning caches and creating backup
         /// </summary>
-        Task OptimizeAuthenticatedSessionAsync();
+        Task OptimizeAuthenticatedSessionAsync(int moderatorId);
 
         /// <summary>
-        /// Optimizes current session by cleaning caches only (no backup creation)
+        /// Optimizes a moderator's current session by cleaning caches only (no backup creation)
         /// </summary>
-        Task OptimizeCurrentSessionOnlyAsync();
+        Task OptimizeCurrentSessionOnlyAsync(int moderatorId);
 
         /// <summary>
-        /// Restores session from compressed backup
+        /// Restores a moderator's session from compressed backup
         /// </summary>
-        Task RestoreFromBackupAsync();
+        Task RestoreFromBackupAsync(int moderatorId);
 
         /// <summary>
-        /// Gets current session health metrics
+        /// Gets a moderator's session health metrics
         /// </summary>
-        Task<SessionHealthMetrics> GetHealthMetricsAsync();
+        Task<SessionHealthMetrics> GetHealthMetricsAsync(int moderatorId);
 
         /// <summary>
-        /// Checks session size and auto-restores if threshold exceeded
+        /// Checks a moderator's session size and auto-restores if threshold exceeded
         /// </summary>
-        Task CheckAndAutoRestoreIfNeededAsync();
+        Task CheckAndAutoRestoreIfNeededAsync(int moderatorId);
     }
 }

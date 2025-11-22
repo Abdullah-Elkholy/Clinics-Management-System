@@ -64,16 +64,38 @@ public class UserCascadeService : IUserCascadeService
                 return (false, "User not found");
             }
 
-            // Mark user as deleted
+            // Capture operation snapshot timestamp to ensure consistency
+            var operationTimestamp = DateTime.UtcNow;
+
+            // Mark user as deleted with snapshot timestamp
             user.IsDeleted = true;
-            user.DeletedAt = DateTime.UtcNow;
+            user.DeletedAt = operationTimestamp;
             user.DeletedBy = deletedByUserId;
+
+            // If user is a moderator, soft-delete their WhatsAppSession
+            if (user.Role == "moderator")
+            {
+                var whatsappSession = await _db.Set<WhatsAppSession>()
+                    .FirstOrDefaultAsync(s => s.ModeratorUserId == userId && !s.IsDeleted);
+                
+                if (whatsappSession != null)
+                {
+                    whatsappSession.IsDeleted = true;
+                    whatsappSession.DeletedAt = operationTimestamp;
+                    whatsappSession.DeletedBy = deletedByUserId;
+                    whatsappSession.Status = "disconnected"; // Update status to disconnected
+                    
+                    _logger.LogInformation(
+                        "WhatsAppSession {SessionId} for moderator {UserId} soft-deleted at {Timestamp}",
+                        whatsappSession.Id, userId, operationTimestamp);
+                }
+            }
 
             await _db.SaveChangesAsync();
 
             _logger.LogInformation(
                 "User {UserId} soft-deleted by user {DeletingUserId} at {Timestamp}",
-                userId, deletedByUserId, DateTime.UtcNow);
+                userId, deletedByUserId, operationTimestamp);
 
             return (true, "");
         }
@@ -120,11 +142,38 @@ public class UserCascadeService : IUserCascadeService
             user.UpdatedAt = operationTimestamp;
             user.UpdatedBy = restoredBy;
 
+            // If user is a moderator, restore their WhatsAppSession (if deleted during same cascade)
+            if (user.Role == "moderator")
+            {
+                var deletedAtValue = user.DeletedAt ?? operationTimestamp;
+                var whatsappSession = await _db.Set<WhatsAppSession>()
+                    .FirstOrDefaultAsync(s => s.ModeratorUserId == userId 
+                        && s.IsDeleted 
+                        && s.DeletedAt.HasValue 
+                        && s.DeletedAt >= deletedAtValue);
+                
+                if (whatsappSession != null)
+                {
+                    whatsappSession.IsDeleted = false;
+                    whatsappSession.DeletedAt = null;
+                    whatsappSession.DeletedBy = null;
+                    whatsappSession.RestoredAt = operationTimestamp;
+                    whatsappSession.RestoredBy = restoredBy;
+                    whatsappSession.UpdatedAt = operationTimestamp;
+                    whatsappSession.UpdatedBy = restoredBy;
+                    // Note: Status remains "disconnected" - user must re-authenticate
+                    
+                    _logger.LogInformation(
+                        "WhatsAppSession {SessionId} for moderator {UserId} restored at {Timestamp}",
+                        whatsappSession.Id, userId, operationTimestamp);
+                }
+            }
+
             await _db.SaveChangesAsync();
 
             _logger.LogInformation(
                 "User {UserId} restored at {Timestamp}",
-                userId, DateTime.UtcNow);
+                userId, operationTimestamp);
 
             return (true, "");
         }

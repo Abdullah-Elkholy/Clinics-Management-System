@@ -3,6 +3,8 @@ using ClinicsManagementService.Services.Interfaces;
 using ClinicsManagementService.Services.Domain;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading;
+using Clinics.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace ClinicsManagementService.Controllers
 {
@@ -37,6 +39,7 @@ namespace ClinicsManagementService.Controllers
         private readonly IValidationService _validationService;
         private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
         private readonly IWhatsAppSessionSyncService _sessionSyncService;
+        private readonly ApplicationDbContext _dbContext;
 
         public BulkMessagingController(
             IMessageSender messageSender, 
@@ -44,7 +47,8 @@ namespace ClinicsManagementService.Controllers
             INotifier notifier,
             IValidationService validationService,
             IWhatsAppSessionOptimizer sessionOptimizer,
-            IWhatsAppSessionSyncService sessionSyncService)
+            IWhatsAppSessionSyncService sessionSyncService,
+            ApplicationDbContext dbContext)
         {
             _messageSender = messageSender;
             _whatsappService = whatsappService;
@@ -52,17 +56,29 @@ namespace ClinicsManagementService.Controllers
             _validationService = validationService;
             _sessionOptimizer = sessionOptimizer;
             _sessionSyncService = sessionSyncService;
+            _dbContext = dbContext;
         }
         // Send a single message to a single phone number.
         [HttpPost("send-single")]
         public async Task<IActionResult> SendSingle(
             [FromBody] PhoneMessageDto request,
+            [FromQuery] int moderatorUserId,
+            [FromQuery] int? userId = null,
+            [FromQuery] int? patientId = null,
             CancellationToken cancellationToken = default)
         {
             return await ControllerAsyncHelper.TryExecuteAsync(async () =>
             {
                 // Check if request was already cancelled
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // Validate userId if provided
+                if (userId.HasValue && userId.Value <= 0)
+                {
+                    return BadRequest(new { error = "userId must be greater than 0 if provided" });
+                }
+
+                int effectiveModeratorId = moderatorUserId;
 
                 var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
                 var messageValidation = _validationService.ValidateMessage(request.Message);
@@ -73,10 +89,41 @@ namespace ClinicsManagementService.Controllers
                 if (!messageValidation.IsValid)
                     return BadRequest(messageValidation.ErrorMessage);
 
+                // Validate IsValidWhatsAppNumber if patientId is provided
+                if (patientId.HasValue)
+                {
+                    var patient = await _dbContext.Patients.FindAsync(patientId.Value);
+                    if (patient == null)
+                    {
+                        return BadRequest(new { error = "PatientNotFound", message = "المريض غير موجود." });
+                    }
+
+                    // Check IsValidWhatsAppNumber state
+                    if (!patient.IsValidWhatsAppNumber.HasValue)
+                    {
+                        // null state: WhatsApp number validation not performed yet
+                        return BadRequest(new 
+                        { 
+                            error = "WhatsAppNotChecked", 
+                            message = "لم يتم التحقق من رقم الواتساب. يرجى التحقق من الرقم أولاً." 
+                        });
+                    }
+                    else if (patient.IsValidWhatsAppNumber.Value == false)
+                    {
+                        // false state: WhatsApp number is invalid
+                        return BadRequest(new 
+                        { 
+                            error = "InvalidWhatsAppNumber", 
+                            message = "رقم الواتساب غير صالح. يرجى التحقق من الرقم المُدخل." 
+                        });
+                    }
+                    // true state: WhatsApp number is valid - proceed with send
+                }
+
                 // Check and auto-restore if session size exceeds threshold
                 try
                 {
-                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(moderatorUserId);
                 }
                 catch (Exception optimizeEx)
                 {
@@ -86,19 +133,32 @@ namespace ClinicsManagementService.Controllers
                 // Check cancellation before sending
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var sent = await _messageSender.SendMessageAsync(request.Phone, request.Message, cancellationToken);
+                var sent = await _messageSender.SendMessageAsync(moderatorUserId, request.Phone, request.Message, cancellationToken);
                 
                 if (sent)
                 {
+                    // Update session status on successful send to track activity
+                    try
+                    {
+                        await _sessionSyncService.UpdateSessionStatusAsync(
+                            effectiveModeratorId,
+                            "connected",
+                            DateTime.UtcNow,
+                            activityUserId: userId ?? effectiveModeratorId
+                        );
+                    }
+                    catch (Exception syncEx)
+                    {
+                        _notifier.Notify($"⚠️ Failed to sync session status after successful send: {syncEx.Message}");
+                    }
                     return Ok("Message sent successfully.");
                 }
                 else
                 {
                     // Message failed - check if it's due to PendingQR by calling check-authentication
-                    const int MODERATOR_ID = 1; // TODO: Get from authenticated user context
                     try
                     {
-                        var browserSession = await _whatsappService.PrepareSessionAsync();
+                        var browserSession = await _whatsappService.PrepareSessionAsync(effectiveModeratorId);
                         await browserSession.InitializeAsync();
                         await browserSession.NavigateToAsync(Configuration.WhatsAppConfiguration.WhatsAppBaseUrl);
                         var authCheck = await _whatsappService.CheckInternetConnectivityDetailedAsync();
@@ -107,7 +167,7 @@ namespace ClinicsManagementService.Controllers
                         if (authCheck.State == Models.OperationState.PendingQR)
                         {
                             _notifier.Notify($"⚠️ Message failed due to PendingQR - updating database status");
-                            await _sessionSyncService.UpdateSessionStatusAsync(MODERATOR_ID, "pending");
+                            await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
                         }
                     }
                     catch (Exception syncEx)
@@ -117,7 +177,7 @@ namespace ClinicsManagementService.Controllers
                     // Check and auto-restore if session size exceeds threshold
                     try
                     {
-                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync();
+                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
                     }
                     catch (Exception optimizeEx)
                     {
@@ -131,7 +191,7 @@ namespace ClinicsManagementService.Controllers
         /* Send multiple messages to multiple phone numbers (each item is a phone/message pair), 
          with random throttling between sends using a random number between minDelayMs and maxDelayMs in MilliSeconds. */
     [HttpPost("send-bulk")]
-    public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request, [FromQuery] int minDelayMs = 1000, [FromQuery] int maxDelayMs = 3000)
+    public async Task<IActionResult> SendBulk([FromBody] BulkPhoneMessageRequest request, [FromQuery] int moderatorUserId, [FromQuery] int minDelayMs = 1000, [FromQuery] int maxDelayMs = 3000)
         {
             var bulkValidation = _validationService.ValidateBulkRequest(request);
             if (!bulkValidation.IsValid)
@@ -157,6 +217,7 @@ namespace ClinicsManagementService.Controllers
                 .ToList();
 
             var rawResults = await _messageSender.SendBulkWithThrottlingAsync(
+                moderatorUserId,
                 items.Select(i => (i.Phone, i.Message)), minDelayMs, maxDelayMs);
 
             var results = items.Zip(rawResults, (input, result) => new MessageSendResult

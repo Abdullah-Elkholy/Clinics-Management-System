@@ -14,6 +14,14 @@ namespace ClinicsManagementService.Services
         private IPage? _page;
         private readonly SemaphoreSlim _lock = new(1, 1); // For operation thread safety
         private readonly SemaphoreSlim _initLock = new(1, 1); // For initialization/recreation safety
+        private readonly int _moderatorId;
+        private readonly string _sessionDirectory;
+
+        public PlaywrightBrowserSession(int moderatorId)
+        {
+            _moderatorId = moderatorId;
+            _sessionDirectory = WhatsAppConfiguration.GetSessionDirectory(moderatorId);
+        }
 
         // Helper that runs an operation under the page lock and retries once if the page/target was closed during the operation.
         private async Task<T> WithPageRetryAsync<T>(Func<Task<T>> operation)
@@ -101,9 +109,9 @@ namespace ClinicsManagementService.Services
 
                 if (_browser == null)
                 {
-                    Directory.CreateDirectory(WhatsAppConfiguration.SessionDirectory);
+                    Directory.CreateDirectory(_sessionDirectory);
                     _browser = await _playwright.Chromium.LaunchPersistentContextAsync(
-                        WhatsAppConfiguration.SessionDirectory,
+                        _sessionDirectory,
                         new BrowserTypeLaunchPersistentContextOptions
                         {
                             Headless = false,

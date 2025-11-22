@@ -102,23 +102,39 @@ async function fetchAPI<T>(
 /**
  * Check if a phone number has WhatsApp
  * @param phoneNumber Phone number in E.164 format (e.g., +201234567890)
+ * @param moderatorUserId Optional moderator user ID whose session to use
+ * @param userId Optional user ID performing the action (for audit trail)
  * @param signal Optional AbortSignal to cancel the request
  * @returns OperationResult with boolean indicating if number has WhatsApp
  */
 export async function checkWhatsAppNumber(
   phoneNumber: string,
+  moderatorUserId?: number,
+  userId?: number,
   signal?: AbortSignal
 ): Promise<OperationResult<boolean>> {
   try {
     // URL encode the phone number to handle special characters
     const encodedPhoneNumber = encodeURIComponent(phoneNumber);
+    const queryParams = new URLSearchParams();
+    if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
+    if (userId) queryParams.append('userId', userId.toString());
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
     const result = await fetchAPI<OperationResult<boolean>>(
-      `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}`,
+      `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}${query}`,
       {
         method: 'GET',
         signal, // Pass abort signal to fetch
       }
     );
+    
+    // Emit event if PendingQR detected for UI updates
+    if (result.state === 'PendingQR' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
+        detail: { moderatorUserId, source: 'checkWhatsAppNumber' }
+      }));
+    }
+    
     return result;
   } catch (error: any) {
     // Check if error is due to abort
@@ -162,15 +178,18 @@ export async function checkWhatsAppNumber(
 /**
  * Check WhatsApp authentication status
  * @param moderatorUserId - Optional moderator user ID to sync session for
+ * @param userId - Optional user ID performing the action (for audit trail)
  * @returns OperationResult with boolean indicating if WhatsApp is authenticated
  */
-export async function checkAuthentication(moderatorUserId?: number): Promise<OperationResult<boolean>> {
+export async function checkAuthentication(moderatorUserId?: number, userId?: number): Promise<OperationResult<boolean>> {
   try {
-    const url = moderatorUserId 
-      ? `/api/WhatsAppUtility/check-authentication?moderatorUserId=${moderatorUserId}`
-      : '/api/WhatsAppUtility/check-authentication';
+    const queryParams = new URLSearchParams();
+    if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
+    if (userId) queryParams.append('userId', userId.toString());
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    const url = `/api/WhatsAppUtility/check-authentication${query}`;
     
-    console.log('[WhatsApp API] checkAuthentication called - moderatorUserId:', moderatorUserId, 'url:', url);
+    console.log('[WhatsApp API] checkAuthentication called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
     
     const result = await fetchAPI<OperationResult<boolean>>(
       url,
@@ -178,6 +197,14 @@ export async function checkAuthentication(moderatorUserId?: number): Promise<Ope
     );
     
     console.log('[WhatsApp API] checkAuthentication result:', result);
+    
+    // Emit event if PendingQR detected for UI updates
+    if (result.state === 'PendingQR' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
+        detail: { moderatorUserId, source: 'checkAuthentication' }
+      }));
+    }
+    
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] checkAuthentication error:', error);
@@ -193,15 +220,18 @@ export async function checkAuthentication(moderatorUserId?: number): Promise<Ope
 /**
  * Start WhatsApp authentication flow (QR code scan)
  * @param moderatorUserId - Optional moderator user ID to sync session for
+ * @param userId - Optional user ID performing the action (for audit trail)
  * @returns OperationResult with boolean indicating if authentication was successful
  */
-export async function authenticate(moderatorUserId?: number): Promise<OperationResult<boolean>> {
+export async function authenticate(moderatorUserId?: number, userId?: number): Promise<OperationResult<boolean>> {
   try {
-    const url = moderatorUserId 
-      ? `/api/WhatsAppUtility/authenticate?moderatorUserId=${moderatorUserId}`
-      : '/api/WhatsAppUtility/authenticate';
+    const queryParams = new URLSearchParams();
+    if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
+    if (userId) queryParams.append('userId', userId.toString());
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+    const url = `/api/WhatsAppUtility/authenticate${query}`;
     
-    console.log('[WhatsApp API] authenticate called - moderatorUserId:', moderatorUserId, 'url:', url);
+    console.log('[WhatsApp API] authenticate called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
     
     const result = await fetchAPI<OperationResult<boolean>>(
       url,
@@ -209,6 +239,14 @@ export async function authenticate(moderatorUserId?: number): Promise<OperationR
     );
     
     console.log('[WhatsApp API] authenticate result:', result);
+    
+    // Emit event if PendingQR detected for UI updates
+    if (result.state === 'PendingQR' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
+        detail: { moderatorUserId, source: 'authenticate' }
+      }));
+    }
+    
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] authenticate error:', error);
@@ -221,10 +259,42 @@ export async function authenticate(moderatorUserId?: number): Promise<OperationR
   }
 }
 
+/**
+ * Get session health metrics for a moderator
+ * @param moderatorUserId - Moderator user ID to get health metrics for
+ * @returns Session health metrics including size, backup status, and provider session ID
+ */
+export async function getSessionHealth(moderatorUserId: number): Promise<{
+  currentSizeBytes: number;
+  currentSizeMB: number;
+  backupSizeBytes: number;
+  backupSizeMB: number;
+  lastCleanup?: string;
+  lastBackup?: string;
+  backupExists: boolean;
+  isAuthenticated: boolean;
+  providerSessionId?: string;
+  compressionRatio: number;
+  thresholdBytes: number;
+  thresholdMB: number;
+  exceedsThreshold: boolean;
+} | null> {
+  try {
+    const result = await fetchAPI<any>(
+      `/api/SessionManagement/health?moderatorUserId=${moderatorUserId}`,
+      { method: 'GET' }
+    );
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] getSessionHealth error:', error);
+    return null;
+  }
+}
+
 // Export the client object for consistency with other API clients
 export const whatsappApiClient = {
   checkWhatsAppNumber,
   checkAuthentication,
   authenticate,
+  getSessionHealth,
 };
-

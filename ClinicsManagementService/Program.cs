@@ -30,9 +30,11 @@ builder.Services.AddScoped<IWhatsAppUIService, WhatsAppUIService>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
 
 // Infrastructure Services
-builder.Services.AddScoped<IBrowserSession, PlaywrightBrowserSession>();
-// here we tell DI how to create a Func<IBrowserSession> that resolves a new IBrowserSession each time it's called.
-builder.Services.AddScoped<Func<IBrowserSession>>(sp => () => sp.GetRequiredService<IBrowserSession>()); 
+// Register factory that creates PlaywrightBrowserSession with moderatorId parameter
+builder.Services.AddScoped<Func<int, IBrowserSession>>(sp => 
+{
+    return (moderatorId) => new PlaywrightBrowserSession(moderatorId);
+});
 builder.Services.AddScoped<IWhatsAppSessionManager, WhatsAppSessionManager>();
 builder.Services.AddScoped<IWhatsAppSessionOptimizer, WhatsAppSessionOptimizer>();
 
@@ -55,25 +57,6 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
-
-// Restore from backup on startup (always start fresh)
-try
-{
-    using var scope = app.Services.CreateScope();
-    var optimizer = scope.ServiceProvider.GetRequiredService<IWhatsAppSessionOptimizer>();
-    var notifier = scope.ServiceProvider.GetRequiredService<INotifier>();
-    
-    notifier.Notify("🔄 Checking for session backup to restore on startup...");
-    await optimizer.RestoreFromBackupAsync();
-}
-catch (FileNotFoundException)
-{
-    Console.WriteLine("ℹ️ No backup found on startup. Will create one after authentication.");
-}
-catch (Exception ex)
-{
-    Console.Error.WriteLine($"⚠️ Failed to restore backup on startup: {ex.Message}");
-}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -104,8 +87,8 @@ lifetime.ApplicationStopping.Register(() =>
     {
         // Dispose WhatsAppService which will cleanup browser sessions
         (whatsAppService as IDisposable)?.Dispose();
-        // Explicitly dispose session manager
-        sessionManager.DisposeSessionAsync().GetAwaiter().GetResult();
+        // Dispose all active moderator sessions (handles multiple moderators)
+        sessionManager.DisposeAllSessionsAsync().GetAwaiter().GetResult();
     }
     catch (Exception ex)
     {

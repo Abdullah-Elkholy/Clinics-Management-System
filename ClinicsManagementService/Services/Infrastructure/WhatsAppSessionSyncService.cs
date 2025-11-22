@@ -1,6 +1,7 @@
 using ClinicsManagementService.Services.Interfaces;
 using Clinics.Domain;
 using Clinics.Infrastructure;
+using ClinicsManagementService.Configuration;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClinicsManagementService.Services.Infrastructure
@@ -25,7 +26,9 @@ namespace ClinicsManagementService.Services.Infrastructure
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <param name="status">Status: 'connected', 'disconnected', 'pending'</param>
         /// <param name="lastSyncAt">Optional last sync timestamp</param>
-        public async Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null)
+        /// <param name="providerSessionId">Optional provider session identifier</param>
+        /// <param name="activityUserId">Optional user ID performing this operation for audit trail</param>
+        public async Task UpdateSessionStatusAsync(int moderatorUserId, string status, DateTime? lastSyncAt = null, string? providerSessionId = null, int? activityUserId = null)
         {
             try
             {
@@ -53,7 +56,11 @@ namespace ClinicsManagementService.Services.Infrastructure
                         Status = status,
                         LastSyncAt = lastSyncAt ?? DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow,
-                        SessionName = $"WhatsApp-Moderator-{moderatorUserId}"
+                        SessionName = WhatsAppConfiguration.GetSessionDirectory(moderatorUserId),
+                        ProviderSessionId = providerSessionId,
+                        CreatedByUserId = activityUserId,
+                        LastActivityUserId = activityUserId,
+                        LastActivityAt = DateTime.UtcNow
                     };
                     _dbContext.WhatsAppSessions.Add(session);
                     _notifier.Notify($"✅ [DB SYNC] New session entity created - ModeratorUserId: {moderatorUserId}, Status: {status}, SessionName: {session.SessionName}");
@@ -71,7 +78,16 @@ namespace ClinicsManagementService.Services.Infrastructure
                     {
                         session.LastSyncAt = DateTime.UtcNow;
                     }
-                    _notifier.Notify($"✅ [DB SYNC] Session entity updated - ModeratorUserId: {moderatorUserId}, NewStatus: {status}, LastSyncAt: {session.LastSyncAt}");
+                    if (!string.IsNullOrWhiteSpace(providerSessionId))
+                    {
+                        session.ProviderSessionId = providerSessionId;
+                    }
+                    if (activityUserId.HasValue)
+                    {
+                        session.LastActivityUserId = activityUserId;
+                        session.LastActivityAt = DateTime.UtcNow;
+                    }
+                    _notifier.Notify($"✅ [DB SYNC] Session entity updated - ModeratorUserId: {moderatorUserId}, NewStatus: {status}, LastSyncAt: {session.LastSyncAt}, LastActivityUserId: {session.LastActivityUserId}");
                 }
 
                 _notifier.Notify($"💾 [DB SYNC] Calling SaveChangesAsync...");

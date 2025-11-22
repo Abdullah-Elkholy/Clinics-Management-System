@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { whatsappApiClient } from '@/services/api/whatsappApiClient';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Reuse API base URL logic (mirrors other api clients)
 const getApiBaseUrl = (): string => {
@@ -26,14 +27,37 @@ export interface WhatsAppSessionData {
   status?: WhatsAppSessionStatus;
   lastSyncAt?: string;
   createdAt: string;
+  providerSessionId?: string; // Correlates frontend state with backend browser session lifetime
+  // Audit trail fields
+  createdByUserId?: number;
+  lastActivityUserId?: number;
+  lastActivityAt?: string;
+}
+
+export interface WhatsAppSessionHealth {
+  currentSizeBytes: number;
+  currentSizeMB: number;
+  backupSizeBytes: number;
+  backupSizeMB: number;
+  lastCleanup?: string;
+  lastBackup?: string;
+  backupExists: boolean;
+  isAuthenticated: boolean;
+  providerSessionId?: string;
+  compressionRatio: number;
+  thresholdBytes: number;
+  thresholdMB: number;
+  exceedsThreshold: boolean;
 }
 
 interface WhatsAppSessionContextValue {
   sessionStatus: WhatsAppSessionStatus;
   sessionData: WhatsAppSessionData | null;
+  sessionHealth: WhatsAppSessionHealth | null;
   isLoading: boolean;
   error: string | null;
   refreshSessionStatus: () => Promise<void>;
+  refreshSessionHealth: () => Promise<void>;
   checkAuthentication: () => Promise<{ isSuccess?: boolean; state?: string; resultMessage?: string }>;
   startAuthentication: () => Promise<{ isSuccess?: boolean; state?: string; resultMessage?: string }>;
 }
@@ -46,8 +70,10 @@ interface WhatsAppSessionProviderProps {
 }
 
 export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessionProviderProps) {
+  const { user } = useAuth();
   const [sessionStatus, setSessionStatus] = useState<WhatsAppSessionStatus>(null);
   const [sessionData, setSessionData] = useState<WhatsAppSessionData | null>(null);
+  const [sessionHealth, setSessionHealth] = useState<WhatsAppSessionHealth | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,8 +142,9 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
 
   const checkAuthentication = useCallback(async () => {
     try {
-      console.log('[WhatsAppSessionContext] checkAuthentication called - moderatorId:', moderatorId);
-      const result = await whatsappApiClient.checkAuthentication(moderatorId);
+      const userId = user?.id ? parseInt(user.id, 10) : undefined;
+      console.log('[WhatsAppSessionContext] checkAuthentication called - moderatorId:', moderatorId, 'userId:', userId);
+      const result = await whatsappApiClient.checkAuthentication(moderatorId, userId);
       console.log('[WhatsAppSessionContext] checkAuthentication result:', result);
       
       // Update local state based on result
@@ -143,11 +170,27 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     }
   }, [moderatorId, refreshSessionStatus]);
 
+  const refreshSessionHealth = useCallback(async () => {
+    if (!moderatorId) {
+      setSessionHealth(null);
+      return;
+    }
+
+    try {
+      const health = await whatsappApiClient.getSessionHealth(moderatorId);
+      setSessionHealth(health);
+    } catch (err: any) {
+      console.error('[WhatsAppSessionContext] Error fetching session health:', err);
+      setSessionHealth(null);
+    }
+  }, [moderatorId]);
+
   const startAuthentication = useCallback(async () => {
     try {
-      console.log('[WhatsAppSessionContext] startAuthentication called - moderatorId:', moderatorId);
+      const userId = user?.id ? parseInt(user.id, 10) : undefined;
+      console.log('[WhatsAppSessionContext] startAuthentication called - moderatorId:', moderatorId, 'userId:', userId);
       setSessionStatus('pending');
-      const result = await whatsappApiClient.authenticate(moderatorId);
+      const result = await whatsappApiClient.authenticate(moderatorId, userId);
       console.log('[WhatsAppSessionContext] startAuthentication result:', result);
       
       // Update local state based on result
@@ -172,10 +215,34 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     }
   }, [moderatorId, refreshSessionStatus]);
 
+  // Listen for pendingQR events from API calls
+  useEffect(() => {
+    if (!moderatorId) return;
+
+    const handlePendingQR = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const eventModeratorId = customEvent.detail?.moderatorUserId;
+      
+      // Only respond to events for this moderator
+      if (!eventModeratorId || eventModeratorId === moderatorId) {
+        console.log('[WhatsAppSessionContext] pendingQR event detected, refreshing status');
+        setSessionStatus('pending');
+        refreshSessionStatus();
+      }
+    };
+
+    window.addEventListener('whatsapp:pendingQR', handlePendingQR);
+    
+    return () => {
+      window.removeEventListener('whatsapp:pendingQR', handlePendingQR);
+    };
+  }, [moderatorId, refreshSessionStatus]);
+
   // Initial fetch
   useEffect(() => {
     refreshSessionStatus();
-  }, [refreshSessionStatus]);
+    refreshSessionHealth();
+  }, [refreshSessionStatus, refreshSessionHealth]);
 
   // Poll every 10 seconds
   useEffect(() => {
@@ -183,17 +250,20 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
 
     const interval = setInterval(() => {
       refreshSessionStatus();
+      refreshSessionHealth();
     }, 10000); // 10 seconds
 
     return () => clearInterval(interval);
-  }, [moderatorId, refreshSessionStatus]);
+  }, [moderatorId, refreshSessionStatus, refreshSessionHealth]);
 
   const value: WhatsAppSessionContextValue = {
     sessionStatus,
     sessionData,
+    sessionHealth,
     isLoading,
     error,
     refreshSessionStatus,
+    refreshSessionHealth,
     checkAuthentication,
     startAuthentication,
   };
