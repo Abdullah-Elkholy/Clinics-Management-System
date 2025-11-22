@@ -3,11 +3,13 @@
 import React, { useState } from 'react';
 import { useWhatsAppSession } from '@/contexts/WhatsAppSessionContext';
 import { useUI } from '@/contexts/UIContext';
+import { useModal } from '@/contexts/ModalContext';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 export default function WhatsAppAuthTabContent() {
   const { sessionStatus, sessionData, startAuthentication, checkAuthentication } = useWhatsAppSession();
   const { addToast } = useUI();
+  const { openModal } = useModal();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const handleStartAuthentication = async () => {
@@ -20,7 +22,8 @@ export default function WhatsAppAuthTabContent() {
         addToast('تم الاتصال بواتساب بنجاح', 'success');
       } else if (result.state === 'PendingQR') {
         addToast('يرجى مسح رمز QR من تطبيق واتساب', 'info');
-        // TODO: Open QR code modal
+        // Open QR code modal to show QR code
+        openModal('qrCode');
       } else if (result.state === 'Failure' || result.isSuccess === false) {
         addToast(result.resultMessage || 'فشل بدء المصادقة', 'error');
       }

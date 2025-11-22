@@ -295,10 +295,143 @@ export async function getSessionHealth(moderatorUserId: number): Promise<{
   }
 }
 
+/**
+ * Get browser status for a moderator
+ * @param moderatorUserId - Moderator user ID
+ * @returns Browser status information
+ */
+export interface BrowserStatus {
+  isActive: boolean;
+  isHealthy: boolean;
+  currentUrl?: string;
+  lastAction?: string;
+  sessionAge?: string;
+  isAuthenticated: boolean;
+  lastUpdated?: string;
+}
+
+export interface ModeratorBrowserStatus extends BrowserStatus {
+  moderatorId: number;
+  moderatorName: string;
+  moderatorUsername: string;
+  error?: string;
+}
+
+export async function getBrowserStatus(moderatorUserId: number): Promise<BrowserStatus | null> {
+  try {
+    const result = await fetchAPI<{ success: boolean; data: BrowserStatus }>(
+      `/api/WhatsAppUtility/browser/status?moderatorUserId=${moderatorUserId}`,
+      { method: 'GET' }
+    );
+    
+    if (result.success && result.data) {
+      return result.data;
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error('[WhatsApp API] getBrowserStatus error:', error);
+    return null;
+  }
+}
+
+/**
+ * Get browser status for all moderators (Admin only)
+ * @returns List of browser status for all moderators
+ */
+export async function getAllModeratorsBrowserStatus(): Promise<ModeratorBrowserStatus[]> {
+  try {
+    const result = await fetchAPI<{ success: boolean; data: ModeratorBrowserStatus[] }>(
+      `/api/WhatsAppUtility/browser/status/all`,
+      { method: 'GET' }
+    );
+    
+    if (result.success && result.data) {
+      return result.data;
+    }
+    
+    return [];
+  } catch (error: any) {
+    console.error('[WhatsApp API] getAllModeratorsBrowserStatus error:', error);
+    return [];
+  }
+}
+
+/**
+ * Refresh browser status for a moderator
+ * @param moderatorUserId - Moderator user ID
+ * @returns Success response
+ */
+export async function refreshBrowserStatus(moderatorUserId: number): Promise<{ success: boolean; message?: string }> {
+  try {
+    const result = await fetchAPI<{ success: boolean; message?: string }>(
+      `/api/WhatsAppUtility/browser/refresh?moderatorUserId=${moderatorUserId}`,
+      { method: 'POST' }
+    );
+    
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] refreshBrowserStatus error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Close browser session for a moderator
+ * @param moderatorUserId - Moderator user ID
+ * @returns Success response
+ */
+export async function closeBrowserSession(moderatorUserId: number): Promise<{ success: boolean; message?: string }> {
+  try {
+    const result = await fetchAPI<{ success: boolean; message?: string }>(
+      `/api/WhatsAppUtility/browser/close?moderatorUserId=${moderatorUserId}`,
+      { method: 'POST' }
+    );
+    
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] closeBrowserSession error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get QR code screenshot for authentication
+ * @param moderatorUserId - Moderator user ID
+ * @returns QR code image as base64
+ */
+export interface QRCodeResponse {
+  success: boolean;
+  data?: {
+    qrCodeImage: string; // base64
+    format: string;
+  };
+  error?: string;
+}
+
+export async function getQRCode(moderatorUserId: number): Promise<QRCodeResponse> {
+  try {
+    const result = await fetchAPI<QRCodeResponse>(
+      `/api/WhatsAppUtility/qr-code?moderatorUserId=${moderatorUserId}`,
+      { method: 'GET' }
+    );
+    
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] getQRCode error:', error);
+    throw error;
+  }
+}
+
 // Export the client object for consistency with other API clients
 export const whatsappApiClient = {
   checkWhatsAppNumber,
   checkAuthentication,
   authenticate,
   getSessionHealth,
+  getBrowserStatus,
+  getAllModeratorsBrowserStatus,
+  refreshBrowserStatus,
+  closeBrowserSession,
+  getQRCode,
 };

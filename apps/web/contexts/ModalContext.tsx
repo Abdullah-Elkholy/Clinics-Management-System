@@ -21,7 +21,8 @@ export type ModalType =
   | 'editPatient'
   | 'messageConditions'
   | 'manageConditions'
-  | 'templateEditor';
+  | 'templateEditor'
+  | 'qrCode';
 
 export interface ModalData {
   [key: string]: any;

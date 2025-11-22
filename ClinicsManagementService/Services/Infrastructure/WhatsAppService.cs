@@ -428,12 +428,11 @@ namespace ClinicsManagementService.Services
                 {
                     var currentUrl = await browserSession.GetUrlAsync();
                     
-                    // Check for blank or invalid pages
+                    // Check for blank or invalid pages (only check for blank pages, not URL content)
                     if (string.IsNullOrWhiteSpace(currentUrl) || 
                         currentUrl == "about:blank" || 
                         currentUrl.Contains("data:text/html") ||
-                        currentUrl.Contains("chrome-error://") ||
-                        (!string.IsNullOrEmpty(currentUrl) && !currentUrl.Contains("web.whatsapp.com")))
+                        currentUrl.Contains("chrome-error://"))
                     {
                         _notifier.Notify("⚠️ Blank or invalid page detected - attempting recovery");
                         
@@ -448,8 +447,7 @@ namespace ClinicsManagementService.Services
                         
                         // If still blank or invalid, return waiting state (page may still be loading)
                         if (string.IsNullOrWhiteSpace(currentUrl) || 
-                            currentUrl == "about:blank" || 
-                            (!string.IsNullOrEmpty(currentUrl) && !currentUrl.Contains("web.whatsapp.com")))
+                            currentUrl == "about:blank")
                         {
                             _notifier.Notify("⚠️ Still on blank or invalid page after recovery attempt");
                             return OperationResult<bool>.Waiting("Blank page detected - page may still be loading. Please try again.", false);

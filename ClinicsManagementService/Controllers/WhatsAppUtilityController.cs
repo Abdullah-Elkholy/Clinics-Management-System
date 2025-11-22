@@ -4,6 +4,10 @@ using ClinicsManagementService.Models;
 using ClinicsManagementService.Services.Domain;
 using ClinicsManagementService.Services.Infrastructure;
 using ClinicsManagementService.Configuration;
+using Clinics.Infrastructure;
+using Clinics.Domain;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Playwright;
 using System.Net;
 using System.Threading;
 
@@ -24,6 +28,7 @@ namespace ClinicsManagementService.Controllers
         private readonly IRetryService _retryService;
         private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
         private readonly IWhatsAppSessionSyncService _sessionSyncService;
+        private readonly ApplicationDbContext _dbContext;
 
 
         public WhatsAppUtilityController(
@@ -34,7 +39,8 @@ namespace ClinicsManagementService.Controllers
             IWhatsAppUIService whatsAppUIService,
             IRetryService retryService,
             IWhatsAppSessionOptimizer sessionOptimizer,
-            IWhatsAppSessionSyncService sessionSyncService)
+            IWhatsAppSessionSyncService sessionSyncService,
+            ApplicationDbContext dbContext)
         {
             _whatsAppService = whatsAppService;
             _notifier = notifier;
@@ -44,6 +50,7 @@ namespace ClinicsManagementService.Controllers
             _retryService = retryService;
             _sessionOptimizer = sessionOptimizer;
             _sessionSyncService = sessionSyncService;
+            _dbContext = dbContext;
         }
 
         /// <summary>
@@ -526,6 +533,400 @@ namespace ClinicsManagementService.Controllers
                 _notifier.Notify($"❌ Exception during WhatsApp authentication: {ex.Message}");
                 return Ok(OperationResult<bool>.Failure($"Authentication failed: {ex.Message}"));
             }
+        }
+
+        /// <summary>
+        /// Get browser status for a moderator
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>Browser status information</returns>
+        [HttpGet("browser/status")]
+        public async Task<ActionResult> GetBrowserStatus([FromQuery] int? moderatorUserId = null)
+        {
+            try
+            {
+                // Validate moderatorUserId
+                if (!moderatorUserId.HasValue || moderatorUserId.Value <= 0)
+                {
+                    return BadRequest(new { success = false, error = "moderatorUserId is required and must be greater than 0" });
+                }
+
+                int effectiveModeratorId = moderatorUserId.Value;
+
+                // Check if session exists
+                var session = await _sessionManager.GetCurrentSessionAsync(effectiveModeratorId);
+                
+                if (session == null)
+                {
+                    return Ok(new 
+                    { 
+                        success = true, 
+                        data = new 
+                        {
+                            isActive = false,
+                            isHealthy = false,
+                            currentUrl = (string?)null,
+                            lastAction = (string?)null,
+                            sessionAge = (string?)null,
+                            isAuthenticated = false,
+                            lastUpdated = (DateTime?)null
+                        }
+                    });
+                }
+
+                // Get browser status from session
+                string? currentUrl = null;
+                bool isHealthy = false;
+                bool isAuthenticated = false;
+
+                try
+                {
+                    currentUrl = await session.GetUrlAsync();
+                    // Only check for blank pages, not URL content (WhatsApp may show base URL even when on chat)
+                    isHealthy = !string.IsNullOrWhiteSpace(currentUrl) 
+                        && currentUrl != "about:blank";
+                    
+                    // Check authentication status by looking for ChatUI selectors
+                    foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
+                    {
+                        try
+                        {
+                            var element = await session.QuerySelectorAsync(selector);
+                            if (element != null)
+                            {
+                                isAuthenticated = true;
+                                break;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _notifier.Notify($"⚠️ Error getting browser status: {ex.Message}");
+                    // Continue with default values
+                }
+
+                // Get database session info
+                var dbSession = await _sessionSyncService.GetSessionStatusAsync(effectiveModeratorId);
+                var sessionAge = dbSession?.CreatedAt != null 
+                    ? DateTime.UtcNow - dbSession.CreatedAt 
+                    : (TimeSpan?)null;
+
+                var result = new
+                {
+                    isActive = true,
+                    isHealthy = isHealthy,
+                    currentUrl = currentUrl,
+                    lastAction = "نشط", // Default, can be enhanced later with action tracking
+                    sessionAge = sessionAge.HasValue ? FormatTimeSpan(sessionAge.Value) : (string?)null,
+                    isAuthenticated = isAuthenticated,
+                    lastUpdated = DateTime.UtcNow
+                };
+
+                return Ok(new { success = true, data = result });
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error getting browser status: {ex.Message}");
+                return StatusCode(500, new { success = false, error = $"حدث خطأ أثناء جلب حالة المتصفح: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// Get browser status for all moderators (Admin only)
+        /// </summary>
+        /// <returns>List of browser status for all moderators</returns>
+        [HttpGet("browser/status/all")]
+        public async Task<ActionResult> GetAllModeratorsBrowserStatus()
+        {
+            try
+            {
+                // Get all moderators from database
+                var moderators = await _dbContext.Users
+                    .Where(u => u.Role == "moderator" && !u.IsDeleted)
+                    .ToListAsync();
+
+                var statusList = new List<object>();
+
+                foreach (var moderator in moderators)
+                {
+                    try
+                    {
+                        // Check if session exists
+                        var session = await _sessionManager.GetCurrentSessionAsync(moderator.Id);
+                        
+                        bool isActive = session != null;
+                        bool isHealthy = false;
+                        string? currentUrl = null;
+                        bool isAuthenticated = false;
+
+                        if (session != null)
+                        {
+                            try
+                            {
+                                currentUrl = await session.GetUrlAsync();
+                                // Only check for blank pages, not URL content (WhatsApp may show base URL even when on chat)
+                                isHealthy = !string.IsNullOrWhiteSpace(currentUrl) 
+                                    && currentUrl != "about:blank";
+                                
+                                // Check authentication status
+                                foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
+                                {
+                                    try
+                                    {
+                                        var element = await session.QuerySelectorAsync(selector);
+                                        if (element != null)
+                                        {
+                                            isAuthenticated = true;
+                                            break;
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _notifier.Notify($"⚠️ Error getting browser status for moderator {moderator.Id}: {ex.Message}");
+                            }
+                        }
+
+                        // Get database session info
+                        var dbSession = await _sessionSyncService.GetSessionStatusAsync(moderator.Id);
+                        var sessionAge = dbSession?.CreatedAt != null 
+                            ? DateTime.UtcNow - dbSession.CreatedAt 
+                            : (TimeSpan?)null;
+
+                        statusList.Add(new
+                        {
+                            moderatorId = moderator.Id,
+                            moderatorName = moderator.FullName,
+                            moderatorUsername = moderator.Username,
+                            isActive = isActive,
+                            isHealthy = isHealthy,
+                            currentUrl = currentUrl,
+                            lastAction = "نشط", // Default
+                            sessionAge = sessionAge.HasValue ? FormatTimeSpan(sessionAge.Value) : (string?)null,
+                            isAuthenticated = isAuthenticated,
+                            lastUpdated = DateTime.UtcNow
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _notifier.Notify($"⚠️ Error processing moderator {moderator.Id}: {ex.Message}");
+                        // Continue with other moderators
+                        statusList.Add(new
+                        {
+                            moderatorId = moderator.Id,
+                            moderatorName = moderator.FullName,
+                            moderatorUsername = moderator.Username,
+                            isActive = false,
+                            isHealthy = false,
+                            currentUrl = (string?)null,
+                            lastAction = (string?)null,
+                            sessionAge = (string?)null,
+                            isAuthenticated = false,
+                            lastUpdated = (DateTime?)null,
+                            error = ex.Message
+                        });
+                    }
+                }
+
+                return Ok(new { success = true, data = statusList });
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error getting all moderators browser status: {ex.Message}");
+                return StatusCode(500, new { success = false, error = $"حدث خطأ أثناء جلب حالة المتصفحات: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// Refresh browser status for a moderator
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>Success response</returns>
+        [HttpPost("browser/refresh")]
+        public async Task<ActionResult> RefreshBrowserStatus([FromQuery] int? moderatorUserId = null)
+        {
+            try
+            {
+                // Validate moderatorUserId
+                if (!moderatorUserId.HasValue || moderatorUserId.Value <= 0)
+                {
+                    return BadRequest(new { success = false, error = "moderatorUserId is required and must be greater than 0" });
+                }
+
+                int effectiveModeratorId = moderatorUserId.Value;
+
+                // Get session and refresh by navigating to WhatsApp base URL
+                var session = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
+                await session.InitializeAsync();
+                
+                var url = WhatsAppConfiguration.WhatsAppBaseUrl;
+                _notifier.Notify($"🔄 Refreshing browser session for moderator {effectiveModeratorId}...");
+                await session.NavigateToAsync(url);
+
+                // Wait a bit for page to load
+                await Task.Delay(2000);
+
+                // Check authentication status
+                var waitResult = await _whatsAppUIService.WaitForPageLoadAsync(session, WhatsAppConfiguration.ChatUIReadySelectors);
+                
+                if (waitResult.IsSuccess == true)
+                {
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
+                }
+                else if (waitResult.IsPendingQr())
+                {
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending");
+                }
+                else
+                {
+                    await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "disconnected");
+                }
+
+                return Ok(new { success = true, message = "تم تحديث حالة المتصفح بنجاح" });
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error refreshing browser status: {ex.Message}");
+                return StatusCode(500, new { success = false, error = $"حدث خطأ أثناء تحديث حالة المتصفح: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// Close browser session for a moderator
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>Success response</returns>
+        [HttpPost("browser/close")]
+        public async Task<ActionResult> CloseBrowserSession([FromQuery] int? moderatorUserId = null)
+        {
+            try
+            {
+                // Validate moderatorUserId
+                if (!moderatorUserId.HasValue || moderatorUserId.Value <= 0)
+                {
+                    return BadRequest(new { success = false, error = "moderatorUserId is required and must be greater than 0" });
+                }
+
+                int effectiveModeratorId = moderatorUserId.Value;
+
+                _notifier.Notify($"🚪 Closing browser session for moderator {effectiveModeratorId}...");
+                
+                // Dispose session
+                await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
+                
+                // Update database status
+                await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "disconnected");
+
+                return Ok(new { success = true, message = "تم إغلاق المتصفح بنجاح" });
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error closing browser session: {ex.Message}");
+                return StatusCode(500, new { success = false, error = $"حدث خطأ أثناء إغلاق المتصفح: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// Get QR code screenshot for authentication
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <returns>QR code image as base64</returns>
+        [HttpGet("qr-code")]
+        public async Task<ActionResult> GetQRCode([FromQuery] int? moderatorUserId = null)
+        {
+            try
+            {
+                // Validate moderatorUserId
+                if (!moderatorUserId.HasValue || moderatorUserId.Value <= 0)
+                {
+                    return BadRequest(new { success = false, error = "moderatorUserId is required and must be greater than 0" });
+                }
+
+                int effectiveModeratorId = moderatorUserId.Value;
+
+                // Get session
+                var session = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
+                await session.InitializeAsync();
+
+                // Navigate to WhatsApp base URL if not already there
+                var currentUrl = await session.GetUrlAsync();
+                if (!currentUrl.Contains("web.whatsapp.com"))
+                {
+                    await session.NavigateToAsync(WhatsAppConfiguration.WhatsAppBaseUrl);
+                    await Task.Delay(2000); // Wait for page to load
+                }
+
+                // Find QR code element
+                IElementHandle? qrCodeElement = null;
+                foreach (var selector in WhatsAppConfiguration.QrCodeSelectors)
+                {
+                    try
+                    {
+                        var element = await session.QuerySelectorAsync(selector);
+                        if (element != null)
+                        {
+                            qrCodeElement = element;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (qrCodeElement == null)
+                {
+                    return NotFound(new { success = false, error = "رمز QR غير موجود. قد تكون الجلسة مصادقة بالفعل." });
+                }
+
+                // Take screenshot of QR code element
+                try
+                {
+                    var screenshotBytes = await session.ScreenshotElementAsync(qrCodeElement);
+                    if (screenshotBytes != null && screenshotBytes.Length > 0)
+                    {
+                        // Convert to base64 for JSON response
+                        var base64Image = Convert.ToBase64String(screenshotBytes);
+                        return Ok(new 
+                        { 
+                            success = true, 
+                            data = new 
+                            {
+                                qrCodeImage = base64Image,
+                                format = "image/png"
+                            }
+                        });
+                    }
+                }
+                catch (Exception screenshotEx)
+                {
+                    _notifier.Notify($"⚠️ Error taking QR code screenshot: {screenshotEx.Message}");
+                    // Fall through to return error
+                }
+                
+                return NotFound(new { success = false, error = "فشل التقاط صورة رمز QR" });
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ Error getting QR code: {ex.Message}");
+                return StatusCode(500, new { success = false, error = $"حدث خطأ أثناء جلب رمز QR: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// Helper method to format TimeSpan to readable Arabic string
+        /// </summary>
+        private static string FormatTimeSpan(TimeSpan timeSpan)
+        {
+            if (timeSpan.TotalDays >= 1)
+                return $"{(int)timeSpan.TotalDays} يوم";
+            if (timeSpan.TotalHours >= 1)
+                return $"{(int)timeSpan.TotalHours} ساعة";
+            if (timeSpan.TotalMinutes >= 1)
+                return $"{(int)timeSpan.TotalMinutes} دقيقة";
+            return $"{(int)timeSpan.TotalSeconds} ثانية";
         }
     }
 }

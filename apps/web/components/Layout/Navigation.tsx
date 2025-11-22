@@ -395,6 +395,18 @@ export default function Navigation() {
               }}
             />
           </li>
+          <li>
+            <NavigationItem
+              icon="fa-window-restore"
+              label="حالة المتصفح"
+              isActive={!isQueueSelected && currentPanel === 'browserStatus'}
+              isCollapsed={isCollapsed}
+              onClick={() => {
+                // setCurrentPanel will handle clearing queue selection internally
+                setCurrentPanel('browserStatus');
+              }}
+            />
+          </li>
         </ul>
       </nav>
 
