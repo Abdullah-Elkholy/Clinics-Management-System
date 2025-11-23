@@ -61,6 +61,14 @@ namespace Clinics.Api.Controllers
 
                 // Get effective moderator ID (unified WhatsApp session per moderator)
                 var effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+                
+                // Validate moderatorId is valid (should never be 0)
+                if (effectiveModeratorId <= 0)
+                {
+                    _logger.LogError("[MessagesController.Send] Invalid effectiveModeratorId: {ModeratorId} for userId: {UserId}", 
+                        effectiveModeratorId, userId);
+                    return BadRequest(new { success = false, error = "معرف المشرف غير صحيح" });
+                }
 
                 // Check if WhatsApp session is paused due to PendingQR
                 var whatsappSessionCheck = await _db.WhatsAppSessions
@@ -143,10 +151,35 @@ namespace Clinics.Api.Controllers
                         return BadRequest(new { success = false, error = "Queue not found" });
                     }
 
-                    // Get WhatsAppSession for moderator to get SessionName
+                    // Get WhatsAppSession for moderator (for status check, not for session name)
+                    // IMPORTANT: Always construct session name from effectiveModeratorId (from header/auth)
+                    // This ensures the session name always matches the moderatorId from the JWT token
+                    // Format: whatsapp-session-{moderatorId} (matches WhatsAppConfiguration.GetSessionDirectory)
                     var whatsappSession = await _db.WhatsAppSessions
                         .FirstOrDefaultAsync(w => w.ModeratorUserId == effectiveModeratorId && !w.IsDeleted);
-                    var sessionName = whatsappSession?.SessionName ?? "default";
+                    
+                    // ALWAYS use the constructed session name based on moderatorId from header/auth
+                    // This is the source of truth - never rely on DB SessionName which might be stale/incorrect
+                    var sessionName = $"whatsapp-session-{effectiveModeratorId}";
+                    
+                    // Log if DB session name doesn't match (indicates data inconsistency)
+                    if (whatsappSession != null && !string.IsNullOrEmpty(whatsappSession.SessionName) && 
+                        whatsappSession.SessionName != sessionName)
+                    {
+                        _logger.LogWarning("[MessagesController.Send] DB SessionName mismatch! DB has '{DbSessionName}', but using '{ExpectedSessionName}' for moderator {ModeratorId} (userId: {UserId}). DB value will be ignored.", 
+                            whatsappSession.SessionName, sessionName, effectiveModeratorId, userId);
+                    }
+                    
+                    // Truncate to 20 characters if needed (Channel field constraint: StringLength(20))
+                    if (sessionName.Length > 20)
+                    {
+                        _logger.LogWarning("[MessagesController.Send] Session name '{SessionName}' exceeds 20 characters for moderator {ModeratorId}, truncating to '{Truncated}'", 
+                            sessionName, effectiveModeratorId, sessionName.Substring(0, 20));
+                        sessionName = sessionName.Substring(0, 20);
+                    }
+                    
+                    _logger.LogInformation("[MessagesController.Send] Using session name '{SessionName}' for moderator {ModeratorId} (userId: {UserId})", 
+                        sessionName, effectiveModeratorId, userId);
 
                     // Get all MessageConditions for this queue (for condition matching)
                     var conditions = await _db.Set<MessageCondition>()

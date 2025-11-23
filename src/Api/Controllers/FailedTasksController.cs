@@ -12,7 +12,7 @@ namespace Clinics.Api.Controllers
     /// Failed tasks are messages that couldn't be sent and need user intervention
     /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/failed-tasks")]
     [Microsoft.AspNetCore.Authorization.Authorize]
     public class FailedTasksController : ControllerBase
     {

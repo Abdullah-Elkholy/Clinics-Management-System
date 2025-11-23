@@ -128,7 +128,7 @@ public class SessionsController : ControllerBase
                     .Distinct()
                     .ToList();
 
-                // Get patients with their message statuses
+                // Get patients from database (materialize first, then match messages in memory)
                 var patients = await _context.Patients
                     .Where(p => patientIds.Contains(p.Id))
                     .Select(p => new
@@ -136,13 +136,30 @@ public class SessionsController : ControllerBase
                         p.Id,
                         p.FullName,
                         p.PhoneNumber,
-                        p.CountryCode,
-                        Message = sessionMessages
-                            .Where(m => m.PatientId == p.Id)
-                            .OrderByDescending(m => m.CreatedAt)
-                            .FirstOrDefault()
+                        p.CountryCode
                     })
                     .ToListAsync();
+
+                // Match messages to patients in memory (after materialization)
+                var patientDtos = patients.Select(p =>
+                {
+                    var message = sessionMessages
+                        .Where(m => m.PatientId == p.Id)
+                        .OrderByDescending(m => m.CreatedAt)
+                        .FirstOrDefault();
+                    
+                    return new SessionPatientDto
+                    {
+                        PatientId = p.Id,
+                        MessageId = message?.Id,
+                        Name = p.FullName ?? "غير محدد",
+                        Phone = p.PhoneNumber ?? "",
+                        CountryCode = p.CountryCode ?? "+966",
+                        Status = MapMessageStatus(message?.Status),
+                        IsPaused = message?.IsPaused ?? false,
+                        Attempts = message?.Attempts ?? 0
+                    };
+                }).ToList();
 
                 sessionDtos.Add(new OngoingSessionDto
                 {
@@ -153,15 +170,7 @@ public class SessionsController : ControllerBase
                     Total = session.TotalMessages,
                     Sent = session.SentMessages,
                     Status = session.IsPaused ? "paused" : session.Status,
-                    Patients = patients.Select(p => new SessionPatientDto
-                    {
-                        PatientId = p.Id,
-                        Name = p.FullName,
-                        Phone = p.PhoneNumber,
-                        CountryCode = p.CountryCode ?? "+966",
-                        Status = MapMessageStatus(p.Message?.Status),
-                        IsPaused = p.Message?.IsPaused ?? false
-                    }).ToList()
+                    Patients = patientDtos
                 });
             }
 
@@ -771,50 +780,99 @@ public class SessionsController : ControllerBase
 
             foreach (var session in sessions)
             {
-                var sessionMessages = await _context.Messages
-                    .Where(m => m.SessionId == session.Id.ToString() && !m.IsDeleted)
-                    .ToListAsync();
-
-                var patientIds = sessionMessages
-                    .Where(m => m.PatientId.HasValue)
-                    .Select(m => m.PatientId!.Value)
-                    .Distinct()
-                    .ToList();
-
-                var patients = await _context.Patients
-                    .Where(p => patientIds.Contains(p.Id))
-                    .Select(p => new
-                    {
-                        p.Id,
-                        p.FullName,
-                        p.PhoneNumber,
-                        p.CountryCode,
-                        Message = sessionMessages
-                            .Where(m => m.PatientId == p.Id)
-                            .OrderByDescending(m => m.CreatedAt)
-                            .FirstOrDefault()
-                    })
-                    .ToListAsync();
-
-                sessionDtos.Add(new CompletedSessionDto
+                try
                 {
-                    SessionId = session.Id,
-                    QueueId = session.QueueId,
-                    QueueName = session.Queue?.DoctorName ?? "غير محدد",
-                    StartTime = session.StartTime,
-                    CompletedAt = session.EndTime,
-                    Total = session.TotalMessages,
-                    Sent = session.SentMessages,
-                    Patients = patients.Select(p => new SessionPatientDto
+                    // Get session messages - handle case-insensitive SessionId comparison
+                    var sessionIdString = session.Id.ToString();
+                    var sessionIdGuid = session.Id;
+                    
+                    // Materialize all messages for this session first (handle case-insensitive GUID comparison)
+                    var allSessionMessages = await _context.Messages
+                        .Where(m => !m.IsDeleted && !string.IsNullOrEmpty(m.SessionId))
+                        .ToListAsync();
+                    
+                    var sessionMessages = allSessionMessages
+                        .Where(m => Guid.TryParse(m.SessionId, out var msgSessionId) && msgSessionId == sessionIdGuid)
+                        .ToList();
+
+                    // Get unique patient IDs from messages
+                    var patientIds = sessionMessages
+                        .Where(m => m.PatientId.HasValue)
+                        .Select(m => m.PatientId!.Value)
+                        .Distinct()
+                        .ToList();
+
+                    List<SessionPatientDto> patientDtos;
+                    
+                    if (patientIds.Count == 0)
                     {
-                        PatientId = p.Id,
-                        Name = p.FullName,
-                        Phone = p.PhoneNumber,
-                        CountryCode = p.CountryCode ?? "+966",
-                        Status = MapMessageStatus(p.Message?.Status),
-                        Attempts = p.Message?.Attempts ?? 0
-                    }).ToList()
-                });
+                        // No patient IDs - create DTOs from message data directly
+                        patientDtos = sessionMessages
+                            .Where(m => m.PatientId.HasValue)
+                            .Select(m => new SessionPatientDto
+                            {
+                                PatientId = m.PatientId!.Value,
+                                MessageId = m.Id,
+                                Name = m.FullName ?? "غير محدد",
+                                Phone = m.PatientPhone ?? "",
+                                CountryCode = m.CountryCode ?? "+966",
+                                Status = MapMessageStatus(m.Status),
+                                Attempts = m.Attempts
+                            })
+                            .ToList();
+                    }
+                    else
+                    {
+                        // Materialize patients from database first
+                        var patients = await _context.Patients
+                            .Where(p => patientIds.Contains(p.Id))
+                            .Select(p => new
+                            {
+                                p.Id,
+                                p.FullName,
+                                p.PhoneNumber,
+                                p.CountryCode,
+                            })
+                            .ToListAsync();
+
+                        // Then join with messages in memory (not in LINQ query)
+                        patientDtos = patients.Select(p =>
+                        {
+                            var message = sessionMessages
+                                .Where(m => m.PatientId == p.Id)
+                                .OrderByDescending(m => m.CreatedAt)
+                                .FirstOrDefault();
+                            
+                            return new SessionPatientDto
+                            {
+                                PatientId = p.Id,
+                                MessageId = message?.Id,
+                                Name = p.FullName ?? "غير محدد",
+                                Phone = p.PhoneNumber ?? "",
+                                CountryCode = p.CountryCode ?? "+966",
+                                Status = MapMessageStatus(message?.Status),
+                                Attempts = message?.Attempts ?? 0
+                            };
+                        }).ToList();
+                    }
+
+                    sessionDtos.Add(new CompletedSessionDto
+                    {
+                        SessionId = session.Id,
+                        QueueId = session.QueueId,
+                        QueueName = session.Queue?.DoctorName ?? "غير محدد",
+                        StartTime = session.StartTime,
+                        CompletedAt = session.EndTime,
+                        Total = session.TotalMessages,
+                        Sent = session.SentMessages,
+                        Patients = patientDtos
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing session {SessionId} in GetCompletedSessions", session.Id);
+                    continue; // Skip this session and continue with others
+                }
             }
 
             return Ok(new { success = true, data = sessionDtos });

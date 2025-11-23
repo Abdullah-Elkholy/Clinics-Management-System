@@ -30,8 +30,19 @@ namespace Clinics.Api.Services
             try
             {
                 var baseUrl = _configuration["WhatsAppServiceUrl"] ?? "http://localhost:5185";
-                _logger.LogInformation("Calling WhatsApp service at {BaseUrl} for message ID {MessageId} to phone {Phone}", 
-                    baseUrl, message.Id, message.PatientPhone);
+                
+                // CRITICAL: Validate ModeratorId is present and valid
+                if (!message.ModeratorId.HasValue || message.ModeratorId.Value <= 0)
+                {
+                    _logger.LogError("Message {MessageId} has invalid ModeratorId: {ModeratorId}. Cannot send message.", 
+                        message.Id, message.ModeratorId);
+                    message.ErrorMessage = "Invalid ModeratorId: Cannot determine WhatsApp session";
+                    return (false, "WhatsAppService", "Invalid ModeratorId");
+                }
+                
+                var moderatorUserId = message.ModeratorId.Value;
+                _logger.LogInformation("Calling WhatsApp service at {BaseUrl} for message ID {MessageId} to phone {Phone} with moderatorUserId {ModeratorId}", 
+                    baseUrl, message.Id, message.PatientPhone, moderatorUserId);
 
                 var requestBody = new
                 {
@@ -40,10 +51,21 @@ namespace Clinics.Api.Services
                     Message = message.Content
                 };
 
-                var response = await _httpClient.PostAsJsonAsync(
-                    $"{baseUrl}/BulkMessaging/send-single",
-                    requestBody
-                );
+                // CRITICAL: Include moderatorUserId as query parameter to ensure correct session is used
+                // This ensures the session name is whatsapp-session-{moderatorId} instead of defaulting to whatsapp-session-0
+                var url = $"{baseUrl}/BulkMessaging/send-single?moderatorUserId={moderatorUserId}";
+                if (message.PatientId.HasValue)
+                {
+                    url += $"&patientId={message.PatientId.Value}";
+                }
+                if (message.SenderUserId.HasValue)
+                {
+                    url += $"&userId={message.SenderUserId.Value}";
+                }
+                
+                _logger.LogInformation("Sending message {MessageId} to WhatsApp service with URL: {Url}", message.Id, url);
+                
+                var response = await _httpClient.PostAsJsonAsync(url, requestBody);
 
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogDebug("WhatsApp service response: Status={StatusCode}, Body={Body}", 
@@ -106,6 +128,33 @@ namespace Clinics.Api.Services
             {
                 // Re-throw PendingQR exceptions
                 throw;
+            }
+            catch (TaskCanceledException taskEx) when (taskEx.InnerException is TimeoutException)
+            {
+                // Handle HttpClient timeout (default is 100 seconds)
+                var errorMessage = "The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.";
+                _logger.LogWarning(taskEx, "Request timeout sending message {MessageId} to {Phone}. The WhatsApp service took longer than 100 seconds to respond.", 
+                    message.Id, message.PatientPhone);
+                message.ErrorMessage = errorMessage; // Set ErrorMessage on failure
+                return (false, "WhatsAppService", errorMessage);
+            }
+            catch (TaskCanceledException taskEx)
+            {
+                // Handle general cancellation
+                var errorMessage = $"Request was canceled: {taskEx.Message}";
+                _logger.LogWarning(taskEx, "Request canceled sending message {MessageId} to {Phone}", 
+                    message.Id, message.PatientPhone);
+                message.ErrorMessage = errorMessage; // Set ErrorMessage on failure
+                return (false, "WhatsAppService", errorMessage);
+            }
+            catch (TimeoutException timeoutEx)
+            {
+                // Handle timeout exceptions
+                var errorMessage = $"Request timeout: {timeoutEx.Message}";
+                _logger.LogWarning(timeoutEx, "Timeout sending message {MessageId} to {Phone}", 
+                    message.Id, message.PatientPhone);
+                message.ErrorMessage = errorMessage; // Set ErrorMessage on failure
+                return (false, "WhatsAppService", errorMessage);
             }
             catch (HttpRequestException httpEx)
             {
