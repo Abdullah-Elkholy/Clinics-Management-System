@@ -63,10 +63,10 @@ namespace Clinics.Api.Controllers
                 var effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
 
                 // Check if WhatsApp session is paused due to PendingQR
-                var whatsappSession = await _db.WhatsAppSessions
+                var whatsappSessionCheck = await _db.WhatsAppSessions
                     .FirstOrDefaultAsync(w => w.ModeratorUserId == effectiveModeratorId && !w.IsDeleted);
                 
-                if (whatsappSession != null && whatsappSession.Status == "pending")
+                if (whatsappSessionCheck != null && whatsappSessionCheck.Status == "pending")
                 {
                     _logger.LogWarning("User {UserId} attempted to send messages but WhatsApp session requires authentication (PendingQR)", userId);
                     return BadRequest(new 
@@ -134,9 +134,40 @@ namespace Clinics.Api.Controllers
                         });
                     }
 
+                    // Get queue for CurrentPosition
+                    var queueId = patients.First().QueueId; // All patients should be from same queue
+                    var queue = await _db.Queues.FindAsync(queueId);
+                    if (queue == null)
+                    {
+                        await transaction.RollbackAsync();
+                        return BadRequest(new { success = false, error = "Queue not found" });
+                    }
+
+                    // Get WhatsAppSession for moderator to get SessionName
+                    var whatsappSession = await _db.WhatsAppSessions
+                        .FirstOrDefaultAsync(w => w.ModeratorUserId == effectiveModeratorId && !w.IsDeleted);
+                    var sessionName = whatsappSession?.SessionName ?? "default";
+
+                    // Get all MessageConditions for this queue (for condition matching)
+                    var conditions = await _db.Set<MessageCondition>()
+                        .Where(c => c.QueueId == queueId && !c.IsDeleted)
+                        .Include(c => c.Template)
+                        .ToListAsync();
+
+                    // Separate conditions by operator type
+                    var valuedConditions = conditions
+                        .Where(c => c.Operator == "EQUAL" || c.Operator == "GREATER" || 
+                                   c.Operator == "LESS" || c.Operator == "RANGE")
+                        .OrderBy(c => c.Id) // Order by ID if Priority doesn't exist
+                        .ToList();
+                    var defaultCondition = conditions.FirstOrDefault(c => c.Operator == "DEFAULT");
+                    var unconditionedConditions = conditions
+                        .Where(c => c.Operator == "UNCONDITIONED")
+                        .OrderBy(c => c.Id) // Order by ID if Priority doesn't exist
+                        .ToList();
+
                     // Create MessageSession for this batch (unified session per moderator)
                     var sessionId = Guid.NewGuid();
-                    var queueId = patients.First().QueueId; // All patients should be from same queue
                     var messageSession = new MessageSession
                     {
                         Id = sessionId,
@@ -147,6 +178,8 @@ namespace Clinics.Api.Controllers
                         IsPaused = false,
                         TotalMessages = patients.Count,
                         SentMessages = 0,
+                        FailedMessages = 0,
+                        OngoingMessages = patients.Count, // All messages start as queued
                         StartTime = creationTimestamp,
                         LastUpdated = creationTimestamp
                     };
@@ -156,16 +189,66 @@ namespace Clinics.Api.Controllers
 
                     foreach (var p in patients)
                     {
-                        var content = req.OverrideContent ?? template.Content;
+                        // Calculate CalculatedPosition (offset from CQP)
+                        var calculatedPosition = p.Position - queue.CurrentPosition;
+
+                        // Match condition based on CalculatedPosition
+                        MessageTemplate? selectedTemplate = null;
+                        string content;
+
+                        // 1. Check valued conditions FIRST (EQUAL, GREATER, LESS, RANGE) - highest priority
+                        foreach (var cond in valuedConditions)
+                        {
+                            bool matches = cond.Operator switch
+                            {
+                                "EQUAL" => calculatedPosition == cond.Value,
+                                "GREATER" => calculatedPosition > cond.Value,
+                                "LESS" => calculatedPosition < cond.Value,
+                                "RANGE" => calculatedPosition >= cond.MinValue && 
+                                           calculatedPosition <= cond.MaxValue,
+                                _ => false
+                            };
+                            
+                            if (matches && cond.Template != null)
+                            {
+                                selectedTemplate = cond.Template;
+                                break; // First match wins
+                            }
+                        }
+
+                        // 2. Fallback to DEFAULT if no valued condition matched
+                        if (selectedTemplate == null && defaultCondition != null && defaultCondition.Template != null)
+                        {
+                            selectedTemplate = defaultCondition.Template;
+                        }
+
+                        // 3. Last resort: UNCONDITIONED (least priority - template with no condition)
+                        if (selectedTemplate == null && unconditionedConditions.Any())
+                        {
+                            var firstUnconditioned = unconditionedConditions.First();
+                            if (firstUnconditioned.Template != null)
+                            {
+                                selectedTemplate = firstUnconditioned.Template;
+                            }
+                        }
+
+                        // Use selected template or fallback to provided template
+                        var finalTemplate = selectedTemplate ?? template;
+                        content = req.OverrideContent ?? finalTemplate.Content;
+
                         var msg = new Message
                         {
                             PatientId = p.Id,
-                            TemplateId = template.Id,
+                            TemplateId = finalTemplate.Id,
                             QueueId = p.QueueId,
                             SenderUserId = userId,
                             ModeratorId = effectiveModeratorId,  // Unified session per moderator
-                            Channel = req.Channel ?? "whatsapp",
-                            RecipientPhone = p.PhoneNumber,
+                            Channel = sessionName,  // WhatsApp session name
+                            CountryCode = p.CountryCode ?? "+20",
+                            PatientPhone = p.PhoneNumber,
+                            Position = p.Position,
+                            CalculatedPosition = calculatedPosition,
+                            FullName = p.FullName,
                             Content = content,
                             Status = "queued",
                             Attempts = 0,  // Initialize attempts counter
@@ -195,8 +278,7 @@ namespace Clinics.Api.Controllers
                 {
                     await transaction.RollbackAsync();
                     _logger.LogError(ex, "Error queueing messages");
-                    return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إضافة الرسائل إلى قائمة الانتظار", message = "حدث خطأ أثناء إضافة الرسائل إلى قائمة الانتظار." });
-                    throw;
+                    return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إضافة الرسائل إلى قائمة الانتظار", message = ex.Message });
                 }
             }
             catch (InvalidOperationException ex)
@@ -215,17 +297,43 @@ namespace Clinics.Api.Controllers
         [HttpPost("retry")]
         public async Task<IActionResult> RetryAll()
         {
-            // Simple operation: requeue any failed tasks' messages
-            // IMPORTANT: Do NOT reset Attempts - preserve the count for retry history
+            // IMPORTANT: Validate WhatsApp numbers before retrying
+            // Do NOT reset Attempts - preserve the count for retry history
             var failed = await _db.FailedTasks.ToListAsync();
             var requeued = 0;
+            var skipped = 0;
+            var invalidPatients = new List<string>();
+            
             foreach(var f in failed)
             {
                 if (f.MessageId.HasValue)
                 {
-                    var msg = await _db.Messages.FindAsync(f.MessageId.Value);
+                    var msg = await _db.Messages
+                        .Include(m => m.Queue)
+                        .FirstOrDefaultAsync(m => m.Id == f.MessageId.Value);
+                    
                     if (msg != null)
                     {
+                        // CRITICAL: Validate WhatsApp number before retrying
+                        if (msg.PatientId.HasValue)
+                        {
+                            var patient = await _db.Patients.FindAsync(msg.PatientId.Value);
+                            
+                            if (patient != null)
+                            {
+                                // Skip if IsValidWhatsAppNumber is null or false
+                                if (!patient.IsValidWhatsAppNumber.HasValue || patient.IsValidWhatsAppNumber.Value == false)
+                                {
+                                    skipped++;
+                                    invalidPatients.Add(patient.FullName ?? $"Patient ID: {patient.Id}");
+                                    _logger.LogWarning("Skipped retry for message {MessageId} - Patient {PatientId} has unvalidated WhatsApp number", 
+                                        msg.Id, patient.Id);
+                                    continue;
+                                }
+                            }
+                        }
+                        
+                        // Requeue the message
                         msg.Status = "queued";
                         msg.IsPaused = false; // Resume paused messages on retry
                         msg.PausedAt = null;
@@ -237,7 +345,21 @@ namespace Clinics.Api.Controllers
                     }
                 }
             }
+            
             await _db.SaveChangesAsync();
+            
+            if (skipped > 0)
+            {
+                return Ok(new 
+                { 
+                    success = true, 
+                    requeued,
+                    skipped,
+                    message = $"تم إعادة إضافة {requeued} رسالة إلى قائمة الانتظار. تم تخطي {skipped} رسالة بسبب أرقام واتساب غير محققة.",
+                    invalidPatients = invalidPatients.Take(5).ToList()
+                });
+            }
+            
             return Ok(new { success = true, requeued });
         }
 
@@ -309,6 +431,51 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(ex, "Error resuming message {MessageId}", id);
                 return StatusCode(500, new { success = false, error = "Error resuming message" });
+            }
+        }
+
+        /// <summary>
+        /// Delete a message (soft delete)
+        /// Sets IsDeleted = true, DeletedAt, DeletedBy, and UpdatedAt
+        /// Status remains unchanged
+        /// </summary>
+        [HttpDelete("{id}")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> DeleteMessage(long id)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+                
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+                }
+
+                var message = await _db.Messages.FindAsync(id);
+                
+                if (message == null)
+                    return NotFound(new { success = false, error = "Message not found" });
+
+                if (message.IsDeleted)
+                    return BadRequest(new { success = false, error = "Message is already deleted" });
+
+                // Soft delete: Set IsDeleted, DeletedAt, DeletedBy, UpdatedAt
+                // Status remains unchanged as per requirements
+                message.IsDeleted = true;
+                message.DeletedAt = DateTime.UtcNow;
+                message.DeletedBy = userId;
+                message.UpdatedAt = DateTime.UtcNow;
+
+                await _db.SaveChangesAsync();
+                return Ok(new { success = true, message = "Message deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting message {MessageId}", id);
+                return StatusCode(500, new { success = false, error = "Error deleting message" });
             }
         }
 

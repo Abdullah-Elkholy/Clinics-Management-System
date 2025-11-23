@@ -24,12 +24,12 @@ export default function QRCodeModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const authCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const authCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const moderatorId = user?.assignedModerator 
     ? parseInt(user.assignedModerator) 
-    : (user?.role === 'moderator' ? user.id : null);
+    : (user?.role === 'moderator' ? (typeof user.id === 'number' ? user.id : parseInt(String(user.id))) : null);
 
   const loadQRCode = useCallback(async (silent = false) => {
     if (!moderatorId) {
@@ -54,8 +54,8 @@ export default function QRCodeModal() {
           addToast(response.error || 'فشل تحميل رمز QR', 'error');
         }
       }
-    } catch (err: any) {
-      const errorMsg = err?.message || 'فشل تحميل رمز QR';
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'فشل تحميل رمز QR';
       setError(errorMsg);
       if (!silent) {
         addToast(errorMsg, 'error');
@@ -78,9 +78,9 @@ export default function QRCodeModal() {
         addToast('تم المصادقة بنجاح!', 'success');
         closeModal('qrCode');
       }
-    } catch (err) {
+    } catch {
       // Silently fail - don't show error for auth checks
-      console.error('Auth check error:', err);
+      // Error is intentionally ignored for background auth checks
     }
   }, [moderatorId, isOpen, checkAuthentication, addToast, closeModal]);
 
@@ -150,7 +150,7 @@ export default function QRCodeModal() {
             <p className="text-gray-800 font-semibold mb-2">خطأ</p>
             <p className="text-gray-600 text-center mb-4">{error}</p>
             <button
-              onClick={loadQRCode}
+              onClick={() => loadQRCode()}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <i className="fas fa-redo ml-2"></i>
@@ -160,6 +160,7 @@ export default function QRCodeModal() {
         ) : qrCodeImage ? (
           <>
             <div className="bg-gray-100 rounded-lg p-6 flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={qrCodeImage}
                 alt="WhatsApp QR Code"
@@ -180,7 +181,7 @@ export default function QRCodeModal() {
 
             <div className="flex gap-3 pt-4 border-t">
               <button
-                onClick={loadQRCode}
+                onClick={() => loadQRCode()}
                 className="flex-1 bg-gray-600 text-white py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
               >
                 <i className="fas fa-redo"></i>

@@ -31,11 +31,12 @@ namespace Clinics.Api.Services
             {
                 var baseUrl = _configuration["WhatsAppServiceUrl"] ?? "http://localhost:5185";
                 _logger.LogInformation("Calling WhatsApp service at {BaseUrl} for message ID {MessageId} to phone {Phone}", 
-                    baseUrl, message.Id, message.RecipientPhone);
+                    baseUrl, message.Id, message.PatientPhone);
 
                 var requestBody = new
                 {
-                    Phone = message.RecipientPhone,
+                    Phone = message.PatientPhone,
+                    CountryCode = message.CountryCode,
                     Message = message.Content
                 };
 
@@ -52,7 +53,7 @@ namespace Clinics.Api.Services
                 if (response.IsSuccessStatusCode)
                 {
                     _logger.LogInformation("Message {MessageId} sent successfully to {Phone} via WhatsApp service", 
-                        message.Id, message.RecipientPhone);
+                        message.Id, message.PatientPhone);
                     return (true, "WhatsAppService", responseContent);
                 }
 
@@ -95,9 +96,11 @@ namespace Clinics.Api.Services
                 }
 
                 // Generic failure
+                var errorMessage = $"{response.StatusCode}: {responseContent}";
                 _logger.LogError("Failed to send message {MessageId} to {Phone}. Status: {StatusCode}, Response: {Response}", 
-                    message.Id, message.RecipientPhone, response.StatusCode, responseContent);
-                return (false, "WhatsAppService", $"{response.StatusCode}: {responseContent}");
+                    message.Id, message.PatientPhone, response.StatusCode, responseContent);
+                message.ErrorMessage = errorMessage; // Set ErrorMessage on failure
+                return (false, "WhatsAppService", errorMessage);
             }
             catch (InvalidOperationException)
             {
@@ -106,15 +109,19 @@ namespace Clinics.Api.Services
             }
             catch (HttpRequestException httpEx)
             {
+                var errorMessage = $"HTTP Error: {httpEx.Message}";
                 _logger.LogError(httpEx, "HTTP request error sending message {MessageId} to {Phone}", 
-                    message.Id, message.RecipientPhone);
-                return (false, "WhatsAppService", $"HTTP Error: {httpEx.Message}");
+                    message.Id, message.PatientPhone);
+                message.ErrorMessage = errorMessage; // Set ErrorMessage on failure
+                return (false, "WhatsAppService", errorMessage);
             }
             catch (Exception ex)
             {
+                var errorMessage = $"Error: {ex.Message}";
                 _logger.LogError(ex, "Unexpected error sending message {MessageId} to {Phone}", 
-                    message.Id, message.RecipientPhone);
-                return (false, "WhatsAppService", $"Error: {ex.Message}");
+                    message.Id, message.PatientPhone);
+                message.ErrorMessage = errorMessage; // Set ErrorMessage on failure
+                return (false, "WhatsAppService", errorMessage);
             }
         }
 

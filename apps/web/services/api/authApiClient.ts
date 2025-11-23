@@ -219,6 +219,12 @@ export async function refreshAccessToken(): Promise<{ accessToken: string } | nu
     const data = contentType.includes('application/json') ? await response.json() : await response.text();
 
     if (!response.ok) {
+      // Log 401 errors for debugging (refresh token expired/missing is expected in some cases)
+      if (response.status === 401) {
+        console.debug('[Auth] Refresh token request returned 401 - token may be expired or missing');
+      } else {
+        console.warn('[Auth] Refresh token request failed with status:', response.status);
+      }
       return null;
     }
 
@@ -228,7 +234,8 @@ export async function refreshAccessToken(): Promise<{ accessToken: string } | nu
       return { accessToken: token };
     }
     return null;
-  } catch {
+  } catch (error) {
+    console.debug('[Auth] Refresh token request failed:', error);
     return null;
   }
 }

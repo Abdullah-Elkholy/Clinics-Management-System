@@ -171,6 +171,7 @@ namespace Clinics.Infrastructure.Services
                 else
                 {
                     message.Status = "failed";
+                    message.ErrorMessage = providerResponse ?? "Provider returned failure";
                     var failedTask = new FailedTask
                     {
                         MessageId = message.Id,
@@ -197,6 +198,7 @@ namespace Clinics.Infrastructure.Services
                 
                 // For other exceptions, mark as failed
                 message.Status = "failed";
+                message.ErrorMessage = ex.Message;
                 var failedTask = new FailedTask
                 {
                     MessageId = message.Id,

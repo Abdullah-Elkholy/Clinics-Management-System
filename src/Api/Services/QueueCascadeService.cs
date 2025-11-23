@@ -21,12 +21,14 @@ public interface IQueueCascadeService
     /// <summary>
     /// Soft-delete a queue and all its related entities
     /// </summary>
-    Task<(bool Success, string ErrorMessage)> SoftDeleteQueueAsync(int queueId, int deletedByUserId);
+    /// <param name="useTransaction">If false, assumes caller manages transaction</param>
+    Task<(bool Success, string ErrorMessage)> SoftDeleteQueueAsync(int queueId, int deletedByUserId, bool useTransaction = true);
 
     /// <summary>
     /// Restore a previously soft-deleted queue
     /// </summary>
-    Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null);
+    /// <param name="useTransaction">If false, assumes caller manages transaction</param>
+    Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null, bool useTransaction = true);
 
     /// <summary>
     /// Get soft-deleted queues (trash)
@@ -48,29 +50,62 @@ public class QueueCascadeService : IQueueCascadeService
 {
     private readonly ApplicationDbContext _db;
     private readonly ILogger<QueueCascadeService> _logger;
+    private readonly IMessageSessionCascadeService _messageSessionCascadeService;
     private const int TTL_DAYS = 30;
 
-    public QueueCascadeService(ApplicationDbContext db, ILogger<QueueCascadeService> logger)
+    public QueueCascadeService(
+        ApplicationDbContext db, 
+        ILogger<QueueCascadeService> logger,
+        IMessageSessionCascadeService messageSessionCascadeService)
     {
         _db = db;
         _logger = logger;
+        _messageSessionCascadeService = messageSessionCascadeService;
     }
 
-    public async Task<(bool Success, string ErrorMessage)> SoftDeleteQueueAsync(int queueId, int deletedByUserId)
+    public async Task<(bool Success, string ErrorMessage)> SoftDeleteQueueAsync(int queueId, int deletedByUserId, bool useTransaction = true)
     {
-        // Wrap in transaction for atomicity
-        await using var transaction = await _db.Database.BeginTransactionAsync();
-        try
+        if (useTransaction)
         {
-            // Unify datetime for this bulk operation
-            var deletionTimestamp = DateTime.UtcNow;
+            // Wrap in transaction for atomicity
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var result = await SoftDeleteQueueInternalAsync(queueId, deletedByUserId);
+                if (result.Success)
+                {
+                    await transaction.CommitAsync();
+                }
+                else
+                {
+                    await transaction.RollbackAsync();
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error soft-deleting queue {QueueId}", queueId);
+                return (false, "حدث خطأ أثناء حذف الطابور");
+            }
+        }
+        else
+        {
+            // Called from within an existing transaction
+            return await SoftDeleteQueueInternalAsync(queueId, deletedByUserId);
+        }
+    }
+
+    private async Task<(bool Success, string ErrorMessage)> SoftDeleteQueueInternalAsync(int queueId, int deletedByUserId)
+    {
+        // Unify datetime for this bulk operation
+        var deletionTimestamp = DateTime.UtcNow;
 
             var queue = await _db.Queues
                 .FirstOrDefaultAsync(q => q.Id == queueId && !q.IsDeleted);
 
             if (queue == null)
             {
-                await transaction.RollbackAsync();
                 return (false, "Queue not found");
             }
 
@@ -78,6 +113,26 @@ public class QueueCascadeService : IQueueCascadeService
             queue.IsDeleted = true;
             queue.DeletedAt = deletionTimestamp;
             queue.DeletedBy = deletedByUserId;
+
+            // Soft-delete all related MessageSessions (which will cascade to Messages)
+            var messageSessions = await _db.MessageSessions
+                .Where(s => s.QueueId == queueId && !s.IsDeleted)
+                .ToListAsync();
+
+            foreach (var session in messageSessions)
+            {
+                // Call MessageSessionCascadeService with useTransaction = false since we're already in a transaction
+                var (success, error) = await _messageSessionCascadeService.SoftDeleteMessageSessionAsync(
+                    session.Id, 
+                    deletedByUserId, 
+                    useTransaction: false);
+                
+                if (!success)
+                {
+                    _logger.LogError("Failed to soft-delete MessageSession {SessionId}: {Error}", session.Id, error);
+                    return (false, $"فشل حذف جلسة الرسائل: {error}");
+                }
+            }
 
             // Soft-delete all related patients
             var patients = await _db.Patients
@@ -111,54 +166,75 @@ public class QueueCascadeService : IQueueCascadeService
             }
 
             await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
 
             _logger.LogInformation(
                 "Queue {QueueId} soft-deleted by user {UserId} at {Timestamp}",
                 queueId, deletedByUserId, deletionTimestamp);
 
             return (true, "");
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-            _logger.LogError(ex, "Error soft-deleting queue {QueueId}", queueId);
-            return (false, "حدث خطأ أثناء حذف الطابور");
-        }
     }
 
-    public async Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null)
+    public async Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null, bool useTransaction = true)
     {
-        try
+        if (useTransaction)
         {
-            var queue = await _db.Queues
-                .FirstOrDefaultAsync(q => q.Id == queueId && q.IsDeleted);
-
-            if (queue == null)
-            {
-                return (false, "الطابور المحذوف غير موجود");
-            }
-
-            // Check if within 30-day window
-            if (!queue.DeletedAt.HasValue)
-            {
-                return (false, "طابع زمني للحذف مفقود");
-            }
-
-            var deletedAtValue = queue.DeletedAt.Value;
-            var daysDeleted = (DateTime.UtcNow - deletedAtValue).TotalDays;
-            if (daysDeleted > TTL_DAYS)
-            {
-                return (false, "انتهت فترة الاستعادة");
-            }
-
-            // Capture operation snapshot timestamp to ensure consistency across all transaction operations
-            var operationTimestamp = DateTime.UtcNow;
-
             // Wrap restore in explicit transaction for atomicity
             await using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
+                var result = await RestoreQueueInternalAsync(queueId, restoredBy);
+                if (result.Success)
+                {
+                    await transaction.CommitAsync();
+                }
+                else
+                {
+                    await transaction.RollbackAsync();
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error restoring queue {QueueId}", queueId);
+                return (false, "حدث خطأ أثناء استعادة الطابور");
+            }
+        }
+        else
+        {
+            // Called from within an existing transaction
+            return await RestoreQueueInternalAsync(queueId, restoredBy);
+        }
+    }
+
+    private async Task<(bool Success, string ErrorMessage)> RestoreQueueInternalAsync(int queueId, int? restoredBy)
+    {
+        var queue = await _db.Queues
+            .FirstOrDefaultAsync(q => q.Id == queueId && q.IsDeleted);
+
+        if (queue == null)
+        {
+            return (false, "الطابور المحذوف غير موجود");
+        }
+
+        // Check if within 30-day window
+        if (!queue.DeletedAt.HasValue)
+        {
+            return (false, "طابع زمني للحذف مفقود");
+        }
+
+        var deletedAtValue = queue.DeletedAt.Value;
+        var daysDeleted = (DateTime.UtcNow - deletedAtValue).TotalDays;
+        if (daysDeleted > TTL_DAYS)
+        {
+            return (false, "انتهت فترة الاستعادة");
+        }
+
+        // Capture operation snapshot timestamp to ensure consistency across all transaction operations
+        var operationTimestamp = DateTime.UtcNow;
+
+        try
+        {
                 // Check quota before restoring
                 // Queue quota is based on active (!IsDeleted) queues count
                 var activeQueuesCount = await _db.Queues
@@ -174,7 +250,6 @@ public class QueueCascadeService : IQueueCascadeService
                     // After restore, active count will be +1
                     if (activeQueuesCount + 1 > quota.QueuesQuota)
                     {
-                        await transaction.RollbackAsync();
                         _logger.LogWarning(
                             "Restore blocked for queue {QueueId}: would exceed quota. Active: {Active}, Limit: {Limit}",
                             queueId, activeQueuesCount, quota.QueuesQuota);
@@ -192,6 +267,29 @@ public class QueueCascadeService : IQueueCascadeService
                 queue.RestoredBy = restoredBy;
                 queue.UpdatedAt = operationTimestamp;
                 queue.UpdatedBy = restoredBy;
+
+                // Restore related MessageSessions (which will restore Messages)
+                var messageSessions = await _db.MessageSessions
+                    .Where(s => s.QueueId == queueId 
+                        && s.IsDeleted 
+                        && s.DeletedAt.HasValue 
+                        && s.DeletedAt >= deletedAtValue)
+                    .ToListAsync();
+
+                foreach (var session in messageSessions)
+                {
+                    // Call MessageSessionCascadeService with useTransaction = false since we're already in a transaction
+                    var (success, error) = await _messageSessionCascadeService.RestoreMessageSessionAsync(
+                        session.Id, 
+                        restoredBy, 
+                        useTransaction: false);
+                    
+                    if (!success)
+                    {
+                        _logger.LogError("Failed to restore MessageSession {SessionId}: {Error}", session.Id, error);
+                        return (false, $"فشل استعادة جلسة الرسائل: {error}");
+                    }
+                }
 
                 // Restore related patients
                 // Only restoring patients deleted during cascade window (DeletedAt >= parent deletion timestamp)
@@ -252,19 +350,12 @@ public class QueueCascadeService : IQueueCascadeService
                 }
 
                 await _db.SaveChangesAsync();
-                await transaction.CommitAsync();
 
                 _logger.LogInformation(
                     "Queue {QueueId} restored at {Timestamp}",
                     queueId, operationTimestamp);
 
                 return (true, "");
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
         }
         catch (Exception ex)
         {

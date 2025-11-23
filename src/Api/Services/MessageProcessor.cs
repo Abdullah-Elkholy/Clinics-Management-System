@@ -27,11 +27,44 @@ namespace Clinics.Api.Services
 
         public async Task ProcessQueuedMessagesAsync(int maxBatch = 50)
         {
+            // Priority order:
+            // 1. PendingQR pause rejection (highest priority) - already filtered out by !m.IsPaused
+            // 2. Manual pause - already filtered out by !m.IsPaused
+            // 3. Session StartTime (earliest first)
+            //    - Messages ordered by their MessageSession.StartTime (earliest first)
+            //    - Within a session, messages ordered by Message.CreatedAt
+            
             // Fetch ALL queued messages that are NOT paused (no limit) - maxBatch parameter is ignored
+            // Order by Session StartTime first, then by message creation time within session
             var msgs = await _db.Messages
-                .Where(m => m.Status == "queued" && !m.IsPaused)
-                .OrderBy(m => m.CreatedAt)
+                .Where(m => m.Status == "queued" && !m.IsPaused && !string.IsNullOrEmpty(m.SessionId))
+                .Include(m => m.Queue) // May need for additional filtering
                 .ToListAsync();
+
+            // Get sessions for ordering
+            var sessionIds = msgs
+                .Where(m => !string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out _))
+                .Select(m => Guid.Parse(m.SessionId!))
+                .Distinct()
+                .ToList();
+
+            var sessions = await _db.MessageSessions
+                .Where(s => sessionIds.Contains(s.Id))
+                .ToDictionaryAsync(s => s.Id, s => s);
+
+            // Order messages: by session StartTime (earliest first), then by CreatedAt within session
+            msgs = msgs
+                .OrderBy(m => 
+                {
+                    if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid) &&
+                        sessions.TryGetValue(sessionGuid, out var session))
+                    {
+                        return session.StartTime;
+                    }
+                    return DateTime.MaxValue; // Messages without sessions go last
+                })
+                .ThenBy(m => m.CreatedAt)
+                .ToList();
             var totalMessages = msgs.Count;
             var processedCount = 0;
             
@@ -142,6 +175,7 @@ namespace Clinics.Api.Services
                     else
                     {
                         m.Status = "failed";
+                        m.ErrorMessage = result.providerResponse ?? "Provider returned failure";
                         // create or update failed tasks
                         var ft = new FailedTask { MessageId = m.Id, PatientId = m.PatientId, QueueId = m.QueueId, Reason = "provider_failure", ProviderResponse = result.providerResponse, CreatedAt = DateTime.UtcNow, RetryCount = 0 };
                         _db.FailedTasks.Add(ft);
@@ -161,6 +195,7 @@ namespace Clinics.Api.Services
                     
                     // For other exceptions, log and mark failed
                     m.Status = "failed";
+                    m.ErrorMessage = ex.Message;
                     _db.FailedTasks.Add(new FailedTask { MessageId = m.Id, PatientId = m.PatientId, QueueId = m.QueueId, Reason = "exception", ProviderResponse = ex.Message, CreatedAt = DateTime.UtcNow, RetryCount = m.Attempts });
                     await _db.SaveChangesAsync();
                 }

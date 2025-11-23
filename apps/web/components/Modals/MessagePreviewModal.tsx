@@ -226,8 +226,8 @@ export default function MessagePreviewModal() {
       { estimatedTimePerSessionMinutes: estimatedTimePerSession }
     );
     
-    // Debug logging (remove in production if needed)
-    if (process.env.NODE_ENV === 'development') {
+    // Debug logging (only log when there are actual results to avoid spam)
+    if (process.env.NODE_ENV === 'development' && results.length > 0) {
       console.log('[MessagePreview] Resolutions:', {
         config: {
           queueId: messageConfig.queueId,

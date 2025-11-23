@@ -19,5 +19,11 @@ namespace Clinics.Api.DTOs
         public string Username { get; set; } = null!;
         public string FullName { get; set; } = null!;
         public string Role { get; set; } = null!;
+        /// <summary>
+        /// For 'user' role: The moderator ID this user is assigned to.
+        /// Users share their moderator's quota, queues, sessions, and all data.
+        /// For moderator/admin roles: This is null.
+        /// </summary>
+        public int? AssignedModerator { get; set; }
     }
 }

@@ -65,6 +65,7 @@ builder.Services.AddScoped<IPhonePlaceholderService, PhonePlaceholderService>();
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<Clinics.Api.Services.IMessageSessionCascadeService, Clinics.Api.Services.MessageSessionCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IQueueCascadeService, Clinics.Api.Services.QueueCascadeService>();
 // Also register the Infrastructure QueueCascadeService for QuotaService which depends on it
 builder.Services.AddScoped<Clinics.Infrastructure.Services.IQueueCascadeService, Clinics.Infrastructure.Services.QueueCascadeService>();

@@ -23,7 +23,7 @@ namespace ClinicsManagementService.Controllers
         private readonly IWhatsAppService _whatsAppService;
         private readonly INotifier _notifier;
         private readonly IWhatsAppSessionManager _sessionManager;
-        private readonly Func<IBrowserSession> _browserSessionFactory;
+        private readonly Func<int, IBrowserSession> _browserSessionFactory;
         private readonly IWhatsAppUIService _whatsAppUIService;
         private readonly IRetryService _retryService;
         private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
@@ -35,7 +35,7 @@ namespace ClinicsManagementService.Controllers
             IWhatsAppService whatsAppService,
             INotifier notifier,
             IWhatsAppSessionManager sessionManager,
-            Func<IBrowserSession> browserSessionFactory,
+            Func<int, IBrowserSession> browserSessionFactory,
             IWhatsAppUIService whatsAppUIService,
             IRetryService retryService,
             IWhatsAppSessionOptimizer sessionOptimizer,

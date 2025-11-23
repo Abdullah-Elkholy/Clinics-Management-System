@@ -38,7 +38,7 @@ public class TasksController : ControllerBase
                     Id = (int)ft.Id,
                     QueueId = ft.QueueId ?? 0,
                     QueueName = ft.Queue != null ? ft.Queue.DoctorName : "غير محدد",
-                    PatientPhone = ft.Patient != null ? ft.Patient.PhoneNumber : ft.Message != null ? ft.Message.RecipientPhone : "",
+                    PatientPhone = ft.Patient != null ? ft.Patient.PhoneNumber : ft.Message != null ? ft.Message.PatientPhone ?? "" : "",
                     MessageContent = ft.Message != null ? ft.Message.Content : "",
                     ErrorMessage = ft.Reason ?? "خطأ غير معروف",
                     Attempts = ft.RetryCount,

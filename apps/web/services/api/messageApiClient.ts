@@ -651,6 +651,15 @@ export async function resumeMessage(messageId: number): Promise<{ success: boole
 }
 
 /**
+ * Delete a message (soft delete)
+ */
+export async function deleteMessage(messageId: number): Promise<{ success: boolean; message: string }> {
+  return fetchAPI(`/messages/${messageId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
  * Pause all messages for a session
  */
 export async function pauseSessionMessages(sessionId: string): Promise<{ success: boolean; pausedCount: number }> {
@@ -692,6 +701,7 @@ export async function resumeAllModeratorMessages(moderatorId: number): Promise<{
 
 export interface OngoingSessionDto {
   sessionId: string; // Guid serialized as string
+  queueId: number;
   queueName: string;
   startTime: string;
   total: number;
@@ -704,8 +714,32 @@ export interface SessionPatientDto {
   patientId: number;
   name: string;
   phone: string;
+  countryCode: string;
   status: string; // sent, pending, failed
   isPaused: boolean;
+  attempts?: number;
+  failedReason?: string;
+}
+
+export interface FailedSessionDto {
+  sessionId: string;
+  queueId: number;
+  queueName: string;
+  startTime: string;
+  total: number;
+  failed: number;
+  patients: SessionPatientDto[];
+}
+
+export interface CompletedSessionDto {
+  sessionId: string;
+  queueId: number;
+  queueName: string;
+  startTime: string;
+  completedAt?: string;
+  total: number;
+  sent: number;
+  patients: SessionPatientDto[];
 }
 
 /**
@@ -713,6 +747,20 @@ export interface SessionPatientDto {
  */
 export async function getOngoingSessions(): Promise<{ success: boolean; data: OngoingSessionDto[] }> {
   return fetchAPI('/sessions/ongoing');
+}
+
+/**
+ * Get all failed sessions for current user's moderator
+ */
+export async function getFailedSessions(): Promise<{ success: boolean; data: FailedSessionDto[] }> {
+  return fetchAPI('/sessions/failed');
+}
+
+/**
+ * Get all completed sessions for current user's moderator
+ */
+export async function getCompletedSessions(): Promise<{ success: boolean; data: CompletedSessionDto[] }> {
+  return fetchAPI('/sessions/completed');
 }
 
 /**
@@ -858,6 +906,8 @@ export const messageApiClient = {
   
   // Sessions
   getOngoingSessions,
+  getFailedSessions,
+  getCompletedSessions,
   pauseSession,
   resumeSession,
   deleteSession,

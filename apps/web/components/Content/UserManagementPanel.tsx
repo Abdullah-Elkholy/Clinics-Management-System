@@ -2112,7 +2112,7 @@ export default function UserManagementPanel() {
                 </div>
                 <div className="border-l-4 border-blue-600 pl-4">
                   <p className="text-xs text-gray-600 font-medium">الوقت</p>
-                  <p className="text-sm font-semibold mt-1">{selectedLog.timestamp ? formatLocalDateTime(selectedLog.timestamp) : 'غير محدد'}</p>
+                  <p className="text-sm font-semibold mt-1">{selectedLog.timestamp ? formatLocalDateTime(selectedLog.timestamp as string) : 'غير محدد'}</p>
                 </div>
                 <div className="border-l-4 border-green-600 pl-4">
                   <p className="text-xs text-gray-600 font-medium">المصدر</p>

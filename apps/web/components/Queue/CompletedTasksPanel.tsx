@@ -3,6 +3,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUI } from '@/contexts/UIContext';
+import * as messageApiClient from '@/services/api/messageApiClient';
 // Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
@@ -48,12 +50,15 @@ const COMPLETED_TASKS_GUIDE_ITEMS = [
 
 export default function CompletedTasksPanel() {
   const { user, isAuthenticated } = useAuth();
+  const { addToast } = useUI();
   const router = useRouter();
   
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {
@@ -72,6 +77,69 @@ export default function CompletedTasksPanel() {
       return;
     }
   }, [isAuthenticated, user, router]);
+
+  /**
+   * Load completed sessions from backend API
+   */
+  const loadCompletedSessions = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const response = await messageApiClient.getCompletedSessions();
+      
+      if (response.success && response.data) {
+        // Transform API response to Session format
+        const transformedSessions: Session[] = response.data.map((session: any) => ({
+          id: String(session.sessionId),
+          sessionId: String(session.sessionId),
+          queueId: session.queueId,
+          clinicName: session.queueName,
+          doctorName: session.queueName,
+          createdAt: session.startTime,
+          totalPatients: session.total,
+          sentCount: session.sent,
+          completedAt: session.completedAt,
+          patients: session.patients.map((p: any) => ({
+            id: String(p.patientId),
+            name: p.name,
+            phone: p.phone,
+            queueId: String(session.queueId),
+            countryCode: p.countryCode,
+            position: 0,
+            status: p.status,
+            isValidWhatsAppNumber: p.status === 'sent' ? true : null,
+            completedAt: session.completedAt,
+            messagePreview: p.messagePreview || 'تم الإرسال بنجاح',
+          } as Patient)),
+        }));
+        
+        setSessions(transformedSessions);
+      }
+    } catch (err: any) {
+      // Check if error is due to PendingQR (authentication required)
+      if (err?.code === 'AUTHENTICATION_REQUIRED' || err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
+        logger.warn('WhatsApp session requires authentication (PendingQR):', err);
+        addToast('جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً.', 'warning');
+        setSessions([]);
+        setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load completed sessions';
+        setError(errorMessage);
+        logger.error('Failed to load completed sessions:', err);
+        addToast('فشل تحميل الجلسات المكتملة', 'error');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [addToast]);
+
+  /**
+   * Load sessions on mount and when data updates
+   */
+  useEffect(() => {
+    loadCompletedSessions();
+  }, [loadCompletedSessions]);
 
   /**
    * Listen for data updates and refetch

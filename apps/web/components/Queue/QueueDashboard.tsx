@@ -444,10 +444,52 @@ export default function QueueDashboard() {
 
   /**
    * Check if there are any conflicts in the current queue
+   * Returns detailed conflict information
    */
   const hasQueueConflicts = useCallback(() => {
     return detectQueueConflicts().length > 0;
   }, [selectedQueueId]);
+
+  /**
+   * Get detailed conflict information for error messages
+   */
+  const getQueueConflictDetails = useCallback(() => {
+    if (!selectedQueueId) return null;
+    
+    const conflicts = detectQueueConflicts();
+    if (conflicts.length === 0) {
+      // Check for multiple DEFAULT conditions even if no overlaps
+      const defaultConditions = messageConditions.filter(
+        (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT'
+      );
+      const hasMultipleDefaults = defaultConditions.length > 1;
+      
+      if (hasMultipleDefaults) {
+        return {
+          hasOverlaps: false,
+          hasMultipleDefaults: true,
+          overlappingConditions: [],
+          defaultConditions,
+          totalConflicts: 1,
+        };
+      }
+      return null;
+    }
+
+    // Check for multiple DEFAULT conditions
+    const defaultConditions = messageConditions.filter(
+      (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT'
+    );
+    const hasMultipleDefaults = defaultConditions.length > 1;
+
+    return {
+      hasOverlaps: conflicts.length > 0,
+      hasMultipleDefaults,
+      overlappingConditions: conflicts,
+      defaultConditions: hasMultipleDefaults ? defaultConditions : [],
+      totalConflicts: conflicts.length + (hasMultipleDefaults ? 1 : 0),
+    };
+  }, [selectedQueueId, messageConditions, messageTemplates]);
 
   /**
    * Toggle all patients - memoized
@@ -867,9 +909,26 @@ export default function QueueDashboard() {
 
         <button
           onClick={() => {
-            // Check if there are conflicts - if yes, show toast and prevent sending
-            if (hasQueueConflicts()) {
-              addToast('هناك تضارب في الشروط. يرجى حل جميع التضاربات قبل الإرسال', 'error');
+            // Check if there are conflicts - if yes, show detailed toast and prevent sending
+            const conflictDetails = getQueueConflictDetails();
+            if (conflictDetails) {
+              let errorMessage = 'هناك تضارب في الشروط:\n';
+              
+              // Add overlapping conditions details
+              if (conflictDetails.overlappingConditions.length > 0) {
+                errorMessage += '\n• شروط متداخلة:\n';
+                conflictDetails.overlappingConditions.forEach((conflict, index) => {
+                  errorMessage += `  ${index + 1}. ${conflict.description}\n`;
+                });
+              }
+              
+              // Add multiple DEFAULT conditions details
+              if (conflictDetails.hasMultipleDefaults) {
+                errorMessage += `\n• يوجد ${conflictDetails.defaultConditions.length} قالب افتراضي (يجب أن يكون هناك قالب افتراضي واحد فقط)`;
+              }
+              
+              errorMessage += '\n\nيرجى حل جميع التضاربات قبل الإرسال';
+              addToast(errorMessage, 'error');
               return;
             }
             

@@ -123,11 +123,7 @@ export async function checkWhatsAppNumber(
     const result = await fetchAPI<OperationResult<boolean>>(
       `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}${query}`,
       {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ phoneNumber }),
+        method: 'GET', // Changed from POST to GET to match backend endpoint
         signal, // Pass abort signal to fetch
       }
     );
@@ -149,6 +145,17 @@ export async function checkWhatsAppNumber(
         resultMessage: 'تم إلغاء عملية التحقق',
       };
     }
+    
+    // Handle 405 Method Not Allowed error specifically
+    if (error?.statusCode === 405 || error?.message?.includes('405') || error?.message?.includes('Method Not Allowed')) {
+      console.error('[WhatsApp API] Method Not Allowed (405) - endpoint may have changed:', error);
+      return {
+        isSuccess: false,
+        state: 'ServiceUnavailable',
+        resultMessage: 'خطأ في طريقة الاتصال بالخادم. يرجى تحديث الصفحة والمحاولة مرة أخرى.',
+      };
+    }
+    
     // Translate network errors to Arabic
     const translatedMessage = translateNetworkError(error);
     
@@ -319,10 +326,16 @@ export interface ModeratorBrowserStatus extends BrowserStatus {
 
 export async function getBrowserStatus(moderatorUserId: number): Promise<BrowserStatus | null> {
   try {
+    console.log('[WhatsApp API] getBrowserStatus called with moderatorUserId:', moderatorUserId);
+    const url = `/api/WhatsAppUtility/browser/status?moderatorUserId=${moderatorUserId}`;
+    console.log('[WhatsApp API] Fetching from URL:', url);
+    
     const result = await fetchAPI<{ success: boolean; data: BrowserStatus }>(
-      `/api/WhatsAppUtility/browser/status?moderatorUserId=${moderatorUserId}`,
+      url,
       { method: 'GET' }
     );
+    
+    console.log('[WhatsApp API] getBrowserStatus result:', result);
     
     if (result.success && result.data) {
       return result.data;

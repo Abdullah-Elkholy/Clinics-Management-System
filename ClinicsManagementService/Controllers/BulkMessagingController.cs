@@ -137,7 +137,7 @@ namespace ClinicsManagementService.Controllers
                 // Check and auto-restore if session size exceeds threshold
                 try
                 {
-                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(moderatorUserId);
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
                 }
                 catch (Exception optimizeEx)
                 {
@@ -147,7 +147,7 @@ namespace ClinicsManagementService.Controllers
                 // Check cancellation before sending
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var sent = await _messageSender.SendMessageAsync(moderatorUserId, request.Phone, request.Message, cancellationToken);
+                var sent = await _messageSender.SendMessageAsync(effectiveModeratorId, request.Phone, request.Message, cancellationToken);
                 
                 if (sent)
                 {
