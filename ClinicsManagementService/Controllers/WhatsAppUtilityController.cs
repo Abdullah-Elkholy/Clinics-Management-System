@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Playwright;
 using System.Net;
 using System.Threading;
+using System.Linq;
 
 namespace ClinicsManagementService.Controllers
 {
@@ -110,6 +111,51 @@ namespace ClinicsManagementService.Controllers
                 }
 
                 int effectiveModeratorId = moderatorUserId.Value;
+
+                // Validate: Prevent checking your own WhatsApp number
+                // Get moderator's WhatsApp phone number
+                var moderatorSettings = await _dbContext.Set<ModeratorSettings>()
+                    .FirstOrDefaultAsync(m => m.ModeratorUserId == effectiveModeratorId);
+                
+                if (moderatorSettings != null && !string.IsNullOrEmpty(moderatorSettings.WhatsAppPhoneNumber))
+                {
+                    // Normalize phone numbers for comparison (remove all non-digit characters)
+                    var normalizePhone = (string? phone) => 
+                    {
+                        if (string.IsNullOrEmpty(phone)) return null;
+                        // Remove all non-digit characters, but keep digits
+                        var digitsOnly = new string(phone.Where(char.IsDigit).ToArray());
+                        return digitsOnly;
+                    };
+                    
+                    var moderatorPhoneNormalized = normalizePhone(moderatorSettings.WhatsAppPhoneNumber);
+                    var checkPhoneNormalized = normalizePhone(phoneNumber);
+                    
+                    // Check if the phone number being checked matches the moderator's WhatsApp phone
+                    if (!string.IsNullOrEmpty(moderatorPhoneNormalized) && !string.IsNullOrEmpty(checkPhoneNormalized))
+                    {
+                        // Try different combinations:
+                        // 1. Direct match
+                        // 2. Moderator phone ends with check phone (if check phone is shorter, like without country code)
+                        // 3. Check phone ends with moderator phone (if moderator phone is shorter)
+                        var isOwnNumber = checkPhoneNormalized == moderatorPhoneNormalized ||
+                                         (moderatorPhoneNormalized.EndsWith(checkPhoneNormalized) && 
+                                          checkPhoneNormalized.Length >= 7) || // At least 7 digits match
+                                         (checkPhoneNormalized.EndsWith(moderatorPhoneNormalized) &&
+                                          moderatorPhoneNormalized.Length >= 7); // At least 7 digits match
+                        
+                        if (isOwnNumber)
+                        {
+                            _notifier.Notify($"❌ [Moderator {effectiveModeratorId}] Cannot check own WhatsApp number: {phoneNumber}");
+                            return BadRequest(new 
+                            { 
+                                error = "لا يمكن التحقق من رقم الواتساب الخاص بك. واتساب لا يدعم إرسال الرسائل إلى نفس الرقم.",
+                                code = "SELF_MESSAGE_NOT_SUPPORTED",
+                                message = "لا يمكن التحقق من رقم الواتساب الخاص بك. واتساب لا يدعم إرسال الرسائل إلى نفس الرقم."
+                            });
+                        }
+                    }
+                }
 
                 // Check if WhatsApp session is paused due to PendingQR (unified session per moderator)
                 // This check prevents operations when authentication is required

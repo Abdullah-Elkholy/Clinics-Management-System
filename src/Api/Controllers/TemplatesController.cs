@@ -94,9 +94,14 @@ namespace Clinics.Api.Controllers
                 else
                 {
                     // Filter by moderator's queues (if not admin)
+                    // Filter by queue's ModeratorId, not template's ModeratorId, to ensure consistency
                     if (!isAdmin && moderatorId.HasValue)
                     {
-                        query = query.Where(t => t.ModeratorId == moderatorId.Value);
+                        // Join with Queues table to filter by queue's ModeratorId
+                        query = query
+                            .Join(_db.Queues, t => t.QueueId, q => q.Id, (t, q) => new { Template = t, Queue = q })
+                            .Where(j => !j.Queue.IsDeleted && j.Queue.ModeratorId == moderatorId.Value)
+                            .Select(j => j.Template);
                     }
                     // Admins can see all templates
                 }

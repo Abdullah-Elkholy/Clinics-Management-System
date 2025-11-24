@@ -58,7 +58,7 @@ export const getModeratorInfo = (
       // Use firstName + lastName if both exist, otherwise firstName, otherwise username
       const name = moderator.firstName && moderator.lastName
         ? `${moderator.firstName} ${moderator.lastName}`
-        : moderator.firstName || moderator.username || `المشرف #${moderatorId}`;
+        : moderator.firstName || moderator.username || 'Unknown';
       
       return {
         name,
@@ -67,9 +67,9 @@ export const getModeratorInfo = (
     }
   }
   
-  // Fallback to default values if moderator not found
+  // Fallback to default values if moderator not found (use username format instead of ID)
   return {
-    name: `المشرف #${moderatorId}`,
+    name: 'Unknown',
     username: `moderator_${moderatorId}`,
   };
 };
@@ -117,7 +117,7 @@ export const countConflictsInQueue = (
  * Get range representation of a condition
  * Note: All values must be >= 1 (0 and negative values are invalid)
  */
-const getConditionRange = (cond: any): { min: number; max: number } | null => {
+export const getConditionRange = (cond: any): { min: number; max: number } | null => {
   switch (cond.operator) {
     case 'EQUAL':
       if (cond.value === undefined || cond.value <= 0) return null;
@@ -145,7 +145,7 @@ const getConditionRange = (cond: any): { min: number; max: number } | null => {
 /**
  * Check if two conditions overlap/intersect
  */
-const conditionsOverlap = (cond1: any, cond2: any): boolean => {
+export const conditionsOverlap = (cond1: any, cond2: any): boolean => {
   const range1 = getConditionRange(cond1);
   const range2 = getConditionRange(cond2);
 

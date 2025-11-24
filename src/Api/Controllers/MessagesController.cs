@@ -142,6 +142,77 @@ namespace Clinics.Api.Controllers
                         });
                     }
 
+                    // Validate: Prevent sending messages to your own WhatsApp number
+                    // Get moderator's WhatsApp phone number
+                    var moderatorSettings = await _db.Set<ModeratorSettings>()
+                        .FirstOrDefaultAsync(m => m.ModeratorUserId == effectiveModeratorId);
+                    
+                    if (moderatorSettings != null && !string.IsNullOrEmpty(moderatorSettings.WhatsAppPhoneNumber))
+                    {
+                        // Normalize phone numbers for comparison (remove all non-digit characters except +)
+                        // This handles: spaces, dashes, parentheses, country codes with/without +
+                        var normalizePhone = (string? phone) => 
+                        {
+                            if (string.IsNullOrEmpty(phone)) return null;
+                            // Remove all non-digit characters, but keep digits
+                            var digitsOnly = new string(phone.Where(char.IsDigit).ToArray());
+                            return digitsOnly;
+                        };
+                        
+                        var moderatorPhoneNormalized = normalizePhone(moderatorSettings.WhatsAppPhoneNumber);
+                        
+                        // Check if any patient's phone matches the moderator's WhatsApp phone
+                        var ownNumberPatients = patients
+                            .Where(p => 
+                            {
+                                if (string.IsNullOrEmpty(moderatorPhoneNormalized)) return false;
+                                
+                                var patientPhoneNormalized = normalizePhone(p.PhoneNumber);
+                                var patientCountryCodeNormalized = normalizePhone(p.CountryCode);
+                                
+                                // Try different combinations:
+                                // 1. Patient phone only (if moderator phone includes country code)
+                                // 2. Patient phone with country code
+                                // 3. Patient phone without country code (if moderator phone has country code)
+                                var patientPhoneWithCountry = normalizePhone($"{p.CountryCode}{p.PhoneNumber}");
+                                
+                                // Compare normalized phone numbers
+                                return patientPhoneNormalized == moderatorPhoneNormalized ||
+                                       patientPhoneWithCountry == moderatorPhoneNormalized ||
+                                       (moderatorPhoneNormalized.EndsWith(patientPhoneNormalized ?? "") && 
+                                        patientPhoneNormalized?.Length >= 7) || // At least 7 digits match
+                                       (patientPhoneNormalized?.EndsWith(moderatorPhoneNormalized) == true &&
+                                        moderatorPhoneNormalized.Length >= 7); // At least 7 digits match
+                            })
+                            .ToList();
+                        
+                        if (ownNumberPatients.Any())
+                        {
+                            await transaction.RollbackAsync();
+                            
+                            var ownNumberDetails = ownNumberPatients.Select(p => new
+                            {
+                                patientId = p.Id,
+                                name = p.FullName,
+                                phone = p.PhoneNumber,
+                                countryCode = p.CountryCode
+                            }).ToList();
+                            
+                            _logger.LogWarning("User {UserId} (moderator {ModeratorId}) attempted to send messages to their own WhatsApp number. Moderator phone: {ModeratorPhone}, Patient phones: {PatientPhones}", 
+                                userId, effectiveModeratorId, moderatorSettings.WhatsAppPhoneNumber, 
+                                string.Join(", ", ownNumberPatients.Select(p => $"{p.CountryCode}{p.PhoneNumber}")));
+                            
+                            return BadRequest(new 
+                            { 
+                                success = false, 
+                                error = "لا يمكن إرسال رسائل إلى رقم الواتساب الخاص بك. واتساب لا يدعم إرسال الرسائل إلى نفس الرقم.",
+                                code = "SELF_MESSAGE_NOT_SUPPORTED",
+                                message = "لا يمكن إرسال رسائل إلى رقم الواتساب الخاص بك. واتساب لا يدعم إرسال الرسائل إلى نفس الرقم.",
+                                ownNumberPatients = ownNumberDetails
+                            });
+                        }
+                    }
+
                     // Get queue for CurrentPosition
                     var queueId = patients.First().QueueId; // All patients should be from same queue
                     var queue = await _db.Queues.FindAsync(queueId);
@@ -267,7 +338,28 @@ namespace Clinics.Api.Controllers
 
                         // Use selected template or fallback to provided template
                         var finalTemplate = selectedTemplate ?? template;
-                        content = req.OverrideContent ?? finalTemplate.Content;
+                        var templateContent = req.OverrideContent ?? finalTemplate.Content;
+                        
+                        // Replace template variables with actual values
+                        // PN: Patient Name (FullName or Id if FullName is null)
+                        var patientName = !string.IsNullOrEmpty(p.FullName) ? p.FullName : $"Patient ID: {p.Id}";
+                        // PQP: Patient Queue Position (absolute position)
+                        var patientQueuePosition = p.Position;
+                        // CQP: Current Queue Position
+                        var currentQueuePosition = queue.CurrentPosition;
+                        // ETR: Estimated Time Remaining (calculated from offset * estimatedTimePerSession)
+                        var estimatedTimePerSession = queue.EstimatedWaitMinutes > 0 ? queue.EstimatedWaitMinutes : 15; // Default 15 minutes if not set or invalid
+                        var etrMinutes = calculatedPosition * estimatedTimePerSession;
+                        var etrDisplay = FormatTimeDisplay(etrMinutes);
+                        // DN: Doctor/Queue Name
+                        var doctorName = queue.DoctorName ?? "غير محدد";
+                        
+                        content = templateContent
+                            .Replace("{PN}", patientName)
+                            .Replace("{PQP}", patientQueuePosition.ToString())
+                            .Replace("{CQP}", currentQueuePosition.ToString())
+                            .Replace("{ETR}", etrDisplay)
+                            .Replace("{DN}", doctorName);
 
                         var msg = new Message
                         {
@@ -734,6 +826,22 @@ namespace Clinics.Api.Controllers
                 _logger.LogError(ex, "Error resuming all moderator messages {ModeratorId}", moderatorId);
                 return StatusCode(500, new { success = false, error = "Error resuming all messages" });
             }
+        }
+
+        /// <summary>
+        /// Format time in minutes to Arabic display format (e.g., "2 ساعة و 30 دقيقة" or "45 دقيقة")
+        /// </summary>
+        private static string FormatTimeDisplay(int minutes)
+        {
+            var mins = Math.Max(0, minutes);
+            var hours = mins / 60;
+            var rem = mins % 60;
+            
+            if (hours == 0)
+                return $"{rem} دقيقة";
+            if (rem == 0)
+                return $"{hours} ساعة";
+            return $"{hours} ساعة و {rem} دقيقة";
         }
     }
 }

@@ -6,6 +6,8 @@ import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { UserRole } from '@/types/roles';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
@@ -16,7 +18,7 @@ import { ConflictBadge } from '@/components/Common/ConflictBadge';
 import logger from '@/utils/logger';
 import type { MessageCondition } from '@/types/messageCondition';
 import { useUserManagement } from '@/hooks/useUserManagement';
-import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
+import { groupQueuesByModerator, type ModeratorWithStats } from '@/utils/moderatorAggregation';
 // Mock data removed - using API data instead
 
 /**
@@ -49,12 +51,49 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function ModeratorMessagesOverview() {
+  const { user } = useAuth();
   const { moderators: queueBasedModerators, queues, messageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
   const [userManagementState] = useUserManagement();
   const { addToast, setCurrentPanel } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
+
+  // Filter queues and templates based on user role
+  const filteredQueues = useMemo(() => {
+    if (!user) return queues;
+    
+    const isAdmin = user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin;
+    const isModerator = user.role === UserRole.Moderator;
+    const isUser = user.role === UserRole.User;
+    
+    if (isAdmin) {
+      // Admins see all queues
+      return queues;
+    } else if (isModerator) {
+      // Moderators see only queues where ModeratorId == user.id
+      const userId = user.id?.toString();
+      return queues.filter(q => q.moderatorId === userId || q.moderatorId === user.id);
+    } else if (isUser) {
+      // Users see only queues where ModeratorId == user.moderatorId
+      if (!user.moderatorId) return [];
+      const moderatorId = user.moderatorId.toString();
+      return queues.filter(q => q.moderatorId === moderatorId || q.moderatorId === user.moderatorId);
+    }
+    
+    return queues;
+  }, [queues, user]);
+
+  // Filter templates based on filtered queues
+  const filteredTemplates = useMemo(() => {
+    if (!user) return messageTemplates;
+    
+    const filteredQueueIds = new Set(filteredQueues.map(q => q.id.toString()));
+    return messageTemplates.filter(t => {
+      const templateQueueId = t.queueId?.toString();
+      return templateQueueId && filteredQueueIds.has(templateQueueId);
+    });
+  }, [messageTemplates, filteredQueues, user]);
 
   // State for search and expansion
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,43 +123,88 @@ export default function ModeratorMessagesOverview() {
   }, []);
 
   /**
-   * Load all templates for all queues when queues are available (admin view)
+   * Load all templates for filtered queues when queues are available
    * This ensures templates are fetched initially without needing to select a specific queue
    */
   useEffect(() => {
     const loadAllTemplates = async () => {
-      if (queues.length === 0) return;
-      
-      // Only load if we don't have templates yet (avoid unnecessary refetches)
-      if (messageTemplates.length > 0) return;
+      if (filteredQueues.length === 0) return;
 
       try {
-        // Fetch all templates (no queueId filter for admin view)
+        // Always fetch templates to ensure we have the latest data
+        // This fixes the issue where templates disappear after refresh
         const templateResponse = await messageApiClient.getTemplates();
         const templateDtos = templateResponse.items || [];
 
         // Convert DTOs to models and refresh each queue's data
         // This ensures templates are properly loaded into the context
         if (templateDtos.length > 0 && typeof refreshQueueData === 'function') {
-          // Get unique queue IDs from the loaded templates
+          // Get unique queue IDs from the loaded templates that match filtered queues
+          const filteredQueueIds = new Set(filteredQueues.map(q => q.id.toString()));
           const templateQueueIds = new Set(
             templateDtos
               .map(dto => dto.queueId?.toString())
-              .filter((id): id is string => id !== undefined)
+              .filter((id): id is string => id !== undefined && filteredQueueIds.has(id))
           );
           
           // Refresh data for each queue that has templates
           for (const queueId of templateQueueIds) {
             await refreshQueueData(queueId);
           }
+        } else if (templateDtos.length === 0 && typeof refreshQueueData === 'function') {
+          // Even if no templates, refresh queues to ensure state is consistent
+          const filteredQueueIds = filteredQueues.map(q => q.id.toString());
+          for (const queueId of filteredQueueIds) {
+            await refreshQueueData(queueId);
+          }
         }
       } catch (error) {
         logger.error('Failed to load templates in admin view:', error);
+        // Even on error, try to refresh queues to ensure state consistency
+        if (typeof refreshQueueData === 'function') {
+          const filteredQueueIds = filteredQueues.map(q => q.id.toString());
+          for (const queueId of filteredQueueIds) {
+            try {
+              await refreshQueueData(queueId);
+            } catch (refreshError) {
+              logger.error(`Failed to refresh queue ${queueId}:`, refreshError);
+            }
+          }
+        }
       }
     };
 
     loadAllTemplates();
-  }, [queues, messageTemplates.length, refreshQueueData]);
+  }, [filteredQueues, refreshQueueData]);
+
+  /**
+   * Listen for template data updates and refresh
+   */
+  useEffect(() => {
+    const handleTemplateUpdate = async () => {
+      if (filteredQueues.length === 0) return;
+      
+      try {
+        // Refresh all filtered queues when templates are updated
+        if (typeof refreshQueueData === 'function') {
+          const filteredQueueIds = filteredQueues.map(q => q.id.toString());
+          for (const queueId of filteredQueueIds) {
+            await refreshQueueData(queueId);
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to refresh templates after update:', error);
+      }
+    };
+
+    window.addEventListener('templateDataUpdated', handleTemplateUpdate);
+    window.addEventListener('conditionDataUpdated', handleTemplateUpdate);
+
+    return () => {
+      window.removeEventListener('templateDataUpdated', handleTemplateUpdate);
+      window.removeEventListener('conditionDataUpdated', handleTemplateUpdate);
+    };
+  }, [filteredQueues, refreshQueueData]);
 
   // Toggle moderator expansion
   const toggleModeratorExpanded = useCallback((moderatorId: string | number) => {
@@ -237,11 +321,20 @@ export default function ModeratorMessagesOverview() {
   /**
    * Merge queue-based moderators with user management moderators
    * Prioritize firstName first, then fall back to username or ID
+   * Uses filtered queues and templates based on user role
    */
   const moderators = useMemo(() => {
+    // Recalculate queue-based moderators using filtered queues and templates
+    const filteredQueueBasedModerators = groupQueuesByModerator(
+      filteredQueues,
+      filteredTemplates,
+      [], // messageConditions - will be loaded separately if needed
+      userManagementState.moderators
+    );
+    
     // Create a map of queue-based moderators by ID
-    const queueModeratorMap = new Map<string | number, typeof queueBasedModerators[0]>();
-    queueBasedModerators.forEach(mod => {
+    const queueModeratorMap = new Map<string | number, typeof filteredQueueBasedModerators[0]>();
+    filteredQueueBasedModerators.forEach(mod => {
       const normalizedId = String(mod.moderatorId);
       queueModeratorMap.set(normalizedId, mod);
       if (typeof mod.moderatorId === 'number') {
@@ -256,8 +349,7 @@ export default function ModeratorMessagesOverview() {
     // Helper function to get moderator display name following priority:
     // 1. firstName + lastName (if both exist)
     // 2. firstName (if lastName is null/empty)
-    // 3. المشرف #${modId} (ID-based fallback)
-    // 4. username (last fallback)
+    // 3. username (fallback)
     const getModeratorDisplayName = (userMod: typeof userManagementState.moderators[0], modId: string): string => {
       if (userMod.firstName && userMod.lastName) {
         return `${userMod.firstName} ${userMod.lastName}`;
@@ -265,10 +357,8 @@ export default function ModeratorMessagesOverview() {
       if (userMod.firstName) {
         return userMod.firstName;
       }
-      if (modId) {
-        return `المشرف #${modId}`;
-      }
-      return userMod.username || `المشرف #${modId}`;
+      // Use username instead of ID as fallback
+      return userMod.username || 'Unknown';
     };
 
     // First, add all moderators from user management
@@ -304,7 +394,7 @@ export default function ModeratorMessagesOverview() {
     });
     
     // Also include any queue-based moderators that might not be in user management (edge case)
-    queueBasedModerators.forEach(queueMod => {
+    filteredQueueBasedModerators.forEach(queueMod => {
       const normalizedId = String(queueMod.moderatorId);
       if (!processedIds.has(normalizedId)) {
         mergedModerators.push(queueMod);
@@ -314,7 +404,7 @@ export default function ModeratorMessagesOverview() {
     
     // Sort by moderator ID
     return mergedModerators.sort((a, b) => Number(a.moderatorId) - Number(b.moderatorId));
-  }, [queueBasedModerators, userManagementState.moderators]);
+  }, [filteredQueues, filteredTemplates, userManagementState.moderators]);
 
   /**
    * Filter moderators by search term

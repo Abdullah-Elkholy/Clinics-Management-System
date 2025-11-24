@@ -41,10 +41,51 @@ namespace Clinics.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            // Return basic queue list with patient counts for UI
-            var qs = await _db.Queues
+            // Get current user ID and role for filtering
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("sub")?.Value
+                ?? User.FindFirst("userId")?.Value;
+            
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+            }
+
+            // Get current user to check role
+            var currentUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+            if (currentUser == null)
+                return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+            var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+            var isModerator = currentUser.Role == "moderator";
+            var isUser = currentUser.Role == "user";
+
+            // Build base query
+            var query = _db.Queues
                 .AsNoTracking()
-                .Where(q => !q.IsDeleted)
+                .Where(q => !q.IsDeleted);
+
+            // Filter by role:
+            // - Admins: See all queues
+            // - Moderators: See only queues where ModeratorId == userId
+            // - Users: See only queues where ModeratorId == user.ModeratorId
+            if (isModerator)
+            {
+                query = query.Where(q => q.ModeratorId == userId);
+            }
+            else if (isUser)
+            {
+                if (!currentUser.ModeratorId.HasValue)
+                {
+                    // User has no moderator assigned, return empty list
+                    return Ok(new { success = true, data = new List<QueueDto>() });
+                }
+                query = query.Where(q => q.ModeratorId == currentUser.ModeratorId.Value);
+            }
+            // Admins see all queues (no additional filter)
+
+            // Return basic queue list with patient counts for UI
+            var qs = await query
                 .Select(q => new QueueDto {
                     Id = q.Id,
                     DoctorName = q.DoctorName,

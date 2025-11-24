@@ -16,8 +16,7 @@ export default function Header() {
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
   // 2. firstName (if lastName is null/empty)
-  // 3. المشرف #${id} (ID-based fallback)
-  // 4. username (last fallback)
+  // 3. username (fallback)
   const getUserDisplayName = (u: User): string => {
     if (u.firstName && u.lastName) {
       return `${u.firstName} ${u.lastName}`;
@@ -25,9 +24,7 @@ export default function Header() {
     if (u.firstName) {
       return u.firstName;
     }
-    if (u.id) {
-      return `المشرف #${u.id}`;
-    }
+    // Use username instead of ID as fallback
     return u.username || 'Unknown';
   };
 

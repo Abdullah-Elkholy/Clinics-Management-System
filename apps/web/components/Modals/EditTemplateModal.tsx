@@ -6,7 +6,9 @@ import UsageGuideSection from '../Common/UsageGuideSection';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+import { getConditionRange, conditionsOverlap } from '@/utils/moderatorAggregation';
 import { messageApiClient, type TemplateDto } from '@/services/api/messageApiClient';
 import { templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
 import logger from '@/utils/logger';
@@ -20,6 +22,7 @@ import type { ConditionOperator } from '@/types/messageCondition';
 export default function EditTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { confirm } = useConfirmDialog();
   const { updateMessageTemplate, messageTemplates, addMessageCondition, updateMessageCondition, messageConditions, setMessageConditions, setMessageTemplates, refreshQueueData } = useQueue();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -340,6 +343,67 @@ export default function EditTemplateModal() {
     const normalizedMinValue = conditionOperator === 'RANGE' ? selectedMinValue : undefined;
     const normalizedMaxValue = conditionOperator === 'RANGE' ? selectedMaxValue : undefined;
 
+    // Check for conflicts with existing conditions (only for non-UNCONDITIONED and non-DEFAULT operators)
+    if (conditionOperator !== 'UNCONDITIONED' && conditionOperator !== 'DEFAULT') {
+      const newCondition = {
+        operator: conditionOperator,
+        value: normalizedValue,
+        minValue: normalizedMinValue,
+        maxValue: normalizedMaxValue,
+      };
+
+      // Find conflicting conditions in the same queue (excluding the current condition being edited)
+      const conflictingConditions = messageConditions
+        .filter(c => {
+          // Only check conditions in the same queue
+          const conditionQueueId = c.queueId?.toString();
+          if (conditionQueueId !== String(queueIdNum)) return false;
+          
+          // Skip the current condition being edited
+          if (templateCondition && c.id === templateCondition.id) return false;
+          
+          // Skip UNCONDITIONED and DEFAULT conditions (they don't conflict)
+          if (c.operator === 'UNCONDITIONED' || c.operator === 'DEFAULT') return false;
+          
+          // Check if conditions overlap
+          return conditionsOverlap(newCondition, c);
+        })
+        .map(c => {
+          const template = messageTemplates.find(t => t.id === c.templateId);
+          return {
+            condition: c,
+            templateTitle: template?.title || 'غير معروف',
+          };
+        });
+
+      if (conflictingConditions.length > 0) {
+        // Show confirmation dialog
+        const conflictDetails = conflictingConditions
+          .map(c => {
+            const cond = c.condition;
+            let condDesc = '';
+            if (cond.operator === 'RANGE') {
+              condDesc = `${cond.operator} ${cond.minValue}-${cond.maxValue}`;
+            } else {
+              condDesc = `${cond.operator} ${cond.value}`;
+            }
+            return `- ${c.templateTitle} (${condDesc})`;
+          })
+          .join('\n');
+        
+        const shouldProceed = await confirm({
+          title: 'تعارض في الشروط',
+          message: `هناك تعارض مع الشروط التالية:\n\n${conflictDetails}\n\nهل تريد المتابعة على أي حال؟`,
+          confirmText: 'نعم، المتابعة',
+          cancelText: 'إلغاء',
+        });
+
+        if (!shouldProceed) {
+          return; // User cancelled
+        }
+      }
+    }
+
     try {
       setIsLoading(true);
 
@@ -347,7 +411,49 @@ export default function EditTemplateModal() {
       // This ensures condition is in correct state before template loads it
       if (conditionOperator === 'DEFAULT') {
         // For DEFAULT operator, use dedicated endpoint
-        await messageApiClient.setTemplateAsDefault(templateBackendId);
+        // But first check if there's an existing default and handle override
+        try {
+          await messageApiClient.setTemplateAsDefault(templateBackendId);
+        } catch (error: any) {
+          const errorMessage = error?.message || '';
+          // If there's an existing default, show confirmation dialog
+          if (errorMessage.includes('A default template already exists') || errorMessage.includes('default template already exists')) {
+            const shouldOverride = await confirm({
+              title: 'قالب افتراضي موجود بالفعل',
+              message: 'يوجد قالب افتراضي آخر في هذا الطابور. هل تريد جعل هذا القالب هو الافتراضي وتغيير القالب الآخر إلى "بدون قالب"؟',
+              confirmText: 'نعم، تغيير',
+              cancelText: 'إلغاء',
+            });
+
+            if (!shouldOverride) {
+              setIsLoading(false);
+              return; // User cancelled
+            }
+
+            // Override: Find existing default and set it to UNCONDITIONED, then set this one as default
+            const existingDefaultCondition = messageConditions.find(
+              (c) => c.queueId === String(queueIdNum) && c.operator === 'DEFAULT' && c.templateId !== currentTemplate.id
+            );
+
+            if (existingDefaultCondition) {
+              const existingConditionId = Number(existingDefaultCondition.id);
+              if (!isNaN(existingConditionId)) {
+                await messageApiClient.updateCondition(existingConditionId, {
+                  operator: 'UNCONDITIONED',
+                  value: undefined,
+                  minValue: undefined,
+                  maxValue: undefined,
+                });
+              }
+            }
+
+            // Now set this template as default
+            await messageApiClient.setTemplateAsDefault(templateBackendId);
+          } else {
+            // Re-throw other errors
+            throw error;
+          }
+        }
       } else {
         // For other operators, update or create condition
         if (templateCondition) {
@@ -400,7 +506,12 @@ export default function EditTemplateModal() {
       setShowDefaultWarning(false);
       setHasConfirmedDefaultOverride(false);
 
-      addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
+      // Show appropriate success message based on operator
+      if (conditionOperator === 'UNCONDITIONED') {
+        addToast('تم تحديث قالب الرسالة بنجاح (بدون شرط)', 'success');
+      } else {
+        addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
+      }
 
       // Trigger custom events to notify other components to refetch (immediate, no delay)
       window.dispatchEvent(new CustomEvent('templateDataUpdated'));
