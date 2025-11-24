@@ -79,7 +79,15 @@ namespace ClinicsManagementService.Controllers
                 }
 
                 int effectiveModeratorId = moderatorUserId;
-
+                // Check and auto-restore if session size exceeds threshold for this moderator
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
                 // Check if WhatsApp session is paused due to PendingQR (unified session per moderator)
                 // This check prevents operations when authentication is required
                 var hasPausedMessages = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(effectiveModeratorId);

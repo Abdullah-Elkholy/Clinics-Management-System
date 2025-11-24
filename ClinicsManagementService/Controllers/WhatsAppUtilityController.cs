@@ -175,7 +175,15 @@ namespace ClinicsManagementService.Controllers
 
                 // Use the moderator-specific browser session
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
-                
+                // Check and auto-restore if session size exceeds threshold for this moderator
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
                 // Check cancellation before starting operation
                 cancellationToken.ThrowIfCancellationRequested();
                 
@@ -266,7 +274,15 @@ namespace ClinicsManagementService.Controllers
 
                 int effectiveModeratorId = moderatorUserId.Value;
                 _notifier.Notify($"🔐 [AUTH CHECK] Starting - ModeratorUserId: {effectiveModeratorId}");
-
+                // Check and auto-restore if session size exceeds threshold for this moderator
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
                 // Get the moderator-specific session
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 await browserSession.InitializeAsync();
@@ -295,7 +311,15 @@ namespace ClinicsManagementService.Controllers
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=pending, ActivityUserId={userId ?? effectiveModeratorId}");
                 }
-                
+                                // Check and auto-restore if session size exceeds threshold for this moderator
+                try
+                {
+                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
+                }
+                catch (Exception optimizeEx)
+                {
+                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                }
                 return Ok(waitUIResult);
             }
             catch (Exception ex)

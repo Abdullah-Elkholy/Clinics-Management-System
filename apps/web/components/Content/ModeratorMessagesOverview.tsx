@@ -136,40 +136,76 @@ export default function ModeratorMessagesOverview() {
         const templateResponse = await messageApiClient.getTemplates();
         const templateDtos = templateResponse.items || [];
 
-        // Convert DTOs to models and refresh each queue's data
-        // This ensures templates are properly loaded into the context
-        if (templateDtos.length > 0 && typeof refreshQueueData === 'function') {
-          // Get unique queue IDs from the loaded templates that match filtered queues
-          const filteredQueueIds = new Set(filteredQueues.map(q => q.id.toString()));
-          const templateQueueIds = new Set(
-            templateDtos
-              .map(dto => dto.queueId?.toString())
-              .filter((id): id is string => id !== undefined && filteredQueueIds.has(id))
+        logger.debug('ModeratorMessagesOverview: Loaded templates from API', {
+          templateCount: templateDtos.length,
+          filteredQueuesCount: filteredQueues.length,
+          templateQueueIds: templateDtos.map(t => t.queueId),
+        });
+
+        // Get filtered queue IDs for matching
+        const filteredQueueIds = new Set(filteredQueues.map(q => q.id.toString()));
+        
+        // Filter templates to only those belonging to filtered queues
+        const relevantTemplates = templateDtos.filter(dto => {
+          const templateQueueId = dto.queueId?.toString();
+          const isRelevant = templateQueueId && filteredQueueIds.has(templateQueueId);
+          if (!isRelevant && templateQueueId) {
+            logger.debug('ModeratorMessagesOverview: Template filtered out', {
+              templateId: dto.id,
+              templateQueueId,
+              filteredQueueIds: Array.from(filteredQueueIds),
+            });
+          }
+          return isRelevant;
+        });
+
+        logger.debug('ModeratorMessagesOverview: Relevant templates after filtering', {
+          relevantCount: relevantTemplates.length,
+          relevantTemplateIds: relevantTemplates.map(t => ({ id: t.id, queueId: t.queueId })),
+        });
+
+        // IMPORTANT: Refresh ALL filtered queues, not just those with templates
+        // This ensures templates are loaded even if the initial getTemplates() call missed some
+        const queuesToRefresh = Array.from(filteredQueueIds);
+
+        logger.debug('ModeratorMessagesOverview: Refreshing all filtered queues', {
+          queueIds: queuesToRefresh,
+          queueCount: queuesToRefresh.length,
+        });
+
+        if (typeof refreshQueueData === 'function') {
+          // Refresh all filtered queues in parallel for better performance
+          // This ensures templates are loaded from the backend for each queue
+          await Promise.all(
+            queuesToRefresh.map(async (queueId) => {
+              try {
+                logger.debug(`ModeratorMessagesOverview: Refreshing queue ${queueId}`);
+                await refreshQueueData(queueId);
+                logger.debug(`ModeratorMessagesOverview: Successfully refreshed queue ${queueId}`);
+              } catch (refreshError) {
+                logger.error(`Failed to refresh queue ${queueId}:`, refreshError);
+              }
+            })
           );
           
-          // Refresh data for each queue that has templates
-          for (const queueId of templateQueueIds) {
-            await refreshQueueData(queueId);
-          }
-        } else if (templateDtos.length === 0 && typeof refreshQueueData === 'function') {
-          // Even if no templates, refresh queues to ensure state is consistent
-          const filteredQueueIds = filteredQueues.map(q => q.id.toString());
-          for (const queueId of filteredQueueIds) {
-            await refreshQueueData(queueId);
-          }
+          logger.debug('ModeratorMessagesOverview: Finished refreshing all queues', {
+            messageTemplatesCount: messageTemplates.length,
+          });
         }
       } catch (error) {
-        logger.error('Failed to load templates in admin view:', error);
+        logger.error('Failed to load templates in ModeratorMessagesOverview:', error);
         // Even on error, try to refresh queues to ensure state consistency
         if (typeof refreshQueueData === 'function') {
           const filteredQueueIds = filteredQueues.map(q => q.id.toString());
-          for (const queueId of filteredQueueIds) {
-            try {
-              await refreshQueueData(queueId);
-            } catch (refreshError) {
-              logger.error(`Failed to refresh queue ${queueId}:`, refreshError);
-            }
-          }
+          await Promise.all(
+            filteredQueueIds.map(async (queueId) => {
+              try {
+                await refreshQueueData(queueId);
+              } catch (refreshError) {
+                logger.error(`Failed to refresh queue ${queueId}:`, refreshError);
+              }
+            })
+          );
         }
       }
     };
@@ -662,7 +698,8 @@ export default function ModeratorMessagesOverview() {
                       ) : (
                         <div className="space-y-3">
                           {moderatorQueues.map((queue) => {
-                            const queueTemplates = messageTemplates.filter((t) => t.queueId === String(queue.id));
+                            // Use filteredTemplates instead of messageTemplates to ensure role-based filtering
+                            const queueTemplates = filteredTemplates.filter((t) => t.queueId === String(queue.id));
                             const intersections = checkConditionIntersections(String(queue.id));
                             const isQueueExpanded = expandedQueues.has(String(queue.id));
 
