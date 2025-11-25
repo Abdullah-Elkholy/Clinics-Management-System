@@ -302,14 +302,60 @@ namespace Clinics.Api.Controllers
                 condition.Operator = request.Operator.ToUpper();
             }
 
-            if (request.Value.HasValue)
-                condition.Value = request.Value;
+            // Update value fields based on operator type
+            // When operator changes, we need to clear fields that are not relevant to the new operator
+            if (request.Operator != null)
+            {
+                var newOperator = request.Operator.ToUpper();
+                
+                // Clear fields based on operator type
+                if (newOperator == "RANGE")
+                {
+                    // For RANGE, clear Value and set MinValue/MaxValue
+                    condition.Value = null;
+                    if (request.MinValue.HasValue)
+                        condition.MinValue = request.MinValue;
+                    if (request.MaxValue.HasValue)
+                        condition.MaxValue = request.MaxValue;
+                }
+                else if (newOperator == "EQUAL" || newOperator == "GREATER" || newOperator == "LESS")
+                {
+                    // For EQUAL/GREATER/LESS, set Value and clear MinValue/MaxValue
+                    if (request.Value.HasValue)
+                        condition.Value = request.Value;
+                    condition.MinValue = null;
+                    condition.MaxValue = null;
+                }
+                else if (newOperator == "UNCONDITIONED" || newOperator == "DEFAULT")
+                {
+                    // For UNCONDITIONED/DEFAULT, clear all values
+                    condition.Value = null;
+                    condition.MinValue = null;
+                    condition.MaxValue = null;
+                }
+                else
+                {
+                    // For other cases, update fields if provided
+                    if (request.Value.HasValue)
+                        condition.Value = request.Value;
+                    if (request.MinValue.HasValue)
+                        condition.MinValue = request.MinValue;
+                    if (request.MaxValue.HasValue)
+                        condition.MaxValue = request.MaxValue;
+                }
+            }
+            else
+            {
+                // Operator not changed, update fields if provided
+                if (request.Value.HasValue)
+                    condition.Value = request.Value;
 
-            if (request.MinValue.HasValue)
-                condition.MinValue = request.MinValue;
+                if (request.MinValue.HasValue)
+                    condition.MinValue = request.MinValue;
 
-            if (request.MaxValue.HasValue)
-                condition.MaxValue = request.MaxValue;
+                if (request.MaxValue.HasValue)
+                    condition.MaxValue = request.MaxValue;
+            }
 
             // Get current user ID for audit
             var userId = _userContext.GetUserId();

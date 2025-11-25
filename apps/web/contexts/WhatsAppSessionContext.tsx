@@ -244,16 +244,35 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     refreshSessionHealth();
   }, [refreshSessionStatus, refreshSessionHealth]);
 
-  // Poll every 10 seconds
+  // Poll every 15 seconds (reduced frequency to save resources)
+  // Only poll when tab is visible
   useEffect(() => {
     if (!moderatorId) return;
+    
+    // Don't poll if tab is hidden
+    if (document.hidden) return;
 
     const interval = setInterval(() => {
-      refreshSessionStatus();
-      refreshSessionHealth();
-    }, 10000); // 10 seconds
+      // Only poll if tab is visible
+      if (!document.hidden) {
+        refreshSessionStatus();
+        refreshSessionHealth();
+      }
+    }, 15000); // Increased from 10 seconds to 15 seconds
 
-    return () => clearInterval(interval);
+    // Pause polling when tab becomes hidden
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(interval);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [moderatorId, refreshSessionStatus, refreshSessionHealth]);
 
   const value: WhatsAppSessionContextValue = {

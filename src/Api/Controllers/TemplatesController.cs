@@ -97,11 +97,14 @@ namespace Clinics.Api.Controllers
                     // Filter by queue's ModeratorId, not template's ModeratorId, to ensure consistency
                     if (!isAdmin && moderatorId.HasValue)
                     {
-                        // Join with Queues table to filter by queue's ModeratorId
-                        query = query
-                            .Join(_db.Queues, t => t.QueueId, q => q.Id, (t, q) => new { Template = t, Queue = q })
-                            .Where(j => !j.Queue.IsDeleted && j.Queue.ModeratorId == moderatorId.Value)
-                            .Select(j => j.Template);
+                        // Get queue IDs for this moderator first, then filter templates
+                        // This approach preserves the Include for Condition (LEFT JOIN)
+                        var moderatorQueueIds = await _db.Queues
+                            .Where(q => !q.IsDeleted && q.ModeratorId == moderatorId.Value)
+                            .Select(q => q.Id)
+                            .ToListAsync();
+                        
+                        query = query.Where(t => moderatorQueueIds.Contains(t.QueueId));
                     }
                     // Admins can see all templates
                 }

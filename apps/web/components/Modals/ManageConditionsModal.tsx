@@ -428,6 +428,17 @@ export default function ManageConditionsModal() {
   );
 
   const overlappingConditions = useMemo(() => detectOverlappingConditions(activeConditions as any), [activeConditions]);
+  
+  // Create a set of condition IDs that are in conflict for quick lookup
+  const conflictingConditionIds = useMemo(() => {
+    const ids = new Set<string>();
+    overlappingConditions.forEach(overlap => {
+      overlap.forEach(cond => {
+        if (cond.id) ids.add(cond.id);
+      });
+    });
+    return ids;
+  }, [overlappingConditions]);
 
   if (!isOpen || !data) return null;
 
@@ -451,12 +462,28 @@ export default function ManageConditionsModal() {
         {/* Templates List - Per-Template State View */}
         <div className="flex-1 overflow-y-auto space-y-3">
           {queueTemplates.length > 0 ? (
-            queueTemplates.map((template) => {
+            // Sort templates: DEFAULT first, then others
+            [...queueTemplates].sort((a, b) => {
+              const condA = templateConditionMap.get(a.id);
+              const condB = templateConditionMap.get(b.id);
+              const opA = condA?.operator || a.condition?.operator;
+              const opB = condB?.operator || b.condition?.operator;
+              
+              // DEFAULT always comes first
+              if (opA === 'DEFAULT' && opB !== 'DEFAULT') return -1;
+              if (opA !== 'DEFAULT' && opB === 'DEFAULT') return 1;
+              
+              // Otherwise maintain original order
+              return 0;
+            }).map((template) => {
               // Get condition from messageConditions array (real data)
               const condition = templateConditionMap.get(template.id);
               // Use real condition data for status
               const status = getTemplateStatus(template, condition);
               const isEditing = editingTemplateId === template.id;
+              
+              // Check if this template's condition is in conflict
+              const isInConflict = condition && condition.id && conflictingConditionIds.has(condition.id);
 
               return (
                 <div key={template.id}>
@@ -567,14 +594,16 @@ export default function ManageConditionsModal() {
                   ) : (
                     // View Mode - Template status card
                     <div className={`p-4 border-2 rounded-lg transition ${
-                      status.color.includes('red')
+                      isInConflict
+                        ? 'bg-red-100 border-red-400 hover:bg-red-150'
+                        : status.color.includes('red')
                         ? 'hover:bg-red-50'
                         : status.color.includes('blue')
                         ? 'hover:bg-blue-50'
                         : status.color.includes('green')
                         ? 'hover:bg-green-50'
                         : 'hover:bg-gray-50'
-                    } ${status.color}`}>
+                    } ${isInConflict ? 'border-red-400' : status.color}`}>
                       <div className="space-y-2">
                         {/* Header: Title and Status Badge */}
                         <div className="flex items-start justify-between gap-3">

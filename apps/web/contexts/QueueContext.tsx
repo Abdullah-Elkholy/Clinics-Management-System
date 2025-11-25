@@ -725,12 +725,10 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (newTemplates.length > 0) {
             setSelectedMessageTemplateId(newTemplates[0].id);
           }
-        } else {
-          // If no templates for this queue, remove them
-          setMessageTemplates((prevTemplates) => 
-            prevTemplates.filter(t => String(t.queueId) !== String(queueId))
-          );
         }
+        // NOTE: Don't remove templates if API returns empty array
+        // This could be a temporary state or the templates might be loaded from another source
+        // Only remove templates explicitly when a queue is deleted
 
         // Update conditions: replace conditions for this queue
         // Use newTemplates (just created above) instead of stale messageTemplates from closure

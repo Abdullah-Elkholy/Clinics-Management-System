@@ -9,6 +9,7 @@ import { useQueue } from '@/contexts/QueueContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
 import { getConditionRange, conditionsOverlap } from '@/utils/moderatorAggregation';
+import { detectOverlappingConditions } from '@/utils/conditionConflictDetector';
 import { messageApiClient, type TemplateDto } from '@/services/api/messageApiClient';
 import { templateDtoToModel, conditionDtoToModel } from '@/services/api/adapters';
 import logger from '@/utils/logger';
@@ -460,12 +461,26 @@ export default function EditTemplateModal() {
           // Update existing condition
           const conditionIdNum = Number(templateCondition.id);
           if (!isNaN(conditionIdNum)) {
-            await messageApiClient.updateCondition(conditionIdNum, {
+            // Build update request
+            // Backend now automatically clears fields based on operator type:
+            // - RANGE: clears Value, sets MinValue/MaxValue
+            // - EQUAL/GREATER/LESS: sets Value, clears MinValue/MaxValue
+            // - UNCONDITIONED/DEFAULT: clears all values
+            const updateRequest: any = {
               operator: conditionOperator,
-              value: normalizedValue,
-              minValue: normalizedMinValue,
-              maxValue: normalizedMaxValue,
-            });
+            };
+            
+            // Include values that should be set (backend will clear the others based on operator)
+            if (conditionOperator === 'RANGE') {
+              updateRequest.minValue = normalizedMinValue;
+              updateRequest.maxValue = normalizedMaxValue;
+            } else if (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS') {
+              updateRequest.value = normalizedValue;
+            }
+            // For UNCONDITIONED or DEFAULT, we don't need to send any values
+            // Backend will clear them automatically
+            
+            await messageApiClient.updateCondition(conditionIdNum, updateRequest);
           }
         } else {
           // Create new condition
@@ -520,17 +535,43 @@ export default function EditTemplateModal() {
       // Close modal after dispatching events to ensure UI updates
       closeModal('editTemplate');
     } catch (error) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : (error && typeof error === 'object' && 'message' in error)
-          ? String((error as { message?: unknown }).message || 'Unknown error')
-          : 'Unknown error';
+      // Extract detailed error information
+      let errorMessage = 'Unknown error';
+      let statusCode: number | undefined;
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error && typeof error === 'object') {
+        if ('message' in error) {
+          errorMessage = String((error as { message?: unknown }).message || 'Unknown error');
+        }
+        if ('statusCode' in error) {
+          statusCode = Number((error as { statusCode?: unknown }).statusCode);
+        }
+        // Check for API error response structure
+        if ('error' in error && typeof (error as { error?: unknown }).error === 'string') {
+          errorMessage = (error as { error: string }).error;
+        }
+      }
+      
       logger.error('Failed to update template:', {
         error: errorMessage,
-        statusCode: (error && typeof error === 'object' && 'statusCode' in error) ? (error as { statusCode?: unknown }).statusCode : undefined,
+        statusCode: statusCode,
         fullError: error,
+        conditionOperator: conditionOperator,
+        normalizedValue: normalizedValue,
+        normalizedMinValue: normalizedMinValue,
+        normalizedMaxValue: normalizedMaxValue,
       });
-      addToast('حدث خطأ أثناء تحديث القالب', 'error');
+      
+      // Show more detailed error message to user
+      const userFriendlyMessage = errorMessage.includes('overlap') || errorMessage.includes('تضارب')
+        ? 'هناك تضارب في الشروط. يرجى التحقق من الشروط المطبقة.'
+        : errorMessage.includes('validation') || errorMessage.includes('validation')
+        ? 'خطأ في التحقق من البيانات. يرجى التحقق من القيم المدخلة.'
+        : 'حدث خطأ أثناء تحديث القالب';
+      
+      addToast(userFriendlyMessage, 'error');
     } finally {
       // Always reset loading state, even if an error occurred
       setIsLoading(false);
@@ -700,6 +741,102 @@ export default function EditTemplateModal() {
             </button>
           </div>
         </div>
+
+        {/* Applied Conditions Section - Show existing conditions for this queue */}
+        {currentTemplate?.queueId && messageConditions.length > 0 && (
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg p-4 space-y-3">
+            <h5 className="text-sm font-bold text-purple-900 mb-3 flex items-center gap-2">
+              <i className="fas fa-list-check text-purple-600"></i>
+              الشروط المطبقة:
+            </h5>
+            <div className="space-y-2">
+              {(() => {
+                // Get all conditions for this queue, sorted: DEFAULT first, then others
+                const queueConditions = messageConditions
+                  .filter(c => String(c.queueId) === String(currentTemplate.queueId))
+                  .sort((a, b) => {
+                    // DEFAULT always comes first
+                    if (a.operator === 'DEFAULT' && b.operator !== 'DEFAULT') return -1;
+                    if (a.operator !== 'DEFAULT' && b.operator === 'DEFAULT') return 1;
+                    return 0;
+                  });
+                
+                // Detect conflicts
+                const activeConditions = queueConditions.filter(c => 
+                  c.operator && c.operator !== 'DEFAULT' && c.operator !== 'UNCONDITIONED'
+                );
+                const overlappingConditions = detectOverlappingConditions(activeConditions as any);
+                const conflictingIds = new Set<string>();
+                overlappingConditions.forEach(overlap => {
+                  overlap.forEach(cond => {
+                    if (cond.id) conflictingIds.add(cond.id);
+                  });
+                });
+                
+                return queueConditions.map((condition) => {
+                  const template = messageTemplates.find(t => t.id === condition.templateId);
+                  const isInConflict = condition.id && conflictingIds.has(condition.id);
+                  const isCurrentTemplate = condition.templateId === currentTemplate.id;
+                  
+                  let conditionText = '';
+                  if (condition.operator === 'DEFAULT') {
+                    conditionText = 'افتراضي';
+                  } else if (condition.operator === 'UNCONDITIONED') {
+                    conditionText = 'بدون شرط';
+                  } else if (condition.operator === 'RANGE') {
+                    conditionText = `نطاق: ${condition.minValue} - ${condition.maxValue}`;
+                  } else {
+                    const operatorLabels: Record<string, string> = {
+                      'EQUAL': 'يساوي',
+                      'GREATER': 'أكبر من',
+                      'LESS': 'أقل من',
+                    };
+                    conditionText = `${operatorLabels[condition.operator] || condition.operator}: ${condition.value}`;
+                  }
+                  
+                  return (
+                    <div
+                      key={condition.id}
+                      className={`p-3 rounded-lg border-2 transition ${
+                        isInConflict
+                          ? 'bg-red-100 border-red-400'
+                          : isCurrentTemplate
+                          ? 'bg-blue-100 border-blue-400'
+                          : condition.operator === 'DEFAULT'
+                          ? 'bg-green-100 border-green-300'
+                          : 'bg-white border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className={`text-sm font-semibold ${
+                            isInConflict ? 'text-red-900' : isCurrentTemplate ? 'text-blue-900' : 'text-gray-900'
+                          }`}>
+                            {template?.title || 'غير معروف'}
+                            {isCurrentTemplate && (
+                              <span className="ml-2 text-xs text-blue-600">(هذا القالب)</span>
+                            )}
+                          </p>
+                          <p className={`text-xs mt-1 ${
+                            isInConflict ? 'text-red-700' : 'text-gray-600'
+                          }`}>
+                            {conditionText}
+                          </p>
+                        </div>
+                        {isInConflict && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
+                            <i className="fas fa-exclamation-triangle"></i>
+                            تضارب!
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )}
 
         {/* Condition Application Section */}
         <ConditionApplicationSection

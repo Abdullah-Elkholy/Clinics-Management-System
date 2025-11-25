@@ -508,11 +508,12 @@ export default function UserManagementPanel() {
     checkForEdit();
     
     // Poll for changes (since storage events don't fire in same window)
+    // Reduced frequency from 500ms to 2 seconds to reduce CPU usage
     const interval = setInterval(() => {
       if (activeTab === 'accountSettings') {
         checkForEdit();
       }
-    }, 500);
+    }, 2000); // Reduced from 500ms to 2 seconds
 
     // Listen for quota updates
     const handleQuotaUpdate = async () => {
@@ -1994,9 +1995,6 @@ export default function UserManagementPanel() {
                           اسم المستخدم
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          الحالة
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           آخر تسجيل دخول
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2019,17 +2017,6 @@ export default function UserManagementPanel() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {user.username}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                                !(user.isDeleted ?? false)
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}
-                            >
-                              {!(user.isDeleted ?? false) ? 'نشط' : 'غير نشط'}
-                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {formatDate(user.lastLogin)}

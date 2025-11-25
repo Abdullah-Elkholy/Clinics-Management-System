@@ -1122,47 +1122,90 @@ export default function QueueDashboard() {
                       )}
                     </div>
                     
-                    {hasActiveConditions && (
-                      <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
-                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                          <i className="fas fa-filter text-green-600"></i>
-                          الشروط المطبقة ({activeConditions.length}):
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
-                            {activeConditions.length}
-                          </span>
-                        </h4>
-                        <div className="space-y-2">
-                          {activeConditions.map((condition, idx) => {
-                            const templateName = getTemplateNameForCondition(condition);
-                            const conditionText = 
-                              condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
-                              condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
-                              condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
-                              condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
-                              condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
-                              '';
-                            
-                            return (
-                              <div key={condition.id || idx} className="flex items-start gap-3 bg-green-50 rounded-lg p-3 border border-green-100 hover:border-green-300 hover:bg-green-100 transition-colors">
-                                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-300 text-green-900 text-xs font-bold flex-shrink-0">
-                                  {idx + 1}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    {templateName}
-                                  </p>
-                                  {conditionText && (
-                                    <p className="text-xs text-gray-700 mt-1">
-                                      {conditionText}
-                                    </p>
-                                  )}
+                    {hasActiveConditions && (() => {
+                      // Detect conflicts
+                      const overlappingConditions = detectQueueConflicts();
+                      const conflictingIds = new Set<string>();
+                      overlappingConditions.forEach(overlap => {
+                        overlap.forEach(cond => {
+                          if (cond.id) conflictingIds.add(cond.id);
+                        });
+                      });
+                      
+                      // Sort conditions: UNCONDITIONED first (if any), then others
+                      // Note: activeConditions already excludes DEFAULT, so we sort by UNCONDITIONED
+                      const sortedConditions = [...activeConditions].sort((a, b) => {
+                        if (a.operator === 'UNCONDITIONED' && b.operator !== 'UNCONDITIONED') return -1;
+                        if (a.operator !== 'UNCONDITIONED' && b.operator === 'UNCONDITIONED') return 1;
+                        return 0;
+                      });
+                      
+                      return (
+                        <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
+                          <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                            <i className="fas fa-filter text-green-600"></i>
+                            الشروط المطبقة ({sortedConditions.length}):
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
+                              {sortedConditions.length}
+                            </span>
+                          </h4>
+                          <div className="space-y-2">
+                            {sortedConditions.map((condition, idx) => {
+                              const templateName = getTemplateNameForCondition(condition);
+                              const isInConflict = condition.id && conflictingIds.has(condition.id);
+                              const conditionText = 
+                                condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
+                                condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
+                                condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
+                                condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
+                                condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
+                                '';
+                              
+                              return (
+                                <div 
+                                  key={condition.id || idx} 
+                                  className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${
+                                    isInConflict
+                                      ? 'bg-red-100 border-red-400 hover:bg-red-150'
+                                      : 'bg-green-50 border-green-100 hover:border-green-300 hover:bg-green-100'
+                                  }`}
+                                >
+                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${
+                                    isInConflict
+                                      ? 'bg-red-300 text-red-900'
+                                      : 'bg-green-300 text-green-900'
+                                  }`}>
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between">
+                                      <p className={`text-sm font-semibold ${
+                                        isInConflict ? 'text-red-900' : 'text-gray-900'
+                                      }`}>
+                                        {templateName}
+                                      </p>
+                                      {isInConflict && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
+                                          <i className="fas fa-exclamation-triangle"></i>
+                                          تضارب!
+                                        </span>
+                                      )}
+                                    </div>
+                                    {conditionText && (
+                                      <p className={`text-xs mt-1 ${
+                                        isInConflict ? 'text-red-700' : 'text-gray-700'
+                                      }`}>
+                                        {conditionText}
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                     
                     {!hasActiveConditions && (
                       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">

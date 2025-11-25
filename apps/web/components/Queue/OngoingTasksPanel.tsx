@@ -161,15 +161,42 @@ export default function OngoingTasksPanel() {
   }, [loadOngoingSessions]);
 
   /**
-   * Polling mechanism for real-time updates (every 5 seconds)
+   * Polling mechanism for real-time updates (every 10 seconds)
    * Ensures all users see the same updated state
+   * Reduced frequency to reduce server load and CPU usage
    */
   useEffect(() => {
+    // Only poll if tab is visible (reduce CPU when tab is inactive)
+    if (document.hidden) return;
+    
     const pollInterval = setInterval(() => {
-      loadOngoingSessions();
-    }, 5000); // Poll every 5 seconds
+      // Check if tab is still visible before polling
+      if (!document.hidden) {
+        loadOngoingSessions();
+      }
+    }, 10000); // Increased from 5 seconds to 10 seconds
 
-    return () => clearInterval(pollInterval);
+    // Pause polling when tab becomes hidden, resume when visible
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(pollInterval);
+      } else {
+        // Resume polling when tab becomes visible
+        const newInterval = setInterval(() => {
+          if (!document.hidden) {
+            loadOngoingSessions();
+          }
+        }, 10000);
+        return () => clearInterval(newInterval);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [loadOngoingSessions]);
 
   /**
