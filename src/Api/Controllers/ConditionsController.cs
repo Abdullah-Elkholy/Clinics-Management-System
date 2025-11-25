@@ -18,15 +18,18 @@ namespace Clinics.Api.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IUserContext _userContext;
         private readonly IConditionValidationService _conditionValidationService;
+        private readonly ILogger<ConditionsController> _logger;
 
         public ConditionsController(
             ApplicationDbContext context,
             IUserContext userContext,
-            IConditionValidationService conditionValidationService)
+            IConditionValidationService conditionValidationService,
+            ILogger<ConditionsController> logger)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _userContext = userContext ?? throw new ArgumentNullException(nameof(userContext));
             _conditionValidationService = conditionValidationService ?? throw new ArgumentNullException(nameof(conditionValidationService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -48,9 +51,11 @@ namespace Clinics.Api.Controllers
             if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
                 return Forbid();
 
-            // Get all conditions for this queue (no need to Include Template - we use TemplateId FK directly)
+            // Get all non-deleted conditions for this queue (no need to Include Template - we use TemplateId FK directly)
+            // Use AsNoTracking for read-only query to reduce memory usage
             var conditions = await _context.Set<MessageCondition>()
-                .Where(c => c.QueueId == queueId)
+                .AsNoTracking()
+                .Where(c => c.QueueId == queueId && !c.IsDeleted) // Filter out deleted conditions
                 .OrderBy(c => c.CreatedAt)
                 .ToListAsync();
 
@@ -68,6 +73,26 @@ namespace Clinics.Api.Controllers
                 CreatedAt = c.CreatedAt,
                 UpdatedAt = c.UpdatedAt
             }).ToList();
+            
+            // CRITICAL LOGGING: Log conditions with NULL TemplateId
+            var conditionsWithNullTemplateId = dtos.Where(d => !d.TemplateId.HasValue).ToList();
+            if (conditionsWithNullTemplateId.Any())
+            {
+                _logger.LogWarning(
+                    "[ConditionsController] Found {Count} conditions with NULL TemplateId for queue {QueueId}. Condition IDs: {ConditionIds}",
+                    conditionsWithNullTemplateId.Count,
+                    queueId,
+                    string.Join(", ", conditionsWithNullTemplateId.Select(c => c.Id))
+                );
+            }
+            
+            // CRITICAL LOGGING: Log all conditions being returned
+            _logger.LogInformation(
+                "[ConditionsController] Returning {Count} conditions for queue {QueueId}. TemplateIds: {TemplateIds}",
+                dtos.Count,
+                queueId,
+                string.Join(", ", dtos.Select(c => $"Id={c.Id}, TemplateId={c.TemplateId?.ToString() ?? "NULL"}, Operator={c.Operator}"))
+            );
 
             return Ok(new ListResponse<ConditionDto>
             {
@@ -174,10 +199,11 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { message = "This queue already has a default template. Set another template as default first." });
             }
 
-            // Check for overlaps with existing conditions (ignores DEFAULT/UNCONDITIONED)
-            if (await _conditionValidationService.HasOverlapAsync(
-                request.QueueId, request.Operator, request.Value, request.MinValue, request.MaxValue))
-                return BadRequest(new { message = "This condition overlaps with an existing condition in the queue." });
+            // Overlap check removed - frontend handles overlap detection with user confirmation
+            // Users can now create overlapping conditions if they confirm the overlap
+            // if (await _conditionValidationService.HasOverlapAsync(
+            //     request.QueueId, request.Operator, request.Value, request.MinValue, request.MaxValue))
+            //     return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في الطابور." });
 
             // Create condition and update template's state atomically
             // Template state is implicit via condition.Operator (DEFAULT/UNCONDITIONED/active operator)
@@ -277,8 +303,30 @@ namespace Clinics.Api.Controllers
             // Update fields if provided
             if (request.Operator != null)
             {
+                // For UNCONDITIONED and DEFAULT operators, use null values for validation
+                // (don't fall back to existing condition values)
+                int? validationValue = null;
+                int? validationMinValue = null;
+                int? validationMaxValue = null;
+                
+                var newOperator = request.Operator.ToUpper();
+                if (newOperator == "UNCONDITIONED" || newOperator == "DEFAULT")
+                {
+                    // For sentinel operators, always use null for validation
+                    validationValue = null;
+                    validationMinValue = null;
+                    validationMaxValue = null;
+                }
+                else
+                {
+                    // For active operators, use request values or fall back to existing
+                    validationValue = request.Value ?? condition.Value;
+                    validationMinValue = request.MinValue ?? condition.MinValue;
+                    validationMaxValue = request.MaxValue ?? condition.MaxValue;
+                }
+                
                 var validationResult = await _conditionValidationService.ValidateSingleConditionAsync(
-                    request.Operator, request.Value ?? condition.Value, request.MinValue ?? condition.MinValue, request.MaxValue ?? condition.MaxValue);
+                    request.Operator, validationValue, validationMinValue, validationMaxValue);
 
                 if (!validationResult.IsValid)
                     return BadRequest(new { message = validationResult.ErrorMessage });
@@ -290,26 +338,73 @@ namespace Clinics.Api.Controllers
                         return BadRequest(new { message = "This queue already has a default template. Set another template as default first." });
                 }
 
-                // Check for overlaps with existing conditions when changing to active operator
-                if (request.Operator.ToUpper() != "DEFAULT" && request.Operator.ToUpper() != "UNCONDITIONED")
-                {
-                    if (await _conditionValidationService.HasOverlapAsync(
-                        condition.QueueId, request.Operator, request.Value ?? condition.Value, 
-                        request.MinValue ?? condition.MinValue, request.MaxValue ?? condition.MaxValue, condition.Id))
-                        return BadRequest(new { message = "This condition overlaps with an existing condition in the queue." });
-                }
+                // Overlap check removed - frontend handles overlap detection with user confirmation
+                // Users can now create overlapping conditions if they confirm the overlap
+                // if (request.Operator.ToUpper() != "DEFAULT" && request.Operator.ToUpper() != "UNCONDITIONED")
+                // {
+                //     if (await _conditionValidationService.HasOverlapAsync(
+                //         condition.QueueId, request.Operator, request.Value ?? condition.Value, 
+                //         request.MinValue ?? condition.MinValue, request.MaxValue ?? condition.MaxValue, condition.Id))
+                //         return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في الطابور." });
+                // }
 
                 condition.Operator = request.Operator.ToUpper();
             }
 
-            if (request.Value.HasValue)
-                condition.Value = request.Value;
+            // Update value fields based on operator type
+            // When operator changes, we need to clear fields that are not relevant to the new operator
+            if (request.Operator != null)
+            {
+                var newOperator = request.Operator.ToUpper();
+                
+                // Clear fields based on operator type
+                if (newOperator == "RANGE")
+                {
+                    // For RANGE, clear Value and set MinValue/MaxValue
+                    condition.Value = null;
+                    if (request.MinValue.HasValue)
+                        condition.MinValue = request.MinValue;
+                    if (request.MaxValue.HasValue)
+                        condition.MaxValue = request.MaxValue;
+                }
+                else if (newOperator == "EQUAL" || newOperator == "GREATER" || newOperator == "LESS")
+                {
+                    // For EQUAL/GREATER/LESS, set Value and clear MinValue/MaxValue
+                    if (request.Value.HasValue)
+                        condition.Value = request.Value;
+                    condition.MinValue = null;
+                    condition.MaxValue = null;
+                }
+                else if (newOperator == "UNCONDITIONED" || newOperator == "DEFAULT")
+                {
+                    // For UNCONDITIONED/DEFAULT, clear all values
+                    condition.Value = null;
+                    condition.MinValue = null;
+                    condition.MaxValue = null;
+                }
+                else
+                {
+                    // For other cases, update fields if provided
+                    if (request.Value.HasValue)
+                        condition.Value = request.Value;
+                    if (request.MinValue.HasValue)
+                        condition.MinValue = request.MinValue;
+                    if (request.MaxValue.HasValue)
+                        condition.MaxValue = request.MaxValue;
+                }
+            }
+            else
+            {
+                // Operator not changed, update fields if provided
+                if (request.Value.HasValue)
+                    condition.Value = request.Value;
 
-            if (request.MinValue.HasValue)
-                condition.MinValue = request.MinValue;
+                if (request.MinValue.HasValue)
+                    condition.MinValue = request.MinValue;
 
-            if (request.MaxValue.HasValue)
-                condition.MaxValue = request.MaxValue;
+                if (request.MaxValue.HasValue)
+                    condition.MaxValue = request.MaxValue;
+            }
 
             // Get current user ID for audit
             var userId = _userContext.GetUserId();

@@ -16,9 +16,11 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
-import { formatLocalDate } from '@/utils/dateTimeUtils';
+import { formatLocalDate, formatLocalDateTime } from '@/utils/dateTimeUtils';
 import logger from '@/utils/logger';
 import type { MessageCondition } from '@/types/messageCondition';
+import { useUserManagement } from '@/hooks/useUserManagement';
+import { getConditionRange, conditionsOverlap } from '@/utils/moderatorAggregation';
 // Mock data removed - using API data instead
 
 /**
@@ -70,6 +72,7 @@ export default function MessagesPanel() {
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
+  const [userManagementState, userManagementActions] = useUserManagement();
 
   /**
    * Role-based rendering:
@@ -89,7 +92,7 @@ export default function MessagesPanel() {
   const [_isLoadingQuota, setIsLoadingQuota] = useState(false);
 
   /**
-   * Load user's quota from API on component mount
+   * Load user's quota and user data from API on component mount
    */
   useEffect(() => {
     const loadQuota = async () => {
@@ -106,26 +109,67 @@ export default function MessagesPanel() {
     };
 
     loadQuota();
-  }, []);
+    
+    // Fetch users and moderators to populate userManagementState for getUserDisplayName
+    if (user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin || user.role === UserRole.Moderator)) {
+      userManagementActions.fetchUsers();
+      userManagementActions.fetchModerators();
+    }
+  }, [user, userManagementActions]);
 
   /**
    * Listen for data updates and refetch queue data
+   * Debounced to prevent excessive API calls when multiple events fire simultaneously
    */
   useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let isRefreshing = false;
+
     const handleDataUpdate = async () => {
-      // Refetch data for all queues to ensure consistency
-      if (queues.length > 0 && typeof refreshQueueData === 'function') {
-        for (const queue of queues) {
-          await refreshQueueData(String(queue.id));
+      // Debounce: wait 500ms before executing to batch multiple rapid events
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+
+      debounceTimer = setTimeout(async () => {
+        // Prevent concurrent refreshes
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        try {
+          // Only refresh if queues exist and function is available
+          if (queues.length > 0 && typeof refreshQueueData === 'function') {
+            // Batch queue refreshes: process in chunks of 5 to avoid overwhelming the server
+            const queueChunks = [];
+            for (let i = 0; i < queues.length; i += 5) {
+              queueChunks.push(queues.slice(i, i + 5));
+            }
+
+            // Process chunks sequentially to limit concurrent requests
+            for (const chunk of queueChunks) {
+              await Promise.all(
+                chunk.map(async (queue) => {
+                  try {
+                    await refreshQueueData(String(queue.id));
+                  } catch (err) {
+                    logger.error(`Failed to refresh queue ${queue.id}:`, err);
+                  }
+                })
+              );
+            }
+          }
+          
+          // Refetch quota (only once, not per queue)
+          try {
+            const quota = await messageApiClient.getMyQuota();
+            setUserQuota(quota);
+          } catch (err) {
+            // Silently fail quota refetch
+          }
+        } finally {
+          isRefreshing = false;
         }
-      }
-      // Refetch quota
-      try {
-        const quota = await messageApiClient.getMyQuota();
-        setUserQuota(quota);
-      } catch (err) {
-        // Silently fail quota refetch
-      }
+      }, 500); // 500ms debounce
     };
 
     // Listen to all relevant update events
@@ -136,6 +180,9 @@ export default function MessagesPanel() {
     window.addEventListener('messageDataUpdated', handleDataUpdate);
 
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       window.removeEventListener('templateDataUpdated', handleDataUpdate);
       window.removeEventListener('patientDataUpdated', handleDataUpdate);
       window.removeEventListener('queueDataUpdated', handleDataUpdate);
@@ -230,6 +277,52 @@ export default function MessagesPanel() {
     
     return conflictingIds;
   }, [messageConditions, messageTemplates]);
+
+  /**
+   * Helper function to get user display name following priority:
+   * 1. firstName + lastName (if both exist)
+   * 2. firstName only (if lastName is null/empty)
+   * 3. username (fallback, never return "Unknown" or "غير معروف" if username exists)
+   */
+  const getUserDisplayName = useCallback((userId: string | number | undefined): string => {
+    if (!userId) return 'غير معروف';
+    
+    const userIdStr = String(userId).trim();
+    if (!userIdStr) return 'غير معروف';
+    
+    const allUsers = [
+      ...(userManagementState.moderators || []),
+      ...(userManagementState.users || []),
+    ];
+    
+    // Try to find user by ID (both string and number comparison)
+    const foundUser = allUsers.find(u => {
+      const uIdStr = String(u.id).trim();
+      const uIdNum = Number(u.id);
+      const searchIdNum = Number(userIdStr);
+      
+      return uIdStr === userIdStr || 
+             (!isNaN(uIdNum) && !isNaN(searchIdNum) && uIdNum === searchIdNum);
+    });
+    
+    if (foundUser) {
+      // If both firstName and lastName exist, show both
+      if (foundUser.firstName && foundUser.lastName) {
+        return `${foundUser.firstName} ${foundUser.lastName}`;
+      }
+      // If only firstName exists (no lastName), show firstName only
+      if (foundUser.firstName) {
+        return foundUser.firstName;
+      }
+      // Fallback to username if no firstName (username should always exist)
+      if (foundUser.username) {
+        return foundUser.username;
+      }
+    }
+    
+    // If user not found or no username, return 'غير معروف'
+    return 'غير معروف';
+  }, [userManagementState]);
 
   /**
    * Get range representation of a condition
@@ -448,28 +541,33 @@ export default function MessagesPanel() {
                   {/* Queue Content - Collapsible */}
                   {isExpanded && (
                     <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-4">
-                      {/* Intersection Warning */}
+                      {/* Conflict Details - Similar to ModeratorMessagesOverview */}
                       {(() => {
                         const intersections = checkConditionIntersections(String(queue.id));
                         return intersections.length > 0 ? (
-                          <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-3">
-                            <div className="flex items-start gap-2">
-                              <i className="fas fa-exclamation-circle text-red-600 text-lg mt-0.5 flex-shrink-0"></i>
-                              <div className="flex-1">
-                                <p className="text-sm font-semibold text-red-900 mb-2">
-                                  ⛔ خطأ: تقاطع في الشروط
-                                </p>
-                                <p className="text-xs text-red-800 mb-2">
-                                  تم اكتشاف شروط متقاطعة ولا يمكن قبول هذه التكوينات. يجب تصحيح الشروط:
-                                </p>
-                                <ul className="space-y-1 text-xs text-red-800">
-                                  {intersections.map((intersection, idx) => (
-                                    <li key={idx} className="flex items-start gap-2">
-                                      <span className="text-red-600 flex-shrink-0">✕</span>
-                                      <span>{intersection.message}</span>
-                                    </li>
-                                  ))}
-                                </ul>
+                          <div className="border-t border-red-100 px-4 py-2 bg-red-50 space-y-2">
+                            <p className="text-xs font-semibold text-red-900 mb-2">
+                              ⛔ طوابير بها تضاربات:
+                            </p>
+                            <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-3">
+                              <div className="flex items-start gap-2">
+                                <i className="fas fa-exclamation-circle text-red-600 text-lg mt-0.5 flex-shrink-0"></i>
+                                <div className="flex-1">
+                                  <p className="text-sm font-semibold text-red-900 mb-2">
+                                    ⛔ خطأ: تقاطع في الشروط
+                                  </p>
+                                  <p className="text-xs text-red-800 mb-2">
+                                    تم اكتشاف شروط متقاطعة ولا يمكن قبول هذه التكوينات. يجب تصحيح الشروط:
+                                  </p>
+                                  <ul className="space-y-1 text-xs text-red-800">
+                                    {intersections.map((intersection, idx) => (
+                                      <li key={idx} className="flex items-start gap-2">
+                                        <span className="text-red-600 flex-shrink-0">✕</span>
+                                        <span>{intersection.message}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -568,11 +666,11 @@ export default function MessagesPanel() {
                                       )}
                                     </td>
                                     <td className="px-4 py-2">
-                                      <span className="text-sm text-gray-700">{template.createdBy}</span>
+                                      <span className="text-sm text-gray-700">{getUserDisplayName(template.createdBy)}</span>
                                     </td>
                                     <td className="px-4 py-2">
                                       <span className="text-sm text-gray-700">
-                                        {template.updatedAt ? formatLocalDate(template.updatedAt) : '-'}
+                                        {template.updatedAt ? formatLocalDateTime(template.updatedAt instanceof Date ? template.updatedAt : new Date(template.updatedAt)) : '-'}
                                       </span>
                                     </td>
                                     <td className="px-4 py-2">

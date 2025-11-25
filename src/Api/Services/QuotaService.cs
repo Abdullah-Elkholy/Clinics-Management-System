@@ -38,11 +38,16 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         if (user.Role == "moderator")
             return user.Id;
 
+        // Admins can also send messages - they use their own ID as moderator
+        // They have unlimited quotas by default
+        if (user.Role == "primary_admin" || user.Role == "secondary_admin")
+            return user.Id;
+
         // If user has ModeratorId set, use that (users share moderator's quota)
         if (user.ModeratorId.HasValue)
             return user.ModeratorId.Value;
 
-        // Admins don't have quotas
+        // Users must have a moderator assigned
         throw new InvalidOperationException("User is not associated with any moderator");
     }
 

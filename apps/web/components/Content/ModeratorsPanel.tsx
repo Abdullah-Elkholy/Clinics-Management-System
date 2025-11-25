@@ -48,8 +48,7 @@ export default function ModeratorsPanel() {
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
   // 2. firstName (if lastName is null/empty)
-  // 3. المشرف #${id} (ID-based fallback)
-  // 4. username (last fallback)
+  // 3. username (fallback)
   const getUserDisplayName = (user: { firstName: string; lastName?: string; username: string; id?: string | number }): string => {
     if (user.firstName && user.lastName) {
       return `${user.firstName} ${user.lastName}`;
@@ -57,9 +56,7 @@ export default function ModeratorsPanel() {
     if (user.firstName) {
       return user.firstName;
     }
-    if (user.id) {
-      return `المشرف #${user.id}`;
-    }
+    // Use username instead of ID as fallback
     return user.username || 'Unknown';
   };
 
@@ -446,8 +443,8 @@ export default function ModeratorsPanel() {
                   {/* Detailed Info */}
                   <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600">المعرف:</span>
-                      <span className="text-sm font-mono font-medium text-gray-900">{moderator.id}</span>
+                      <span className="text-xs text-gray-600">اسم المستخدم:</span>
+                      <span className="text-sm font-mono font-medium text-gray-900">{moderator.username || 'غير محدد'}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-600">الحالة:</span>

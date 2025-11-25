@@ -283,11 +283,35 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const conditions: MessageCondition[] = conditionDtos.map((dto: ConditionDto, idx: number) => {
             const condition = conditionDtoToModel(dto, idx);
             // Populate template content from templateId if available
+            // CRITICAL: Use String() conversion for robust type matching (handles number/string mismatches)
             if (condition.templateId && templates.length > 0) {
-              // Match template by ID using simple equality (same as EditTemplateModal)
-              const template = templates.find(t => t.id === condition.templateId);
-              if (template) {
+              // Match template by ID using String conversion for type safety
+              const template = templates.find(t => String(t.id) === String(condition.templateId));
+              if (template && template.content && template.content.trim().length > 0) {
                 condition.template = template.content;
+              } else {
+                // Log warning if template not found (only in dev to avoid spam)
+                if (process.env.NODE_ENV === 'development') {
+                  logger.warn('[QueueContext] Template not found for condition:', {
+                    conditionId: condition.id,
+                    templateId: condition.templateId,
+                    templateIdType: typeof condition.templateId,
+                    operator: condition.operator,
+                    templateFound: !!template,
+                    templateHasContent: template ? !!template.content : false,
+                    availableTemplateIds: templates.map(t => ({ id: t.id, idType: typeof t.id, title: t.title })),
+                  });
+                }
+                // Keep empty template - will be handled by MessagePreviewModal
+              }
+            } else if (condition.templateId && templates.length === 0) {
+              // Template ID exists but no templates loaded yet
+              if (process.env.NODE_ENV === 'development') {
+                logger.warn('[QueueContext] Condition has templateId but no templates loaded:', {
+                  conditionId: condition.id,
+                  templateId: condition.templateId,
+                  operator: condition.operator,
+                });
               }
             }
             return condition;
@@ -725,12 +749,10 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (newTemplates.length > 0) {
             setSelectedMessageTemplateId(newTemplates[0].id);
           }
-        } else {
-          // If no templates for this queue, remove them
-          setMessageTemplates((prevTemplates) => 
-            prevTemplates.filter(t => String(t.queueId) !== String(queueId))
-          );
         }
+        // NOTE: Don't remove templates if API returns empty array
+        // This could be a temporary state or the templates might be loaded from another source
+        // Only remove templates explicitly when a queue is deleted
 
         // Update conditions: replace conditions for this queue
         // Use newTemplates (just created above) instead of stale messageTemplates from closure

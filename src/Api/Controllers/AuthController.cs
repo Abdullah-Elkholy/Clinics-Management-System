@@ -170,7 +170,8 @@ namespace Clinics.Api.Controllers
                     user.FirstName,
                     user.LastName,
                     Role = user.Role,
-                    RoleDisplayName = roleDisplayName
+                    RoleDisplayName = roleDisplayName,
+                    AssignedModerator = user.ModeratorId
                 } 
             });
         }

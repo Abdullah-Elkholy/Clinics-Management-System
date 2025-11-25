@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import TrashCountdownBadge from './TrashCountdownBadge';
 import { formatDeletionDate, getDaysRemainingInTrash, getRestoreErrorMessage, parseRestoreError } from '@/utils/trashUtils';
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createRestoreConfirmation } from '@/utils/confirmationHelpers';
 import { formatArabicNumber } from '@/utils/numberUtils';
@@ -44,6 +45,7 @@ interface TrashTabProps {
   }>;
   adminOnly?: boolean;
   isAdmin?: boolean;
+  queues?: Array<{ id: string | number; doctorName?: string }>; // For looking up doctor names for templates
 }
 
 export const TrashTab: React.FC<TrashTabProps> = ({
@@ -62,6 +64,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   columns,
   adminOnly = false,
   isAdmin = false,
+  queues = [],
 }) => {
   const { confirm } = useConfirmDialog();
   const [restoring, setRestoring] = useState<Set<string | number>>(new Set());
@@ -73,7 +76,9 @@ export const TrashTab: React.FC<TrashTabProps> = ({
       case 'queue':
         return [
           { key: 'doctorName', label: 'اسم الطبيب' },
-          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'moderatorUsername', label: 'اسم المشرف' },
+          { key: 'deletedByUsername', label: 'حذف بواسطة' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
           { 
             key: 'countdown', 
             label: 'الوقت المتبقي',
@@ -83,8 +88,21 @@ export const TrashTab: React.FC<TrashTabProps> = ({
       case 'template':
         return [
           { key: 'title', label: 'اسم القالب' },
-          { key: 'queueId', label: 'رقم الطابور' },
-          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
+          { 
+            key: 'doctorName', 
+            label: 'اسم الطبيب',
+            render: (item) => {
+              // Look up doctor name from queueId
+              if (item.queueId && queues.length > 0) {
+                const queue = queues.find(q => String(q.id) === String(item.queueId));
+                return queue?.doctorName || '—';
+              }
+              return '—';
+            }
+          },
+          { key: 'moderatorUsername', label: 'اسم المشرف' },
+          { key: 'deletedByUsername', label: 'حذف بواسطة' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
           { 
             key: 'countdown', 
             label: 'الوقت المتبقي',
@@ -95,7 +113,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
         return [
           { key: 'name', label: 'اسم المريض' },
           { key: 'phone', label: 'رقم الهاتف' },
-          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
           { 
             key: 'countdown', 
             label: 'الوقت المتبقي',
@@ -107,7 +125,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
           { key: 'username', label: 'اسم المستخدم' },
           { key: 'firstName', label: 'الاسم الأول' },
           { key: 'role', label: 'الدور' },
-          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
+          { key: 'deletedByUsername', label: 'حذف بواسطة' },
+          { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
           { 
             key: 'countdown', 
             label: 'الوقت المتبقي',
@@ -141,8 +160,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     }
 
     if (value instanceof Date) {
-      const { formatLocalDate } = require('@/utils/dateTimeUtils');
-      return formatLocalDate(value);
+      return formatLocalDateTime(value);
     }
 
     // Format numbers with Arabic-Indic numerals
@@ -237,14 +255,14 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" dir="rtl">
       {/* Table */}
       <div className="overflow-x-auto border border-gray-200 rounded-lg">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" dir="rtl">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               {onToggleSelect && (
-                <th className="px-4 py-3 text-left">
+                <th className="px-4 py-3 text-right">
                   <input
                     type="checkbox"
                     checked={selectedIds.size > 0}
@@ -261,7 +279,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                 </th>
               )}
               {displayColumns.map((col) => (
-                <th key={col.key} className="px-4 py-3 text-left font-medium text-gray-700">
+                <th key={col.key} className="px-4 py-3 text-right font-medium text-gray-700">
                   {col.label}
                 </th>
               ))}
@@ -288,7 +306,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                       </td>
                     )}
                     {displayColumns.map((col) => (
-                      <td key={col.key} className="px-4 py-3 text-gray-900">
+                      <td key={col.key} className="px-4 py-3 text-gray-900 text-right">
                         {col.render ? col.render(item) : getColumnValue(item, col.key)}
                       </td>
                     ))}
@@ -299,7 +317,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                         <button
                           onClick={() => handleRestore(item.id)}
                           disabled={isRestoring || !canRestore}
-                          className={`px-3 py-1 rounded text-sm font-medium transition ${
+                          className={`px-3 py-1 rounded text-sm font-medium transition flex items-center gap-2 ${
                             isRestoring
                               ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
                               : canRestore
@@ -308,7 +326,17 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                           }`}
                           title={canRestore ? 'استعادة هذا العنصر' : 'لم يعد من الممكن استعادة هذا العنصر (منتهي الصلاحية)'}
                         >
-                          {isRestoring ? 'جاري الاستعادة...' : 'استعادة'}
+                          {isRestoring ? (
+                            <>
+                              <i className="fas fa-spinner fa-spin"></i>
+                              <span>جاري الاستعادة...</span>
+                            </>
+                          ) : (
+                            <>
+                              <i className="fas fa-undo"></i>
+                              <span>استعادة</span>
+                            </>
+                          )}
                         </button>
                       )}
                     </td>

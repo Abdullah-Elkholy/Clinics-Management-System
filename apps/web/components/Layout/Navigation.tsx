@@ -46,6 +46,7 @@ export default function Navigation() {
   const isSecondaryAdmin = user?.role === UserRole.SecondaryAdmin;
   const isAdmin = isPrimaryAdmin || isSecondaryAdmin; // Admin views get moderator grouping
   const isModerator = user?.role === UserRole.Moderator;
+  const isUser = user?.role === UserRole.User;
   
   // Merge all moderators from system with queue-based moderators
   const allModerators = React.useMemo<ModeratorWithStats[]>(() => {
@@ -71,8 +72,7 @@ export default function Navigation() {
     // Helper function to get moderator display name following priority:
     // 1. firstName + lastName (if both exist)
     // 2. firstName (if lastName is null/empty)
-    // 3. المشرف #${modId} (ID-based fallback)
-    // 4. username (last fallback)
+    // 3. username (fallback)
     const getModeratorDisplayName = (userMod: typeof userManagementState.moderators[0], modId: string): string => {
       if (userMod.firstName && userMod.lastName) {
         return `${userMod.firstName} ${userMod.lastName}`;
@@ -80,10 +80,8 @@ export default function Navigation() {
       if (userMod.firstName) {
         return userMod.firstName;
       }
-      if (modId) {
-        return `المشرف #${modId}`;
-      }
-      return userMod.username || `المشرف #${modId}`;
+      // Use username instead of ID as fallback
+      return userMod.username || 'Unknown';
     };
 
     // First, add all moderators from user management
@@ -253,24 +251,35 @@ export default function Navigation() {
     document.addEventListener('mouseup', onMouseUp);
   }, []);
 
-  // Helper: queues for current moderator (when logged in as moderator)
+  // Helper: queues for current moderator (when logged in as moderator) or user (when logged in as user)
   const moderatorQueues = React.useMemo(() => {
-    if (!isModerator || !user) return [];
-    const uid = user.id?.toString();
-    const uname = user.username?.toString();
-    // Match by user id primarily; keep username fallback for legacy/sample data
-    const list = queues.filter(q => q.moderatorId === uid || q.moderatorId === uname);
-    // Minimal debug to help diagnose if still empty
-    if (process.env.NODE_ENV !== 'production' && list.length === 0) {
-      logger.debug('[ModeratorQueues] No queues matched for moderator', {
-        userId: uid,
-        username: uname,
-        queueModeratorIds: queues.map(q => q.moderatorId).slice(0, 10),
-        totalQueues: queues.length,
-      });
+    if ((!isModerator && !isUser) || !user) return [];
+    
+    if (isModerator) {
+      // Moderator: filter queues where ModeratorId == user.id
+      const uid = user.id?.toString();
+      const uname = user.username?.toString();
+      // Match by user id primarily; keep username fallback for legacy/sample data
+      const list = queues.filter(q => q.moderatorId === uid || q.moderatorId === uname);
+      // Minimal debug to help diagnose if still empty
+      if (process.env.NODE_ENV !== 'production' && list.length === 0) {
+        logger.debug('[ModeratorQueues] No queues matched for moderator', {
+          userId: uid,
+          username: uname,
+          queueModeratorIds: queues.map(q => q.moderatorId).slice(0, 10),
+          totalQueues: queues.length,
+        });
+      }
+      return list;
+    } else if (isUser) {
+      // User: filter queues where ModeratorId == user.moderatorId
+      if (!user.moderatorId) return [];
+      const moderatorId = user.moderatorId.toString();
+      return queues.filter(q => q.moderatorId === moderatorId);
     }
-    return list;
-  }, [isModerator, user, queues]);
+    
+    return [];
+  }, [isModerator, isUser, user, queues]);
 
   const isQueueSelected = selectedQueueId !== null;
 

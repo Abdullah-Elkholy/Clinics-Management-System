@@ -44,16 +44,23 @@ public class UserCascadeService : IUserCascadeService
 {
     private readonly ApplicationDbContext _db;
     private readonly ILogger<UserCascadeService> _logger;
+    private readonly IQueueCascadeService _queueCascadeService;
     private const int TTL_DAYS = 30;
 
-    public UserCascadeService(ApplicationDbContext db, ILogger<UserCascadeService> logger)
+    public UserCascadeService(
+        ApplicationDbContext db, 
+        ILogger<UserCascadeService> logger,
+        IQueueCascadeService queueCascadeService)
     {
         _db = db;
         _logger = logger;
+        _queueCascadeService = queueCascadeService;
     }
 
     public async Task<(bool Success, string ErrorMessage)> SoftDeleteUserAsync(int userId, int deletedByUserId)
     {
+        // Wrap in transaction for atomicity
+        await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
             var user = await _db.Users
@@ -61,20 +68,35 @@ public class UserCascadeService : IUserCascadeService
 
             if (user == null)
             {
+                await transaction.RollbackAsync();
                 return (false, "User not found");
             }
 
             // Capture operation snapshot timestamp to ensure consistency
             var operationTimestamp = DateTime.UtcNow;
 
-            // Mark user as deleted with snapshot timestamp
-            user.IsDeleted = true;
-            user.DeletedAt = operationTimestamp;
-            user.DeletedBy = deletedByUserId;
-
-            // If user is a moderator, soft-delete their WhatsAppSession
+            // If user is a moderator, soft-delete all their Queues (which will cascade to MessageSessions → Messages)
             if (user.Role == "moderator")
             {
+                var queues = await _db.Queues
+                    .Where(q => q.ModeratorId == userId && !q.IsDeleted)
+                    .ToListAsync();
+
+                foreach (var queue in queues)
+                {
+                    // Call QueueCascadeService with useTransaction = false since we're already in a transaction
+                    // Note: QueueCascadeService will call MessageSessionCascadeService which will cascade to Messages
+                    var (success, error) = await _queueCascadeService.SoftDeleteQueueAsync(queue.Id, deletedByUserId, useTransaction: false);
+                    
+                    if (!success)
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogError("Failed to soft-delete Queue {QueueId} for moderator {UserId}: {Error}", queue.Id, userId, error);
+                        return (false, $"فشل حذف الطابور: {error}");
+                    }
+                }
+
+                // Soft-delete WhatsAppSession
                 var whatsappSession = await _db.Set<WhatsAppSession>()
                     .FirstOrDefaultAsync(s => s.ModeratorUserId == userId && !s.IsDeleted);
                 
@@ -91,7 +113,13 @@ public class UserCascadeService : IUserCascadeService
                 }
             }
 
+            // Mark user as deleted with snapshot timestamp
+            user.IsDeleted = true;
+            user.DeletedAt = operationTimestamp;
+            user.DeletedBy = deletedByUserId;
+
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             _logger.LogInformation(
                 "User {UserId} soft-deleted by user {DeletingUserId} at {Timestamp}",
@@ -101,6 +129,7 @@ public class UserCascadeService : IUserCascadeService
         }
         catch (Exception ex)
         {
+            await transaction.RollbackAsync();
             _logger.LogError(ex, "Error soft-deleting user {UserId}", userId);
             return (false, "حدث خطأ أثناء حذف المستخدم");
         }
@@ -108,6 +137,8 @@ public class UserCascadeService : IUserCascadeService
 
     public async Task<(bool Success, string ErrorMessage)> RestoreUserAsync(int userId, int? restoredBy = null)
     {
+        // Wrap in transaction for atomicity
+        await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
             var user = await _db.Users
@@ -115,18 +146,21 @@ public class UserCascadeService : IUserCascadeService
 
             if (user == null)
             {
+                await transaction.RollbackAsync();
                 return (false, "المستخدم المحذوف غير موجود");
             }
 
             // Check if within 30-day window
             if (!user.DeletedAt.HasValue)
             {
+                await transaction.RollbackAsync();
                 return (false, "طابع زمني للحذف مفقود");
             }
 
             var daysDeleted = (DateTime.UtcNow - user.DeletedAt.Value).TotalDays;
             if (daysDeleted > TTL_DAYS)
             {
+                await transaction.RollbackAsync();
                 return (false, "انتهت فترة الاستعادة");
             }
 
@@ -136,18 +170,31 @@ public class UserCascadeService : IUserCascadeService
             // Capture operation snapshot timestamp to ensure consistency
             var operationTimestamp = DateTime.UtcNow;
 
-            // Restore user with snapshot timestamp and audit fields
-            user.IsDeleted = false;
-            user.DeletedAt = null;
-            user.DeletedBy = null;
-            user.RestoredAt = operationTimestamp;
-            user.RestoredBy = restoredBy;
-            user.UpdatedAt = operationTimestamp;
-            user.UpdatedBy = restoredBy;
-
-            // If user is a moderator, restore their WhatsAppSession (if deleted during same cascade)
+            // If user is a moderator, restore all their Queues (which will restore MessageSessions → Messages)
             if (user.Role == "moderator")
             {
+                var queues = await _db.Queues
+                    .Where(q => q.ModeratorId == userId 
+                        && q.IsDeleted 
+                        && q.DeletedAt.HasValue 
+                        && q.DeletedAt >= originalDeletedAt)
+                    .ToListAsync();
+
+                foreach (var queue in queues)
+                {
+                    // Call QueueCascadeService with useTransaction = false since we're already in a transaction
+                    // Note: QueueCascadeService will call MessageSessionCascadeService which will restore Messages
+                    var (success, error) = await _queueCascadeService.RestoreQueueAsync(queue.Id, restoredBy, useTransaction: false);
+                    
+                    if (!success)
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogError("Failed to restore Queue {QueueId} for moderator {UserId}: {Error}", queue.Id, userId, error);
+                        return (false, $"فشل استعادة الطابور: {error}");
+                    }
+                }
+
+                // Restore WhatsAppSession (if deleted during same cascade)
                 var whatsappSession = await _db.Set<WhatsAppSession>()
                     .IgnoreQueryFilters() // Must bypass soft-delete filter to find deleted sessions
                     .FirstOrDefaultAsync(s => s.ModeratorUserId == userId 
@@ -172,7 +219,17 @@ public class UserCascadeService : IUserCascadeService
                 }
             }
 
+            // Restore user with snapshot timestamp and audit fields
+            user.IsDeleted = false;
+            user.DeletedAt = null;
+            user.DeletedBy = null;
+            user.RestoredAt = operationTimestamp;
+            user.RestoredBy = restoredBy;
+            user.UpdatedAt = operationTimestamp;
+            user.UpdatedBy = restoredBy;
+
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             _logger.LogInformation(
                 "User {UserId} restored at {Timestamp}",
@@ -182,6 +239,7 @@ public class UserCascadeService : IUserCascadeService
         }
         catch (Exception ex)
         {
+            await transaction.RollbackAsync();
             _logger.LogError(ex, "Error restoring user {UserId}", userId);
             return (false, "حدث خطأ أثناء استعادة المستخدم");
         }

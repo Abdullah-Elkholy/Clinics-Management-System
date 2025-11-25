@@ -300,7 +300,7 @@ namespace Clinics.Domain
     }
 
     [Table("Messages")]
-    public class Message : ISoftDeletable
+    public class Message
     {
         [Key]
         public long Id { get; set; }
@@ -331,18 +331,51 @@ namespace Clinics.Domain
         [StringLength(100)]
         public string? ProviderMessageId { get; set; }
 
+        /// <summary>
+        /// WhatsApp session name being used in that process.
+        /// Stored from WhatsAppSession.SessionName for the moderator.
+        /// </summary>
         [StringLength(20)]
         public string Channel { get; set; } = "whatsapp";
+
+        /// <summary>
+        /// Country code for the phone number (e.g., "+20", "+966")
+        /// Stored separately for display and validation purposes.
+        /// Source: Patient.CountryCode
+        /// </summary>
+        [Required]
+        [StringLength(10)]
+        public string CountryCode { get; set; } = "+20";
 
         [Required]
         [StringLength(20)]
         [Phone]
         public string? PatientPhone { get; set; }
 
+        /// <summary>
+        /// Patient's queue position at the time of message creation.
+        /// Used to trace why this message is being sent.
+        /// Source: Patient.Position
+        /// </summary>
         [Required]
-        [StringLength(20)]
-        [Phone]
-        public string RecipientPhone { get; set; } = null!;
+        public int Position { get; set; }
+
+        /// <summary>
+        /// Calculated position (offset from Current Queue Position).
+        /// Calculated as: Patient.Position - Queue.CurrentPosition
+        /// Used for message condition matching.
+        /// </summary>
+        [Required]
+        public int CalculatedPosition { get; set; }
+
+        /// <summary>
+        /// Patient's full name at the time of message creation.
+        /// Stored for traceability and display purposes.
+        /// Source: Patient.FullName
+        /// </summary>
+        [Required]
+        [StringLength(100)]
+        public string FullName { get; set; } = null!;
 
         [Required]
         [StringLength(2000)]
@@ -379,11 +412,6 @@ namespace Clinics.Domain
         public DateTime? DeletedAt { get; set; }
 
         public int? DeletedBy { get; set; }
-
-        // Restore fields
-        public DateTime? RestoredAt { get; set; }
-
-        public int? RestoredBy { get; set; }
 
         /// <summary>
         /// Indicates if this message is paused and should not be processed.
@@ -644,6 +672,22 @@ namespace Clinics.Domain
         [Required]
         public int SentMessages { get; set; }
 
+        /// <summary>
+        /// Number of messages in this session that have failed.
+        /// Auto-updated when Message.Status changes to "failed".
+        /// Used for FailedTasksPanel filtering.
+        /// </summary>
+        [Required]
+        public int FailedMessages { get; set; } = 0;
+
+        /// <summary>
+        /// Number of messages in this session that are ongoing (queued or sending).
+        /// Auto-updated when Message.Status is "queued" or "sending".
+        /// Used for OngoingTasksPanel filtering.
+        /// </summary>
+        [Required]
+        public int OngoingMessages { get; set; } = 0;
+
         [Required]
         public DateTime StartTime { get; set; }
 
@@ -666,6 +710,14 @@ namespace Clinics.Domain
         /// </summary>
         [StringLength(100)]
         public string? PauseReason { get; set; }
+
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
     /// <summary>

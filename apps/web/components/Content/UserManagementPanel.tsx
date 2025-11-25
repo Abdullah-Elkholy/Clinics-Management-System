@@ -123,13 +123,6 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
       {/* Quota Display */}
       {!quotaLoading && !quotaError && (
         <>
-          <ModeratorQuotaDisplay
-            moderatorId={moderatorIdForQuota}
-            quota={quota || undefined}
-            onEditMessages={() => {}}
-            onEditQueues={() => {}}
-          />
-
           {/* Quota Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white border border-blue-200 rounded-lg p-6">
@@ -291,7 +284,7 @@ export default function UserManagementPanel() {
   const { openModal } = useModal();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
-  const { refreshQueues } = useQueue();
+  const { refreshQueues, queues } = useQueue();
   const router = useRouter();
 
   // All useState hooks MUST be declared before any conditional returns
@@ -330,8 +323,7 @@ export default function UserManagementPanel() {
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
   // 2. firstName (if lastName is null/empty)
-  // 3. المشرف #${id} (ID-based fallback)
-  // 4. username (last fallback)
+  // 3. username (fallback)
   const getUserDisplayName = (user: User): string => {
     if (user.firstName && user.lastName) {
       return `${user.firstName} ${user.lastName}`;
@@ -339,9 +331,7 @@ export default function UserManagementPanel() {
     if (user.firstName) {
       return user.firstName;
     }
-    if (user.id) {
-      return `المشرف #${user.id}`;
-    }
+    // Use username instead of ID as fallback
     return user.username || 'Unknown';
   };
 
@@ -518,11 +508,12 @@ export default function UserManagementPanel() {
     checkForEdit();
     
     // Poll for changes (since storage events don't fire in same window)
+    // Reduced frequency from 500ms to 2 seconds to reduce CPU usage
     const interval = setInterval(() => {
       if (activeTab === 'accountSettings') {
         checkForEdit();
       }
-    }, 500);
+    }, 2000); // Reduced from 500ms to 2 seconds
 
     // Listen for quota updates
     const handleQuotaUpdate = async () => {
@@ -611,15 +602,15 @@ export default function UserManagementPanel() {
       // TODO: Fetch actual logs from backend API
       // For now, export current user's settings as placeholder
       const logData = [
-        { timestamp: new Date().toISOString(), level: 'Information', message: 'User settings exported', source: 'UserManagementPanel.tsx', userId: currentUser?.id, userName: currentUser?.firstName }
+        { timestamp: new Date().toISOString(), level: 'Information', message: 'User settings exported', source: 'UserManagementPanel.tsx', username: currentUser?.username || 'N/A', userName: currentUser?.firstName || 'N/A' }
       ];
 
       // Prepare CSV content
-      const headers = ['الوقت', 'المستوى', 'الرسالة', 'المصدر', 'معرف المستخدم', 'اسم المستخدم'];
+      const headers = ['الوقت', 'المستوى', 'الرسالة', 'المصدر', 'اسم المستخدم', 'الاسم'];
       const csvContent = [
         headers.join(','),
         ...logData.map(log =>
-          [log.timestamp, log.level, `"${log.message}"`, log.source, log.userId || 'N/A', log.userName || 'N/A'].join(',')
+          [log.timestamp, log.level, `"${log.message}"`, log.source, log.username || 'N/A', log.userName || 'N/A'].join(',')
         ),
       ].join('\n');
 
@@ -1052,7 +1043,7 @@ export default function UserManagementPanel() {
           )}
 
           {/* Logs Tab - Show for Admins and Moderators only (NOT Users) */}
-          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin || currentUser.role === UserRole.Moderator) && (
+          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
             <button
               onClick={() => handleTabChange('logs')}
               className={`${TAB_BASE} ${
@@ -1065,7 +1056,7 @@ export default function UserManagementPanel() {
           )}
 
           {/* Trash Tab - Show for Admins and Moderators only (NOT Users) */}
-          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin || currentUser.role === UserRole.Moderator) && (
+          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
             <button
               onClick={() => handleTabChange('trash')}
               className={`${TAB_BASE} ${
@@ -2004,9 +1995,6 @@ export default function UserManagementPanel() {
                           اسم المستخدم
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          الحالة
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           آخر تسجيل دخول
                         </th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -2029,17 +2017,6 @@ export default function UserManagementPanel() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {user.username}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                                !(user.isDeleted ?? false)
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}
-                            >
-                              {!(user.isDeleted ?? false) ? 'نشط' : 'غير نشط'}
-                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {formatDate(user.lastLogin)}
@@ -2112,7 +2089,7 @@ export default function UserManagementPanel() {
                 </div>
                 <div className="border-l-4 border-blue-600 pl-4">
                   <p className="text-xs text-gray-600 font-medium">الوقت</p>
-                  <p className="text-sm font-semibold mt-1">{selectedLog.timestamp ? formatLocalDateTime(selectedLog.timestamp) : 'غير محدد'}</p>
+                  <p className="text-sm font-semibold mt-1">{selectedLog.timestamp ? formatLocalDateTime(selectedLog.timestamp as string) : 'غير محدد'}</p>
                 </div>
                 <div className="border-l-4 border-green-600 pl-4">
                   <p className="text-xs text-gray-600 font-medium">المصدر</p>
@@ -2304,6 +2281,7 @@ export default function UserManagementPanel() {
                 onRestore={handleRestoreTemplate}
                 adminOnly={false}
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                queues={queues}
               />
               )}
             </div>

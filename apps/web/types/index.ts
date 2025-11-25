@@ -17,6 +17,7 @@ export interface LoginCredentials {
 
 export interface Patient {
   id: string;                  // GUID (UUID format)
+  messageId?: number;          // Message ID for retry operations (from Message.Id)
   queueId: string;             // GUID: foreign key to Queue
   name: string;                // Patient full name
   phone: string;               // E.164 format with country code
@@ -24,7 +25,7 @@ export interface Patient {
   isValidWhatsAppNumber?: boolean | null; // null = not checked, true = valid, false = invalid
   position?: number;
   status?: string;             // 'pending' | 'active' | 'completed' | 'failed'
-  failedReason?: string;
+  failedReason?: string;       // ErrorMessage from Message entity
   // Consolidated failure tracking (replacing retryCount and failedAttempts)
   failureMetrics?: {
     attempts: number;        // Total send attempts (1=initial, 2+=retries). Backend Message.Attempts

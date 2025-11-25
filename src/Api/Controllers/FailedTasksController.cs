@@ -12,7 +12,7 @@ namespace Clinics.Api.Controllers
     /// Failed tasks are messages that couldn't be sent and need user intervention
     /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/failed-tasks")]
     [Microsoft.AspNetCore.Authorization.Authorize]
     public class FailedTasksController : ControllerBase
     {
@@ -109,7 +109,7 @@ namespace Clinics.Api.Controllers
                     QueueName = m.Queue?.DoctorName ?? "Unknown",
                     ModeratorId = m.ModeratorId ?? 0,
                     ModeratorName = m.Moderator != null ? $"{m.Moderator.FirstName} {m.Moderator.LastName}".Trim() : "Unknown",
-                    PatientPhone = m.PatientPhone ?? m.RecipientPhone,
+                    PatientPhone = m.PatientPhone ?? "",
                     MessageContent = m.Template?.Content ?? m.Content ?? "",
                     Attempts = m.Attempts,
                     ErrorMessage = m.ErrorMessage,
@@ -168,7 +168,7 @@ namespace Clinics.Api.Controllers
                     QueueName = message.Queue?.DoctorName ?? "Unknown",
                     ModeratorId = message.ModeratorId ?? 0,
                     ModeratorName = message.Moderator != null ? $"{message.Moderator.FirstName} {message.Moderator.LastName}".Trim() : "Unknown",
-                    PatientPhone = message.PatientPhone ?? message.RecipientPhone,
+                    PatientPhone = message.PatientPhone ?? "",
                     MessageContent = message.Template?.Content ?? message.Content ?? "",
                     Attempts = message.Attempts,
                     ErrorMessage = message.ErrorMessage,
@@ -188,6 +188,7 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Retry a failed task (attempt to send it again)
+        /// IMPORTANT: Validates WhatsApp number before retrying
         /// </summary>
         /// <param name="id">Message/task ID to retry</param>
         /// <returns>Updated task details</returns>
@@ -214,10 +215,41 @@ namespace Clinics.Api.Controllers
                         return Forbid();
                 }
 
+                // CRITICAL: Validate WhatsApp number before retrying
+                // Get patient to check IsValidWhatsAppNumber
+                if (message.PatientId.HasValue)
+                {
+                    var patient = await _db.Patients.FindAsync(message.PatientId.Value);
+                    
+                    if (patient != null)
+                    {
+                        // If IsValidWhatsAppNumber is null or false, reject retry
+                        if (!patient.IsValidWhatsAppNumber.HasValue || patient.IsValidWhatsAppNumber.Value == false)
+                        {
+                            _logger.LogWarning("Retry rejected for message {MessageId} - Patient {PatientId} has unvalidated WhatsApp number (IsValidWhatsAppNumber: {IsValid})", 
+                                id, patient.Id, patient.IsValidWhatsAppNumber);
+                            
+                            return BadRequest(new 
+                            { 
+                                success = false,
+                                error = "WhatsAppValidationRequired",
+                                message = $"رقم الواتساب للمريض غير محقق. يجب التحقق من رقم الواتساب أولاً باستخدام زر 'التحقق من الرقم' قبل إعادة المحاولة.",
+                                patientId = patient.Id,
+                                patientName = patient.FullName,
+                                phoneNumber = patient.PhoneNumber,
+                                isValidWhatsAppNumber = patient.IsValidWhatsAppNumber
+                            });
+                        }
+                    }
+                }
+
                 // Update message for retry
-                // In a real system, this would queue the message for sending via WhatsApp service
+                // Status "queued" will be picked up by MessageProcessor
                 message.LastAttemptAt = DateTime.UtcNow;
-                message.Status = "Pending"; // Reset to pending for retry
+                message.Status = "queued"; // Reset to queued for retry
+                message.IsPaused = false; // Unpause if it was paused
+                message.PausedAt = null;
+                message.PauseReason = null;
                 
                 await _db.SaveChangesAsync();
 
@@ -228,7 +260,7 @@ namespace Clinics.Api.Controllers
                     QueueName = message.Queue?.DoctorName ?? "Unknown",
                     ModeratorId = message.ModeratorId ?? 0,
                     ModeratorName = message.Moderator != null ? $"{message.Moderator.FirstName} {message.Moderator.LastName}".Trim() : "Unknown",
-                    PatientPhone = message.PatientPhone ?? message.RecipientPhone,
+                    PatientPhone = message.PatientPhone ?? "",
                     MessageContent = message.Template?.Content ?? message.Content ?? "",
                     Attempts = message.Attempts,
                     ErrorMessage = message.ErrorMessage,

@@ -240,12 +240,12 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       // Auto-remove toast after 3 seconds
     setTimeout(() => {
-      removeToast(id);
+      setToasts((current) => current.filter((t) => t.id !== id));
     }, 3000);
       
       return [...prev, toast];
     });
-  }, [removeToast]);
+  }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

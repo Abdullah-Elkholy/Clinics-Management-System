@@ -5,6 +5,7 @@ import { useUI } from '../../contexts/UIContext';
 import { useQueue } from '../../contexts/QueueContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalProvider } from '../../contexts/ModalContext';
+import { WhatsAppSessionProvider } from '../../contexts/WhatsAppSessionContext';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import Header from '../Layout/Header';
 import Navigation from '../Layout/Navigation';
@@ -132,7 +133,9 @@ function MainAppContent() {
             isAdmin ? (
               <BrowserStatusOverview />
             ) : (
-              <BrowserStatusPanel />
+              <WhatsAppSessionProvider moderatorId={user?.role === 'moderator' ? parseInt(user.id) : user?.assignedModerator ? parseInt(user.assignedModerator) : undefined}>
+                <BrowserStatusPanel />
+              </WhatsAppSessionProvider>
             )
           ) : (
             <WelcomeScreen />

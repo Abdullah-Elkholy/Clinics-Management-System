@@ -6,8 +6,10 @@ import UsageGuideSection from '../Common/UsageGuideSection';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+import { getConditionRange, conditionsOverlap } from '@/utils/moderatorAggregation';
 import logger from '@/utils/logger';
 import type { MessageTemplate } from '@/types/messageTemplate';
 // Use QueueContext to perform API calls for templates
@@ -24,6 +26,7 @@ type AddTemplateModalData = {
 export default function AddTemplateModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { confirm } = useConfirmDialog();
   const {
     selectedQueueId,
     messageTemplates,
@@ -251,11 +254,67 @@ export default function AddTemplateModal() {
       return;
     }
 
+    // Determine the operator: if no operator selected, use UNCONDITIONED
+    const conditionOperator = selectedOperator || 'UNCONDITIONED';
+    
+    // Check for conflicts with existing conditions (only for non-UNCONDITIONED and non-DEFAULT operators)
+    if (conditionOperator !== 'UNCONDITIONED' && conditionOperator !== 'DEFAULT') {
+      const newCondition = {
+        operator: conditionOperator,
+        value: (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS') 
+          ? selectedValue 
+          : undefined,
+        minValue: conditionOperator === 'RANGE' ? selectedMinValue : undefined,
+        maxValue: conditionOperator === 'RANGE' ? selectedMaxValue : undefined,
+      };
+
+      // Find conflicting conditions in the same queue
+      const conflictingConditions = messageConditions
+        .filter(c => {
+          // Only check conditions in the same queue
+          const conditionQueueId = c.queueId?.toString();
+          if (conditionQueueId !== String(queueIdNum)) return false;
+          
+          // Skip UNCONDITIONED and DEFAULT conditions (they don't conflict)
+          if (c.operator === 'UNCONDITIONED' || c.operator === 'DEFAULT') return false;
+          
+          // Check if conditions overlap
+          const newRange = getConditionRange(newCondition);
+          const existingRange = getConditionRange(c);
+          
+          if (!newRange || !existingRange) return false;
+          
+          return conditionsOverlap(newCondition, c);
+        })
+        .map(c => {
+          const template = messageTemplates.find(t => t.id === c.templateId);
+          return {
+            condition: c,
+            templateTitle: template?.title || 'غير معروف',
+          };
+        });
+
+      if (conflictingConditions.length > 0) {
+        // Show confirmation dialog
+        const conflictDetails = conflictingConditions
+          .map(c => `- ${c.templateTitle} (${c.condition.operator} ${c.condition.value || `${c.condition.minValue}-${c.condition.maxValue}`})`)
+          .join('\n');
+        
+        const shouldProceed = await confirm({
+          title: 'تعارض في الشروط',
+          message: `هناك تعارض مع الشروط التالية:\n\n${conflictDetails}\n\nهل تريد المتابعة على أي حال؟`,
+          confirmText: 'نعم، المتابعة',
+          cancelText: 'إلغاء',
+        });
+
+        if (!shouldProceed) {
+          return; // User cancelled
+        }
+      }
+    }
+
     try {
       setIsLoading(true);
-
-      // Determine the operator: if no operator selected, use UNCONDITIONED
-      const conditionOperator = selectedOperator || 'UNCONDITIONED';
       
       // Prepare request payload
       const requestPayload = {
@@ -274,14 +333,64 @@ export default function AddTemplateModal() {
       logger.debug('CreateTemplate Request Payload:', requestPayload);
       
       // Create the template with condition in one call (backend handles one-to-one relationship)
-      const createdTemplate = await messageApiClient.createTemplate(requestPayload);
+      let createdTemplate;
+      try {
+        createdTemplate = await messageApiClient.createTemplate(requestPayload);
+      } catch (createError: any) {
+        // Check if error is about default template already existing
+        const errorMessage = createError?.message || '';
+        if (errorMessage.includes('A default template already exists') || errorMessage.includes('default template already exists')) {
+          // Show confirmation dialog to override existing default
+          const shouldOverride = await confirm({
+            title: 'قالب افتراضي موجود بالفعل',
+            message: 'يوجد قالب افتراضي آخر في هذا الطابور. هل تريد جعل هذا القالب هو الافتراضي وتغيير القالب الآخر إلى "بدون قالب"؟',
+            confirmText: 'نعم، تغيير',
+            cancelText: 'إلغاء',
+          });
+
+          if (!shouldOverride) {
+            setIsLoading(false);
+            return; // User cancelled
+          }
+
+          // Override: First set existing default to UNCONDITIONED, then create new default
+          // We need to find the existing default template and update it
+          const existingDefaultCondition = messageConditions.find(
+            (c) => c.queueId === String(queueIdNum) && c.operator === 'DEFAULT'
+          );
+
+          if (existingDefaultCondition) {
+            // Update existing default condition to UNCONDITIONED
+            const existingConditionId = Number(existingDefaultCondition.id);
+            if (!isNaN(existingConditionId)) {
+              await messageApiClient.updateCondition(existingConditionId, {
+                operator: 'UNCONDITIONED',
+                value: null,
+                minValue: null,
+                maxValue: null,
+              });
+            }
+          }
+
+          // Now create the new template with DEFAULT operator
+          createdTemplate = await messageApiClient.createTemplate(requestPayload);
+        } else {
+          // Re-throw other errors
+          throw createError;
+        }
+      }
 
       // Refetch queue data to get the latest state from backend (includes new template + condition)
       if (typeof refreshQueueData === 'function' && queueId) {
         await refreshQueueData(String(queueId));
       }
 
-      addToast('تم إضافة قالب الرسالة والشرط بنجاح', 'success');
+      // Show appropriate success message based on operator
+      if (conditionOperator === 'UNCONDITIONED') {
+        addToast('تم إضافة قالب الرسالة بنجاح (بدون شرط)', 'success');
+      } else {
+        addToast('تم إضافة قالب الرسالة والشرط بنجاح', 'success');
+      }
       
       // Dispatch event immediately (refreshQueueData has completed)
       window.dispatchEvent(new CustomEvent('templateDataUpdated'));
@@ -318,6 +427,10 @@ export default function AddTemplateModal() {
           } catch (_) {
             // ignore JSON parse fail
           }
+        }
+        // Check if it's a simple message string
+        if (typeof errorDetails === 'string' && errorDetails) {
+          userMessage = errorDetails;
         }
       }
 

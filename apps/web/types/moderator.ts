@@ -17,7 +17,7 @@ export type { ModeratorQuota };
 export type { UserRole };
 
 // Additional status and enum types
-export type MessageStatus = 'queued' | 'sent' | 'delivered' | 'failed' | 'read';
+export type MessageStatus = 'queued' | 'sending' | 'sent' | 'failed';
 export type PatientStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled';
 export type WhatsAppStatus = 'connected' | 'disconnected' | 'pending';
 export type MessageSessionStatus = 'active' | 'paused' | 'completed' | 'cancelled';
@@ -125,14 +125,20 @@ export interface Message {
   senderUserId?: number;
   moderatorId: number;
   providerMessageId?: string;
-  channel: MessageChannel;
-  recipientPhone: string;
+  channel: string; // WhatsApp session name
+  countryCode: string;
+  patientPhone: string;
+  position: number; // Patient's queue position at creation time
+  calculatedPosition: number; // Offset from CQP (Patient.Position - Queue.CurrentPosition)
+  fullName: string; // Patient's full name at creation time
   content: string;
   status: MessageStatus;
+  errorMessage?: string;
   attempts: number;
   lastAttemptAt?: Date;
   sentAt?: Date;
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface MessageWithDetails extends Message {
@@ -173,13 +179,23 @@ export interface WhatsAppSession {
 export interface MessageSession {
   id: string;
   queueId: number;
+  moderatorId: number;
   userId: number;
   status: MessageSessionStatus;
   totalMessages: number;
   sentMessages: number;
+  failedMessages: number; // Number of failed messages in this session
+  ongoingMessages: number; // Number of ongoing (queued/sending) messages
   startTime: Date;
   endTime?: Date;
   lastUpdated?: Date;
+  isPaused?: boolean;
+  pausedAt?: Date;
+  pausedBy?: number;
+  pauseReason?: string;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: number;
   progressPercent?: number;
 }
 
@@ -257,7 +273,7 @@ export interface UpdateMessageTemplateRequest {
 }
 
 export interface CreateMessageRequest {
-  recipientPhone: string;
+  patientPhone: string;
   content: string;
   channel: MessageChannel;
   templateId?: number;
@@ -335,7 +351,7 @@ export interface QuotaEvent {
 }
 
 export interface MessageEvent {
-  type: 'sent' | 'delivered' | 'failed' | 'read';
+  type: 'sent' | 'failed';
   messageId: number;
   status: MessageStatus;
   moderatorId: number;
@@ -344,7 +360,7 @@ export interface MessageEvent {
 
 // Constants
 export const USER_ROLES = ['primary_admin', 'secondary_admin', 'moderator', 'user'] as const;
-export const MESSAGE_STATUSES = ['queued', 'sent', 'delivered', 'failed', 'read'] as const;
+export const MESSAGE_STATUSES = ['queued', 'sending', 'sent', 'failed'] as const;
 export const PATIENT_STATUSES = ['waiting', 'in_service', 'completed', 'cancelled'] as const;
 export const MESSAGE_CHANNELS = ['whatsapp', 'sms', 'email'] as const;
 export const WHATSAPP_STATUSES = ['connected', 'disconnected', 'pending'] as const;

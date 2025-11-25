@@ -41,10 +41,51 @@ namespace Clinics.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            // Return basic queue list with patient counts for UI
-            var qs = await _db.Queues
+            // Get current user ID and role for filtering
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("sub")?.Value
+                ?? User.FindFirst("userId")?.Value;
+            
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+            }
+
+            // Get current user to check role
+            var currentUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+            if (currentUser == null)
+                return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+            var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+            var isModerator = currentUser.Role == "moderator";
+            var isUser = currentUser.Role == "user";
+
+            // Build base query
+            var query = _db.Queues
                 .AsNoTracking()
-                .Where(q => !q.IsDeleted)
+                .Where(q => !q.IsDeleted);
+
+            // Filter by role:
+            // - Admins: See all queues
+            // - Moderators: See only queues where ModeratorId == userId
+            // - Users: See only queues where ModeratorId == user.ModeratorId
+            if (isModerator)
+            {
+                query = query.Where(q => q.ModeratorId == userId);
+            }
+            else if (isUser)
+            {
+                if (!currentUser.ModeratorId.HasValue)
+                {
+                    // User has no moderator assigned, return empty list
+                    return Ok(new { success = true, data = new List<QueueDto>() });
+                }
+                query = query.Where(q => q.ModeratorId == currentUser.ModeratorId.Value);
+            }
+            // Admins see all queues (no additional filter)
+
+            // Return basic queue list with patient counts for UI
+            var qs = await query
                 .Select(q => new QueueDto {
                     Id = q.Id,
                     DoctorName = q.DoctorName,
@@ -439,7 +480,8 @@ namespace Clinics.Api.Controllers
                 }
 
                 var total = await query.CountAsync();
-                var trashQueues = await query
+                var trashQueuesList = await query
+                    .Include(q => q.Moderator) // Include Moderator to get username
                     .OrderByDescending(q => q.DeletedAt)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
@@ -448,11 +490,34 @@ namespace Clinics.Api.Controllers
                         q.Id,
                         q.DoctorName,
                         q.ModeratorId,
+                        ModeratorUsername = q.Moderator != null ? q.Moderator.Username : null,
                         DeletedAt = q.DeletedAt!.Value,
                         DaysRemainingInTrash = _ttlQueries.GetDaysRemainingInTrash(q, 30),
-                        DeletedBy = q.DeletedBy
+                        q.DeletedBy
                     })
                     .ToListAsync();
+
+                // Get deleted by usernames separately to avoid subquery issues
+                var deletedByUserIds = trashQueuesList.Where(q => q.DeletedBy.HasValue).Select(q => q.DeletedBy!.Value).Distinct().ToList();
+                var deletedByUsers = await _db.Users
+                    .Where(u => deletedByUserIds.Contains(u.Id))
+                    .Select(u => new { u.Id, u.Username })
+                    .ToListAsync();
+                var deletedByUsernameMap = deletedByUsers.ToDictionary(u => u.Id, u => u.Username);
+
+                var trashQueues = trashQueuesList.Select(q => new
+                {
+                    q.Id,
+                    q.DoctorName,
+                    q.ModeratorId,
+                    q.ModeratorUsername,
+                    q.DeletedAt,
+                    q.DaysRemainingInTrash,
+                    q.DeletedBy,
+                    DeletedByUsername = q.DeletedBy.HasValue && deletedByUsernameMap.ContainsKey(q.DeletedBy.Value)
+                        ? deletedByUsernameMap[q.DeletedBy.Value]
+                        : (string?)null
+                }).ToList();
 
                 return Ok(new { success = true, data = trashQueues, total, page, pageSize });
             }

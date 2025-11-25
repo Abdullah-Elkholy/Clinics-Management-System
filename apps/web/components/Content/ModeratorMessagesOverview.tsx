@@ -6,6 +6,8 @@ import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { UserRole } from '@/types/roles';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
@@ -16,7 +18,9 @@ import { ConflictBadge } from '@/components/Common/ConflictBadge';
 import logger from '@/utils/logger';
 import type { MessageCondition } from '@/types/messageCondition';
 import { useUserManagement } from '@/hooks/useUserManagement';
-import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
+import { groupQueuesByModerator, type ModeratorWithStats } from '@/utils/moderatorAggregation';
+import { templateDtoToModel } from '@/services/api/adapters';
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 // Mock data removed - using API data instead
 
 /**
@@ -49,12 +53,88 @@ const USAGE_GUIDE_ITEMS = [
 ];
 
 export default function ModeratorMessagesOverview() {
-  const { moderators: queueBasedModerators, queues, messageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
-  const [userManagementState] = useUserManagement();
+  const { user } = useAuth();
+  const { moderators: queueBasedModerators, queues, messageTemplates, setMessageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
+  const [userManagementState, userManagementActions] = useUserManagement();
   const { addToast, setCurrentPanel } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { select: _select } = useSelectDialog();
+
+  /**
+   * Helper function to get user display name (username) for createdBy column
+   * Returns username, not firstName/lastName
+   */
+  const getUserDisplayName = useCallback((userId: string | number | undefined): string => {
+    if (!userId) return 'غير معروف';
+    
+    const userIdStr = String(userId).trim();
+    if (!userIdStr) return 'غير معروف';
+    
+    const allUsers = [
+      ...(userManagementState.moderators || []),
+      ...(userManagementState.users || []),
+    ];
+    
+    // Try to find user by ID (both string and number comparison)
+    const foundUser = allUsers.find(u => {
+      const uIdStr = String(u.id).trim();
+      const uIdNum = Number(u.id);
+      const searchIdNum = Number(userIdStr);
+      
+      return uIdStr === userIdStr || 
+             (!isNaN(uIdNum) && !isNaN(searchIdNum) && uIdNum === searchIdNum);
+    });
+    
+    // Return username, not firstName/lastName
+    if (foundUser?.username) {
+      return foundUser.username;
+    }
+    
+    return 'غير معروف';
+  }, [userManagementState]);
+
+  // Filter queues and templates based on user role
+  const filteredQueues = useMemo(() => {
+    if (!user) return queues;
+    
+    const isAdmin = user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin;
+    const isModerator = user.role === UserRole.Moderator;
+    const isUser = user.role === UserRole.User;
+    
+    if (isAdmin) {
+      // Admins see all queues
+      return queues;
+    } else if (isModerator) {
+      // Moderators see only queues where ModeratorId == user.id
+      const userId = user.id?.toString();
+      return queues.filter(q => {
+        const qModId = q.moderatorId?.toString();
+        return qModId === userId;
+      });
+    } else if (isUser) {
+      // Users see only queues where ModeratorId == user.assignedModerator
+      if (!user.assignedModerator) return [];
+      const moderatorId = user.assignedModerator.toString();
+      return queues.filter(q => {
+        const qModId = q.moderatorId?.toString();
+        return qModId === moderatorId;
+      });
+    }
+    
+    return queues;
+  }, [queues, user]);
+
+  // Filter templates based on filtered queues
+  const filteredTemplates = useMemo(() => {
+    if (!user) return messageTemplates;
+    
+    const filteredQueueIds = new Set(filteredQueues.map(q => q.id.toString()));
+    return messageTemplates.filter(t => {
+      const templateQueueId = t.queueId?.toString();
+      return templateQueueId && filteredQueueIds.has(templateQueueId);
+    });
+  }, [messageTemplates, filteredQueues, user]);
 
   // State for search and expansion
   const [searchTerm, setSearchTerm] = useState('');
@@ -64,7 +144,7 @@ export default function ModeratorMessagesOverview() {
   const [_isLoadingQuota, setIsLoadingQuota] = useState(false);
 
   /**
-   * Load user's quota from API on component mount
+   * Load user's quota and user data from API on component mount
    */
   useEffect(() => {
     const loadQuota = async () => {
@@ -81,46 +161,236 @@ export default function ModeratorMessagesOverview() {
     };
 
     loadQuota();
-  }, []);
+  }, []); // Only run once on mount
 
   /**
-   * Load all templates for all queues when queues are available (admin view)
+   * Fetch users and moderators separately to avoid dependency issues
+   */
+  useEffect(() => {
+    // Fetch users and moderators to populate userManagementState for getUserDisplayName
+    if (user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin || user.role === UserRole.Moderator)) {
+      userManagementActions.fetchUsers();
+      userManagementActions.fetchModerators();
+    }
+  }, [user]); // Only depend on user, not userManagementActions
+
+  /**
+   * Initial load: Refresh queue data for all filtered queues when queues are available
+   * This is similar to MessagesPanel - it calls refreshQueueData for all queues
+   * This ensures templates and conditions are loaded into context
+   * Optimized: Process queues in batches to limit concurrent requests
+   */
+  useEffect(() => {
+    const loadAllQueueData = async () => {
+      if (filteredQueues.length === 0) return;
+      if (typeof refreshQueueData !== 'function') return;
+
+      logger.debug('ModeratorMessagesOverview: Initial load - refreshing all filtered queues', {
+        queueCount: filteredQueues.length,
+        queueIds: filteredQueues.map(q => q.id.toString()),
+      });
+
+      // Process queues in batches of 5 to avoid overwhelming the server
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < filteredQueues.length; i += BATCH_SIZE) {
+        const batch = filteredQueues.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (queue) => {
+            try {
+              const queueIdStr = String(queue.id);
+              await refreshQueueData(queueIdStr);
+            } catch (refreshError) {
+              logger.error(`Failed to refresh queue ${queue.id}:`, refreshError);
+            }
+          })
+        );
+      }
+
+      logger.debug('ModeratorMessagesOverview: Finished initial load of all queue data');
+    };
+
+    loadAllQueueData();
+  }, [filteredQueues, refreshQueueData]);
+
+  /**
+   * Load all templates for filtered queues when queues are available
    * This ensures templates are fetched initially without needing to select a specific queue
    */
   useEffect(() => {
     const loadAllTemplates = async () => {
-      if (queues.length === 0) return;
-      
-      // Only load if we don't have templates yet (avoid unnecessary refetches)
-      if (messageTemplates.length > 0) return;
+      if (filteredQueues.length === 0) return;
 
       try {
-        // Fetch all templates (no queueId filter for admin view)
+        // Always fetch templates to ensure we have the latest data
+        // This fixes the issue where templates disappear after refresh
         const templateResponse = await messageApiClient.getTemplates();
         const templateDtos = templateResponse.items || [];
 
-        // Convert DTOs to models and refresh each queue's data
-        // This ensures templates are properly loaded into the context
-        if (templateDtos.length > 0 && typeof refreshQueueData === 'function') {
-          // Get unique queue IDs from the loaded templates
-          const templateQueueIds = new Set(
-            templateDtos
-              .map(dto => dto.queueId?.toString())
-              .filter((id): id is string => id !== undefined)
-          );
-          
-          // Refresh data for each queue that has templates
-          for (const queueId of templateQueueIds) {
-            await refreshQueueData(queueId);
+        logger.debug('ModeratorMessagesOverview: Loaded templates from API', {
+          templateCount: templateDtos.length,
+          filteredQueuesCount: filteredQueues.length,
+          templateQueueIds: templateDtos.map(t => t.queueId),
+        });
+
+        // Get filtered queue IDs for matching
+        const filteredQueueIds = new Set(filteredQueues.map(q => q.id.toString()));
+        
+        // Filter templates to only those belonging to filtered queues
+        const relevantTemplates = templateDtos.filter(dto => {
+          const templateQueueId = dto.queueId?.toString();
+          const isRelevant = templateQueueId && filteredQueueIds.has(templateQueueId);
+          if (!isRelevant && templateQueueId) {
+            logger.debug('ModeratorMessagesOverview: Template filtered out', {
+              templateId: dto.id,
+              templateQueueId,
+              filteredQueueIds: Array.from(filteredQueueIds),
+            });
           }
+          return isRelevant;
+        });
+
+        logger.debug('ModeratorMessagesOverview: Relevant templates after filtering', {
+          relevantCount: relevantTemplates.length,
+          relevantTemplateIds: relevantTemplates.map(t => ({ id: t.id, queueId: t.queueId })),
+        });
+
+        // IMPORTANT: Directly populate templates into context from the API response
+        // This ensures templates are available immediately, not just after refreshQueueData
+        if (relevantTemplates.length > 0 && setMessageTemplates) {
+          // Convert DTOs to models and merge with existing templates
+          const newTemplates = relevantTemplates.map(dto => {
+            const queueIdStr = dto.queueId?.toString() || '';
+            return templateDtoToModel(dto, queueIdStr);
+          });
+
+          logger.debug('ModeratorMessagesOverview: Adding templates directly to context', {
+            newTemplatesCount: newTemplates.length,
+            newTemplateQueueIds: newTemplates.map(t => t.queueId),
+            filteredQueueIds: Array.from(filteredQueueIds),
+          });
+
+          // Merge with existing templates, replacing templates for these queues
+          setMessageTemplates((prevTemplates) => {
+            const filteredQueueIdsSet = new Set(filteredQueueIds);
+            const templatesForOtherQueues = prevTemplates.filter(t => {
+              const tQueueId = t.queueId?.toString();
+              return !tQueueId || !filteredQueueIdsSet.has(tQueueId);
+            });
+            const merged = [...templatesForOtherQueues, ...newTemplates];
+            logger.debug('ModeratorMessagesOverview: Merged templates', {
+              previousCount: prevTemplates.length,
+              otherQueuesCount: templatesForOtherQueues.length,
+              newCount: newTemplates.length,
+              mergedCount: merged.length,
+            });
+            return merged;
+          });
+        } else {
+          logger.debug('ModeratorMessagesOverview: No relevant templates to add', {
+            relevantTemplatesCount: relevantTemplates.length,
+            hasSetMessageTemplates: !!setMessageTemplates,
+            filteredQueueIds: Array.from(filteredQueueIds),
+          });
         }
+
+        // NOTE: refreshQueueData is called in a separate useEffect (above) when filteredQueues change
+        // This prevents duplicate calls and ensures proper loading order
       } catch (error) {
-        logger.error('Failed to load templates in admin view:', error);
+        logger.error('Failed to load templates in ModeratorMessagesOverview:', error);
+        // Even on error, try to refresh queues to ensure state consistency
+        if (typeof refreshQueueData === 'function') {
+          const filteredQueueIds = filteredQueues.map(q => q.id.toString());
+          await Promise.all(
+            filteredQueueIds.map(async (queueId) => {
+              try {
+                await refreshQueueData(queueId);
+              } catch (refreshError) {
+                logger.error(`Failed to refresh queue ${queueId}:`, refreshError);
+              }
+            })
+          );
+        }
       }
     };
 
     loadAllTemplates();
-  }, [queues, messageTemplates.length, refreshQueueData]);
+  }, [filteredQueues, refreshQueueData]);
+
+  /**
+   * Listen for data updates and refetch queue data
+   * Similar to MessagesPanel - this ensures templates are refreshed when data changes
+   * Debounced to prevent excessive API calls
+   */
+  useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let isRefreshing = false;
+
+    const handleDataUpdate = async () => {
+      // Debounce: wait 500ms before executing to batch multiple rapid events
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+
+      debounceTimer = setTimeout(async () => {
+        // Prevent concurrent refreshes
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        try {
+          // Refetch data for all filtered queues to ensure consistency
+          if (filteredQueues.length > 0 && typeof refreshQueueData === 'function') {
+            // Process queues in batches of 5 to limit concurrent requests
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < filteredQueues.length; i += BATCH_SIZE) {
+              const batch = filteredQueues.slice(i, i + BATCH_SIZE);
+              await Promise.all(
+                batch.map(async (queue) => {
+                  try {
+                    await refreshQueueData(String(queue.id));
+                  } catch (err) {
+                    logger.error(`Failed to refresh queue ${queue.id}:`, err);
+                  }
+                })
+              );
+            }
+          }
+        } finally {
+          isRefreshing = false;
+        }
+      }, 500); // 500ms debounce
+    };
+
+    // Listen to all relevant update events (same as MessagesPanel)
+    window.addEventListener('templateDataUpdated', handleDataUpdate);
+    window.addEventListener('patientDataUpdated', handleDataUpdate);
+    window.addEventListener('queueDataUpdated', handleDataUpdate);
+    window.addEventListener('conditionDataUpdated', handleDataUpdate);
+    window.addEventListener('messageDataUpdated', handleDataUpdate);
+
+    return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      window.removeEventListener('templateDataUpdated', handleDataUpdate);
+      window.removeEventListener('patientDataUpdated', handleDataUpdate);
+      window.removeEventListener('queueDataUpdated', handleDataUpdate);
+      window.removeEventListener('conditionDataUpdated', handleDataUpdate);
+      window.removeEventListener('messageDataUpdated', handleDataUpdate);
+    };
+  }, [filteredQueues, refreshQueueData]);
+
+  /**
+   * Debug: Log template counts when they change
+   */
+  useEffect(() => {
+    logger.debug('ModeratorMessagesOverview: Template state changed', {
+      totalTemplates: messageTemplates.length,
+      filteredTemplates: filteredTemplates.length,
+      filteredQueues: filteredQueues.length,
+      templateQueueIds: messageTemplates.map(t => t.queueId),
+      filteredQueueIds: filteredQueues.map(q => q.id.toString()),
+    });
+  }, [messageTemplates.length, filteredTemplates.length, filteredQueues.length]);
 
   // Toggle moderator expansion
   const toggleModeratorExpanded = useCallback((moderatorId: string | number) => {
@@ -237,11 +507,20 @@ export default function ModeratorMessagesOverview() {
   /**
    * Merge queue-based moderators with user management moderators
    * Prioritize firstName first, then fall back to username or ID
+   * Uses filtered queues and templates based on user role
    */
   const moderators = useMemo(() => {
+    // Recalculate queue-based moderators using filtered queues and templates
+    const filteredQueueBasedModerators = groupQueuesByModerator(
+      filteredQueues,
+      filteredTemplates,
+      [], // messageConditions - will be loaded separately if needed
+      userManagementState.moderators
+    );
+    
     // Create a map of queue-based moderators by ID
-    const queueModeratorMap = new Map<string | number, typeof queueBasedModerators[0]>();
-    queueBasedModerators.forEach(mod => {
+    const queueModeratorMap = new Map<string | number, typeof filteredQueueBasedModerators[0]>();
+    filteredQueueBasedModerators.forEach(mod => {
       const normalizedId = String(mod.moderatorId);
       queueModeratorMap.set(normalizedId, mod);
       if (typeof mod.moderatorId === 'number') {
@@ -256,8 +535,7 @@ export default function ModeratorMessagesOverview() {
     // Helper function to get moderator display name following priority:
     // 1. firstName + lastName (if both exist)
     // 2. firstName (if lastName is null/empty)
-    // 3. المشرف #${modId} (ID-based fallback)
-    // 4. username (last fallback)
+    // 3. username (fallback)
     const getModeratorDisplayName = (userMod: typeof userManagementState.moderators[0], modId: string): string => {
       if (userMod.firstName && userMod.lastName) {
         return `${userMod.firstName} ${userMod.lastName}`;
@@ -265,10 +543,8 @@ export default function ModeratorMessagesOverview() {
       if (userMod.firstName) {
         return userMod.firstName;
       }
-      if (modId) {
-        return `المشرف #${modId}`;
-      }
-      return userMod.username || `المشرف #${modId}`;
+      // Use username instead of ID as fallback
+      return userMod.username || 'غير معروف';
     };
 
     // First, add all moderators from user management
@@ -304,7 +580,7 @@ export default function ModeratorMessagesOverview() {
     });
     
     // Also include any queue-based moderators that might not be in user management (edge case)
-    queueBasedModerators.forEach(queueMod => {
+    filteredQueueBasedModerators.forEach(queueMod => {
       const normalizedId = String(queueMod.moderatorId);
       if (!processedIds.has(normalizedId)) {
         mergedModerators.push(queueMod);
@@ -314,7 +590,7 @@ export default function ModeratorMessagesOverview() {
     
     // Sort by moderator ID
     return mergedModerators.sort((a, b) => Number(a.moderatorId) - Number(b.moderatorId));
-  }, [queueBasedModerators, userManagementState.moderators]);
+  }, [filteredQueues, filteredTemplates, userManagementState.moderators]);
 
   /**
    * Filter moderators by search term
@@ -572,7 +848,8 @@ export default function ModeratorMessagesOverview() {
                       ) : (
                         <div className="space-y-3">
                           {moderatorQueues.map((queue) => {
-                            const queueTemplates = messageTemplates.filter((t) => t.queueId === String(queue.id));
+                            // Use filteredTemplates instead of messageTemplates to ensure role-based filtering
+                            const queueTemplates = filteredTemplates.filter((t) => t.queueId === String(queue.id));
                             const intersections = checkConditionIntersections(String(queue.id));
                             const isQueueExpanded = expandedQueues.has(String(queue.id));
 
@@ -658,7 +935,9 @@ export default function ModeratorMessagesOverview() {
                                             <thead>
                                               <tr className="bg-gray-100 border-b border-gray-200">
                                                 <th className="px-3 py-1 text-right">العنوان</th>
-                                                <th className="px-3 py-1 text-right">الشرط</th>
+                                                <th className="px-3 py-1 text-right">الشرط المطبق</th>
+                                                <th className="px-3 py-1 text-right">انشئ بواسطة</th>
+                                                <th className="px-3 py-1 text-right">آخر تحديث</th>
                                                 <th className="px-3 py-1 text-right">الإجراءات</th>
                                               </tr>
                                             </thead>
@@ -675,6 +954,10 @@ export default function ModeratorMessagesOverview() {
                                                     <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">
                                                       <td className="px-3 py-1">
                                                         <p className="font-medium text-gray-900">{template.title}</p>
+                                                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                                                          {template.content.substring(0, 80)}
+                                                          {template.content.length > 80 ? '...' : ''}
+                                                        </p>
                                                       </td>
                                                       <td className="px-3 py-1">
                                                         {condition ? (
@@ -683,20 +966,35 @@ export default function ModeratorMessagesOverview() {
                                                           ) : condition.operator === 'UNCONDITIONED' ? (
                                                             <span className="text-gray-600 text-xs font-medium">بدون شرط</span>
                                                           ) : (
-                                                            <span className="text-sm font-semibold text-blue-600">
-                                                              {condition.operator === 'EQUAL' && 'يساوي'}
-                                                              {condition.operator === 'GREATER' && 'أكثر من'}
-                                                              {condition.operator === 'LESS' && 'أقل من'}
-                                                              {condition.operator === 'RANGE' && 'نطاق'}
-                                                              {' '}
-                                                              {condition.operator === 'RANGE' 
-                                                                ? `${condition.minValue}-${condition.maxValue}` 
-                                                                : condition.value}
-                                                            </span>
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                              <span className="text-sm font-semibold text-blue-600">
+                                                                {condition.operator === 'EQUAL' && 'يساوي'}
+                                                                {condition.operator === 'GREATER' && 'أكثر من'}
+                                                                {condition.operator === 'LESS' && 'أقل من'}
+                                                                {condition.operator === 'RANGE' && 'نطاق'}
+                                                              </span>
+                                                              {condition.operator === 'RANGE' ? (
+                                                                <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
+                                                                  {condition.minValue} - {condition.maxValue}
+                                                                </span>
+                                                              ) : (
+                                                                <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
+                                                                  {condition.value}
+                                                                </span>
+                                                              )}
+                                                            </div>
                                                           )
                                                         ) : (
                                                           <span className="text-amber-600 text-xs font-medium">لم يتم تحديده</span>
                                                         )}
+                                                      </td>
+                                                      <td className="px-3 py-1">
+                                                        <span className="text-xs text-gray-700">{getUserDisplayName(template.createdBy)}</span>
+                                                      </td>
+                                                      <td className="px-3 py-1">
+                                                        <span className="text-xs text-gray-700">
+                                                          {template.updatedAt ? formatLocalDateTime(template.updatedAt instanceof Date ? template.updatedAt : new Date(template.updatedAt)) : '-'}
+                                                        </span>
                                                       </td>
                                                       <td className="px-3 py-1">
                                                         <div className="flex items-center gap-1">

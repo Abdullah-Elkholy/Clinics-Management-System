@@ -62,9 +62,9 @@ export interface CreateConditionRequest {
 
 export interface UpdateConditionRequest {
   operator?: string;
-  value?: number;
-  minValue?: number;
-  maxValue?: number;
+  value?: number | null;
+  minValue?: number | null;
+  maxValue?: number | null;
 }
 
 export interface MyQuotaDto {
@@ -520,10 +520,48 @@ export async function createCondition(data: CreateConditionRequest): Promise<Con
  * Update an existing condition (with automatic retry on network failures)
  */
 export async function updateCondition(id: number, data: UpdateConditionRequest): Promise<ConditionDto> {
+  // Build request body, explicitly including null values when provided
+  // This ensures UNCONDITIONED operator gets value: null, minValue: null, maxValue: null
+  const requestBody: any = {};
+  
+  if (data.operator !== undefined) {
+    requestBody.operator = data.operator;
+    
+    // For UNCONDITIONED and DEFAULT operators, explicitly set null values
+    // This ensures the backend receives null instead of omitting the fields
+    if (data.operator === 'UNCONDITIONED' || data.operator === 'DEFAULT') {
+      requestBody.value = null;
+      requestBody.minValue = null;
+      requestBody.maxValue = null;
+    } else {
+      // For other operators, include values if provided
+      if (data.value !== undefined) {
+        requestBody.value = data.value;
+      }
+      if (data.minValue !== undefined) {
+        requestBody.minValue = data.minValue;
+      }
+      if (data.maxValue !== undefined) {
+        requestBody.maxValue = data.maxValue;
+      }
+    }
+  } else {
+    // If operator is not being changed, include values if provided
+    if (data.value !== undefined) {
+      requestBody.value = data.value;
+    }
+    if (data.minValue !== undefined) {
+      requestBody.minValue = data.minValue;
+    }
+    if (data.maxValue !== undefined) {
+      requestBody.maxValue = data.maxValue;
+    }
+  }
+  
   return withRetry(() =>
     fetchAPI(`/conditions/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: JSON.stringify(requestBody),
     })
   );
 }
@@ -651,6 +689,15 @@ export async function resumeMessage(messageId: number): Promise<{ success: boole
 }
 
 /**
+ * Delete a message (soft delete)
+ */
+export async function deleteMessage(messageId: number): Promise<{ success: boolean; message: string }> {
+  return fetchAPI(`/messages/${messageId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
  * Pause all messages for a session
  */
 export async function pauseSessionMessages(sessionId: string): Promise<{ success: boolean; pausedCount: number }> {
@@ -692,6 +739,7 @@ export async function resumeAllModeratorMessages(moderatorId: number): Promise<{
 
 export interface OngoingSessionDto {
   sessionId: string; // Guid serialized as string
+  queueId: number;
   queueName: string;
   startTime: string;
   total: number;
@@ -704,8 +752,32 @@ export interface SessionPatientDto {
   patientId: number;
   name: string;
   phone: string;
+  countryCode: string;
   status: string; // sent, pending, failed
   isPaused: boolean;
+  attempts?: number;
+  failedReason?: string;
+}
+
+export interface FailedSessionDto {
+  sessionId: string;
+  queueId: number;
+  queueName: string;
+  startTime: string;
+  total: number;
+  failed: number;
+  patients: SessionPatientDto[];
+}
+
+export interface CompletedSessionDto {
+  sessionId: string;
+  queueId: number;
+  queueName: string;
+  startTime: string;
+  completedAt?: string;
+  total: number;
+  sent: number;
+  patients: SessionPatientDto[];
 }
 
 /**
@@ -713,6 +785,20 @@ export interface SessionPatientDto {
  */
 export async function getOngoingSessions(): Promise<{ success: boolean; data: OngoingSessionDto[] }> {
   return fetchAPI('/sessions/ongoing');
+}
+
+/**
+ * Get all failed sessions for current user's moderator
+ */
+export async function getFailedSessions(): Promise<{ success: boolean; data: FailedSessionDto[] }> {
+  return fetchAPI('/sessions/failed');
+}
+
+/**
+ * Get all completed sessions for current user's moderator
+ */
+export async function getCompletedSessions(): Promise<{ success: boolean; data: CompletedSessionDto[] }> {
+  return fetchAPI('/sessions/completed');
 }
 
 /**
@@ -858,6 +944,8 @@ export const messageApiClient = {
   
   // Sessions
   getOngoingSessions,
+  getFailedSessions,
+  getCompletedSessions,
   pauseSession,
   resumeSession,
   deleteSession,

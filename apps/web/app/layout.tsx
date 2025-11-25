@@ -33,20 +33,20 @@ export default function RootLayout({
         {/** Provider order adjusted: UIProvider now wraps AuthProvider so AuthContext can trigger global toasts */}
         <UIProvider>
           <AuthProvider>
-            <WhatsAppSessionWrapper>
-              <QueueProvider>
-                <ModalProvider>
-                  <ConfirmationProvider>
-                    <InputDialogProvider>
-                      <SelectDialogProvider>
+            <ConfirmationProvider>
+              <InputDialogProvider>
+                <SelectDialogProvider>
+                  <WhatsAppSessionWrapper>
+                    <QueueProvider>
+                      <ModalProvider>
                         {children}
                         <ToastContainer />
-                      </SelectDialogProvider>
-                    </InputDialogProvider>
-                  </ConfirmationProvider>
-                </ModalProvider>
-              </QueueProvider>
-            </WhatsAppSessionWrapper>
+                      </ModalProvider>
+                    </QueueProvider>
+                  </WhatsAppSessionWrapper>
+                </SelectDialogProvider>
+              </InputDialogProvider>
+            </ConfirmationProvider>
           </AuthProvider>
         </UIProvider>
       </body>

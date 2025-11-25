@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Clinics.Domain;
 
 namespace Clinics.Infrastructure
@@ -187,6 +188,104 @@ namespace Clinics.Infrastructure
                 .HasForeignKey(a => a.ActorUserId)
                 .OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<AuditLog>().Property(a => a.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+        }
+
+        /// <summary>
+        /// Override SaveChangesAsync to automatically update MessageSession counters
+        /// when Message.Status or Message.IsDeleted changes.
+        /// </summary>
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            // Track Message.Status and IsDeleted changes before save
+            var affectedSessionIds = new HashSet<string>();
+            
+            foreach (var entry in ChangeTracker.Entries<Message>())
+            {
+                if (entry.State == EntityState.Added || entry.State == EntityState.Modified || entry.State == EntityState.Deleted)
+                {
+                    var message = entry.Entity;
+                    var sessionId = message.SessionId;
+
+                    if (!string.IsNullOrEmpty(sessionId))
+                    {
+                        // Track if status changed
+                        if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+                        {
+                            var oldStatus = entry.OriginalValues["Status"]?.ToString();
+                            var newStatus = message.Status;
+                            if (oldStatus != newStatus)
+                            {
+                                affectedSessionIds.Add(sessionId);
+                            }
+                        }
+
+                        // Track if IsDeleted changed
+                        if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+                        {
+                            var oldIsDeleted = entry.OriginalValues.GetValue<bool>("IsDeleted");
+                            var newIsDeleted = message.IsDeleted;
+                            if (oldIsDeleted != newIsDeleted)
+                            {
+                                affectedSessionIds.Add(sessionId);
+                            }
+                        }
+
+                        // Track if message is being deleted (soft delete)
+                        if (entry.State == EntityState.Deleted)
+                        {
+                            affectedSessionIds.Add(sessionId);
+                        }
+                    }
+                }
+            }
+
+            // Save changes first
+            var result = await base.SaveChangesAsync(cancellationToken);
+
+            // Update MessageSession counters after save
+            if (affectedSessionIds.Any())
+            {
+                foreach (var sessionIdStr in affectedSessionIds)
+                {
+                    if (Guid.TryParse(sessionIdStr, out var sessionGuid))
+                    {
+                        var session = await MessageSessions.FindAsync(new object[] { sessionGuid }, cancellationToken);
+                        if (session != null)
+                        {
+                            // Recalculate counters based on current Message.Status and IsDeleted
+                            var sessionMessages = await Messages
+                                .Where(m => m.SessionId == sessionIdStr && !m.IsDeleted)
+                                .ToListAsync(cancellationToken);
+
+                            session.OngoingMessages = sessionMessages.Count(m => m.Status == "queued" || m.Status == "sending");
+                            session.FailedMessages = sessionMessages.Count(m => m.Status == "failed");
+                            session.SentMessages = sessionMessages.Count(m => m.Status == "sent");
+
+                            // Check for session completion
+                            if (session.OngoingMessages == 0 && session.Status != "completed" && session.Status != "cancelled")
+                            {
+                                // Check if all messages are processed (sent or failed)
+                                // Note: Deleted messages are tracked via IsDeleted, not Status
+                                var allProcessed = sessionMessages.All(m => 
+                                    m.Status == "sent" || m.Status == "failed" || m.IsDeleted);
+                                
+                                if (allProcessed)
+                                {
+                                    session.Status = "completed";
+                                    session.EndTime = DateTime.UtcNow;
+                                }
+                            }
+
+                            session.LastUpdated = DateTime.UtcNow;
+                        }
+                    }
+                }
+
+                // Save counter updates
+                await base.SaveChangesAsync(cancellationToken);
+            }
+
+            return result;
         }
     }
 }

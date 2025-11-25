@@ -25,6 +25,7 @@ import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 interface Session {
   id: string;
   sessionId: string;
+  queueId: number;
   clinicName: string;
   doctorName: string;
   createdAt: string;
@@ -104,6 +105,7 @@ export default function OngoingTasksPanel() {
         const transformedSessions: Session[] = response.data.map((session: OngoingSessionDto) => ({
           id: String(session.sessionId), // Ensure sessionId is string (Guid serialized as string)
           sessionId: String(session.sessionId),
+          queueId: session.queueId,
           clinicName: session.queueName,
           doctorName: session.queueName,
           createdAt: session.startTime,
@@ -112,13 +114,13 @@ export default function OngoingTasksPanel() {
           failedCount: session.patients.filter((p: SessionPatientDto) => p.status === 'failed').length,
           isPaused: session.status === 'paused',
           patients: session.patients.map((p: SessionPatientDto) => ({
-            id: p.patientId,
-            fullName: p.name,
-            phoneNumber: p.phone,
-            countryCode: '+966', // Default, should be fetched from patient data
-            queueId: 0, // Will be set from session
+            id: String(p.patientId),
+            name: p.name,
+            phone: p.phone,
+            queueId: String(session.queueId),
+            countryCode: p.countryCode,
             position: 0,
-            status: 'active',
+            status: p.status,
             isValidWhatsAppNumber: p.status === 'sent' ? true : null,
             isPaused: p.isPaused,
           } as Patient & { isPaused?: boolean })),
@@ -133,11 +135,19 @@ export default function OngoingTasksPanel() {
             .map(s => s.id)
         ));
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load ongoing sessions';
-      setError(errorMessage);
-      logger.error('Failed to load ongoing sessions:', err);
-      addToast('فشل تحميل الجلسات الجارية', 'error');
+    } catch (err: any) {
+      // Check if error is due to PendingQR (authentication required)
+      if (err?.code === 'AUTHENTICATION_REQUIRED' || err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
+        logger.warn('WhatsApp session requires authentication (PendingQR):', err);
+        addToast('جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً.', 'warning');
+        setSessions([]); // Clear sessions to show empty state
+        setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load ongoing sessions';
+        setError(errorMessage);
+        logger.error('Failed to load ongoing sessions:', err);
+        addToast('فشل تحميل الجلسات الجارية', 'error');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -151,15 +161,42 @@ export default function OngoingTasksPanel() {
   }, [loadOngoingSessions]);
 
   /**
-   * Polling mechanism for real-time updates (every 5 seconds)
+   * Polling mechanism for real-time updates (every 10 seconds)
    * Ensures all users see the same updated state
+   * Reduced frequency to reduce server load and CPU usage
    */
   useEffect(() => {
+    // Only poll if tab is visible (reduce CPU when tab is inactive)
+    if (document.hidden) return;
+    
     const pollInterval = setInterval(() => {
-      loadOngoingSessions();
-    }, 5000); // Poll every 5 seconds
+      // Check if tab is still visible before polling
+      if (!document.hidden) {
+        loadOngoingSessions();
+      }
+    }, 10000); // Increased from 5 seconds to 10 seconds
 
-    return () => clearInterval(pollInterval);
+    // Pause polling when tab becomes hidden, resume when visible
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearInterval(pollInterval);
+      } else {
+        // Resume polling when tab becomes visible
+        const newInterval = setInterval(() => {
+          if (!document.hidden) {
+            loadOngoingSessions();
+          }
+        }, 10000);
+        return () => clearInterval(newInterval);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [loadOngoingSessions]);
 
   /**
@@ -261,7 +298,7 @@ export default function OngoingTasksPanel() {
     try {
       // Delete all selected patients
       const deletePromises = Array.from(selected).map(patientId =>
-        patientsApiClient.deletePatient(patientId)
+        patientsApiClient.deletePatient(Number(patientId))
       );
       
       await Promise.all(deletePromises);
@@ -471,7 +508,7 @@ export default function OngoingTasksPanel() {
     const confirmed = await confirm(createDeleteConfirmation('هذا المريض'));
     if (confirmed) {
       try {
-        await patientsApiClient.deletePatient(patientId);
+        await patientsApiClient.deletePatient(Number(patientId));
         addToast('تم حذف المريض بنجاح', 'success');
         
         // Reload sessions to get updated state

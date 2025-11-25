@@ -65,6 +65,7 @@ builder.Services.AddScoped<IPhonePlaceholderService, PhonePlaceholderService>();
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<Clinics.Api.Services.IMessageSessionCascadeService, Clinics.Api.Services.MessageSessionCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IQueueCascadeService, Clinics.Api.Services.QueueCascadeService>();
 // Also register the Infrastructure QueueCascadeService for QuotaService which depends on it
 builder.Services.AddScoped<Clinics.Infrastructure.Services.IQueueCascadeService, Clinics.Infrastructure.Services.QueueCascadeService>();
@@ -179,7 +180,14 @@ if (!builder.Environment.IsEnvironment("Test"))
 }
 
 // message sender and processor
-builder.Services.AddHttpClient<WhatsAppServiceSender>();
+// Configure HttpClient with extended timeout for WhatsApp service operations
+// WhatsApp browser automation can take longer than default 100 seconds
+builder.Services.AddHttpClient<WhatsAppServiceSender>(client =>
+{
+    // Set timeout to 5 minutes (300 seconds) to accommodate slow WhatsApp operations
+    // This is especially important for browser automation that may wait for UI elements
+    client.Timeout = TimeSpan.FromSeconds(300);
+});
 builder.Services.AddScoped<IMessageSender, WhatsAppServiceSender>();
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
 
