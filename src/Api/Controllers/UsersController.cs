@@ -584,7 +584,7 @@ namespace Clinics.Api.Controllers
                 }
 
                 var total = await query.CountAsync();
-                var users = await query
+                var usersList = await query
                     .OrderByDescending(u => u.DeletedAt)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
@@ -601,6 +601,30 @@ namespace Clinics.Api.Controllers
                         u.DeletedBy
                     })
                     .ToListAsync();
+
+                // Get deleted by usernames separately to avoid subquery issues
+                var deletedByUserIds = usersList.Where(u => u.DeletedBy.HasValue).Select(u => u.DeletedBy!.Value).Distinct().ToList();
+                var deletedByUsers = await _db.Users
+                    .Where(d => deletedByUserIds.Contains(d.Id))
+                    .Select(d => new { d.Id, d.Username })
+                    .ToListAsync();
+                var deletedByUsernameMap = deletedByUsers.ToDictionary(d => d.Id, d => d.Username);
+
+                var users = usersList.Select(u => new
+                {
+                    u.Id,
+                    u.FirstName,
+                    u.LastName,
+                    u.Username,
+                    u.Role,
+                    u.ModeratorId,
+                    u.DeletedAt,
+                    u.DaysRemainingInTrash,
+                    u.DeletedBy,
+                    DeletedByUsername = u.DeletedBy.HasValue && deletedByUsernameMap.ContainsKey(u.DeletedBy.Value)
+                        ? deletedByUsernameMap[u.DeletedBy.Value]
+                        : (string?)null
+                }).ToList();
 
                 return Ok(new { success = true, data = users, total, page, pageSize });
             }

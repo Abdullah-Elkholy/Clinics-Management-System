@@ -23,7 +23,7 @@ import ConfirmationDialog from './ConfirmationDialog';
 export default function MessagePreviewModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
-  const { queues, messageTemplates, messageConditions, patients: contextPatients, refreshPatients } = useQueue();
+  const { queues, messageTemplates, messageConditions, patients: contextPatients, refreshPatients, selectedQueueId } = useQueue();
   const { user } = useAuth();
   const { sessionData } = useWhatsAppSession();
   const moderatorUserId = sessionData?.moderatorUserId;
@@ -34,7 +34,8 @@ export default function MessagePreviewModal() {
   const selectedCount = data?.selectedPatientCount ?? 0;
   const selectedPatientIds = data?.selectedPatients ?? [];
   const currentCQP = data?.currentCQP ? parseInt(data.currentCQP) : undefined;
-  const queueId = data?.queueId;
+  // Use selectedQueueId as fallback when queueId is 'default' or missing
+  const queueId = data?.queueId && data.queueId !== 'default' ? data.queueId : (selectedQueueId || data?.queueId);
   const defaultTemplateId = data?.defaultTemplateId; // Template ID from queue data
 
   // State for removed patients
@@ -118,45 +119,186 @@ export default function MessagePreviewModal() {
 
   // Get real templates and conditions from context
   const realTemplates = useMemo(() => {
-    if (!queueId) return [];
-    return messageTemplates.filter(t => String(t.queueId) === String(queueId));
+    if (!queueId) {
+      console.warn('[MessagePreview] No queueId available, cannot load templates');
+      return [];
+    }
+    // Filter out deleted templates
+    const filtered = messageTemplates.filter(t => 
+      String(t.queueId) === String(queueId) && 
+      !t.isDeleted // Exclude deleted templates
+    );
+    if (filtered.length === 0) {
+      console.warn('[MessagePreview] No templates found for queueId:', queueId, {
+        totalTemplates: messageTemplates.length,
+        availableQueueIds: [...new Set(messageTemplates.map(t => t.queueId))],
+      });
+    }
+    return filtered;
   }, [messageTemplates, queueId]);
 
   const realConditions = useMemo(() => {
-    if (!queueId) return [];
+    if (!queueId) {
+      console.warn('[MessagePreview] No queueId available, cannot load conditions');
+      return [];
+    }
     // Filter conditions for this queue and populate template content from templates
-    return messageConditions
-      .filter(c => String(c.queueId) === String(queueId))
-      .map(condition => {
-        // If condition already has template content, use it
-        if (condition.template) {
-          return condition;
-        }
-        // Otherwise, look up template content from templateId
-        if (condition.templateId) {
-          const template = realTemplates.find(t => String(t.id) === String(condition.templateId));
-          if (template) {
-            return {
-              ...condition,
-              template: template.content,
-            };
-          }
-        }
-        // If no template found, return condition as-is (will show empty message)
-        return condition;
+    // CRITICAL: Always populate template content from MessageTemplates to ensure correct template is shown
+    // This ensures the "الرسالة" column shows the actual MessageTemplate content based on condition matching
+    // Filter out deleted conditions
+    const filtered = messageConditions.filter(c => 
+      String(c.queueId) === String(queueId) && 
+      !c.isDeleted // Exclude deleted conditions
+    );
+    
+    if (filtered.length === 0) {
+      console.warn('[MessagePreview] No conditions found for queueId:', queueId, {
+        totalConditions: messageConditions.length,
+        availableQueueIds: [...new Set(messageConditions.map(c => c.queueId))],
+        dataQueueId: data?.queueId,
+        selectedQueueId,
+        finalQueueId: queueId,
       });
+    }
+    
+    // Comprehensive logging for debugging
+    if (filtered.length > 0) {
+      console.log('[MessagePreview] Processing conditions:', {
+        queueId,
+        conditionsCount: filtered.length,
+        templatesCount: realTemplates.length,
+        conditions: filtered.map(c => ({
+          id: c.id,
+          templateId: c.templateId,
+          templateIdType: typeof c.templateId,
+          operator: c.operator,
+          hasTemplateContent: !!c.template && c.template.trim().length > 0,
+          templateLength: c.template?.length || 0,
+          templatePreview: c.template ? c.template.substring(0, 100) : 'EMPTY',
+          templateIsEmptyString: c.template === '',
+          templateIsUndefined: c.template === undefined,
+        })),
+        availableTemplates: realTemplates.map(t => ({ 
+          id: t.id, 
+          idType: typeof t.id,
+          title: t.title,
+          contentLength: t.content?.length || 0,
+          contentPreview: t.content ? t.content.substring(0, 100) : 'EMPTY',
+        })),
+      });
+    }
+    
+    return filtered.map(condition => {
+      // Priority 1: Look up template content from templateId (most reliable)
+      if (condition.templateId) {
+        const template = realTemplates.find(t => String(t.id) === String(condition.templateId));
+        if (template && template.content && template.content.trim().length > 0) {
+          console.log('[MessagePreview] ✅ Found template for condition:', {
+            conditionId: condition.id,
+            templateId: condition.templateId,
+            operator: condition.operator,
+            templateTitle: template.title,
+            templateContentLength: template.content.length,
+            templateContentPreview: template.content.substring(0, 100),
+          });
+          return {
+            ...condition,
+            template: template.content, // Use actual template content from MessageTemplate
+          };
+        }
+        // Log warning if templateId exists but template not found
+        console.warn('[MessagePreview] ❌ Template not found for condition:', {
+          conditionId: condition.id,
+          templateId: condition.templateId,
+          templateIdType: typeof condition.templateId,
+          operator: condition.operator,
+          templateFound: !!template,
+          templateHasContent: template ? !!template.content : false,
+          templateContentLength: template ? template.content?.length || 0 : 0,
+          availableTemplateIds: realTemplates.map(t => ({ 
+            id: t.id, 
+            idType: typeof t.id,
+            title: t.title,
+          })),
+          availableTemplateTitles: realTemplates.map(t => t.title),
+        });
+      }
+      
+      // Priority 2: If condition already has template content, use it (fallback from QueueContext)
+      if (condition.template && condition.template.trim().length > 0) {
+        console.log('[MessagePreview] ✅ Using existing template content from condition:', {
+          conditionId: condition.id,
+          templateId: condition.templateId,
+          operator: condition.operator,
+          templateContentLength: condition.template.length,
+          templateContentPreview: condition.template.substring(0, 100),
+        });
+        return condition;
+      }
+      
+      // Priority 3: If no template found, return condition with empty template (will show empty message)
+      // This should not happen in normal operation, but handle gracefully
+      console.error('[MessagePreview] ❌❌❌ Condition without template content - THIS IS A PROBLEM:', {
+        conditionId: condition.id,
+        templateId: condition.templateId,
+        operator: condition.operator,
+        hasTemplateId: !!condition.templateId,
+        hasTemplateContent: !!condition.template,
+        templateContent: condition.template,
+        templateIsEmptyString: condition.template === '',
+        templateIsUndefined: condition.template === undefined,
+        templateIsNull: condition.template === null,
+        availableTemplates: realTemplates.map(t => ({ 
+          id: t.id, 
+          idType: typeof t.id,
+          title: t.title, 
+          contentLength: t.content?.length || 0,
+          contentPreview: t.content ? t.content.substring(0, 50) : 'EMPTY',
+        })),
+      });
+      return condition;
+    });
   }, [messageConditions, queueId, realTemplates]);
 
   // Get default template by finding condition with DEFAULT operator, then finding its template
   const defaultTemplate = useMemo(() => {
     // Find condition with DEFAULT operator
     const defaultCondition = realConditions.find(c => c.operator === 'DEFAULT');
-    if (!defaultCondition || !defaultCondition.templateId) {
+    if (!defaultCondition) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[MessagePreview] No DEFAULT condition found');
+      }
       return undefined;
     }
+    
     // Find template by templateId from the condition
-    return realTemplates.find(t => String(t.id) === String(defaultCondition.templateId));
-  }, [realConditions, realTemplates]);
+    if (defaultCondition.templateId) {
+      const template = realTemplates.find(t => String(t.id) === String(defaultCondition.templateId));
+      if (template) {
+        return template;
+      }
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[MessagePreview] DEFAULT condition template not found:', {
+          conditionId: defaultCondition.id,
+          templateId: defaultCondition.templateId,
+          availableTemplateIds: realTemplates.map(t => t.id),
+        });
+      }
+    }
+    
+    // Fallback: If DEFAULT condition has template content but no templateId, create a synthetic template
+    if (defaultCondition.template && defaultCondition.template.trim().length > 0) {
+      return {
+        id: `default-${defaultCondition.id}`,
+        title: 'القالب الافتراضي',
+        content: defaultCondition.template,
+        queueId: queueId || '',
+        variables: [],
+      };
+    }
+    
+    return undefined;
+  }, [realConditions, realTemplates, queueId]);
 
   // Preview data with queue positions - use data from modal, fallback to context patients
   const previewPatients: Patient[] = useMemo(() => {
@@ -201,13 +343,50 @@ export default function MessagePreviewModal() {
   }, [data?.queueName, queue]);
 
   // Build a QueueMessageConfig from real data
-  const messageConfig: QueueMessageConfig = useMemo(() => ({
-    queueId: queueId || 'default',
-    queueName,
-    // Only include a default template if one truly exists
-    defaultTemplate: defaultTemplate?.content,
-    conditions: realConditions,
-  }), [queueId, queueName, defaultTemplate, realConditions]);
+  const messageConfig: QueueMessageConfig = useMemo(() => {
+    // CRITICAL: Verify all conditions have template content before building config
+    const validatedConditions = realConditions.map(cond => {
+      if (!cond.template || cond.template.trim().length === 0) {
+        // Last attempt: try to find template if templateId exists
+        if (cond.templateId && realTemplates.length > 0) {
+          const template = realTemplates.find(t => String(t.id) === String(cond.templateId));
+          if (template && template.content && template.content.trim().length > 0) {
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[MessagePreview] Found template in messageConfig validation:', {
+                conditionId: cond.id,
+                templateId: cond.templateId,
+                templateTitle: template.title,
+              });
+            }
+            return {
+              ...cond,
+              template: template.content,
+            };
+          }
+        }
+        // Log error if still no template found
+        if (process.env.NODE_ENV === 'development') {
+          console.error('[MessagePreview] Condition still has no template in messageConfig:', {
+            conditionId: cond.id,
+            templateId: cond.templateId,
+            operator: cond.operator,
+            hasTemplateId: !!cond.templateId,
+            templateContent: cond.template,
+            availableTemplates: realTemplates.map(t => ({ id: t.id, title: t.title })),
+          });
+        }
+      }
+      return cond;
+    });
+    
+    return {
+      queueId: queueId || 'default',
+      queueName,
+      // Only include a default template if one truly exists
+      defaultTemplate: defaultTemplate?.content,
+      conditions: validatedConditions,
+    };
+  }, [queueId, queueName, defaultTemplate, realConditions, realTemplates]);
 
   const missingDefaultTemplate = !defaultTemplate;
 
@@ -219,6 +398,59 @@ export default function MessagePreviewModal() {
   }, [sortedPatients, selectedPatientIds, removedPatients]);
 
   const resolutions = useMemo(() => {
+    // CRITICAL LOGGING: Log the entire messageConfig before resolution
+    console.log('[MessagePreview] RESOLUTION START - Full messageConfig:', {
+      queueId: messageConfig.queueId,
+      queueName: messageConfig.queueName,
+      currentQueuePosition,
+      patientCount: patientArray.length,
+      conditionsCount: messageConfig.conditions?.length || 0,
+      defaultTemplateExists: !!messageConfig.defaultTemplate,
+      defaultTemplateLength: messageConfig.defaultTemplate?.length || 0,
+      defaultTemplatePreview: messageConfig.defaultTemplate ? messageConfig.defaultTemplate.substring(0, 100) : 'MISSING',
+      conditions: messageConfig.conditions?.map(c => ({
+        id: c.id,
+        templateId: c.templateId,
+        operator: c.operator,
+        value: c.value,
+        minValue: c.minValue,
+        maxValue: c.maxValue,
+        priority: c.priority,
+        enabled: c.enabled,
+        templateLength: c.template?.length || 0,
+        templatePreview: c.template ? c.template.substring(0, 150) : 'EMPTY',
+        hasTemplateContent: !!c.template && c.template.trim().length > 0,
+        templateIsEmptyString: c.template === '',
+        templateIsUndefined: c.template === undefined,
+        templateIsNull: c.template === null,
+      })),
+      patients: patientArray.map(p => ({
+        id: p.id,
+        name: p.name,
+        position: p.position,
+      })),
+    });
+    
+    // CRITICAL: Explicitly log each condition's template content status
+    if (messageConfig.conditions && messageConfig.conditions.length > 0) {
+      console.log('[MessagePreview] 🔍 DETAILED CONDITION TEMPLATE CHECK:');
+      messageConfig.conditions.forEach((c, idx) => {
+        const hasContent = !!c.template && c.template.trim().length > 0;
+        console.log(`  Condition ${idx + 1} (${c.id}):`, {
+          operator: c.operator,
+          templateId: c.templateId,
+          hasTemplateContent: hasContent,
+          templateLength: c.template?.length || 0,
+          templatePreview: c.template ? c.template.substring(0, 100) : '❌ EMPTY',
+          templateValue: c.template, // Show full template value
+        });
+      });
+    } else {
+      console.warn('[MessagePreview] ⚠️ NO CONDITIONS IN MESSAGECONFIG!');
+    }
+    
+    // Calculate offset (CalculatedPosition) for each patient: position - CQP
+    // This is what conditions are matched against
     const results = resolvePatientMessages(
       messageConfig,
       patientArray,
@@ -227,34 +459,61 @@ export default function MessagePreviewModal() {
     );
     
     // Debug logging (only log when there are actual results to avoid spam)
-    if (process.env.NODE_ENV === 'development' && results.length > 0) {
-      console.log('[MessagePreview] Resolutions:', {
+    if (results.length > 0) {
+      console.log('[MessagePreview] Resolutions with CalculatedPosition (offset):', {
         config: {
           queueId: messageConfig.queueId,
           queueName: messageConfig.queueName,
+          currentQueuePosition, // CQP
           conditionsCount: messageConfig.conditions?.length || 0,
-          defaultTemplate: messageConfig.defaultTemplate ? 'exists' : 'missing',
+          defaultTemplate: messageConfig.defaultTemplate ? `${messageConfig.defaultTemplate.substring(0, 50)}...` : 'missing',
           conditions: messageConfig.conditions?.map(c => ({
             id: c.id,
             operator: c.operator,
+            value: c.value,
+            minValue: c.minValue,
+            maxValue: c.maxValue,
             template: c.template ? `${c.template.substring(0, 50)}...` : 'EMPTY',
             templateId: c.templateId,
             enabled: c.enabled,
+            priority: c.priority,
+            templateLength: c.template?.length || 0,
+            hasTemplateContent: !!c.template && c.template.trim().length > 0,
           })),
         },
         patients: patientArray.length,
-        currentQueuePosition,
         results: results.map(r => ({
           patientId: r.patientId,
+          patientPosition: r.patientPosition,
+          offset: r.offset, // CalculatedPosition = position - CQP
           reason: r.reason,
+          matchedConditionId: r.matchedConditionId,
           hasTemplate: !!r.resolvedTemplate,
           templateLength: r.resolvedTemplate?.length || 0,
+          templatePreview: r.resolvedTemplate ? `${r.resolvedTemplate.substring(0, 50)}...` : 'NO TEMPLATE',
         })),
       });
+      
+      // Additional diagnostic: Check if any conditions have empty templates
+      const conditionsWithEmptyTemplates = messageConfig.conditions?.filter(c => !c.template || c.template.trim().length === 0) || [];
+      if (conditionsWithEmptyTemplates.length > 0) {
+        console.warn('[MessagePreview] Conditions with empty templates:', conditionsWithEmptyTemplates.map(c => ({
+          id: c.id,
+          operator: c.operator,
+          templateId: c.templateId,
+          hasTemplateId: !!c.templateId,
+        })));
+      }
     }
     
     return results;
   }, [messageConfig, patientArray, currentQueuePosition, estimatedTimePerSession]);
+
+  // Calculate actual preview patient count (patients in the preview table, excluding EXCLUDED)
+  const previewPatientCount = useMemo(() => {
+    if (!resolutions || !Array.isArray(resolutions)) return 0;
+    return resolutions.filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId))).length;
+  }, [resolutions, removedPatients]);
 
   // Group resolutions by resolvedTemplate for grouped display
   const groupedByTemplate = resolutions.reduce(
@@ -1197,7 +1456,7 @@ export default function MessagePreviewModal() {
               </p>
             </div>
             <div className="text-blue-600 text-left">
-              <span className="text-2xl font-bold">{selectedCount - removedPatients.length}</span>
+              <span className="text-2xl font-bold">{previewPatientCount ?? 0}</span>
               <p className="text-sm">سيتم إرسال الرسالة لهم</p>
             </div>
           </div>
@@ -1275,6 +1534,7 @@ export default function MessagePreviewModal() {
                 <tr>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الترتيب</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الاسم</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الموضع = CQP</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الهاتف</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الرسالة</th>
                   <th className="px-4 py-2 text-center text-xs font-medium text-gray-600">الحالة</th>
@@ -1282,11 +1542,30 @@ export default function MessagePreviewModal() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {resolutions
-                  .filter((res) => res.reason !== 'EXCLUDED')
-                  .map((resolution) => {
+                {(() => {
+                  const filteredResolutions = resolutions.filter((res) => res.reason !== 'EXCLUDED');
+                  if (filteredResolutions.length === 0) {
+                    console.warn('[MessagePreview] No resolutions to display (all excluded or empty)');
+                  } else {
+                    console.log('[MessagePreview] Rendering table with resolutions:', {
+                      total: filteredResolutions.length,
+                      resolutions: filteredResolutions.map(r => ({
+                        patientId: r.patientId,
+                        patientName: r.patientName,
+                        reason: r.reason,
+                        hasResolvedTemplate: !!r.resolvedTemplate,
+                        resolvedTemplateLength: r.resolvedTemplate?.length || 0,
+                        resolvedTemplatePreview: r.resolvedTemplate ? r.resolvedTemplate.substring(0, 50) : 'MISSING',
+                      })),
+                    });
+                  }
+                  return filteredResolutions;
+                })().map((resolution) => {
                     const patient = previewPatients.find((p) => String(p.id) === resolution.patientId);
-                    if (!patient) return null;
+                    if (!patient) {
+                      console.warn('[MessagePreview] Patient not found for resolution:', resolution.patientId);
+                      return null;
+                    }
                     const reasonBadge = getReasonBadge(resolution.reason);
                     
                     return (
@@ -1302,6 +1581,20 @@ export default function MessagePreviewModal() {
                           </div>
                         </td>
                         <td className="px-4 py-2">{resolution.patientName}</td>
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">
+                              {resolution.patientPosition}
+                            </span>
+                            <span className="text-xs text-gray-500">=</span>
+                            <span className="font-medium text-blue-700">
+                              {currentQueuePosition}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              ({resolution.offset > 0 ? '+' : ''}{resolution.offset})
+                            </span>
+                          </div>
+                        </td>
                         <td className={`px-4 py-2 ${
                           (() => {
                             const status = validationStatus[String(resolution.patientId)];
@@ -1351,7 +1644,19 @@ export default function MessagePreviewModal() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-gray-600 max-w-xs">{resolution.resolvedTemplate}</td>
+                        <td className="px-4 py-2 text-gray-600 max-w-xs">
+                          {resolution.resolvedTemplate && resolution.resolvedTemplate.trim().length > 0 ? (
+                            <span className="whitespace-pre-wrap break-words">{resolution.resolvedTemplate}</span>
+                          ) : (
+                            <span className="text-red-500 italic text-xs">
+                              {resolution.reason === 'EXCLUDED' 
+                                ? 'مستبعد (موضع سابق)' 
+                                : resolution.reason === 'NO_CONDITION_MATCHED'
+                                ? 'لا يوجد شرط مطابق'
+                                : `لا توجد رسالة (${resolution.reason})`}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-center">
                           <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${reasonBadge.bg} ${reasonBadge.text}`}>
                             {reasonBadge.label}
@@ -1389,7 +1694,7 @@ export default function MessagePreviewModal() {
             ) : (
               <>
                 <i className="fab fa-whatsapp"></i>
-                {`تأكيد الإرسال (${selectedCount - removedPatients.length})`}
+                {`تأكيد الإرسال (${previewPatientCount ?? 0})`}
               </>
             )}
           </button>

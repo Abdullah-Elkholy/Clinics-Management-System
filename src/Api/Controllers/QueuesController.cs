@@ -480,7 +480,8 @@ namespace Clinics.Api.Controllers
                 }
 
                 var total = await query.CountAsync();
-                var trashQueues = await query
+                var trashQueuesList = await query
+                    .Include(q => q.Moderator) // Include Moderator to get username
                     .OrderByDescending(q => q.DeletedAt)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
@@ -489,11 +490,34 @@ namespace Clinics.Api.Controllers
                         q.Id,
                         q.DoctorName,
                         q.ModeratorId,
+                        ModeratorUsername = q.Moderator != null ? q.Moderator.Username : null,
                         DeletedAt = q.DeletedAt!.Value,
                         DaysRemainingInTrash = _ttlQueries.GetDaysRemainingInTrash(q, 30),
-                        DeletedBy = q.DeletedBy
+                        q.DeletedBy
                     })
                     .ToListAsync();
+
+                // Get deleted by usernames separately to avoid subquery issues
+                var deletedByUserIds = trashQueuesList.Where(q => q.DeletedBy.HasValue).Select(q => q.DeletedBy!.Value).Distinct().ToList();
+                var deletedByUsers = await _db.Users
+                    .Where(u => deletedByUserIds.Contains(u.Id))
+                    .Select(u => new { u.Id, u.Username })
+                    .ToListAsync();
+                var deletedByUsernameMap = deletedByUsers.ToDictionary(u => u.Id, u => u.Username);
+
+                var trashQueues = trashQueuesList.Select(q => new
+                {
+                    q.Id,
+                    q.DoctorName,
+                    q.ModeratorId,
+                    q.ModeratorUsername,
+                    q.DeletedAt,
+                    q.DaysRemainingInTrash,
+                    q.DeletedBy,
+                    DeletedByUsername = q.DeletedBy.HasValue && deletedByUsernameMap.ContainsKey(q.DeletedBy.Value)
+                        ? deletedByUsernameMap[q.DeletedBy.Value]
+                        : (string?)null
+                }).ToList();
 
                 return Ok(new { success = true, data = trashQueues, total, page, pageSize });
             }

@@ -284,7 +284,7 @@ export default function UserManagementPanel() {
   const { openModal } = useModal();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
-  const { refreshQueues } = useQueue();
+  const { refreshQueues, queues } = useQueue();
   const router = useRouter();
 
   // All useState hooks MUST be declared before any conditional returns
@@ -2281,6 +2281,7 @@ export default function UserManagementPanel() {
                 onRestore={handleRestoreTemplate}
                 adminOnly={false}
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                queues={queues}
               />
               )}
             </div>

@@ -18,15 +18,18 @@ namespace Clinics.Api.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IUserContext _userContext;
         private readonly IConditionValidationService _conditionValidationService;
+        private readonly ILogger<ConditionsController> _logger;
 
         public ConditionsController(
             ApplicationDbContext context,
             IUserContext userContext,
-            IConditionValidationService conditionValidationService)
+            IConditionValidationService conditionValidationService,
+            ILogger<ConditionsController> logger)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _userContext = userContext ?? throw new ArgumentNullException(nameof(userContext));
             _conditionValidationService = conditionValidationService ?? throw new ArgumentNullException(nameof(conditionValidationService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -48,11 +51,11 @@ namespace Clinics.Api.Controllers
             if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
                 return Forbid();
 
-            // Get all conditions for this queue (no need to Include Template - we use TemplateId FK directly)
+            // Get all non-deleted conditions for this queue (no need to Include Template - we use TemplateId FK directly)
             // Use AsNoTracking for read-only query to reduce memory usage
             var conditions = await _context.Set<MessageCondition>()
                 .AsNoTracking()
-                .Where(c => c.QueueId == queueId)
+                .Where(c => c.QueueId == queueId && !c.IsDeleted) // Filter out deleted conditions
                 .OrderBy(c => c.CreatedAt)
                 .ToListAsync();
 
@@ -70,6 +73,26 @@ namespace Clinics.Api.Controllers
                 CreatedAt = c.CreatedAt,
                 UpdatedAt = c.UpdatedAt
             }).ToList();
+            
+            // CRITICAL LOGGING: Log conditions with NULL TemplateId
+            var conditionsWithNullTemplateId = dtos.Where(d => !d.TemplateId.HasValue).ToList();
+            if (conditionsWithNullTemplateId.Any())
+            {
+                _logger.LogWarning(
+                    "[ConditionsController] Found {Count} conditions with NULL TemplateId for queue {QueueId}. Condition IDs: {ConditionIds}",
+                    conditionsWithNullTemplateId.Count,
+                    queueId,
+                    string.Join(", ", conditionsWithNullTemplateId.Select(c => c.Id))
+                );
+            }
+            
+            // CRITICAL LOGGING: Log all conditions being returned
+            _logger.LogInformation(
+                "[ConditionsController] Returning {Count} conditions for queue {QueueId}. TemplateIds: {TemplateIds}",
+                dtos.Count,
+                queueId,
+                string.Join(", ", dtos.Select(c => $"Id={c.Id}, TemplateId={c.TemplateId?.ToString() ?? "NULL"}, Operator={c.Operator}"))
+            );
 
             return Ok(new ListResponse<ConditionDto>
             {

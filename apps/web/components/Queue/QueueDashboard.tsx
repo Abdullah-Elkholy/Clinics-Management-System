@@ -221,10 +221,34 @@ export default function QueueDashboard() {
   }, [currentCQP]);
 
   /**
+   * Calculate maximum patient position in the queue
+   */
+  const maxPatientPosition = useMemo(() => {
+    if (!patients || patients.length === 0) return 1;
+    const positions = patients
+      .filter(p => p.position && p.position > 0)
+      .map(p => p.position || 0);
+    return positions.length > 0 ? Math.max(...positions) : 1;
+  }, [patients]);
+
+  /**
    * Handle CQP Save - memoized
    */
   const handleSaveCQP = useCallback(async () => {
-    const error = validateNumber(currentCQP, 'الموضع الحالي', 1, 1000);
+    // Validate CQP >= 1
+    const cqpNum = parseInt(currentCQP, 10);
+    if (isNaN(cqpNum) || cqpNum < 1) {
+      addToast('الموضع الحالي يجب أن يكون أكبر من أو يساوي 1', 'error');
+      return;
+    }
+    
+    // Validate CQP <= max patient position
+    if (cqpNum > maxPatientPosition) {
+      addToast(`الموضع الحالي يجب أن يكون أقل من أو يساوي أكبر موضع في الطابور (${maxPatientPosition})`, 'error');
+      return;
+    }
+    
+    const error = validateNumber(currentCQP, 'الموضع الحالي', 1, maxPatientPosition);
     if (error) {
       addToast(error, 'error');
       return;
@@ -261,7 +285,7 @@ export default function QueueDashboard() {
     } catch (err: any) {
       addToast(err?.message || 'فشل تحديث الموضع الحالي', 'error');
     }
-  }, [currentCQP, addToast, queue, selectedQueueId, refreshQueueData, refreshQueues]);
+  }, [currentCQP, maxPatientPosition, addToast, queue, selectedQueueId, refreshQueueData, refreshQueues]);
 
   /**
    * Handle CQP Cancel - memoized
@@ -283,6 +307,19 @@ export default function QueueDashboard() {
    * Handle ETS Save - memoized
    */
   const handleSaveETS = useCallback(async () => {
+    // Validate ETS >= 1
+    const etsNum = parseInt(currentETS, 10);
+    if (isNaN(etsNum) || etsNum < 1) {
+      addToast('الوقت المقدر يجب أن يكون أكبر من أو يساوي 1', 'error');
+      return;
+    }
+    
+    // Validate ETS <= 600
+    if (etsNum > 600) {
+      addToast('الوقت المقدر يجب أن يكون أقل من أو يساوي 600', 'error');
+      return;
+    }
+    
     const error = validateNumber(currentETS, 'الوقت المقدر', 1, 600);
     if (error) {
       addToast(error, 'error');
@@ -379,13 +416,15 @@ export default function QueueDashboard() {
   const detectQueueConflicts = useCallback(() => {
     if (!selectedQueueId) return [];
 
-    // Get only active conditions from context (exclude DEFAULT as it's a sentinel, but include UNCONDITIONED)
+    // Get only active conditions from context (exclude DEFAULT and UNCONDITIONED, exclude deleted)
     const queueConditions = messageConditions.filter(
       (c) => 
         c.queueId === selectedQueueId && 
         c.operator !== 'DEFAULT' && 
-        ['UNCONDITIONED', 'EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
-        c.templateId
+        c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from conflict detection
+        ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
+        c.templateId &&
+        !c.isDeleted // Exclude deleted conditions
     );
 
     if (queueConditions.length < 2) return [];
@@ -747,8 +786,29 @@ export default function QueueDashboard() {
             <div className="flex gap-2 items-end">
               <input
                 type="number"
+                min="1"
+                max={maxPatientPosition}
                 value={currentCQP}
-                onChange={(e) => setCurrentCQP(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow empty string for editing
+                  if (value === '') {
+                    setCurrentCQP('');
+                    return;
+                  }
+                  const num = parseInt(value, 10);
+                  // Enforce >= 1
+                  if (!isNaN(num) && num < 1) {
+                    setCurrentCQP('1');
+                    return;
+                  }
+                  // Enforce <= maxPatientPosition
+                  if (!isNaN(num) && num > maxPatientPosition) {
+                    setCurrentCQP(maxPatientPosition.toString());
+                    return;
+                  }
+                  setCurrentCQP(value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -803,8 +863,29 @@ export default function QueueDashboard() {
             <div className="flex gap-2 items-end">
               <input
                 type="number"
+                min="1"
+                max="600"
                 value={currentETS}
-                onChange={(e) => setCurrentETS(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow empty string for editing
+                  if (value === '') {
+                    setCurrentETS('');
+                    return;
+                  }
+                  const num = parseInt(value, 10);
+                  // Enforce >= 1
+                  if (!isNaN(num) && num < 1) {
+                    setCurrentETS('1');
+                    return;
+                  }
+                  // Enforce <= 600
+                  if (!isNaN(num) && num > 600) {
+                    setCurrentETS('600');
+                    return;
+                  }
+                  setCurrentETS(value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -1067,13 +1148,15 @@ export default function QueueDashboard() {
                   );
                 }
 
-                // Filter active conditions for this queue (exclude DEFAULT as it's a sentinel, but include UNCONDITIONED)
+                // Filter active conditions for this queue (exclude DEFAULT and UNCONDITIONED, exclude deleted)
                 const activeConditions = messageConditions.filter(
                   (c) => 
                     c.queueId === selectedQueueId && 
                     c.operator !== 'DEFAULT' && 
-                    ['UNCONDITIONED', 'EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
-                    c.templateId
+                    c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from display
+                    ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
+                    c.templateId &&
+                    !c.isDeleted // Exclude deleted conditions
                 );
                 
                 const hasActiveConditions = activeConditions.length > 0;
@@ -1132,25 +1215,19 @@ export default function QueueDashboard() {
                         if (overlap.id2) conflictingIds.add(overlap.id2);
                       });
                       
-                      // Sort conditions: UNCONDITIONED first (if any), then others
-                      // Note: activeConditions already excludes DEFAULT, so we sort by UNCONDITIONED
-                      const sortedConditions = [...activeConditions].sort((a, b) => {
-                        if (a.operator === 'UNCONDITIONED' && b.operator !== 'UNCONDITIONED') return -1;
-                        if (a.operator !== 'UNCONDITIONED' && b.operator === 'UNCONDITIONED') return 1;
-                        return 0;
-                      });
-                      
+                      // activeConditions already excludes DEFAULT and UNCONDITIONED, so no sorting needed
+                      // Just use activeConditions directly
                       return (
                         <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
                           <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
                             <i className="fas fa-filter text-green-600"></i>
-                            الشروط المطبقة ({sortedConditions.length}):
+                            الشروط المطبقة ({activeConditions.length}):
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
-                              {sortedConditions.length}
+                              {activeConditions.length}
                             </span>
                           </h4>
                           <div className="space-y-2">
-                            {sortedConditions.map((condition, idx) => {
+                            {activeConditions.map((condition, idx) => {
                               const templateName = getTemplateNameForCondition(condition);
                               const isInConflict = condition.id && conflictingIds.has(condition.id);
                               const conditionText = 

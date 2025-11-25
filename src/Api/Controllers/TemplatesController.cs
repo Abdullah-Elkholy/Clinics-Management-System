@@ -557,28 +557,26 @@ namespace Clinics.Api.Controllers
                     {
                         // Unify datetime for this bulk operation
                         var operationTimestamp = DateTime.UtcNow;
-
-                        // Set all other conditions in the same queue to UNCONDITIONED
-                        // Find other templates in the same queue and get their conditions
-                        var otherTemplates = await _db.MessageTemplates
-                            .Where(t => t.QueueId == template.QueueId && t.Id != id && !t.IsDeleted)
-                            .Include(t => t.Condition)
-                            .ToListAsync();
-                        var otherConditions = otherTemplates
-                            .Where(t => t.Condition != null)
-                            .Select(t => t.Condition!)
-                            .ToList();
                         // Get current user ID for audit
                         var userId = _userContext.GetUserId();
 
-                        foreach (var other in otherConditions)
+                        // Find the current DEFAULT condition in the same queue (if any) and set it to UNCONDITIONED
+                        // Only change the condition that is currently DEFAULT, not all other conditions
+                        var currentDefaultCondition = await _db.Set<MessageCondition>()
+                            .FirstOrDefaultAsync(c => 
+                                c.QueueId == template.QueueId && 
+                                c.Operator == "DEFAULT" && 
+                                c.TemplateId != id); // Exclude the template we're setting as default
+
+                        if (currentDefaultCondition != null)
                         {
-                            other.Operator = "UNCONDITIONED";
-                            other.Value = null;
-                            other.MinValue = null;
-                            other.MaxValue = null;
-                            other.UpdatedAt = operationTimestamp;
-                            other.UpdatedBy = userId;
+                            // Change the current DEFAULT condition to UNCONDITIONED
+                            currentDefaultCondition.Operator = "UNCONDITIONED";
+                            currentDefaultCondition.Value = null;
+                            currentDefaultCondition.MinValue = null;
+                            currentDefaultCondition.MaxValue = null;
+                            currentDefaultCondition.UpdatedAt = operationTimestamp;
+                            currentDefaultCondition.UpdatedBy = userId;
                         }
 
                         // Get or create condition for this template with DEFAULT operator
@@ -672,7 +670,8 @@ namespace Clinics.Api.Controllers
                 var isAdmin = _userContext.IsAdmin();
 
                 var query = _ttlQueries.QueryTrash(30)
-                    .Include(t => t.Queue) // Include Queue to check if it's deleted
+                    .Include(t => t.Moderator) // Include Moderator to get username
+                    .AsNoTracking() // Read-only query, no tracking needed
                     .AsQueryable();
 
                 if (!isAdmin && moderatorId.HasValue)
@@ -681,10 +680,15 @@ namespace Clinics.Api.Controllers
                 }
 
                 // Filter out templates that belong to deleted queues
-                query = query.Where(t => t.Queue == null || !t.Queue.IsDeleted);
+                // Use a subquery instead of Include to avoid loading entire Queue entities
+                query = query.Where(t => 
+                    t.QueueId == null || 
+                    !_db.Queues.IgnoreQueryFilters().Any(q => 
+                        q.Id == t.QueueId && 
+                        q.IsDeleted));
 
                 var total = await query.CountAsync();
-                var templates = await query
+                var templatesList = await query
                     .OrderByDescending(t => t.DeletedAt)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
@@ -694,6 +698,7 @@ namespace Clinics.Api.Controllers
                         t.Title,
                         t.Content,
                         t.ModeratorId,
+                        ModeratorUsername = t.Moderator != null ? t.Moderator.Username : null,
                         t.QueueId,
                         DefaultOperator = t.Condition != null && t.Condition.Operator == "DEFAULT" ? "DEFAULT" : null,
                         t.DeletedAt,
@@ -701,6 +706,31 @@ namespace Clinics.Api.Controllers
                         t.DeletedBy
                     })
                     .ToListAsync();
+
+                // Get deleted by usernames separately to avoid subquery issues
+                var deletedByUserIds = templatesList.Where(t => t.DeletedBy.HasValue).Select(t => t.DeletedBy!.Value).Distinct().ToList();
+                var deletedByUsers = await _db.Users
+                    .Where(u => deletedByUserIds.Contains(u.Id))
+                    .Select(u => new { u.Id, u.Username })
+                    .ToListAsync();
+                var deletedByUsernameMap = deletedByUsers.ToDictionary(u => u.Id, u => u.Username);
+
+                var templates = templatesList.Select(t => new
+                {
+                    t.Id,
+                    t.Title,
+                    t.Content,
+                    t.ModeratorId,
+                    t.ModeratorUsername,
+                    t.QueueId,
+                    t.DefaultOperator,
+                    t.DeletedAt,
+                    t.DaysRemainingInTrash,
+                    t.DeletedBy,
+                    DeletedByUsername = t.DeletedBy.HasValue && deletedByUsernameMap.ContainsKey(t.DeletedBy.Value)
+                        ? deletedByUsernameMap[t.DeletedBy.Value]
+                        : (string?)null
+                }).ToList();
 
                 return Ok(new { success = true, data = templates, total, page, pageSize });
             }
