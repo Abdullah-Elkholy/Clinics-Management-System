@@ -62,9 +62,9 @@ export interface CreateConditionRequest {
 
 export interface UpdateConditionRequest {
   operator?: string;
-  value?: number;
-  minValue?: number;
-  maxValue?: number;
+  value?: number | null;
+  minValue?: number | null;
+  maxValue?: number | null;
 }
 
 export interface MyQuotaDto {
@@ -520,10 +520,48 @@ export async function createCondition(data: CreateConditionRequest): Promise<Con
  * Update an existing condition (with automatic retry on network failures)
  */
 export async function updateCondition(id: number, data: UpdateConditionRequest): Promise<ConditionDto> {
+  // Build request body, explicitly including null values when provided
+  // This ensures UNCONDITIONED operator gets value: null, minValue: null, maxValue: null
+  const requestBody: any = {};
+  
+  if (data.operator !== undefined) {
+    requestBody.operator = data.operator;
+    
+    // For UNCONDITIONED and DEFAULT operators, explicitly set null values
+    // This ensures the backend receives null instead of omitting the fields
+    if (data.operator === 'UNCONDITIONED' || data.operator === 'DEFAULT') {
+      requestBody.value = null;
+      requestBody.minValue = null;
+      requestBody.maxValue = null;
+    } else {
+      // For other operators, include values if provided
+      if (data.value !== undefined) {
+        requestBody.value = data.value;
+      }
+      if (data.minValue !== undefined) {
+        requestBody.minValue = data.minValue;
+      }
+      if (data.maxValue !== undefined) {
+        requestBody.maxValue = data.maxValue;
+      }
+    }
+  } else {
+    // If operator is not being changed, include values if provided
+    if (data.value !== undefined) {
+      requestBody.value = data.value;
+    }
+    if (data.minValue !== undefined) {
+      requestBody.minValue = data.minValue;
+    }
+    if (data.maxValue !== undefined) {
+      requestBody.maxValue = data.maxValue;
+    }
+  }
+  
   return withRetry(() =>
     fetchAPI(`/conditions/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(data),
+      body: JSON.stringify(requestBody),
     })
   );
 }

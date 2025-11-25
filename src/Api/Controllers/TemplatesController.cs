@@ -109,7 +109,11 @@ namespace Clinics.Api.Controllers
                     // Admins can see all templates
                 }
 
-                var templates = await query.OrderBy(t => t.CreatedAt).ToListAsync();
+                // Use AsNoTracking for read-only query to reduce memory usage
+                var templates = await query
+                    .AsNoTracking()
+                    .OrderBy(t => t.CreatedAt)
+                    .ToListAsync();
                 
                 var dtos = templates.Select(t => new TemplateDto
                 {

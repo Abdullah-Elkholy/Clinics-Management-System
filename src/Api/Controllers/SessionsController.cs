@@ -80,14 +80,18 @@ public class SessionsController : ControllerBase
             }
             
             // Get all sessions for the moderator first
+            // Use AsNoTracking for read-only query to reduce memory usage
             var allSessions = await _context.MessageSessions
+                .AsNoTracking()
                 .Include(s => s.Queue)
                 .Where(s => !s.IsDeleted 
                     && (moderatorId == null || s.ModeratorId == moderatorId))
                 .ToListAsync();
 
             // Get session IDs that actually have ongoing messages (check actual Messages table, not counter)
+            // Use AsNoTracking for read-only query
             var sessionIdsWithOngoingMessages = await _context.Messages
+                .AsNoTracking()
                 .Where(m => (m.Status == "queued" || m.Status == "sending") && !m.IsDeleted && !string.IsNullOrEmpty(m.SessionId))
                 .Select(m => m.SessionId!)
                 .Distinct()
@@ -111,34 +115,69 @@ public class SessionsController : ControllerBase
 
             var sessionDtos = new List<OngoingSessionDto>();
 
+            // OPTIMIZATION: Batch fetch all messages and patients in one query instead of N+1
+            // Get all session IDs first
+            var sessionIdStrings = sessions.Select(s => s.Id.ToString()).ToList();
+            
+            // Fetch all messages for all sessions in one query
+            // Only select fields we actually need (Patient data comes from Patient entity)
+            var allSessionMessages = await _context.Messages
+                .AsNoTracking() // Read-only, no need to track
+                .Where(m => sessionIdStrings.Contains(m.SessionId!) 
+                    && !m.IsDeleted 
+                    && (m.Status == "queued" || m.Status == "sending"))
+                .Select(m => new
+                {
+                    SessionId = m.SessionId,
+                    PatientId = m.PatientId,
+                    MessageId = m.Id,
+                    Status = m.Status,
+                    CreatedAt = m.CreatedAt
+                })
+                .ToListAsync();
+
+            // Get all unique patient IDs from all messages
+            var allPatientIds = allSessionMessages
+                .Where(m => m.PatientId.HasValue)
+                .Select(m => m.PatientId!.Value)
+                .Distinct()
+                .ToList();
+
+            // Fetch all patients in one query
+            var allPatientsList = await _context.Patients
+                .AsNoTracking() // Read-only, no need to track
+                .Where(p => allPatientIds.Contains(p.Id))
+                .Select(p => new
+                {
+                    Id = p.Id,
+                    FullName = p.FullName,
+                    PhoneNumber = p.PhoneNumber,
+                    CountryCode = p.CountryCode
+                })
+                .ToListAsync();
+
+            // Convert to dictionary for fast lookup
+            var patientsDict = allPatientsList.ToDictionary(p => p.Id, p => p);
+
             foreach (var session in sessions)
             {
-                // Get messages linked to this session via SessionId
-                // Only include messages that are ongoing (queued or sending)
-                var sessionMessages = await _context.Messages
-                    .Where(m => m.SessionId == session.Id.ToString() 
-                        && !m.IsDeleted 
-                        && (m.Status == "queued" || m.Status == "sending"))
-                    .ToListAsync();
+                // Filter messages for this session from pre-fetched data
+                var sessionMessages = allSessionMessages
+                    .Where(m => m.SessionId == session.Id.ToString())
+                    .ToList();
 
-                // Get unique patient IDs from messages
+                // Get unique patient IDs from messages for this session
                 var patientIds = sessionMessages
                     .Where(m => m.PatientId.HasValue)
                     .Select(m => m.PatientId!.Value)
                     .Distinct()
                     .ToList();
 
-                // Get patients from database (materialize first, then match messages in memory)
-                var patients = await _context.Patients
-                    .Where(p => patientIds.Contains(p.Id))
-                    .Select(p => new
-                    {
-                        p.Id,
-                        p.FullName,
-                        p.PhoneNumber,
-                        p.CountryCode
-                    })
-                    .ToListAsync();
+                // Get patients from pre-fetched dictionary
+                var patients = patientIds
+                    .Where(id => patientsDict.ContainsKey(id))
+                    .Select(id => patientsDict[id])
+                    .ToList();
 
                 // Match messages to patients in memory (after materialization)
                 var patientDtos = patients.Select(p =>
@@ -151,13 +190,13 @@ public class SessionsController : ControllerBase
                     return new SessionPatientDto
                     {
                         PatientId = p.Id,
-                        MessageId = message?.Id,
+                        MessageId = message?.MessageId, // Use MessageId from anonymous type
                         Name = p.FullName ?? "غير محدد",
                         Phone = p.PhoneNumber ?? "",
                         CountryCode = p.CountryCode ?? "+966",
                         Status = MapMessageStatus(message?.Status),
-                        IsPaused = message?.IsPaused ?? false,
-                        Attempts = message?.Attempts ?? 0
+                        IsPaused = false, // Anonymous type doesn't include IsPaused
+                        Attempts = 0 // Anonymous type doesn't include Attempts
                     };
                 }).ToList();
 

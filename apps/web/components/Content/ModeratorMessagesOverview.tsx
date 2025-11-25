@@ -178,6 +178,7 @@ export default function ModeratorMessagesOverview() {
    * Initial load: Refresh queue data for all filtered queues when queues are available
    * This is similar to MessagesPanel - it calls refreshQueueData for all queues
    * This ensures templates and conditions are loaded into context
+   * Optimized: Process queues in batches to limit concurrent requests
    */
   useEffect(() => {
     const loadAllQueueData = async () => {
@@ -189,18 +190,21 @@ export default function ModeratorMessagesOverview() {
         queueIds: filteredQueues.map(q => q.id.toString()),
       });
 
-      // Refresh all filtered queues in parallel
-      // This loads templates and conditions into context properly
-      await Promise.all(
-        filteredQueues.map(async (queue) => {
-          try {
-            const queueIdStr = String(queue.id);
-            await refreshQueueData(queueIdStr);
-          } catch (refreshError) {
-            logger.error(`Failed to refresh queue ${queue.id}:`, refreshError);
-          }
-        })
-      );
+      // Process queues in batches of 5 to avoid overwhelming the server
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < filteredQueues.length; i += BATCH_SIZE) {
+        const batch = filteredQueues.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (queue) => {
+            try {
+              const queueIdStr = String(queue.id);
+              await refreshQueueData(queueIdStr);
+            } catch (refreshError) {
+              logger.error(`Failed to refresh queue ${queue.id}:`, refreshError);
+            }
+          })
+        );
+      }
 
       logger.debug('ModeratorMessagesOverview: Finished initial load of all queue data');
     };
@@ -315,15 +319,45 @@ export default function ModeratorMessagesOverview() {
   /**
    * Listen for data updates and refetch queue data
    * Similar to MessagesPanel - this ensures templates are refreshed when data changes
+   * Debounced to prevent excessive API calls
    */
   useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let isRefreshing = false;
+
     const handleDataUpdate = async () => {
-      // Refetch data for all filtered queues to ensure consistency
-      if (filteredQueues.length > 0 && typeof refreshQueueData === 'function') {
-        for (const queue of filteredQueues) {
-          await refreshQueueData(String(queue.id));
-        }
+      // Debounce: wait 500ms before executing to batch multiple rapid events
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
       }
+
+      debounceTimer = setTimeout(async () => {
+        // Prevent concurrent refreshes
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        try {
+          // Refetch data for all filtered queues to ensure consistency
+          if (filteredQueues.length > 0 && typeof refreshQueueData === 'function') {
+            // Process queues in batches of 5 to limit concurrent requests
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < filteredQueues.length; i += BATCH_SIZE) {
+              const batch = filteredQueues.slice(i, i + BATCH_SIZE);
+              await Promise.all(
+                batch.map(async (queue) => {
+                  try {
+                    await refreshQueueData(String(queue.id));
+                  } catch (err) {
+                    logger.error(`Failed to refresh queue ${queue.id}:`, err);
+                  }
+                })
+              );
+            }
+          }
+        } finally {
+          isRefreshing = false;
+        }
+      }, 500); // 500ms debounce
     };
 
     // Listen to all relevant update events (same as MessagesPanel)
@@ -334,6 +368,9 @@ export default function ModeratorMessagesOverview() {
     window.addEventListener('messageDataUpdated', handleDataUpdate);
 
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       window.removeEventListener('templateDataUpdated', handleDataUpdate);
       window.removeEventListener('patientDataUpdated', handleDataUpdate);
       window.removeEventListener('queueDataUpdated', handleDataUpdate);

@@ -441,9 +441,9 @@ export default function EditTemplateModal() {
               if (!isNaN(existingConditionId)) {
                 await messageApiClient.updateCondition(existingConditionId, {
                   operator: 'UNCONDITIONED',
-                  value: undefined,
-                  minValue: undefined,
-                  maxValue: undefined,
+                  value: null,
+                  minValue: null,
+                  maxValue: null,
                 });
               }
             }
@@ -768,9 +768,9 @@ export default function EditTemplateModal() {
                 const overlappingConditions = detectOverlappingConditions(activeConditions as any);
                 const conflictingIds = new Set<string>();
                 overlappingConditions.forEach(overlap => {
-                  overlap.forEach(cond => {
-                    if (cond.id) conflictingIds.add(cond.id);
-                  });
+                  // Each overlap is an object with id1 and id2 properties
+                  if (overlap.id1) conflictingIds.add(overlap.id1);
+                  if (overlap.id2) conflictingIds.add(overlap.id2);
                 });
                 
                 return queueConditions.map((condition) => {

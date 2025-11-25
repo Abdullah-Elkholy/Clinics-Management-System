@@ -49,7 +49,9 @@ namespace Clinics.Api.Controllers
                 return Forbid();
 
             // Get all conditions for this queue (no need to Include Template - we use TemplateId FK directly)
+            // Use AsNoTracking for read-only query to reduce memory usage
             var conditions = await _context.Set<MessageCondition>()
+                .AsNoTracking()
                 .Where(c => c.QueueId == queueId)
                 .OrderBy(c => c.CreatedAt)
                 .ToListAsync();
@@ -174,10 +176,11 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { message = "This queue already has a default template. Set another template as default first." });
             }
 
-            // Check for overlaps with existing conditions (ignores DEFAULT/UNCONDITIONED)
-            if (await _conditionValidationService.HasOverlapAsync(
-                request.QueueId, request.Operator, request.Value, request.MinValue, request.MaxValue))
-                return BadRequest(new { message = "This condition overlaps with an existing condition in the queue." });
+            // Overlap check removed - frontend handles overlap detection with user confirmation
+            // Users can now create overlapping conditions if they confirm the overlap
+            // if (await _conditionValidationService.HasOverlapAsync(
+            //     request.QueueId, request.Operator, request.Value, request.MinValue, request.MaxValue))
+            //     return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في الطابور." });
 
             // Create condition and update template's state atomically
             // Template state is implicit via condition.Operator (DEFAULT/UNCONDITIONED/active operator)
@@ -277,8 +280,30 @@ namespace Clinics.Api.Controllers
             // Update fields if provided
             if (request.Operator != null)
             {
+                // For UNCONDITIONED and DEFAULT operators, use null values for validation
+                // (don't fall back to existing condition values)
+                int? validationValue = null;
+                int? validationMinValue = null;
+                int? validationMaxValue = null;
+                
+                var newOperator = request.Operator.ToUpper();
+                if (newOperator == "UNCONDITIONED" || newOperator == "DEFAULT")
+                {
+                    // For sentinel operators, always use null for validation
+                    validationValue = null;
+                    validationMinValue = null;
+                    validationMaxValue = null;
+                }
+                else
+                {
+                    // For active operators, use request values or fall back to existing
+                    validationValue = request.Value ?? condition.Value;
+                    validationMinValue = request.MinValue ?? condition.MinValue;
+                    validationMaxValue = request.MaxValue ?? condition.MaxValue;
+                }
+                
                 var validationResult = await _conditionValidationService.ValidateSingleConditionAsync(
-                    request.Operator, request.Value ?? condition.Value, request.MinValue ?? condition.MinValue, request.MaxValue ?? condition.MaxValue);
+                    request.Operator, validationValue, validationMinValue, validationMaxValue);
 
                 if (!validationResult.IsValid)
                     return BadRequest(new { message = validationResult.ErrorMessage });
@@ -290,14 +315,15 @@ namespace Clinics.Api.Controllers
                         return BadRequest(new { message = "This queue already has a default template. Set another template as default first." });
                 }
 
-                // Check for overlaps with existing conditions when changing to active operator
-                if (request.Operator.ToUpper() != "DEFAULT" && request.Operator.ToUpper() != "UNCONDITIONED")
-                {
-                    if (await _conditionValidationService.HasOverlapAsync(
-                        condition.QueueId, request.Operator, request.Value ?? condition.Value, 
-                        request.MinValue ?? condition.MinValue, request.MaxValue ?? condition.MaxValue, condition.Id))
-                        return BadRequest(new { message = "This condition overlaps with an existing condition in the queue." });
-                }
+                // Overlap check removed - frontend handles overlap detection with user confirmation
+                // Users can now create overlapping conditions if they confirm the overlap
+                // if (request.Operator.ToUpper() != "DEFAULT" && request.Operator.ToUpper() != "UNCONDITIONED")
+                // {
+                //     if (await _conditionValidationService.HasOverlapAsync(
+                //         condition.QueueId, request.Operator, request.Value ?? condition.Value, 
+                //         request.MinValue ?? condition.MinValue, request.MaxValue ?? condition.MaxValue, condition.Id))
+                //         return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في الطابور." });
+                // }
 
                 condition.Operator = request.Operator.ToUpper();
             }

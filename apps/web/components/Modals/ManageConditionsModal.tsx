@@ -24,6 +24,7 @@
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
+import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useState, useCallback, useMemo } from 'react';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import Modal from './Modal';
@@ -31,7 +32,7 @@ import { ValidationError } from '@/utils/validation';
 import { ConditionApplicationSection } from '../Common/ConditionApplicationSection';
 import UsageGuideSection from '../Common/UsageGuideSection';
 import { ConflictWarning } from '../Common/ConflictBadge';
-import { detectOverlappingConditions } from '@/utils/conditionConflictDetector';
+import { detectOverlappingConditions, conditionsOverlap } from '@/utils/conditionConflictDetector';
 
 import type { MessageCondition } from '@/types/messageCondition';
 import type { MessageTemplate } from '@/types/messageTemplate';
@@ -120,6 +121,7 @@ function getConditionDisplayText(condition: MessageCondition | undefined): strin
 export default function ManageConditionsModal() {
   const { openModals, closeModal, getModalData } = useModal();
   const { addToast } = useUI();
+  const { confirm } = useConfirmDialog();
   const {
     queues,
     messageConditions,
@@ -225,17 +227,85 @@ export default function ManageConditionsModal() {
       return;
     }
 
+    const template = queueTemplates.find(t => t.id === editingTemplateId);
+    if (!template) {
+      addToast('لم يتم العثور على القالب', 'error');
+      return;
+    }
+
+    // Get condition from messageConditions array (real data)
+    const condition = templateConditionMap.get(template.id);
+    
+    const targetQueueId = queueId || selectedQueueId;
+    if (!targetQueueId) {
+      addToast('معرف الطابور غير متوفر', 'error');
+      return;
+    }
+
+    // Check for overlaps with existing conditions (only for active operators)
+    const newOperator = formData.operator as string;
+    if (newOperator && newOperator !== 'DEFAULT' && newOperator !== 'UNCONDITIONED') {
+      const newCondition: Partial<MessageCondition> = {
+        operator: newOperator as any,
+        value: formData.value,
+        minValue: formData.minValue,
+        maxValue: formData.maxValue,
+      };
+
+      // Find conflicting conditions in the same queue (excluding the current condition being edited)
+      const conflictingConditions = messageConditions
+        .filter(c => {
+          // Only check conditions in the same queue
+          const conditionQueueId = c.queueId?.toString();
+          if (conditionQueueId !== String(targetQueueId)) return false;
+          
+          // Skip the current condition being edited
+          if (condition && c.id === condition.id) return false;
+          
+          // Skip UNCONDITIONED and DEFAULT conditions (they don't conflict)
+          if (c.operator === 'UNCONDITIONED' || c.operator === 'DEFAULT') return false;
+          
+          // Check if conditions overlap
+          return conditionsOverlap(newCondition as MessageCondition, c);
+        })
+        .map(c => {
+          const conflictingTemplate = messageTemplates.find(t => t.id === c.templateId);
+          return {
+            condition: c,
+            templateTitle: conflictingTemplate?.title || 'غير معروف',
+          };
+        });
+
+      if (conflictingConditions.length > 0) {
+        // Show confirmation dialog
+        const conflictDetails = conflictingConditions
+          .map(c => {
+            const cond = c.condition;
+            let condDesc = '';
+            if (cond.operator === 'RANGE') {
+              condDesc = `${cond.operator} ${cond.minValue}-${cond.maxValue}`;
+            } else {
+              condDesc = `${cond.operator} ${cond.value}`;
+            }
+            return `- ${c.templateTitle} (${condDesc})`;
+          })
+          .join('\n');
+        
+        const shouldProceed = await confirm({
+          title: 'تعارض في الشروط',
+          message: `هذا الشرط يتداخل مع الشروط التالية:\n\n${conflictDetails}\n\nهل تريد المتابعة على أي حال؟`,
+          confirmText: 'نعم، المتابعة',
+          cancelText: 'إلغاء',
+        });
+
+        if (!shouldProceed) {
+          return; // User cancelled
+        }
+      }
+    }
+
     try {
       setIsLoading(true);
-
-      const template = queueTemplates.find(t => t.id === editingTemplateId);
-      if (!template) throw new Error('لم يتم العثور على القالب');
-
-      // Get condition from messageConditions array (real data)
-      const condition = templateConditionMap.get(template.id);
-      
-      const targetQueueId = queueId || selectedQueueId;
-      if (!targetQueueId) throw new Error('معرف الطابور غير متوفر');
 
       if (condition && condition.id && condition.templateId) {
         // Update existing condition
@@ -306,6 +376,9 @@ export default function ManageConditionsModal() {
     queueId,
     selectedQueueId,
     refreshQueueData,
+    messageConditions,
+    messageTemplates,
+    confirm,
   ]);
 
   const handleSetAsDefault = useCallback(async (template: MessageTemplate) => {
@@ -360,12 +433,15 @@ export default function ManageConditionsModal() {
         if (isNaN(conditionBackendId)) throw new Error('معرف الشرط غير صالح');
 
         // Update to placeholder: UNCONDITIONED operator
-        await messageApiClient.updateCondition(conditionBackendId, {
+        // Backend requires explicit null values (not undefined) for UNCONDITIONED operator
+        // Ensure null values are explicitly included in the request
+        const updateRequest: any = {
           operator: 'UNCONDITIONED',
-          value: undefined,
-          minValue: undefined,
-          maxValue: undefined,
-        });
+          value: null,
+          minValue: null,
+          maxValue: null,
+        };
+        await messageApiClient.updateCondition(conditionBackendId, updateRequest);
 
         updateMessageCondition(condition.id, {
           operator: 'UNCONDITIONED' as any,
@@ -427,15 +503,56 @@ export default function ManageConditionsModal() {
     [messageConditions, queueTemplates]
   );
 
-  const overlappingConditions = useMemo(() => detectOverlappingConditions(activeConditions as any), [activeConditions]);
+  // Helper function to get human-readable condition text (same format as QueueDashboard)
+  const getConditionText = useCallback((cond: MessageCondition): string => {
+    const operatorMap: Record<string, string> = {
+      'EQUAL': 'يساوي',
+      'GREATER': 'أكثر من',
+      'LESS': 'أقل من',
+      'RANGE': 'نطاق',
+      'UNCONDITIONED': 'بدون شرط', 
+      'DEFAULT': 'افتراضي',
+    };
+
+    const operatorText = operatorMap[cond.operator] || cond.operator;
+    const valueText =
+      cond.operator === 'RANGE' ? `${cond.minValue}-${cond.maxValue}` : cond.value;
+
+    return `${operatorText} ${valueText}`;
+  }, []);
+
+  // Detect overlaps and format descriptions like QueueDashboard
+  const overlappingConditions = useMemo(() => {
+    const overlaps = detectOverlappingConditions(activeConditions as any);
+    
+    // Transform descriptions to match QueueDashboard format
+    return overlaps.map(overlap => {
+      const cond1 = activeConditions.find(c => c.id === overlap.id1);
+      const cond2 = activeConditions.find(c => c.id === overlap.id2);
+      
+      if (!cond1 || !cond2) return overlap;
+      
+      // Get template names
+      const template1 = queueTemplates.find(t => t.id === cond1.templateId);
+      const template2 = queueTemplates.find(t => t.id === cond2.templateId);
+      const template1Name = template1?.title || 'قالب غير معروف';
+      const template2Name = template2?.title || 'قالب غير معروف';
+      
+      // Format like QueueDashboard: "تقاطع: TemplateName (conditionText) و TemplateName2 (conditionText2)"
+      return {
+        ...overlap,
+        description: `تقاطع: ${template1Name} (${getConditionText(cond1)}) و ${template2Name} (${getConditionText(cond2)})`
+      };
+    });
+  }, [activeConditions, queueTemplates, getConditionText]);
   
   // Create a set of condition IDs that are in conflict for quick lookup
   const conflictingConditionIds = useMemo(() => {
     const ids = new Set<string>();
     overlappingConditions.forEach(overlap => {
-      overlap.forEach(cond => {
-        if (cond.id) ids.add(cond.id);
-      });
+      // Each overlap is an object with id1 and id2 properties
+      if (overlap.id1) ids.add(overlap.id1);
+      if (overlap.id2) ids.add(overlap.id2);
     });
     return ids;
   }, [overlappingConditions]);

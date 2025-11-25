@@ -34,11 +34,13 @@ namespace Clinics.Api.Services
             //    - Messages ordered by their MessageSession.StartTime (earliest first)
             //    - Within a session, messages ordered by Message.CreatedAt
             
-            // Fetch ALL queued messages that are NOT paused (no limit) - maxBatch parameter is ignored
-            // Order by Session StartTime first, then by message creation time within session
+            // Fetch queued messages with limit to prevent memory issues
+            // Process in batches to avoid loading too many messages at once
             var msgs = await _db.Messages
+                .AsNoTracking() // Read-only, no need to track entities
                 .Where(m => m.Status == "queued" && !m.IsPaused && !string.IsNullOrEmpty(m.SessionId))
                 .Include(m => m.Queue) // May need for additional filtering
+                .Take(maxBatch * 2) // Limit to 2x batch size to prevent excessive memory usage
                 .ToListAsync();
 
             // Get sessions for ordering

@@ -119,22 +119,57 @@ export default function MessagesPanel() {
 
   /**
    * Listen for data updates and refetch queue data
+   * Debounced to prevent excessive API calls when multiple events fire simultaneously
    */
   useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let isRefreshing = false;
+
     const handleDataUpdate = async () => {
-      // Refetch data for all queues to ensure consistency
-      if (queues.length > 0 && typeof refreshQueueData === 'function') {
-        for (const queue of queues) {
-          await refreshQueueData(String(queue.id));
+      // Debounce: wait 500ms before executing to batch multiple rapid events
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+
+      debounceTimer = setTimeout(async () => {
+        // Prevent concurrent refreshes
+        if (isRefreshing) return;
+        isRefreshing = true;
+
+        try {
+          // Only refresh if queues exist and function is available
+          if (queues.length > 0 && typeof refreshQueueData === 'function') {
+            // Batch queue refreshes: process in chunks of 5 to avoid overwhelming the server
+            const queueChunks = [];
+            for (let i = 0; i < queues.length; i += 5) {
+              queueChunks.push(queues.slice(i, i + 5));
+            }
+
+            // Process chunks sequentially to limit concurrent requests
+            for (const chunk of queueChunks) {
+              await Promise.all(
+                chunk.map(async (queue) => {
+                  try {
+                    await refreshQueueData(String(queue.id));
+                  } catch (err) {
+                    logger.error(`Failed to refresh queue ${queue.id}:`, err);
+                  }
+                })
+              );
+            }
+          }
+          
+          // Refetch quota (only once, not per queue)
+          try {
+            const quota = await messageApiClient.getMyQuota();
+            setUserQuota(quota);
+          } catch (err) {
+            // Silently fail quota refetch
+          }
+        } finally {
+          isRefreshing = false;
         }
-      }
-      // Refetch quota
-      try {
-        const quota = await messageApiClient.getMyQuota();
-        setUserQuota(quota);
-      } catch (err) {
-        // Silently fail quota refetch
-      }
+      }, 500); // 500ms debounce
     };
 
     // Listen to all relevant update events
@@ -145,6 +180,9 @@ export default function MessagesPanel() {
     window.addEventListener('messageDataUpdated', handleDataUpdate);
 
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       window.removeEventListener('templateDataUpdated', handleDataUpdate);
       window.removeEventListener('patientDataUpdated', handleDataUpdate);
       window.removeEventListener('queueDataUpdated', handleDataUpdate);

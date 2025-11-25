@@ -365,9 +365,9 @@ export default function AddTemplateModal() {
             if (!isNaN(existingConditionId)) {
               await messageApiClient.updateCondition(existingConditionId, {
                 operator: 'UNCONDITIONED',
-                value: undefined,
-                minValue: undefined,
-                maxValue: undefined,
+                value: null,
+                minValue: null,
+                maxValue: null,
               });
             }
           }
