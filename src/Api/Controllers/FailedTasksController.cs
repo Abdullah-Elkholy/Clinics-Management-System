@@ -104,7 +104,7 @@ namespace Clinics.Api.Controllers
                 // Map to DTOs
                 var dtos = failedTasks.Select(m => new FailedTaskDto
                 {
-                    Id = (int)m.Id,
+                    Id = m.Id,
                     QueueId = m.QueueId ?? 0,
                     QueueName = m.Queue?.DoctorName ?? "Unknown",
                     ModeratorId = m.ModeratorId ?? 0,
@@ -139,7 +139,7 @@ namespace Clinics.Api.Controllers
         /// <param name="id">Message/task ID</param>
         /// <returns>Failed task details</returns>
         [HttpGet("{id}")]
-        public async Task<ActionResult<FailedTaskDto>> GetFailedTask(int id)
+        public async Task<ActionResult<FailedTaskDto>> GetFailedTask(Guid id)
         {
             try
             {
@@ -163,7 +163,7 @@ namespace Clinics.Api.Controllers
 
                 var dto = new FailedTaskDto
                 {
-                    Id = (int)message.Id,
+                    Id = message.Id,
                     QueueId = message.QueueId ?? 0,
                     QueueName = message.Queue?.DoctorName ?? "Unknown",
                     ModeratorId = message.ModeratorId ?? 0,
@@ -193,7 +193,7 @@ namespace Clinics.Api.Controllers
         /// <param name="id">Message/task ID to retry</param>
         /// <returns>Updated task details</returns>
         [HttpPost("{id}/retry")]
-        public async Task<ActionResult<FailedTaskDto>> RetryFailedTask(int id)
+        public async Task<ActionResult<FailedTaskDto>> RetryFailedTask(Guid id)
         {
             try
             {
@@ -255,7 +255,7 @@ namespace Clinics.Api.Controllers
 
                 var dto = new FailedTaskDto
                 {
-                    Id = (int)message.Id,
+                    Id = message.Id,
                     QueueId = message.QueueId ?? 0,
                     QueueName = message.Queue?.DoctorName ?? "Unknown",
                     ModeratorId = message.ModeratorId ?? 0,
@@ -284,7 +284,7 @@ namespace Clinics.Api.Controllers
         /// <param name="id">Message/task ID to dismiss</param>
         /// <returns>No content</returns>
         [HttpPost("{id}/dismiss")]
-        public async Task<IActionResult> DismissFailedTask(int id)
+        public async Task<IActionResult> DismissFailedTask(Guid id)
         {
             try
             {

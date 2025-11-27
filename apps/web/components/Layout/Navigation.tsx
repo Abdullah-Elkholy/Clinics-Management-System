@@ -28,10 +28,16 @@ export default function Navigation() {
   const [userManagementState, userManagementActions] = useUserManagement();
   
   // Listen for user data updates to refresh moderators in sidebar
+  // Use ref to prevent infinite loops from userManagementActions dependency changes
+  const userManagementActionsRef = React.useRef(userManagementActions);
+  React.useEffect(() => {
+    userManagementActionsRef.current = userManagementActions;
+  }, [userManagementActions]);
+
   React.useEffect(() => {
     const handleUserDataUpdate = async () => {
       // Refetch moderators when user data is updated (e.g., new moderator created)
-      await userManagementActions.fetchModerators();
+      await userManagementActionsRef.current.fetchModerators();
     };
 
     window.addEventListener('userDataUpdated', handleUserDataUpdate);
@@ -39,7 +45,7 @@ export default function Navigation() {
     return () => {
       window.removeEventListener('userDataUpdated', handleUserDataUpdate);
     };
-  }, [userManagementActions]);
+  }, []); // Empty deps - event listener doesn't need to re-register, ref provides latest actions
   
   // Role flags
   const isPrimaryAdmin = user?.role === UserRole.PrimaryAdmin;
@@ -214,6 +220,54 @@ export default function Navigation() {
     });
   }, []);
 
+  // Track the active moderator (the one whose queue is currently selected)
+  // This helps determine when to keep moderator expanded vs when to collapse
+  const activeModeratorIdRef = React.useRef<string | number | null>(null);
+  
+  // Get moderator ID for the currently selected queue
+  const getModeratorIdForQueue = React.useCallback((queueId: string | null): string | number | null => {
+    if (!queueId) return null;
+    const queue = queues.find(q => String(q.id) === String(queueId));
+    return queue?.moderatorId ?? null;
+  }, [queues]);
+
+  // Auto-expand only the active moderator (whose queue is selected), collapse all others
+  // This ensures only one moderator is expanded at a time for clarity
+  React.useEffect(() => {
+    if (!isAdmin) return; // Only for admin view
+    
+    const currentModeratorId = getModeratorIdForQueue(selectedQueueId);
+    const isQueuePanel = currentPanel === 'ongoing' || currentPanel === 'failed' || 
+                         currentPanel === 'completed' || (currentPanel === 'welcome' && selectedQueueId !== null);
+    const isUpperPanel = currentPanel === 'messages' || currentPanel === 'management' || 
+                         currentPanel === 'browserStatus';
+    
+    if (currentModeratorId && isQueuePanel) {
+      // Queue is selected and on a queue panel - expand ONLY this moderator, collapse all others
+      setExpandedModerators(prev => {
+        // Only expand if not already expanded (avoid unnecessary state updates)
+        if (prev.has(currentModeratorId) && prev.size === 1) {
+          return prev; // Already correct state
+        }
+        const next = new Set<string | number>();
+        next.add(currentModeratorId);
+        return next;
+      });
+      
+      activeModeratorIdRef.current = currentModeratorId;
+    } else if (isUpperPanel || (!selectedQueueId && !isQueuePanel)) {
+      // Navigating to upper panels or queue deselected - collapse ALL moderators
+      setExpandedModerators(prev => {
+        if (prev.size === 0) {
+          return prev; // Already collapsed
+        }
+        return new Set();
+      });
+      activeModeratorIdRef.current = null;
+    }
+    // If on queue panel with same moderator, keep expanded (no action needed - already handled above)
+  }, [selectedQueueId, currentPanel, isAdmin, getModeratorIdForQueue]);
+
   // Collapsed-mode: track which moderator's quick menu is open
   const [openCollapsedMod, setOpenCollapsedMod] = React.useState<string | number | null>(null);
 
@@ -272,9 +326,9 @@ export default function Navigation() {
       }
       return list;
     } else if (isUser) {
-      // User: filter queues where ModeratorId == user.moderatorId
-      if (!user.moderatorId) return [];
-      const moderatorId = user.moderatorId.toString();
+      // User: filter queues where ModeratorId == user.assignedModerator
+      if (!user.assignedModerator) return [];
+      const moderatorId = user.assignedModerator.toString();
       return queues.filter(q => q.moderatorId === moderatorId);
     }
     
@@ -419,19 +473,13 @@ export default function Navigation() {
         </ul>
       </nav>
 
-      {/* Queue Tabs - Show when queue is selected */}
-      {isQueueSelected && !isCollapsed && (
+      {/* Docked Task Panels - Show for moderator/user views (not admin) */}
+      {!isAdmin && !isCollapsed && (
         <nav
           className="p-4 border-b border-gray-200 bg-gradient-to-b from-blue-50 to-white flex-shrink-0"
           role="tablist"
         >
           <div className="space-y-2">
-            <TabItem
-              icon="fa-tachometer-alt"
-              label="لوحة التحكم الرئيسية"
-              isActive={currentPanel === 'welcome'}
-              onClick={() => setCurrentPanel('welcome')}
-            />
             <TabItem
               icon="fa-spinner"
               label="المهام الجارية"
@@ -569,9 +617,70 @@ export default function Navigation() {
                           </span>
                         </div>
                       </button>
-                      {/* Queues under moderator */}
+                      {/* Task panels and queues under moderator */}
                       {isExpanded && (
-                        <div className="border-t border-gray-100 bg-gray-50 p-1 space-y-0.5 overflow-hidden min-w-0">
+                        <>
+                          {/* Docked task panels for this moderator */}
+                          <div className="border-t border-gray-100 bg-gradient-to-b from-blue-50 to-white p-2">
+                            <div className="space-y-1">
+                              {/* Check if selected queue belongs to this moderator */}
+                              {(() => {
+                                const selectedQueue = selectedQueueId ? queues.find(q => String(q.id) === String(selectedQueueId)) : null;
+                                const isThisModeratorActive = selectedQueue && String(selectedQueue.moderatorId) === String(mod.moderatorId);
+                                
+                                return (
+                                  <>
+                                    <TabItem
+                                      icon="fa-spinner"
+                                      label="المهام الجارية"
+                                      isActive={isThisModeratorActive && currentPanel === 'ongoing'}
+                                      onClick={(e) => {
+                                        e?.stopPropagation?.();
+                                        // If no queue selected or different moderator's queue, select first queue of this moderator
+                                        if (!selectedQueueId || !isThisModeratorActive) {
+                                          if (mod.queues && mod.queues.length > 0) {
+                                            setSelectedQueueId(mod.queues[0].id);
+                                          }
+                                        }
+                                        setCurrentPanel('ongoing');
+                                      }}
+                                    />
+                                    <TabItem
+                                      icon="fa-exclamation-circle"
+                                      label="المهام الفاشلة"
+                                      isActive={isThisModeratorActive && currentPanel === 'failed'}
+                                      onClick={(e) => {
+                                        e?.stopPropagation?.();
+                                        // If no queue selected or different moderator's queue, select first queue of this moderator
+                                        if (!selectedQueueId || !isThisModeratorActive) {
+                                          if (mod.queues && mod.queues.length > 0) {
+                                            setSelectedQueueId(mod.queues[0].id);
+                                          }
+                                        }
+                                        setCurrentPanel('failed');
+                                      }}
+                                    />
+                                    <TabItem
+                                      icon="fa-check-circle"
+                                      label="المهام المكتملة"
+                                      isActive={isThisModeratorActive && currentPanel === 'completed'}
+                                      onClick={(e) => {
+                                        e?.stopPropagation?.();
+                                        // If no queue selected or different moderator's queue, select first queue of this moderator
+                                        if (!selectedQueueId || !isThisModeratorActive) {
+                                          if (mod.queues && mod.queues.length > 0) {
+                                            setSelectedQueueId(mod.queues[0].id);
+                                          }
+                                        }
+                                        setCurrentPanel('completed');
+                                      }}
+                                    />
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                          <div className="border-t border-gray-100 bg-gray-50 p-1 space-y-0.5 overflow-hidden min-w-0">
                           {mod.queues.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-6 text-center px-2">
                               <i className="fas fa-hospital text-3xl text-gray-300 mb-2"></i>
@@ -599,7 +708,7 @@ export default function Navigation() {
                                 key={q.id}
                                 id={q.id}
                                 doctorName={q.doctorName}
-                                isSelected={selectedQueueId === q.id}
+                                isSelected={selectedQueueId === q.id && currentPanel === 'welcome'}
                                 isCollapsed={false}
                                 onClick={() => {
                                   // setSelectedQueueId will handle navigation to /queues/${id}
@@ -612,6 +721,7 @@ export default function Navigation() {
                             ))
                           )}
                         </div>
+                        </>
                       )}
                     </div>
                   );
@@ -634,7 +744,7 @@ export default function Navigation() {
                     key={queue.id}
                     id={queue.id}
                     doctorName={queue.doctorName}
-                    isSelected={selectedQueueId === queue.id}
+                    isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
                     isCollapsed={false}
                     onClick={() => {
                       // setSelectedQueueId will handle navigation to /queues/${id}
@@ -663,7 +773,7 @@ export default function Navigation() {
                     key={queue.id}
                     id={queue.id}
                     doctorName={queue.doctorName}
-                    isSelected={selectedQueueId === queue.id}
+                    isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
                     isCollapsed={false}
                     onClick={() => {
                       // setSelectedQueueId will handle navigation to /queues/${id}
@@ -683,17 +793,9 @@ export default function Navigation() {
           {/* Collapsed sidebar variant */}
       {isCollapsed && (
         <div className="p-2 border-t border-gray-200 flex-1 flex flex-col">
-          {/* Collapsed: quick tab icons when a queue is selected */}
-          {isQueueSelected && (
-            <div className="flex flex-col items-center gap-2 mb-2 px-1">
-              <button
-                onClick={() => setCurrentPanel('welcome')}
-                title="لوحة التحكم الرئيسية"
-                aria-label="لوحة التحكم الرئيسية"
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'welcome' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
-              >
-                <i className="fas fa-tachometer-alt text-xs"></i>
-              </button>
+          {/* Collapsed: docked task panel icons for moderator/user views */}
+          {!isAdmin && (
+            <div className="flex flex-col items-center gap-2 mb-2 px-1 border-b border-gray-200 pb-2">
               <button
                 onClick={() => setCurrentPanel('ongoing')}
                 title="المهام الجارية"
@@ -801,7 +903,7 @@ export default function Navigation() {
                               title={q.doctorName}
                               aria-label={`فتح الطابور: ${q.doctorName}`}
                               className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
-                                selectedQueueId === q.id 
+                                selectedQueueId === q.id && currentPanel === 'welcome'
                                   ? 'bg-blue-100 ring-2 ring-blue-500' 
                                   : 'bg-gray-50 hover:bg-gray-100 ring-1 ring-gray-200'
                               }`}
@@ -831,7 +933,7 @@ export default function Navigation() {
                 key={queue.id}
                 id={queue.id}
                 doctorName={queue.doctorName}
-                isSelected={selectedQueueId === queue.id}
+                isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
                 isCollapsed={isIconOnly}
                 onClick={() => {
                   setSelectedQueueId(queue.id);
@@ -847,7 +949,7 @@ export default function Navigation() {
                 key={queue.id}
                 id={queue.id}
                 doctorName={queue.doctorName}
-                isSelected={selectedQueueId === queue.id}
+                isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
                 isCollapsed={isIconOnly}
                 onClick={() => {
                   setSelectedQueueId(queue.id);

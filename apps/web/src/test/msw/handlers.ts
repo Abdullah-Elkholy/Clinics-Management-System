@@ -27,7 +27,7 @@ type ConditionRow = {
 
 type FailedTaskRow = {
   id: number;
-  messageId: number;
+  messageId: string; // Changed from number to string (Guid)
   queueId: number;
   queueName: string;
   patientPhone: string;
@@ -91,7 +91,7 @@ const createDb = () => ({
   failedTasks: [
     {
       id: 501,
-      messageId: 501,
+      messageId: '501',
       queueId: 10,
       queueName: 'Dr One',
       patientPhone: '+201001234567',
@@ -104,7 +104,7 @@ const createDb = () => ({
     },
     {
       id: 502,
-      messageId: 502,
+      messageId: '502',
       queueId: 11,
       queueName: 'Dr Two',
       patientPhone: '+201009876543',

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { ModeratorQuota } from '@/types/user';
 import { useModeratorQuota } from '@/hooks/useModeratorQuota';
+import { formatArabicNumber, formatArabicPercentage } from '@/utils/numberUtils';
 
 interface ModeratorQuotaDisplayProps {
   quota?: ModeratorQuota;
@@ -107,7 +108,7 @@ export default function ModeratorQuotaDisplay({
               الإجمالي
             </div>
             <div className={`text-lg font-bold ${textColor}`}>
-              {isUnlimited ? 'غير محدود' : quotaData.limit.toLocaleString('ar-SA')}
+              {isUnlimited ? 'غير محدود' : formatArabicNumber(quotaData.limit)}
             </div>
           </div>
 
@@ -117,7 +118,7 @@ export default function ModeratorQuotaDisplay({
               المستخدم
             </div>
             <div className={`text-lg font-bold ${textColor}`}>
-              {quotaData.used.toLocaleString('ar-SA')}
+              {formatArabicNumber(quotaData.used)}
             </div>
           </div>
 
@@ -127,7 +128,7 @@ export default function ModeratorQuotaDisplay({
               المتبقي
             </div>
             <div className={`text-lg font-bold ${textColor}`}>
-              {isUnlimited ? 'غير محدود' : remaining.toLocaleString('ar-SA')}
+              {isUnlimited ? 'غير محدود' : formatArabicNumber(remaining)}
             </div>
           </div>
         </div>
@@ -145,7 +146,7 @@ export default function ModeratorQuotaDisplay({
             {/* Usage Percentage and Warning */}
             <div className="flex items-center justify-between">
               <span className={`text-xs font-medium ${textColor}`}>
-                استخدام: {quotaData.percentage.toFixed(1)}%
+                استخدام: {formatArabicPercentage(quotaData.percentage, 1)}
               </span>
               {quotaData.isLow && (
                 <span className="flex items-center gap-1 text-xs font-semibold text-yellow-600">

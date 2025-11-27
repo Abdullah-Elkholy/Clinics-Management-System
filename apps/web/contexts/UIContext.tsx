@@ -21,21 +21,31 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const pathname = usePathname();
   const router = useRouter();
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // Initialize selectedQueueId from localStorage synchronously to prevent race conditions
+  const [selectedQueueId, setSelectedQueueId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('selectedQueueId');
+      return stored || null;
+    }
+    return null;
+  });
   const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus'>('welcome');
-  const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const toastCounterRef = React.useRef(0);
   const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const navigationTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const pendingPanelRef = React.useRef<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus' | null>(null);
 
-  // Restore selectedQueueId from localStorage on mount
+  // Sync selectedQueueId with localStorage on mount (if not already set from initial state)
+  // This ensures queue is available immediately when queue routes are accessed
   useEffect(() => {
-    const stored = localStorage.getItem('selectedQueueId');
-    if (stored) {
-      setSelectedQueueId(stored);
+    if (!selectedQueueId && typeof window !== 'undefined') {
+      const stored = localStorage.getItem('selectedQueueId');
+      if (stored) {
+        setSelectedQueueId(stored);
+      }
     }
-  }, []);
+  }, []); // Only run once on mount
 
   // Persist selectedQueueId to localStorage whenever it changes
   useEffect(() => {
@@ -97,13 +107,14 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (pendingPanelRef.current) {
         const targetPath = getPathForPanel(pendingPanelRef.current);
         if (pathname === targetPath) {
-          // URL matches pending panel - activate it
+          // URL matches pending panel - activate it immediately
           setCurrentPanel(pendingPanelRef.current);
           pendingPanelRef.current = null;
           setIsTransitioning(false);
           // Reset flags
           isNavigatingProgrammatically.current = false;
           isUpdatingFromUrl.current = false;
+          // Don't return - let the URL sync continue to ensure queue selection is handled
         } else {
           // URL doesn't match pending panel - this might be browser navigation
           // Clear pending panel and let normal URL sync handle it
@@ -115,8 +126,8 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         // Reset flag and let normal URL sync handle it
         isNavigatingProgrammatically.current = false;
       }
-      // If we still have the flag set, return early
-      if (isNavigatingProgrammatically.current) {
+      // Only return early if we still have the flag set AND we've handled the pending panel
+      if (isNavigatingProgrammatically.current && !pendingPanelRef.current) {
         return;
       }
     }
@@ -194,18 +205,24 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           targetPanel = 'completed';
         }
         
-        setCurrentPanel(prev => {
-          if (prev !== targetPanel) return targetPanel;
+        // Queue routes require a selected queue - restore from localStorage if needed
+        // Use functional update to ensure we get the latest state
+        setSelectedQueueId(prev => {
+          if (!prev) {
+            const stored = localStorage.getItem('selectedQueueId');
+            if (stored) {
+              return stored;
+            }
+          }
           return prev;
         });
         
-        // Queue routes require a selected queue - restore from localStorage if needed
-        if (!selectedQueueId) {
-          const stored = localStorage.getItem('selectedQueueId');
-          if (stored) {
-            setSelectedQueueId(stored);
-          }
-        }
+        // ALWAYS set the panel to match the URL - don't check if it's already set
+        // This ensures URL and panel state are always in sync
+        setCurrentPanel(targetPanel);
+      } else {
+        // Invalid queue route - redirect to dashboard
+        router.replace('/queues/dashboard');
       }
     }
     
@@ -336,21 +353,10 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     let targetPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus' = currentPanel;
     
     if (id !== null) {
-      // Queue selected - determine which queue panel to show based on current panel
-      if (currentPanel === 'ongoing') {
-        targetPath = '/queues/ongoing';
-        targetPanel = 'ongoing';
-      } else if (currentPanel === 'failed') {
-        targetPath = '/queues/failed';
-        targetPanel = 'failed';
-      } else if (currentPanel === 'completed') {
-        targetPath = '/queues/completed';
-        targetPanel = 'completed';
-      } else {
-        // Default to dashboard for queue
-        targetPath = '/queues/dashboard';
-        targetPanel = 'welcome';
-      }
+      // Queue selected - always navigate to dashboard when clicking a queue
+      // This provides consistent behavior: clicking a queue always shows its dashboard
+      targetPath = '/queues/dashboard';
+      targetPanel = 'welcome';
     } else {
       // No queue selected - go to home
       targetPath = '/home';
@@ -358,6 +364,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }
     
     // Prevent updates only if both state AND URL are already at target
+    // This prevents unnecessary navigation when clicking the same queue that's already selected
     if (selectedQueueId === id && pathname === targetPath) {
       return;
     }

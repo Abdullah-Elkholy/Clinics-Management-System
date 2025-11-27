@@ -17,7 +17,7 @@ export interface LoginCredentials {
 
 export interface Patient {
   id: string;                  // GUID (UUID format)
-  messageId?: number;          // Message ID for retry operations (from Message.Id)
+  messageId?: string;          // Message ID for retry operations (from Message.Id - Guid)
   queueId: string;             // GUID: foreign key to Queue
   name: string;                // Patient full name
   phone: string;               // E.164 format with country code

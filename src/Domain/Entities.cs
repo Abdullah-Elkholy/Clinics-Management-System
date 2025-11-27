@@ -302,8 +302,72 @@ namespace Clinics.Domain
     [Table("Messages")]
     public class Message
     {
+        /// <summary>
+        /// Unique identifier for this message.
+        /// Changed from long to Guid for better scalability and distribution.
+        /// </summary>
         [Key]
-        public long Id { get; set; }
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// Patient's queue position at the time of message creation.
+        /// Used to trace why this message is being sent.
+        /// Source: Patient.Position
+        /// </summary>
+        [Required]
+        public int Position { get; set; }
+
+        /// <summary>
+        /// Calculated position (offset from Current Queue Position).
+        /// Calculated as: Patient.Position - Queue.CurrentPosition
+        /// Used for message condition matching.
+        /// </summary>
+        [Required]
+        public int CalculatedPosition { get; set; }
+
+        /// <summary>
+        /// Patient's full name at the time of message creation.
+        /// Stored for traceability and display purposes.
+        /// Source: Patient.FullName
+        /// </summary>
+        [Required]
+        [StringLength(100)]
+        public string FullName { get; set; } = null!;
+
+        /// <summary>
+        /// Country code for the phone number (e.g., "+20", "+966")
+        /// Stored separately for display and validation purposes.
+        /// Source: Patient.CountryCode
+        /// </summary>
+        [Required]
+        [StringLength(10)]
+        public string CountryCode { get; set; } = "+20";
+
+        [Required]
+        [StringLength(20)]
+        [Phone]
+        public string? PatientPhone { get; set; }
+
+        /// <summary>
+        /// Message content with resolved variables.
+        /// Variables (e.g., {PN}, {CQP}, {ETR}) are resolved before saving.
+        /// Stores the actual text sent to patient, not the template.
+        /// </summary>
+        [Required]
+        [StringLength(2000)]
+        public string Content { get; set; } = null!;
+
+        [Required]
+        [StringLength(20)]
+        public string Status { get; set; } = "queued";
+
+        /// <summary>
+        /// Error message in Arabic when message fails.
+        /// NULL when Status = "sent" (successful delivery).
+        /// Always populated in Arabic when there's an error.
+        /// </summary>
+        [StringLength(500)]
+        public string? ErrorMessage { get; set; }
 
         public int? PatientId { get; set; }
 
@@ -332,61 +396,19 @@ namespace Clinics.Domain
         public string? ProviderMessageId { get; set; }
 
         /// <summary>
+        /// Session identifier for grouping related messages.
+        /// Messages sent together in a batch share the same SessionId.
+        /// Links to MessageSession entity for unified session management per moderator.
+        /// </summary>
+        [StringLength(100)]
+        public string? SessionId { get; set; }
+
+        /// <summary>
         /// WhatsApp session name being used in that process.
         /// Stored from WhatsAppSession.SessionName for the moderator.
         /// </summary>
         [StringLength(20)]
         public string Channel { get; set; } = "whatsapp";
-
-        /// <summary>
-        /// Country code for the phone number (e.g., "+20", "+966")
-        /// Stored separately for display and validation purposes.
-        /// Source: Patient.CountryCode
-        /// </summary>
-        [Required]
-        [StringLength(10)]
-        public string CountryCode { get; set; } = "+20";
-
-        [Required]
-        [StringLength(20)]
-        [Phone]
-        public string? PatientPhone { get; set; }
-
-        /// <summary>
-        /// Patient's queue position at the time of message creation.
-        /// Used to trace why this message is being sent.
-        /// Source: Patient.Position
-        /// </summary>
-        [Required]
-        public int Position { get; set; }
-
-        /// <summary>
-        /// Calculated position (offset from Current Queue Position).
-        /// Calculated as: Patient.Position - Queue.CurrentPosition
-        /// Used for message condition matching.
-        /// </summary>
-        [Required]
-        public int CalculatedPosition { get; set; }
-
-        /// <summary>
-        /// Patient's full name at the time of message creation.
-        /// Stored for traceability and display purposes.
-        /// Source: Patient.FullName
-        /// </summary>
-        [Required]
-        [StringLength(100)]
-        public string FullName { get; set; } = null!;
-
-        [Required]
-        [StringLength(2000)]
-        public string Content { get; set; } = null!;
-
-        [Required]
-        [StringLength(20)]
-        public string Status { get; set; } = "queued";
-
-        [StringLength(500)]
-        public string? ErrorMessage { get; set; }
 
         [Required]
         public int Attempts { get; set; }
@@ -395,28 +417,25 @@ namespace Clinics.Domain
 
         public DateTime? SentAt { get; set; }
 
+        /// <summary>
+        /// User who created this message (for audit)
+        /// </summary>
+        public int? CreatedBy { get; set; }
+
         [Required]
         public DateTime CreatedAt { get; set; }
 
-        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-        // Audit fields
-        public int? CreatedBy { get; set; }
-
+        /// <summary>
+        /// User who last updated this message (for audit)
+        /// </summary>
         public int? UpdatedBy { get; set; }
 
-        // Soft-delete fields
-        [Required]
-        public bool IsDeleted { get; set; } = false;
-
-        public DateTime? DeletedAt { get; set; }
-
-        public int? DeletedBy { get; set; }
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>
         /// Indicates if this message is paused and should not be processed.
         /// When true, MessageProcessor will skip this message.
-        /// Automatically set to true when PendingQR is detected.
+        /// Lowest priority in pause hierarchy: WhatsAppSession → MessageSession → Message.
         /// </summary>
         [Required]
         public bool IsPaused { get; set; } = false;
@@ -437,13 +456,13 @@ namespace Clinics.Domain
         [StringLength(100)]
         public string? PauseReason { get; set; }
 
-        /// <summary>
-        /// Session identifier for grouping related messages.
-        /// Messages sent together in a batch share the same SessionId.
-        /// Links to MessageSession entity for unified session management per moderator.
-        /// </summary>
-        [StringLength(100)]
-        public string? SessionId { get; set; }
+        // Soft-delete fields
+        [Required]
+        public bool IsDeleted { get; set; } = false;
+
+        public DateTime? DeletedAt { get; set; }
+
+        public int? DeletedBy { get; set; }
     }
 
     [Table("FailedTasks")]
@@ -452,7 +471,11 @@ namespace Clinics.Domain
         [Key]
         public long Id { get; set; }
 
-        public long? MessageId { get; set; }
+        /// <summary>
+        /// Reference to the failed message.
+        /// Changed from long to Guid to match Message.Id type.
+        /// </summary>
+        public Guid? MessageId { get; set; }
 
         [ForeignKey(nameof(MessageId))]
         public Message? Message { get; set; }
@@ -619,6 +642,31 @@ namespace Clinics.Domain
         public int? CreatedByUserId { get; set; }
         public int? LastActivityUserId { get; set; }
         public DateTime? LastActivityAt { get; set; }
+
+        /// <summary>
+        /// Global pause flag for all ongoing tasks for this moderator.
+        /// When true, ALL messages, sessions, and operations for this moderator are paused.
+        /// Highest priority in pause hierarchy: WhatsAppSession → MessageSession → Message.
+        /// </summary>
+        [Required]
+        public bool IsPaused { get; set; } = false;
+
+        /// <summary>
+        /// Timestamp when global pause was activated (for audit)
+        /// </summary>
+        public DateTime? PausedAt { get; set; }
+
+        /// <summary>
+        /// User who activated global pause (for audit)
+        /// </summary>
+        public int? PausedBy { get; set; }
+
+        /// <summary>
+        /// Reason for global pause (e.g., "PendingQR", "PendingNET", "BrowserClosed", "Authentication check", "check-whatsapp")
+        /// Max 100 characters for database efficiency
+        /// </summary>
+        [StringLength(100)]
+        public string? PauseReason { get; set; }
 
         // Soft-delete fields
         public bool IsDeleted { get; set; } = false;

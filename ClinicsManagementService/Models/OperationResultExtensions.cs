@@ -22,6 +22,8 @@ namespace ClinicsManagementService.Models
                     return OperationResult<T>.PendingNET(result.ResultMessage ?? "Internet connection unavailable", result.Data);
                 case OperationState.PendingQR:
                     return OperationResult<T>.PendingQR(result.ResultMessage ?? "Authentication required", result.Data);
+                case OperationState.Warning:
+                    return OperationResult<T>.Warning(result.ResultMessage ?? "Warning", result.Data);
                 default:
                     // For Success/Failure or any other state, fall through to IsSuccess check below
                     break;
@@ -44,5 +46,6 @@ namespace ClinicsManagementService.Models
         public static bool IsWaiting(this IOperationResult r) => r.State == OperationState.Waiting;
         public static bool IsPendingNet(this IOperationResult r) => r.State == OperationState.PendingNET;
         public static bool IsPendingQr(this IOperationResult r) => r.State == OperationState.PendingQR;
+        public static bool IsWarning(this IOperationResult r) => r.State == OperationState.Warning;
     }
 }

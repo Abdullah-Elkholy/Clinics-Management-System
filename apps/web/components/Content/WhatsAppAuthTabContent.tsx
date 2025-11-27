@@ -7,7 +7,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 export default function WhatsAppAuthTabContent() {
-  const { sessionStatus, sessionData, startAuthentication, checkAuthentication } = useWhatsAppSession();
+  const { sessionStatus, sessionData, globalPauseState, startAuthentication, checkAuthentication, refreshGlobalPauseState } = useWhatsAppSession();
   const { addToast } = useUI();
   const { openModal } = useModal();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -17,6 +17,9 @@ export default function WhatsAppAuthTabContent() {
     try {
       const result = await startAuthentication();
       
+      // Refresh global pause state after authentication attempt
+      await refreshGlobalPauseState();
+      
       // Check using isSuccess property as primary indicator
       if (result.isSuccess === true || result.state === 'Success') {
         addToast('تم الاتصال بواتساب بنجاح', 'success');
@@ -24,6 +27,8 @@ export default function WhatsAppAuthTabContent() {
         addToast('يرجى مسح رمز QR من تطبيق واتساب', 'info');
         // Open QR code modal to show QR code
         openModal('qrCode');
+      } else if (result.state === 'PendingNET') {
+        addToast('فشل الاتصال بالإنترنت (PendingNET)', 'warning');
       } else if (result.state === 'Failure' || result.isSuccess === false) {
         addToast(result.resultMessage || 'فشل بدء المصادقة', 'error');
       }
@@ -39,22 +44,54 @@ export default function WhatsAppAuthTabContent() {
     try {
       const result = await checkAuthentication();
       
+      // Refresh global pause state after check
+      await refreshGlobalPauseState();
+      
       // Check using isSuccess property as primary indicator
       if (result.isSuccess === true || result.state === 'Success') {
         addToast('واتساب متصل بنجاح', 'success');
       } else if (result.state === 'PendingQR') {
         addToast('في انتظار مسح رمز QR', 'info');
+      } else if (result.state === 'PendingNET') {
+        addToast('فشل الاتصال بالإنترنت (PendingNET)', 'warning');
       } else if (result.state === 'Failure' || result.isSuccess === false) {
         addToast(result.resultMessage || 'غير متصل بواتساب', 'error');
       }
-      // Don't show toast for other states (Waiting, PendingNET, etc.) unless there's a message
+      // Don't show toast for other states (Waiting, etc.) unless there's a message
     } catch (error: any) {
       addToast(error.message || 'فشل التحقق من حالة الاتصال', 'error');
     }
   };
 
-  // Determine status display
+  // Determine status display - consider global pause state
   const getStatusDisplay = () => {
+    // Check global pause state first
+    if (globalPauseState?.isPaused) {
+      if (globalPauseState.pauseReason?.includes('PendingQR')) {
+        return {
+          bgColor: 'bg-yellow-100',
+          textColor: 'text-yellow-800',
+          icon: 'fa-exclamation-triangle',
+          label: 'في انتظار المصادقة (PendingQR)',
+        };
+      } else if (globalPauseState.pauseReason?.includes('PendingNET')) {
+        return {
+          bgColor: 'bg-orange-100',
+          textColor: 'text-orange-800',
+          icon: 'fa-wifi',
+          label: 'فشل الاتصال بالإنترنت (PendingNET)',
+        };
+      } else if (globalPauseState.pauseReason?.includes('BrowserClosure')) {
+        return {
+          bgColor: 'bg-red-100',
+          textColor: 'text-red-800',
+          icon: 'fa-times-circle',
+          label: 'تم إغلاق المتصفح',
+        };
+      }
+    }
+    
+    // Fallback to session status
     switch (sessionStatus) {
       case 'connected':
         return {
@@ -157,6 +194,79 @@ export default function WhatsAppAuthTabContent() {
           </div>
         </div>
       </div>
+
+      {/* Global Pause Warning - PendingQR/PendingNET/BrowserClosure */}
+      {globalPauseState?.isPaused && (
+        <div className={`rounded-lg p-4 flex items-start gap-3 ${
+          globalPauseState.pauseReason?.includes('PendingQR')
+            ? 'bg-yellow-50 border border-yellow-200'
+            : globalPauseState.pauseReason?.includes('PendingNET')
+            ? 'bg-orange-50 border border-orange-200'
+            : globalPauseState.pauseReason?.includes('BrowserClosure')
+            ? 'bg-red-50 border border-red-200'
+            : 'bg-gray-50 border border-gray-200'
+        }`}>
+          <i className={`fas ${
+            globalPauseState.pauseReason?.includes('PendingQR')
+              ? 'fa-exclamation-triangle text-yellow-600'
+              : globalPauseState.pauseReason?.includes('PendingNET')
+              ? 'fa-wifi text-orange-600'
+              : globalPauseState.pauseReason?.includes('BrowserClosure')
+              ? 'fa-times-circle text-red-600'
+              : 'fa-pause-circle text-gray-600'
+          } text-lg mt-0.5`}></i>
+          <div className="flex-1">
+            <h4 className={`font-semibold mb-2 ${
+              globalPauseState.pauseReason?.includes('PendingQR')
+                ? 'text-yellow-800'
+                : globalPauseState.pauseReason?.includes('PendingNET')
+                ? 'text-orange-800'
+                : globalPauseState.pauseReason?.includes('BrowserClosure')
+                ? 'text-red-800'
+                : 'text-gray-800'
+            }`}>
+              {globalPauseState.pauseReason?.includes('PendingQR')
+                ? '⚠️ تم إيقاف جميع المهام - يتطلب المصادقة (PendingQR)'
+                : globalPauseState.pauseReason?.includes('PendingNET')
+                ? '⚠️ تم إيقاف جميع المهام - فشل الاتصال بالإنترنت (PendingNET)'
+                : globalPauseState.pauseReason?.includes('BrowserClosure')
+                ? '⚠️ تم إيقاف جميع المهام - تم إغلاق المتصفح'
+                : '⚠️ تم إيقاف جميع المهام'}
+            </h4>
+            <p className={`text-sm ${
+              globalPauseState.pauseReason?.includes('PendingQR')
+                ? 'text-yellow-700'
+                : globalPauseState.pauseReason?.includes('PendingNET')
+                ? 'text-orange-700'
+                : globalPauseState.pauseReason?.includes('BrowserClosure')
+                ? 'text-red-700'
+                : 'text-gray-700'
+            }`}>
+              {globalPauseState.pauseReason || 'تم إيقاف جميع المهام مؤقتًا'}
+              {globalPauseState.pausedAt && (
+                <span className="block mt-1 text-xs opacity-75">
+                  تم الإيقاف في: {new Date(globalPauseState.pausedAt).toLocaleString('ar-SA')}
+                </span>
+              )}
+            </p>
+            {globalPauseState.pauseReason?.includes('PendingQR') && (
+              <p className="text-sm text-yellow-700 mt-2">
+                <strong>الحل:</strong> قم ببدء المصادقة باستخدام زر "بدء المصادقة" أعلاه لاستئناف المهام.
+              </p>
+            )}
+            {globalPauseState.pauseReason?.includes('PendingNET') && (
+              <p className="text-sm text-orange-700 mt-2">
+                <strong>الحل:</strong> تحقق من اتصالك بالإنترنت وحاول تحديث الحالة.
+              </p>
+            )}
+            {globalPauseState.pauseReason?.includes('BrowserClosure') && (
+              <p className="text-sm text-red-700 mt-2">
+                <strong>الحل:</strong> تم إغلاق المتصفح. قم ببدء المصادقة مرة أخرى.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Instructions Card */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

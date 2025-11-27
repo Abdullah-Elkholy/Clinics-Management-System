@@ -185,9 +185,80 @@ namespace Clinics.Api.Services
                     await _db.SaveChangesAsync();
                     processedCount++;
                 }
+                catch (InvalidOperationException ex) when (
+                    ex.Message.StartsWith("PendingQR:", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.StartsWith("PendingNET:", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.StartsWith("BrowserClosure:", StringComparison.OrdinalIgnoreCase))
+                {
+                    // PendingQR, PendingNET, or BrowserClosure detected - pause global WhatsAppSession
+                    string pauseReason;
+                    string errorType;
+                    
+                    if (ex.Message.StartsWith("PendingQR:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pauseReason = "PendingQR - Authentication required";
+                        errorType = "PendingQR";
+                    }
+                    else if (ex.Message.StartsWith("PendingNET:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pauseReason = "PendingNET - Network failure";
+                        errorType = "PendingNET";
+                    }
+                    else // BrowserClosure
+                    {
+                        pauseReason = "BrowserClosure - Browser session terminated";
+                        errorType = "BrowserClosure";
+                    }
+                    
+                    // Pause this message (not failed, just paused)
+                    m.Status = "queued";
+                    m.IsPaused = true;
+                    m.PausedAt = DateTime.UtcNow;
+                    m.PauseReason = errorType;
+                    m.Attempts -= 1; // Don't count this as a failed attempt
+                    m.ErrorMessage = ex.Message; // Store error message for user visibility
+                    await _db.SaveChangesAsync();
+                    
+                    // Pause global WhatsAppSession for this moderator (3-tier hierarchy: top level)
+                    if (m.ModeratorId.HasValue)
+                    {
+                        var moderatorId = m.ModeratorId.Value;
+                        var whatsappSession = await _db.WhatsAppSessions
+                            .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted);
+                        
+                        if (whatsappSession == null)
+                        {
+                            // Create new WhatsAppSession if doesn't exist
+                            whatsappSession = new WhatsAppSession
+                            {
+                                ModeratorUserId = moderatorId,
+                                Status = "connected",
+                                CreatedAt = DateTime.UtcNow,
+                                IsPaused = false
+                            };
+                            _db.WhatsAppSessions.Add(whatsappSession);
+                        }
+                        
+                        // Set global pause - this will affect ALL messages/sessions for this moderator
+                        whatsappSession.IsPaused = true;
+                        whatsappSession.PausedAt = DateTime.UtcNow;
+                        whatsappSession.PausedBy = m.SenderUserId;
+                        whatsappSession.PauseReason = pauseReason;
+                        whatsappSession.UpdatedAt = DateTime.UtcNow;
+                        whatsappSession.UpdatedBy = m.SenderUserId;
+                        
+                        await _db.SaveChangesAsync();
+                        
+                        var remainingCount = totalMessages - processedCount;
+                        Console.WriteLine($"[{errorType}] Global pause set for moderator {moderatorId}. Processed: {processedCount}/{totalMessages}, Remaining will be paused by QueuedMessageProcessor.");
+                    }
+                    
+                    // Stop processing batch - global pause is set, QueuedMessageProcessor will handle remaining messages
+                    throw;
+                }
                 catch (Exception ex)
                 {
-                    // If PendingQR exception, re-throw to stop batch processing (message already reset to queued)
+                    // If old PendingQR exception format (for backwards compatibility)
                     if (ex.Message.Contains("WhatsApp session requires authentication", StringComparison.OrdinalIgnoreCase))
                     {
                         var remainingCount = totalMessages - processedCount;

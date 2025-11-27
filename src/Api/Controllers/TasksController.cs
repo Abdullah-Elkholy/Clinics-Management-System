@@ -35,7 +35,9 @@ public class TasksController : ControllerBase
                 .OrderByDescending(ft => ft.CreatedAt)
                 .Select(ft => new FailedTaskDto
                 {
-                    Id = (int)ft.Id,
+                    Id = ft.MessageId ?? Guid.Empty, // Use MessageId as primary Id
+                    FailedTaskId = ft.Id, // Store FailedTask.Id separately
+                    MessageId = ft.MessageId,
                     QueueId = ft.QueueId ?? 0,
                     QueueName = ft.Queue != null ? ft.Queue.DoctorName : "غير محدد",
                     PatientPhone = ft.Patient != null ? ft.Patient.PhoneNumber : ft.Message != null ? ft.Message.PatientPhone ?? "" : "",

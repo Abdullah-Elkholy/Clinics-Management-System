@@ -247,7 +247,7 @@ export default function BrowserStatusOverview() {
                   }`}></div>
                 </div>
 
-                {/* Status Badges */}
+                {/* Status Badges
                 <div className="flex flex-wrap gap-2 mb-4">
                   <span className={`px-2 py-1 rounded text-sm font-medium ${
                     status.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
@@ -264,7 +264,7 @@ export default function BrowserStatusOverview() {
                   }`}>
                     {status.isAuthenticated ? 'مصادق' : 'غير مصادق'}
                   </span>
-                </div>
+                </div> */}
 
                 {/* Details */}
                 <div className="space-y-2 mb-4 text-sm">

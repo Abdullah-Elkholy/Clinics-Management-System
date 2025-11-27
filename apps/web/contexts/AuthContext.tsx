@@ -309,6 +309,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setHasToken(true);
               setAuthCookie(true);
               
+              // Refresh user data from backend to populate assignedModerator and other fields
+              // This ensures the user object has all necessary data (especially for regular users)
+              // Call getCurrentUser directly to avoid dependency issues
+              // Use setTimeout to ensure token is fully saved and available
+              setTimeout(() => {
+                getCurrentUser()
+                  .then((freshUserData) => {
+                    if (freshUserData) {
+                      setAuthState((prev) => {
+                        if (!prev.user) return prev;
+                        return {
+                          ...prev,
+                          user: {
+                            ...prev.user,
+                            id: freshUserData.id || prev.user.id,
+                            username: freshUserData.username || prev.user.username,
+                            firstName: freshUserData.firstName || prev.user.firstName,
+                            lastName: freshUserData.lastName || prev.user.lastName,
+                            role: freshUserData.role || prev.user.role,
+                            isActive: freshUserData.isActive ?? prev.user.isActive,
+                            createdAt: freshUserData.createdAt || prev.user.createdAt,
+                            updatedAt: freshUserData.updatedAt || prev.user.updatedAt,
+                            lastLogin: freshUserData.lastLogin || prev.user.lastLogin,
+                            assignedModerator: freshUserData.assignedModerator || prev.user.assignedModerator,
+                            moderatorQuota: freshUserData.moderatorQuota || prev.user.moderatorQuota,
+                            createdBy: freshUserData.createdBy || prev.user.createdBy,
+                            isDeleted: freshUserData.isDeleted || prev.user.isDeleted,
+                            deletedAt: freshUserData.deletedAt || prev.user.deletedAt,
+                          },
+                        };
+                      });
+                    }
+                  })
+                  .catch((err) => {
+                    // Silently fail - user can still use the app, data will refresh on next page load
+                    // Don't trigger logout - this is just a data refresh, not a critical auth failure
+                    if (process.env.NODE_ENV === 'development') {
+                      logger.warn('Failed to refresh user data after login (non-critical):', err);
+                    }
+                    // User object from JWT is still valid, so keep them authenticated
+                  });
+              }, 100); // Small delay to ensure token is saved
+              
               // Clean URL of any sensitive parameters after successful login
               if (typeof window !== 'undefined') {
                 const url = new URL(window.location.href);

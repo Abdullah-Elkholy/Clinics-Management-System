@@ -156,11 +156,23 @@ namespace Clinics.Infrastructure.Services
                 // Count active (non-deleted) queues for this moderator
                 var activeQueueCount = await queueRepo.GetByPredicateAsync(q => q.ModeratorId == queue.ModeratorId && !q.IsDeleted);
                 
-                // If quota exists, check if we have room to restore
-                if (quota != null && activeQueueCount.Count >= quota.QueuesQuota)
+                // If quota exists and is not unlimited, check if we have room to restore
+                // -1 means unlimited quota, so skip the check entirely
+                // Use explicit comparison with int to ensure type safety
+                if (quota != null)
                 {
-                    return RestoreResult.QuotaInsufficient("Queues", 
-                        quota.QueuesQuota - activeQueueCount.Count, 1);
+                    int queuesQuotaValue = quota.QueuesQuota;
+                    // Check if quota is unlimited (-1) - if so, skip quota check completely
+                    if (queuesQuotaValue != -1)
+                    {
+                        // Only check quota if it's not unlimited
+                        if (activeQueueCount.Count >= queuesQuotaValue)
+                        {
+                            var available = queuesQuotaValue - activeQueueCount.Count;
+                            return RestoreResult.QuotaInsufficient("Queues", available, 1);
+                        }
+                    }
+                    // If quota is -1 (unlimited), skip the check and allow restore
                 }
 
                 // Restore the queue with snapshot timestamp

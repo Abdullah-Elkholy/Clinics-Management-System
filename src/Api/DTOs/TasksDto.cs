@@ -23,7 +23,22 @@ public class DeleteTasksResponse
 
 public class FailedTaskDto
 {
-    public int Id { get; set; }
+    /// <summary>
+    /// FailedTask.Id (long) or Message.Id (Guid) depending on source.
+    /// For Messages: use MessageId field.
+    /// For FailedTasks: use FailedTaskId field converted to Guid.
+    /// </summary>
+    public Guid Id { get; set; }
+    
+    /// <summary>
+    /// FailedTask entity ID (if source is FailedTask table)
+    /// </summary>
+    public long? FailedTaskId { get; set; }
+    
+    /// <summary>
+    /// Message entity ID (if source is Message table)
+    /// </summary>
+    public Guid? MessageId { get; set; }
     public int QueueId { get; set; }
     public string QueueName { get; set; } = string.Empty;
     public int ModeratorId { get; set; }

@@ -502,10 +502,20 @@ export default function EditTemplateModal() {
       });
 
       // STEP 3: Refetch all queue data to ensure consistency
-      // This ensures we get the latest state from backend
+      // This ensures we get the latest state from backend, especially for condition updates
       if (typeof refreshQueueData === 'function' && currentTemplate.queueId) {
-        await refreshQueueData(String(currentTemplate.queueId));
+        try {
+          await refreshQueueData(String(currentTemplate.queueId));
+        } catch (refreshError) {
+          // Log but don't fail the update if refetch fails
+          logger.error('Failed to refresh queue data after condition update:', refreshError);
+        }
       }
+
+      // Trigger custom events to notify other components to refetch (immediate, no delay)
+      // Dispatch these events BEFORE closing modal to ensure components receive them
+      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+      window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
 
       // Clear form fields after successful update
       setTitle('');
@@ -527,12 +537,8 @@ export default function EditTemplateModal() {
       } else {
         addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
       }
-
-      // Trigger custom events to notify other components to refetch (immediate, no delay)
-      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-      window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
       
-      // Close modal after dispatching events to ensure UI updates
+      // Close modal after dispatching events and showing toast to ensure UI updates
       closeModal('editTemplate');
     } catch (error) {
       // Extract detailed error information

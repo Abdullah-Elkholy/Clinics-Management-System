@@ -23,7 +23,7 @@ import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
 
 export default function QueueDashboard() {
-  const { selectedQueueId, queues, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData, refreshQueues } = useQueue();
+  const { selectedQueueId, queues, queuesLoading, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData, refreshQueues } = useQueue();
   const { user, isAuthenticated } = useAuth();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
@@ -48,13 +48,38 @@ export default function QueueDashboard() {
   const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
   
   // Authentication guard - ensure user has token and valid role
+  // Wait for auth validation to complete before checking
+  const { isValidating } = useAuth();
+  
   useEffect(() => {
+    // Wait for auth validation to complete
+    if (isValidating) return;
+    
     // Check for token
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     
-    // If no token or not authenticated, redirect to login
-    if (!token || !isAuthenticated || !user) {
+    // CRITICAL: Only redirect to login if we're CERTAIN the user is not authenticated
+    // Don't redirect if we have a token and isAuthenticated is true, even if user is temporarily null
+    // This prevents false redirects during user data refresh after login
+    if (!token) {
+      // No token at all - definitely not authenticated
       router.replace('/');
+      return;
+    }
+    
+    // If we have a token but isAuthenticated is false, redirect
+    // But if isAuthenticated is true, wait for user object (might be refreshing)
+    if (!isAuthenticated) {
+      router.replace('/');
+      return;
+    }
+    
+    // If we have token and isAuthenticated but no user object yet, wait a bit
+    // This handles the case where user data is being refreshed after login
+    if (!user) {
+      // Give it a moment for user data to load (especially after login refresh)
+      // Don't redirect immediately - the user might be loading
+      logger.debug('QueueDashboard: Waiting for user object to load...', { hasToken: !!token, isAuthenticated });
       return;
     }
 
@@ -63,7 +88,87 @@ export default function QueueDashboard() {
       router.replace('/');
       return;
     }
-  }, [isAuthenticated, user, router]);
+
+    // For users: verify they have access to the selected queue
+    // Only check if we have both user and selectedQueueId and queues are loaded
+    // Also wait for queues to finish loading to avoid false negatives
+    if (user.role === UserRole.User && selectedQueueId) {
+      // Wait for queues to finish loading before checking
+      // If queues are still loading, skip the check (will re-run when queues load)
+      if (queuesLoading) {
+        return; // Wait for queues to load
+      }
+      
+      // Only check if queues are loaded (even if empty)
+      if (queues.length > 0) {
+        const selectedQueue = queues.find((q) => q.id === selectedQueueId);
+        if (selectedQueue) {
+          // Check if queue belongs to user's assigned moderator
+          // Only show error if assignedModerator is explicitly null/undefined (not just falsy)
+          // This handles cases where assignedModerator might be 0 or empty string (edge cases)
+          if (user.assignedModerator != null && user.assignedModerator !== '') {
+            const queueModeratorId = selectedQueue.moderatorId?.toString();
+            const userModeratorId = user.assignedModerator.toString();
+            if (queueModeratorId !== userModeratorId) {
+              // User doesn't have access to this queue - clear selection and redirect to home
+              logger.warn('QueueDashboard: User attempted to access queue not assigned to their moderator', {
+                queueId: selectedQueueId,
+                queueModeratorId,
+                userModeratorId
+              });
+              // Clear the invalid queue selection to prevent infinite redirects
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('selectedQueueId');
+              }
+              addToast('ليس لديك صلاحية للوصول إلى هذا الطابور', 'error');
+              router.replace('/home');
+              return;
+            }
+          } else {
+            // User has no assigned moderator - but only show error if we're certain
+            // Check if assignedModerator is explicitly null/undefined (not just not loaded yet)
+            // If it's undefined, it might still be loading, so wait a bit
+            const hasExplicitlyNoModerator = user.assignedModerator === null || user.assignedModerator === '';
+            
+            if (hasExplicitlyNoModerator) {
+              logger.warn('QueueDashboard: User has no assigned moderator', {
+                userAssignedModerator: user.assignedModerator,
+                selectedQueueId
+              });
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('selectedQueueId');
+              }
+              addToast('لم يتم تعيين مشرف لك', 'error');
+              router.replace('/home');
+              return;
+            } else {
+              // assignedModerator is undefined - might still be loading
+              // Don't show error yet, wait for user data to fully load
+              logger.debug('QueueDashboard: Waiting for assignedModerator to load...', {
+                userAssignedModerator: user.assignedModerator,
+                selectedQueueId
+              });
+              return; // Wait for user data refresh
+            }
+          }
+        } else if (!selectedQueue && queues.length > 0) {
+          // Queue not found in user's accessible queues - clear selection
+          logger.warn('QueueDashboard: Selected queue not found in user accessible queues', {
+            selectedQueueId,
+            accessibleQueueIds: queues.map(q => q.id),
+            userAssignedModerator: user.assignedModerator
+          });
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('selectedQueueId');
+          }
+          router.replace('/home');
+          return;
+        }
+      }
+      // If queues.length === 0, don't show error yet - queues might still be loading
+      // or user might not have any queues assigned (which is valid)
+    }
+  }, [isAuthenticated, user, router, isValidating, selectedQueueId, queues, queuesLoading, addToast]);
   
   // Update CQP and ETS when queue data changes
   useEffect(() => {

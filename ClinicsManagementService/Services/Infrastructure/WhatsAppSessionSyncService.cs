@@ -124,7 +124,7 @@ namespace ClinicsManagementService.Services.Infrastructure
 
         /// <summary>
         /// Check if session is paused due to PendingQR (authentication required)
-        /// Checks both WhatsAppSession status and paused messages/sessions
+        /// Checks global WhatsAppSession.IsPaused, WhatsAppSession status, and paused messages/sessions
         /// </summary>
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <returns>True if session is paused due to PendingQR</returns>
@@ -132,13 +132,25 @@ namespace ClinicsManagementService.Services.Infrastructure
         {
             try
             {
-                // Check WhatsAppSession status
+                // CRITICAL: First check global WhatsAppSession.IsPaused with PendingQR reason (highest priority)
                 var whatsappSession = await _dbContext.WhatsAppSessions
                     .FirstOrDefaultAsync(s => s.ModeratorUserId == moderatorUserId && !s.IsDeleted);
                 
-                if (whatsappSession != null && whatsappSession.Status == "pending")
+                if (whatsappSession != null)
                 {
-                    return true; // Session requires authentication
+                    // Check global pause state with PendingQR reason
+                    if (whatsappSession.IsPaused && 
+                        whatsappSession.PauseReason != null && 
+                        whatsappSession.PauseReason.Contains("PendingQR"))
+                    {
+                        return true; // Global pause due to PendingQR
+                    }
+                    
+                    // Also check if status is "pending" (legacy check)
+                    if (whatsappSession.Status == "pending")
+                    {
+                        return true; // Session requires authentication
+                    }
                 }
 
                 // Check if there are paused messages with PendingQR reason

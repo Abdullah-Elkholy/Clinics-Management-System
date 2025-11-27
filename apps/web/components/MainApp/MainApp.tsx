@@ -114,31 +114,33 @@ function MainAppContent() {
                 <p className="text-gray-600">جاري التحميل...</p>
               </div>
             </div>
-          ) : isQueueSelected ? (
+          ) : (
+            // Render based on currentPanel state (which is synced with URL)
+            // Priority: currentPanel determines what to show, regardless of queue selection
+            // This ensures the displayed panel always matches the URL
             currentPanel === 'ongoing' ? (
               <OngoingTasksPanel />
             ) : currentPanel === 'failed' ? (
               <FailedTasksPanel />
             ) : currentPanel === 'completed' ? (
               <CompletedTasksPanel />
-            ) : (
-              <QueueDashboard />
-            )
-          ) : currentPanel === 'messages' ? (
-            <MessagesPanel />
-          ) : currentPanel === 'management' ? (
-            // ManagementPanel has its own authentication guard
-            <ManagementPanel />
-          ) : currentPanel === 'browserStatus' ? (
-            isAdmin ? (
-              <BrowserStatusOverview />
-            ) : (
-              <WhatsAppSessionProvider moderatorId={user?.role === 'moderator' ? parseInt(user.id) : user?.assignedModerator ? parseInt(user.assignedModerator) : undefined}>
+            ) : currentPanel === 'welcome' ? (
+              // Welcome panel: queue dashboard if queue selected, home screen otherwise
+              isQueueSelected ? <QueueDashboard /> : <WelcomeScreen />
+            ) : currentPanel === 'messages' ? (
+              <MessagesPanel />
+            ) : currentPanel === 'management' ? (
+              <ManagementPanel />
+            ) : currentPanel === 'browserStatus' ? (
+              isAdmin ? (
+                <BrowserStatusOverview />
+              ) : (
                 <BrowserStatusPanel />
-              </WhatsAppSessionProvider>
+              )
+            ) : (
+              // Default fallback - should only happen on initial load before URL sync
+              <WelcomeScreen />
             )
-          ) : (
-            <WelcomeScreen />
           )}
         </div>
       </div>

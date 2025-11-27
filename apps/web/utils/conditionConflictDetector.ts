@@ -9,7 +9,7 @@ export interface MessageCondition {
   id: string;
   name?: string;
   priority: number;
-  operator: 'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT';
+  operator: 'UNCONDITIONED' | 'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT';
   value?: number;
   minValue?: number;
   maxValue?: number;
@@ -43,6 +43,10 @@ export function conditionToRange(cond: MessageCondition): ValueRange | null {
 
     case 'DEFAULT':
       // DEFAULT doesn't have a numeric range, skip overlap check
+      return null;
+
+    case 'UNCONDITIONED':
+      // UNCONDITIONED doesn't have a numeric range, skip overlap check
       return null;
 
     default:

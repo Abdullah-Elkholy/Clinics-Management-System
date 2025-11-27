@@ -115,10 +115,24 @@ export async function getCurrentUser(): Promise<User> {
     const message = (typeof data === 'string' ? data : (data as Record<string, unknown>)?.message as string) || response.statusText || 'Failed to get current user';
     const error = new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
     
-    // Handle auth errors globally
+    // Handle auth errors globally, but only if this is NOT a user data refresh after login
+    // We check this by seeing if we have a token - if we do, it might be a refresh issue, not auth failure
+    // Only trigger logout if we're certain it's an auth failure (no token or token is definitely invalid)
     if (response.status === 401 || response.status === 403) {
-      const { handleApiError } = require('@/utils/apiInterceptor');
-      handleApiError({ statusCode: response.status, message });
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      // Only trigger global logout if we don't have a token
+      // If we have a token but get 401, it might be a temporary issue or token refresh needed
+      // Let the caller handle it (they might want to retry or use cached user data)
+      if (!token) {
+        const { handleApiError } = require('@/utils/apiInterceptor');
+        handleApiError({ statusCode: response.status, message });
+      } else {
+        // We have a token but got 401/403 - log but don't trigger logout
+        // This might be a temporary issue or the token needs refresh
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[getCurrentUser] Got 401/403 but token exists - might be temporary or need refresh');
+        }
+      }
     }
     
     throw error;

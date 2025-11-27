@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+
 namespace ClinicsManagementService.Configuration
 {
     /// <summary>
@@ -216,13 +219,38 @@ namespace ClinicsManagementService.Configuration
 
         #region Session and Storage
         /// <summary>
-        /// Get session directory for a specific moderator
+        /// Get base directory for WhatsApp sessions (absolute path)
+        /// </summary>
+        private static string GetSessionsBaseDirectory()
+        {
+            // // Use AppContext.BaseDirectory for .NET Core/5+ (more reliable than AppDomain.CurrentDomain.BaseDirectory)
+            // var baseDir = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory ?? Directory.GetCurrentDirectory();
+            
+            // // Normalize the path (remove trailing slashes, resolve relative paths)
+            // baseDir = Path.GetFullPath(baseDir);
+            
+            // Create a dedicated "WhatsAppSessions" directory in the base directory
+            var sessionsDir = Path.Combine("WhatsAppSessions");
+            
+            // Ensure the directory exists
+            if (!Directory.Exists(sessionsDir))
+            {
+                Directory.CreateDirectory(sessionsDir);
+            }
+            
+            return sessionsDir;
+        }
+
+        /// <summary>
+        /// Get session directory for a specific moderator (absolute path)
         /// </summary>
         /// <param name="moderatorId">Moderator ID</param>
-        /// <returns>Session directory path</returns>
+        /// <returns>Absolute session directory path</returns>
         public static string GetSessionDirectory(int moderatorId)
         {
-            return $"whatsapp-session-{moderatorId}";
+            var baseDir = GetSessionsBaseDirectory();
+            var sessionDir = Path.Combine(baseDir, $"whatsapp-session-{moderatorId}");
+            return sessionDir;
         }
 
         /// <summary>
@@ -238,13 +266,15 @@ namespace ClinicsManagementService.Configuration
         public const long MaxSessionSizeBytes = 10 * 1024 * 1024;
 
         /// <summary>
-        /// Get backup file name for a specific moderator
+        /// Get backup file path for a specific moderator (absolute path)
         /// </summary>
         /// <param name="moderatorId">Moderator ID</param>
-        /// <returns>Backup file name</returns>
+        /// <returns>Absolute backup file path</returns>
         public static string GetBackupFileName(int moderatorId)
         {
-            return $"whatsapp-session-{moderatorId}.zip";
+            var baseDir = GetSessionsBaseDirectory();
+            var backupPath = Path.Combine(baseDir, $"whatsapp-session-{moderatorId}.zip");
+            return backupPath;
         }
 
         /// <summary>

@@ -62,6 +62,8 @@ builder.Services.AddScoped<IUserContext, UserContext>();
 builder.Services.AddScoped<IConditionValidationService, ConditionValidationService>();
 builder.Services.AddScoped<IPatientPositionService, PatientPositionService>();  // Add missing service
 builder.Services.AddScoped<IPhonePlaceholderService, PhonePlaceholderService>();  // Add phone placeholder service
+builder.Services.AddScoped<IArabicErrorMessageService, ArabicErrorMessageService>();  // Arabic error message translation
+builder.Services.AddScoped<IContentVariableResolver, ContentVariableResolver>();  // Template variable resolution
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
 builder.Services.AddScoped<IAuditService, AuditService>();
@@ -147,9 +149,23 @@ builder.Services.AddCors(options =>
               )
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .AllowCredentials(); // Required for HttpOnly cookies
+              .AllowCredentials(); // Required for HttpOnly cookies and SignalR
     });
 });
+
+// Add SignalR services for real-time updates
+builder.Services.AddSignalR(options =>
+{
+    // Configure SignalR options
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
+    options.HandshakeTimeout = TimeSpan.FromSeconds(15);
+});
+
+// Register the ChangeNotificationInterceptor as a scoped service
+builder.Services.AddScoped<Clinics.Api.Interceptors.ChangeNotificationInterceptor>();
+builder.Services.AddScoped<Clinics.Api.Interceptors.AuditFieldsInterceptor>();
 
 // Resolve connection string (prefer configured DefaultConnection). Only use LocalSqlServer fallback when USE_LOCAL_SQL=true.
 var defaultConn = builder.Configuration.GetConnectionString("DefaultConnection") ?? builder.Configuration["ConnectionStrings:Default"];
@@ -162,13 +178,29 @@ if (string.IsNullOrEmpty(defaultConn) && useLocalSql)
 // Configure ApplicationDbContext: prefer SQL Server when we have a connection string, otherwise use InMemory for quick demo
 if (!string.IsNullOrEmpty(defaultConn))
 {
-    builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(defaultConn));
+    builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
+    {
+        options.UseSqlServer(defaultConn);
+        // Add interceptors: SignalR notifications and audit fields auto-population
+        options.AddInterceptors(
+            serviceProvider.GetRequiredService<Clinics.Api.Interceptors.AuditFieldsInterceptor>(),
+            serviceProvider.GetRequiredService<Clinics.Api.Interceptors.ChangeNotificationInterceptor>()
+        );
+    });
     // Configure Hangfire to use SQL Server storage (persistent job storage)
     builder.Services.AddHangfire(config => config.UseSqlServerStorage(defaultConn));
 }
 else
 {
-    builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase("ClinicsDemoDb"));
+    builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
+    {
+        options.UseInMemoryDatabase("ClinicsDemoDb");
+        // Add interceptors: SignalR notifications and audit fields auto-population
+        options.AddInterceptors(
+            serviceProvider.GetRequiredService<Clinics.Api.Interceptors.AuditFieldsInterceptor>(),
+            serviceProvider.GetRequiredService<Clinics.Api.Interceptors.ChangeNotificationInterceptor>()
+        );
+    });
     builder.Services.AddHangfire(config => config.UseMemoryStorage());
 }
 
@@ -223,6 +255,9 @@ app.UseAuthorization();
 // Cookie policy for refresh token (HttpOnly cookie usage planned)
 app.UseCookiePolicy();
 app.MapControllers();
+
+// Map SignalR hub endpoint
+app.MapHub<Clinics.Api.Hubs.DataUpdateHub>("/dataUpdateHub");
 
 // Lightweight health endpoint for CI/CD readiness and Playwright waits
 // Returns 200 OK when the application has started routing/middleware.

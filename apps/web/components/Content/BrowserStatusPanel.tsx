@@ -11,6 +11,7 @@ import { PanelHeader } from '@/components/Common/PanelHeader';
 import { EmptyState } from '@/components/Common/EmptyState';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import logger from '@/utils/logger';
 
 /**
  * BrowserStatusPanel - Normal View (for Moderators and Users)
@@ -20,22 +21,31 @@ export default function BrowserStatusPanel() {
   const { user } = useAuth();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
-  const { sessionStatus, sessionData, sessionHealth, refreshSessionStatus, refreshSessionHealth } = useWhatsAppSession();
+  const { sessionStatus, sessionData, sessionHealth, globalPauseState, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState } = useWhatsAppSession();
   const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Get moderator ID - ensure it's always a number or null
-  const moderatorId = user?.assignedModerator 
-    ? parseInt(user.assignedModerator) 
-    : (user?.role === 'moderator' ? parseInt(user.id) : null);
+  // For moderators: use their own ID
+  // For users: use their assignedModerator
+  // For admins: undefined (they should use BrowserStatusOverview instead)
+  let moderatorId: number | null = null;
+  
+  if (user?.role === 'moderator') {
+    const parsedId = parseInt(user.id, 10);
+    moderatorId = !isNaN(parsedId) ? parsedId : null;
+  } else if (user?.role === 'user' && user.assignedModerator) {
+    const parsedId = parseInt(user.assignedModerator, 10);
+    moderatorId = !isNaN(parsedId) ? parsedId : null;
+  }
   
   // Ensure moderatorId is a valid number
   const validModeratorId = moderatorId && !isNaN(moderatorId) ? moderatorId : null;
 
   const loadBrowserStatus = useCallback(async () => {
-    console.log('[BrowserStatusPanel] Loading browser status...', {
+    logger.debug('[BrowserStatusPanel] Loading browser status...', {
       user: user,
       moderatorId: moderatorId,
       validModeratorId: validModeratorId,
@@ -45,7 +55,7 @@ export default function BrowserStatusPanel() {
     });
 
     if (!validModeratorId) {
-      console.error('[BrowserStatusPanel] No valid moderator ID found');
+      logger.error('[BrowserStatusPanel] No valid moderator ID found');
       setError('لا يوجد مشرف مخصص');
       setIsLoading(false);
       return;
@@ -53,13 +63,13 @@ export default function BrowserStatusPanel() {
 
     try {
       setError(null);
-      console.log('[BrowserStatusPanel] Calling API with moderatorId:', validModeratorId);
+      logger.debug('[BrowserStatusPanel] Calling API with moderatorId:', validModeratorId);
       const status = await whatsappApiClient.getBrowserStatus(validModeratorId);
-      console.log('[BrowserStatusPanel] Received status:', status);
+      logger.debug('[BrowserStatusPanel] Received status:', status);
       setBrowserStatus(status);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'فشل تحميل حالة المتصفح';
-      console.error('[BrowserStatusPanel] Error loading status:', err);
+      logger.error('[BrowserStatusPanel] Error loading status:', err);
       setError(errorMsg);
       addToast(errorMsg, 'error');
     } finally {
@@ -76,20 +86,39 @@ export default function BrowserStatusPanel() {
 
     setIsRefreshing(true);
     try {
-      await whatsappApiClient.refreshBrowserStatus(validModeratorId);
-      addToast('تم تحديث حالة المتصفح بنجاح', 'success');
+      // Use checkAuthentication endpoint which handles pause/resume automatically
+      logger.debug('[BrowserStatusPanel] Calling checkAuthentication for moderator:', validModeratorId);
+      const result = await whatsappApiClient.checkAuthentication(validModeratorId, user?.id ? parseInt(user.id) : undefined);
+      
+      logger.debug('[BrowserStatusPanel] checkAuthentication result:', result);
+      
+      // Handle different states from OperationResult
+      if (result.isSuccess && result.state === 'Success') {
+        addToast('تم تحديث حالة المتصفح بنجاح - واتساب مصادق عليه', 'success');
+      } else if (result.state === 'PendingQR') {
+        addToast('تحديث الحالة: يتطلب مسح رمز QR للمصادقة', 'warning');
+      } else if (result.state === 'PendingNET') {
+        addToast('تحديث الحالة: فشل الاتصال بالشبكة', 'warning');
+      } else {
+        const errorMsg = result.resultMessage || 'فشل تحديث حالة المتصفح';
+        addToast(errorMsg, 'error');
+      }
+      
+      // Refresh all session data
       await Promise.all([
         loadBrowserStatus(),
         refreshSessionStatus(),
-        refreshSessionHealth()
+        refreshSessionHealth(),
+        refreshGlobalPauseState()
       ]);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'فشل تحديث حالة المتصفح';
+      logger.error('[BrowserStatusPanel] Error refreshing browser status:', err);
       addToast(errorMsg, 'error');
     } finally {
       setIsRefreshing(false);
     }
-  }, [validModeratorId, loadBrowserStatus, addToast, refreshSessionStatus, refreshSessionHealth]);
+  }, [validModeratorId, loadBrowserStatus, addToast, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState, user]);
 
   const handleClose = useCallback(async () => {
     if (!validModeratorId) return;
@@ -190,8 +219,93 @@ export default function BrowserStatusPanel() {
         ]}
       />
 
+      {/* Global Pause Warning - PendingQR/PendingNET/BrowserClosure */}
+      {globalPauseState?.isPaused && (
+        <div className={`mx-6 mt-6 rounded-lg p-4 flex items-start gap-3 ${
+          globalPauseState.pauseReason?.includes('PendingQR')
+            ? 'bg-yellow-50 border border-yellow-200'
+            : globalPauseState.pauseReason?.includes('PendingNET')
+            ? 'bg-orange-50 border border-orange-200'
+            : globalPauseState.pauseReason?.includes('BrowserClosure')
+            ? 'bg-red-50 border border-red-200'
+            : 'bg-gray-50 border border-gray-200'
+        }`}>
+          <i className={`fas ${
+            globalPauseState.pauseReason?.includes('PendingQR')
+              ? 'fa-exclamation-triangle text-yellow-600'
+              : globalPauseState.pauseReason?.includes('PendingNET')
+              ? 'fa-wifi text-orange-600'
+              : globalPauseState.pauseReason?.includes('BrowserClosure')
+              ? 'fa-times-circle text-red-600'
+              : 'fa-pause-circle text-gray-600'
+          } text-lg mt-0.5`}></i>
+          <div className="flex-1">
+            <h5 className={`font-semibold mb-1 ${
+              globalPauseState.pauseReason?.includes('PendingQR')
+                ? 'text-yellow-800'
+                : globalPauseState.pauseReason?.includes('PendingNET')
+                ? 'text-orange-800'
+                : globalPauseState.pauseReason?.includes('BrowserClosure')
+                ? 'text-red-800'
+                : 'text-gray-800'
+            }`}>
+              {globalPauseState.pauseReason?.includes('PendingQR')
+                ? '⚠️ تم إيقاف جميع المهام - يتطلب المصادقة (PendingQR)'
+                : globalPauseState.pauseReason?.includes('PendingNET')
+                ? '⚠️ تم إيقاف جميع المهام - فشل الاتصال بالإنترنت (PendingNET)'
+                : globalPauseState.pauseReason?.includes('BrowserClosure')
+                ? '⚠️ تم إيقاف جميع المهام - تم إغلاق المتصفح'
+                : '⚠️ تم إيقاف جميع المهام'}
+            </h5>
+            <p className={`text-sm ${
+              globalPauseState.pauseReason?.includes('PendingQR')
+                ? 'text-yellow-700'
+                : globalPauseState.pauseReason?.includes('PendingNET')
+                ? 'text-orange-700'
+                : globalPauseState.pauseReason?.includes('BrowserClosure')
+                ? 'text-red-700'
+                : 'text-gray-700'
+            }`}>
+              {globalPauseState.pauseReason || 'تم إيقاف جميع المهام مؤقتًا'}
+              {globalPauseState.pausedAt && (
+                <span className="block mt-1 text-xs opacity-75">
+                  تم الإيقاف في: {new Date(globalPauseState.pausedAt).toLocaleString('ar-SA')}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Info Box - Authentication Check Notice */}
+      {!isRefreshing && !globalPauseState?.isPaused && (
+        <div className="mx-6 mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+          <i className="fas fa-info-circle text-blue-600 text-lg mt-0.5"></i>
+          <div className="flex-1">
+            <h5 className="font-semibold text-blue-800 mb-1">ملاحظة هامة</h5>
+            <p className="text-sm text-blue-700">
+              عند الضغط على زر التحديث، سيتم إيقاف جميع عمليات إرسال الرسائل مؤقتًا للتحقق من حالة المصادقة. 
+              بعد الانتهاء، ستستأنف العمليات تلقائيًا.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Notice - During Authentication Check */}
+      {isRefreshing && (
+        <div className="mx-6 mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+          <i className="fas fa-spinner fa-spin text-yellow-600 text-lg mt-0.5"></i>
+          <div className="flex-1">
+            <h5 className="font-semibold text-yellow-800 mb-1">جاري التحقق من حالة المصادقة...</h5>
+            <p className="text-sm text-yellow-700">
+              تم إيقاف جميع عمليات إرسال الرسائل مؤقتًا. يرجى الانتظار...
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
-      <div className="flex flex-wrap gap-3 mb-6 px-6 pt-6">
+      <div className="flex flex-wrap gap-3 px-6 pt-6">
         <button
           onClick={handleRefresh}
           disabled={isRefreshing}
@@ -221,53 +335,6 @@ export default function BrowserStatusPanel() {
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Status Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Active Status */}
-          <div className={`p-5 rounded-lg border ${displayStatus.isActive ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-gray-800">حالة النشاط</h3>
-              <div className={`w-3 h-3 rounded-full ${displayStatus.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-            </div>
-            <p className="text-xl font-bold text-gray-900">
-              {displayStatus.isActive ? 'نشط' : 'غير نشط'}
-            </p>
-          </div>
-
-          {/* Health Status */}
-          <div className={`p-5 rounded-lg border ${displayStatus.isHealthy ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'}`}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-gray-800">حالة الصحة</h3>
-              <div className={`w-3 h-3 rounded-full ${displayStatus.isHealthy ? 'bg-blue-500' : 'bg-yellow-500'}`}></div>
-            </div>
-            <p className="text-xl font-bold text-gray-900">
-              {displayStatus.isHealthy ? 'صحي' : 'غير صحي'}
-            </p>
-          </div>
-
-          {/* Authentication Status */}
-          <div className={`p-5 rounded-lg border ${displayStatus.isAuthenticated ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-gray-800">حالة المصادقة</h3>
-              <div className={`w-3 h-3 rounded-full ${displayStatus.isAuthenticated ? 'bg-emerald-500' : 'bg-orange-500'}`}></div>
-            </div>
-            <p className="text-xl font-bold text-gray-900">
-              {displayStatus.isAuthenticated ? 'مصادق' : 'غير مصادق'}
-            </p>
-          </div>
-
-          {/* Session Age */}
-          <div className="p-5 rounded-lg border bg-gray-50 border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-gray-800">عمر الجلسة</h3>
-              <i className="fas fa-clock text-gray-400"></i>
-            </div>
-            <p className="text-xl font-bold text-gray-900">
-              {displayStatus.sessionAge || 'غير متاح'}
-            </p>
-          </div>
-        </div>
-
         {/* Details Section */}
         <div className="bg-white rounded-lg border border-gray-200 p-5">
           <h3 className="text-base font-semibold text-gray-800 mb-4">تفاصيل الجلسة</h3>

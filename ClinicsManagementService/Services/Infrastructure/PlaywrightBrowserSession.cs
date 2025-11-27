@@ -110,7 +110,7 @@ namespace ClinicsManagementService.Services
                 if (_browser == null)
                 {
                     Directory.CreateDirectory(_sessionDirectory);
-                    _browser = await _playwright.Chromium.LaunchPersistentContextAsync(
+                    _browser = await _playwright.Firefox.LaunchPersistentContextAsync(
                         _sessionDirectory,
                         new BrowserTypeLaunchPersistentContextOptions
                         {
@@ -118,8 +118,6 @@ namespace ClinicsManagementService.Services
                             Args = new[]
                             {
                                 "--disable-blink-features=AutomationControlled",
-                                "--window-size=1280,800",
-                                "--start-maximized",
                             }
                         }
                     );

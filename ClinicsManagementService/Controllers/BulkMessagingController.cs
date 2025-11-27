@@ -1,6 +1,7 @@
 using ClinicsManagementService.Models;
 using ClinicsManagementService.Services.Interfaces;
 using ClinicsManagementService.Services.Domain;
+using ClinicsManagementService.Services.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading;
 using Clinics.Infrastructure;
@@ -79,6 +80,26 @@ namespace ClinicsManagementService.Controllers
                 }
 
                 int effectiveModeratorId = moderatorUserId;
+                
+                // ✅ Phase 12: Restore from backup at START (before any operations)
+                var sessionOptimizer = HttpContext.RequestServices.GetRequiredService<IWhatsAppSessionOptimizer>();
+                try
+                {
+                    await sessionOptimizer.RestoreFromBackupAsync(effectiveModeratorId);
+                }
+                catch (Exception restoreEx)
+                {
+                    _notifier.Notify($"⚠️ [SEND-SINGLE] Restore from backup failed (non-critical): {restoreEx.Message}");
+                }
+                
+                // Wait for any current operations to complete
+                var coordinator = HttpContext.RequestServices.GetRequiredService<OperationCoordinatorService>();
+                var waitResult = await coordinator.WaitForCurrentOperationToFinishAsync(effectiveModeratorId, cancellationToken);
+                if (!waitResult)
+                {
+                    _notifier.Notify($"⚠️ [SEND-SINGLE] Timeout waiting for operations to finish for moderator {effectiveModeratorId}");
+                }
+                
                 // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {
@@ -142,6 +163,9 @@ namespace ClinicsManagementService.Controllers
                     // true state: WhatsApp number is valid - proceed with send
                 }
 
+                // Check cancellation before restore
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // Check and auto-restore if session size exceeds threshold
                 try
                 {
@@ -155,7 +179,140 @@ namespace ClinicsManagementService.Controllers
                 // Check cancellation before sending
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var sent = await _messageSender.SendMessageAsync(effectiveModeratorId, request.Phone, request.Message, cancellationToken);
+                bool sent = false;
+                string? errorCode = null;
+                string? errorMessage = null;
+                
+                try
+                {
+                    sent = await _messageSender.SendMessageAsync(effectiveModeratorId, request.Phone, request.Message, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Browser closed or operation cancelled - BrowserClosure
+                    _notifier.Notify($"⚠️ [SEND-SINGLE] Operation cancelled (BrowserClosure) for moderator {effectiveModeratorId}");
+                    
+                    // Pause all tasks globally using global WhatsAppSession pause
+                    await coordinator.PauseAllOngoingTasksAsync(
+                        effectiveModeratorId,
+                        userId ?? effectiveModeratorId,
+                        "BrowserClosure - Browser closed or operation cancelled");
+                    
+                    errorCode = "BrowserClosure";
+                    errorMessage = "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية.";
+                    
+                    return BadRequest(new { 
+                        success = false,
+                        error = errorCode,
+                        code = "BROWSER_CLOSED",
+                        message = errorMessage,
+                        warning = true
+                    });
+                }
+                catch (InvalidOperationException ex) when (ex.Message.StartsWith("PendingQR:"))
+                {
+                    // PendingQR detected - pause global WhatsAppSession
+                    _notifier.Notify($"❌ [SEND-SINGLE] PendingQR detected for moderator {effectiveModeratorId}");
+                    
+                    // Pause all tasks globally using global WhatsAppSession pause
+                    await coordinator.PauseAllOngoingTasksAsync(
+                        effectiveModeratorId,
+                        userId ?? effectiveModeratorId,
+                        "PendingQR - Authentication required");
+                    
+                    // Update database status to pending
+                    try
+                    {
+                        await _sessionSyncService.UpdateSessionStatusAsync(
+                            effectiveModeratorId,
+                            "pending",
+                            DateTime.UtcNow,
+                            activityUserId: userId ?? effectiveModeratorId);
+                    }
+                    catch (Exception syncEx)
+                    {
+                        _notifier.Notify($"⚠️ Failed to update session status: {syncEx.Message}");
+                    }
+                    
+                    errorCode = "PendingQR";
+                    errorMessage = ex.Message.Replace("PendingQR: ", "") ?? "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.";
+                    
+                    return BadRequest(new { 
+                        success = false,
+                        error = errorCode,
+                        code = "AUTHENTICATION_REQUIRED",
+                        message = errorMessage,
+                        warning = true
+                    });
+                }
+                catch (InvalidOperationException ex) when (ex.Message.StartsWith("PendingNET:"))
+                {
+                    // PendingNET detected - pause global WhatsAppSession
+                    _notifier.Notify($"❌ [SEND-SINGLE] PendingNET detected for moderator {effectiveModeratorId}");
+                    
+                    // Pause all tasks globally using global WhatsAppSession pause
+                    await coordinator.PauseAllOngoingTasksAsync(
+                        effectiveModeratorId,
+                        userId ?? effectiveModeratorId,
+                        "PendingNET - Network failure");
+                    
+                    // Note: Do NOT update database status for PendingNET (as per requirement)
+                    
+                    errorCode = "PendingNET";
+                    errorMessage = ex.Message.Replace("PendingNET: ", "") ?? "فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية.";
+                    
+                    return BadRequest(new { 
+                        success = false,
+                        error = errorCode,
+                        code = "NETWORK_FAILURE",
+                        message = errorMessage,
+                        warning = true
+                    });
+                }
+                catch (InvalidOperationException ex) when (ex.Message.StartsWith("BrowserClosure:"))
+                {
+                    // BrowserClosure detected - pause global WhatsAppSession
+                    _notifier.Notify($"⚠️ [SEND-SINGLE] BrowserClosure detected for moderator {effectiveModeratorId}");
+                    
+                    // Pause all tasks globally using global WhatsAppSession pause
+                    await coordinator.PauseAllOngoingTasksAsync(
+                        effectiveModeratorId,
+                        userId ?? effectiveModeratorId,
+                        "BrowserClosure - Browser session terminated");
+                    
+                    errorCode = "BrowserClosure";
+                    errorMessage = ex.Message.Replace("BrowserClosure: ", "") ?? "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية.";
+                    
+                    return BadRequest(new { 
+                        success = false,
+                        error = errorCode,
+                        code = "BROWSER_CLOSED",
+                        message = errorMessage,
+                        warning = true
+                    });
+                }
+                catch (Exception ex) when (IsBrowserClosedException(ex))
+                {
+                    // Browser closed exception - BrowserClosure
+                    _notifier.Notify($"⚠️ [SEND-SINGLE] Browser closed (BrowserClosure) for moderator {effectiveModeratorId}");
+                    
+                    // Pause all tasks globally using global WhatsAppSession pause
+                    await coordinator.PauseAllOngoingTasksAsync(
+                        effectiveModeratorId,
+                        userId ?? effectiveModeratorId,
+                        "BrowserClosure - Browser session terminated");
+                    
+                    errorCode = "BrowserClosure";
+                    errorMessage = "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية.";
+                    
+                    return BadRequest(new { 
+                        success = false,
+                        error = errorCode,
+                        code = "BROWSER_CLOSED",
+                        message = errorMessage,
+                        warning = true
+                    });
+                }
                 
                 if (sent)
                 {
@@ -177,25 +334,9 @@ namespace ClinicsManagementService.Controllers
                 }
                 else
                 {
-                    // Message failed - check if it's due to PendingQR by calling check-authentication
-                    try
-                    {
-                        var browserSession = await _whatsappService.PrepareSessionAsync(effectiveModeratorId);
-                        await browserSession.InitializeAsync();
-                        await browserSession.NavigateToAsync(Configuration.WhatsAppConfiguration.WhatsAppBaseUrl);
-                        var authCheck = await _whatsappService.CheckInternetConnectivityDetailedAsync();
-                        
-                        // If authentication is pending, update database status
-                        if (authCheck.State == Models.OperationState.PendingQR)
-                        {
-                            _notifier.Notify($"⚠️ Message failed due to PendingQR - updating database status");
-                            await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
-                        }
-                    }
-                    catch (Exception syncEx)
-                    {
-                        _notifier.Notify($"⚠️ Failed to sync session status after send failure: {syncEx.Message}");
-                    }
+                    // Generic failure (not PendingQR/PendingNET/BrowserClosure)
+                    _notifier.Notify($"❌ [SEND-SINGLE] Message failed to send for moderator {effectiveModeratorId}");
+                    
                     // Check and auto-restore if session size exceeds threshold
                     try
                     {
@@ -205,9 +346,32 @@ namespace ClinicsManagementService.Controllers
                     {
                         _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                     }
-                    return StatusCode(502, "Message failed to be sent.");
+                    
+                    return StatusCode(502, new { 
+                        success = false,
+                        error = "Message failed to be sent.",
+                        message = "فشل إرسال الرسالة."
+                    });
                 }
             }, this, _notifier, nameof(SendSingle));
+        }
+
+        /// <summary>
+        /// Helper method to detect browser closed exceptions
+        /// </summary>
+        private bool IsBrowserClosedException(Exception ex)
+        {
+            if (ex == null) return false;
+            
+            var message = ex.Message?.ToLower() ?? "";
+            var innerMessage = ex.InnerException?.Message?.ToLower() ?? "";
+            
+            return message.Contains("browser") && message.Contains("closed") ||
+                   message.Contains("target closed") ||
+                   message.Contains("session closed") ||
+                   innerMessage.Contains("browser") && innerMessage.Contains("closed") ||
+                   innerMessage.Contains("target closed") ||
+                   innerMessage.Contains("session closed");
         }
 
         /* Send multiple messages to multiple phone numbers (each item is a phone/message pair), 

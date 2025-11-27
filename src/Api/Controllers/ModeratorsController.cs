@@ -566,5 +566,242 @@ namespace Clinics.Api.Controllers
                 return StatusCode(500, new { success = false, error = "Error fetching WhatsApp session" });
             }
         }
+
+        /// <summary>
+        /// Pause all tasks for a moderator (sets WhatsAppSession.IsPaused = true)
+        /// </summary>
+        [HttpPost("{moderatorId}/pause-all")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
+        public async Task<IActionResult> PauseAllModeratorTasks(int moderatorId, [FromBody] PauseAllRequest request)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+                }
+
+                // Verify user has permission to pause this moderator's tasks
+                var currentUser = await _db.Users.FindAsync(userId);
+                if (currentUser == null) 
+                    return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+                var isModerator = currentUser.Role == "moderator";
+                var isUser = currentUser.Role == "user";
+
+                // Users under the moderator can manage everything (pause, resume, send, etc.)
+                // Moderators can manage their own tasks
+                // Admins can manage any moderator's tasks
+                if (!isAdmin)
+                {
+                    if (isModerator && currentUser.Id != moderatorId)
+                    {
+                        return Forbid();
+                    }
+
+                    if (isUser && currentUser.ModeratorId != moderatorId)
+                    {
+                        return Forbid();
+                    }
+                }
+
+                // Get or create WhatsAppSession for moderator
+                var whatsappSession = await _db.WhatsAppSessions
+                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId);
+
+                if (whatsappSession == null)
+                {
+                    // Create new WhatsAppSession if doesn't exist
+                    whatsappSession = new WhatsAppSession
+                    {
+                        ModeratorUserId = moderatorId,
+                        Status = "connected",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedByUserId = userId,
+                        IsPaused = false
+                    };
+                    _db.WhatsAppSessions.Add(whatsappSession);
+                }
+
+                // Set global pause ONLY (no cascade to MessageSessions)
+                // The priority logic in MessageProcessor will check WhatsAppSession.IsPaused first
+                whatsappSession.IsPaused = true;
+                whatsappSession.PausedAt = DateTime.UtcNow;
+                whatsappSession.PausedBy = userId;
+                whatsappSession.PauseReason = request?.Reason ?? "User paused";
+                whatsappSession.UpdatedAt = DateTime.UtcNow;
+                whatsappSession.UpdatedBy = userId;
+
+                await _db.SaveChangesAsync();
+
+                _logger.LogInformation("Moderator {ModeratorId} tasks paused globally by user {UserId}", moderatorId, userId);
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "تم إيقاف جميع المهام للمشرف"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error pausing moderator tasks");
+                return StatusCode(500, new { success = false, error = "فشل إيقاف المهام" });
+            }
+        }
+
+        /// <summary>
+        /// Resume all tasks for a moderator (sets WhatsAppSession.IsPaused = false)
+        /// </summary>
+        [HttpPost("{moderatorId}/resume-all")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
+        public async Task<IActionResult> ResumeAllModeratorTasks(int moderatorId)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+                }
+
+                // Verify permissions (same as pause - users can manage)
+                var currentUser = await _db.Users.FindAsync(userId);
+                if (currentUser == null) 
+                    return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+                var isModerator = currentUser.Role == "moderator";
+                var isUser = currentUser.Role == "user";
+
+                // Users under the moderator can manage everything
+                if (!isAdmin)
+                {
+                    if (isModerator && currentUser.Id != moderatorId)
+                    {
+                        return Forbid();
+                    }
+
+                    if (isUser && currentUser.ModeratorId != moderatorId)
+                    {
+                        return Forbid();
+                    }
+                }
+
+                // Get WhatsAppSession
+                var whatsappSession = await _db.WhatsAppSessions
+                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId);
+
+                if (whatsappSession == null || !whatsappSession.IsPaused)
+                {
+                    return Ok(new { success = true, message = "لا توجد مهام موقوفة" });
+                }
+
+                // Resume global pause ONLY (no cascade resume needed)
+                // Messages will be automatically processable when global pause is removed
+                whatsappSession.IsPaused = false;
+                whatsappSession.PausedAt = null;
+                whatsappSession.PausedBy = null;
+                whatsappSession.PauseReason = null;
+                whatsappSession.UpdatedAt = DateTime.UtcNow;
+                whatsappSession.UpdatedBy = userId;
+
+                await _db.SaveChangesAsync();
+
+                _logger.LogInformation("Moderator {ModeratorId} tasks resumed by user {UserId}", moderatorId, userId);
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "تم استئناف جميع المهام للمشرف"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resuming moderator tasks");
+                return StatusCode(500, new { success = false, error = "فشل استئناف المهام" });
+            }
+        }
+
+        /// <summary>
+        /// Get global pause state for a moderator
+        /// </summary>
+        [HttpGet("{moderatorId}/pause-state")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
+        public async Task<IActionResult> GetGlobalPauseState(int moderatorId)
+        {
+            try
+            {
+                // Verify permissions: users can only access their assigned moderator's pause state
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+                }
+
+                var currentUser = await _db.Users.FindAsync(userId);
+                if (currentUser == null) 
+                    return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+                var isModerator = currentUser.Role == "moderator";
+                var isUser = currentUser.Role == "user";
+
+                // Verify access: users can only access their assigned moderator's pause state
+                if (!isAdmin)
+                {
+                    if (isModerator && currentUser.Id != moderatorId)
+                    {
+                        return Forbid();
+                    }
+
+                    if (isUser && (!currentUser.ModeratorId.HasValue || currentUser.ModeratorId.Value != moderatorId))
+                    {
+                        return Forbid();
+                    }
+                }
+
+                var whatsappSession = await _db.WhatsAppSessions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId);
+
+                if (whatsappSession == null)
+                {
+                    return Ok(new
+                    {
+                        isPaused = false,
+                        pauseReason = (string?)null,
+                        pausedAt = (DateTime?)null
+                    });
+                }
+
+                return Ok(new
+                {
+                    isPaused = whatsappSession.IsPaused,
+                    pauseReason = whatsappSession.PauseReason,
+                    pausedAt = whatsappSession.PausedAt
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching pause state");
+                return StatusCode(500, new { success = false, error = "فشل جلب حالة الإيقاف" });
+            }
+        }
+    }
+
+    public class PauseAllRequest
+    {
+        public string? Reason { get; set; }
     }
 }

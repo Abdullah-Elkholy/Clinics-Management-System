@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
+using Clinics.Infrastructure.Services;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
 using Clinics.Api.Services;
@@ -16,31 +17,35 @@ namespace Clinics.Api.Controllers
         private readonly ApplicationDbContext _db;
         private readonly QuotaService _quotaService;
         private readonly ILogger<MessagesController> _logger;
+        private readonly IContentVariableResolver _variableResolver;
 
         public MessagesController(
             ApplicationDbContext db, 
             QuotaService quotaService,
-            ILogger<MessagesController> logger)
+            ILogger<MessagesController> logger,
+            IContentVariableResolver variableResolver)
         {
             _db = db;
             _quotaService = quotaService;
             _logger = logger;
+            _variableResolver = variableResolver;
         }
 
         [HttpPost("send")]
         public async Task<IActionResult> Send([FromBody] SendMessageRequest req)
         {
+            // Get current user ID with fallback claim types (declared outside try block for catch block access)
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("sub")?.Value
+                ?? User.FindFirst("userId")?.Value;
+                
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+            }
+            
             try
             {
-                // Get current user ID with fallback claim types
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                    ?? User.FindFirst("sub")?.Value
-                    ?? User.FindFirst("userId")?.Value;
-                    
-                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-                {
-                    return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
-                }
 
                 // Check if user has sufficient quota
                 var messageCount = req.PatientIds.Length;
@@ -70,10 +75,56 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, error = "معرف المشرف غير صحيح" });
                 }
 
-                // Check if WhatsApp session is paused due to PendingQR
+                // Check if WhatsApp session is paused globally (due to PendingQR, PendingNET, or BrowserClosure)
                 var whatsappSessionCheck = await _db.WhatsAppSessions
                     .FirstOrDefaultAsync(w => w.ModeratorUserId == effectiveModeratorId && !w.IsDeleted);
                 
+                if (whatsappSessionCheck != null && whatsappSessionCheck.IsPaused)
+                {
+                    // Determine error type from pause reason
+                    string errorCode;
+                    string code;
+                    string errorMessage;
+                    
+                    if (whatsappSessionCheck.PauseReason?.Contains("PendingQR") == true)
+                    {
+                        errorCode = "PendingQR";
+                        code = "AUTHENTICATION_REQUIRED";
+                        errorMessage = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.";
+                    }
+                    else if (whatsappSessionCheck.PauseReason?.Contains("PendingNET") == true)
+                    {
+                        errorCode = "PendingNET";
+                        code = "NETWORK_FAILURE";
+                        errorMessage = "فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية. يرجى التحقق من الاتصال والمحاولة مرة أخرى.";
+                    }
+                    else if (whatsappSessionCheck.PauseReason?.Contains("BrowserClosure") == true)
+                    {
+                        errorCode = "BrowserClosure";
+                        code = "BROWSER_CLOSED";
+                        errorMessage = "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية. يرجى إعادة فتح المتصفح والمحاولة مرة أخرى.";
+                    }
+                    else
+                    {
+                        // Generic pause (fallback)
+                        errorCode = "SessionPaused";
+                        code = "SESSION_PAUSED";
+                        errorMessage = "تم إيقاف جلسة الواتساب. يرجى استئناف الجلسة أولاً قبل إرسال الرسائل.";
+                    }
+                    
+                    _logger.LogWarning("User {UserId} attempted to send messages but WhatsApp session is paused: {PauseReason}", 
+                        userId, whatsappSessionCheck.PauseReason);
+                    return BadRequest(new 
+                    { 
+                        success = false, 
+                        error = errorCode,
+                        code = code,
+                        message = errorMessage,
+                        warning = true
+                    });
+                }
+                
+                // Also check if WhatsApp session status is "pending" (legacy check for PendingQR)
                 if (whatsappSessionCheck != null && whatsappSessionCheck.Status == "pending")
                 {
                     _logger.LogWarning("User {UserId} attempted to send messages but WhatsApp session requires authentication (PendingQR)", userId);
@@ -82,26 +133,69 @@ namespace Clinics.Api.Controllers
                         success = false, 
                         error = "PendingQR",
                         code = "AUTHENTICATION_REQUIRED",
-                        message = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل."
+                        message = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.",
+                        warning = true
                     });
                 }
 
-                // Check if there are any paused messages for this moderator (due to PendingQR)
+                // Check if there are any paused messages for this moderator (due to PendingQR/PendingNET/BrowserClosure)
                 var hasPausedMessages = await _db.Messages
                     .AnyAsync(m => m.ModeratorId == effectiveModeratorId 
                         && m.IsPaused 
-                        && m.PauseReason == "PendingQR"
+                        && (m.PauseReason == "PendingQR" || m.PauseReason == "PendingNET" || m.PauseReason == "BrowserClosure")
                         && (m.Status == "queued" || m.Status == "sending"));
                 
                 if (hasPausedMessages)
                 {
-                    _logger.LogWarning("User {UserId} attempted to send messages but there are paused messages due to PendingQR", userId);
+                    // Get the most common pause reason from paused messages
+                    var pauseReasons = await _db.Messages
+                        .Where(m => m.ModeratorId == effectiveModeratorId 
+                            && m.IsPaused 
+                            && (m.PauseReason == "PendingQR" || m.PauseReason == "PendingNET" || m.PauseReason == "BrowserClosure")
+                            && (m.Status == "queued" || m.Status == "sending"))
+                        .GroupBy(m => m.PauseReason)
+                        .Select(g => new { Reason = g.Key, Count = g.Count() })
+                        .OrderByDescending(x => x.Count)
+                        .FirstOrDefaultAsync();
+                    
+                    string errorCode;
+                    string code;
+                    string errorMessage;
+                    
+                    if (pauseReasons?.Reason == "PendingQR")
+                    {
+                        errorCode = "PendingQR";
+                        code = "AUTHENTICATION_REQUIRED";
+                        errorMessage = "هناك رسائل متوقفة بسبب الحاجة إلى المصادقة. يرجى المصادقة أولاً قبل إرسال رسائل جديدة.";
+                    }
+                    else if (pauseReasons?.Reason == "PendingNET")
+                    {
+                        errorCode = "PendingNET";
+                        code = "NETWORK_FAILURE";
+                        errorMessage = "هناك رسائل متوقفة بسبب فشل الاتصال بالإنترنت. يرجى التحقق من الاتصال والمحاولة مرة أخرى.";
+                    }
+                    else if (pauseReasons?.Reason == "BrowserClosure")
+                    {
+                        errorCode = "BrowserClosure";
+                        code = "BROWSER_CLOSED";
+                        errorMessage = "هناك رسائل متوقفة بسبب إغلاق المتصفح. يرجى إعادة فتح المتصفح والمحاولة مرة أخرى.";
+                    }
+                    else
+                    {
+                        errorCode = "MessagesPaused";
+                        code = "MESSAGES_PAUSED";
+                        errorMessage = "هناك رسائل متوقفة. يرجى استئناف الرسائل أولاً قبل إرسال رسائل جديدة.";
+                    }
+                    
+                    _logger.LogWarning("User {UserId} attempted to send messages but there are paused messages due to {PauseReason}", 
+                        userId, pauseReasons?.Reason ?? "unknown");
                     return BadRequest(new 
                     { 
                         success = false, 
-                        error = "PendingQR",
-                        code = "AUTHENTICATION_REQUIRED",
-                        message = "هناك رسائل متوقفة بسبب الحاجة إلى المصادقة. يرجى المصادقة أولاً قبل إرسال رسائل جديدة."
+                        error = errorCode,
+                        code = code,
+                        message = errorMessage,
+                        warning = true
                     });
                 }
 
@@ -340,26 +434,13 @@ namespace Clinics.Api.Controllers
                         var finalTemplate = selectedTemplate ?? template;
                         var templateContent = req.OverrideContent ?? finalTemplate.Content;
                         
-                        // Replace template variables with actual values
-                        // PN: Patient Name (FullName or Id if FullName is null)
-                        var patientName = !string.IsNullOrEmpty(p.FullName) ? p.FullName : $"Patient ID: {p.Id}";
-                        // PQP: Patient Queue Position (absolute position)
-                        var patientQueuePosition = p.Position;
-                        // CQP: Current Queue Position
-                        var currentQueuePosition = queue.CurrentPosition;
-                        // ETR: Estimated Time Remaining (calculated from offset * estimatedTimePerSession)
-                        var estimatedTimePerSession = queue.EstimatedWaitMinutes > 0 ? queue.EstimatedWaitMinutes : 15; // Default 15 minutes if not set or invalid
-                        var etrMinutes = calculatedPosition * estimatedTimePerSession;
-                        var etrDisplay = FormatTimeDisplay(etrMinutes);
-                        // DN: Doctor/Queue Name
-                        var doctorName = queue.DoctorName ?? "غير محدد";
-                        
-                        content = templateContent
-                            .Replace("{PN}", patientName)
-                            .Replace("{PQP}", patientQueuePosition.ToString())
-                            .Replace("{CQP}", currentQueuePosition.ToString())
-                            .Replace("{ETR}", etrDisplay)
-                            .Replace("{DN}", doctorName);
+                        // Resolve template variables using centralized service
+                        content = _variableResolver.ResolveVariables(
+                            templateContent,
+                            p,
+                            queue,
+                            calculatedPosition
+                        );
 
                         var msg = new Message
                         {
@@ -405,6 +486,48 @@ namespace Clinics.Api.Controllers
                     _logger.LogError(ex, "Error queueing messages");
                     return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إضافة الرسائل إلى قائمة الانتظار", message = ex.Message });
                 }
+            }
+            catch (InvalidOperationException ex) when (
+                ex.Message.StartsWith("PendingQR:", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.StartsWith("PendingNET:", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.StartsWith("BrowserClosure:", StringComparison.OrdinalIgnoreCase))
+            {
+                // PendingQR, PendingNET, or BrowserClosure detected during message queueing
+                // These errors are caught from WhatsAppServiceSender when checking session status
+                string errorCode;
+                string errorMessage;
+                string code;
+                
+                if (ex.Message.StartsWith("PendingQR:", StringComparison.OrdinalIgnoreCase))
+                {
+                    errorCode = "PendingQR";
+                    code = "AUTHENTICATION_REQUIRED";
+                    errorMessage = ex.Message.Replace("PendingQR: ", "") ?? "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.";
+                }
+                else if (ex.Message.StartsWith("PendingNET:", StringComparison.OrdinalIgnoreCase))
+                {
+                    errorCode = "PendingNET";
+                    code = "NETWORK_FAILURE";
+                    errorMessage = ex.Message.Replace("PendingNET: ", "") ?? "فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية.";
+                }
+                else // BrowserClosure
+                {
+                    errorCode = "BrowserClosure";
+                    code = "BROWSER_CLOSED";
+                    errorMessage = ex.Message.Replace("BrowserClosure: ", "") ?? "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية.";
+                }
+                
+                _logger.LogWarning("Message queueing blocked due to {ErrorCode} for user {UserId}: {Message}", 
+                    errorCode, userId, errorMessage);
+                
+                return BadRequest(new 
+                { 
+                    success = false, 
+                    error = errorCode,
+                    code = code,
+                    message = errorMessage,
+                    warning = true
+                });
             }
             catch (InvalidOperationException ex)
             {
@@ -826,22 +949,6 @@ namespace Clinics.Api.Controllers
                 _logger.LogError(ex, "Error resuming all moderator messages {ModeratorId}", moderatorId);
                 return StatusCode(500, new { success = false, error = "Error resuming all messages" });
             }
-        }
-
-        /// <summary>
-        /// Format time in minutes to Arabic display format (e.g., "2 ساعة و 30 دقيقة" or "45 دقيقة")
-        /// </summary>
-        private static string FormatTimeDisplay(int minutes)
-        {
-            var mins = Math.Max(0, minutes);
-            var hours = mins / 60;
-            var rem = mins % 60;
-            
-            if (hours == 0)
-                return $"{rem} دقيقة";
-            if (rem == 0)
-                return $"{hours} ساعة";
-            return $"{hours} ساعة و {rem} دقيقة";
         }
     }
 }

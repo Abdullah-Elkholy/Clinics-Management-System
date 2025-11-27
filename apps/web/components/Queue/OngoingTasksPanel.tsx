@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSignalR } from '@/contexts/SignalRContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { createDeleteConfirmation, createActionConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 // Mock data removed - using API data instead
@@ -21,6 +23,8 @@ import logger from '@/utils/logger';
 import messageApiClient, { OngoingSessionDto, SessionPatientDto } from '@/services/api/messageApiClient';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { whatsappApiClient, GlobalPauseState } from '@/services/api/whatsappApiClient';
+import { debounce } from '@/utils/debounce';
 
 interface Session {
   id: string;
@@ -61,16 +65,21 @@ export default function OngoingTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const router = useRouter();
+  const { selectedQueueId } = useQueue();
   
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
   const [pausedSessions, setPausedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-002']));
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  
+  // Request deduplication: track in-flight requests
+  const isLoadingRef = React.useRef(false);
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [globalPauseState, setGlobalPauseState] = useState<GlobalPauseState | null>(null);
 
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {
@@ -92,9 +101,17 @@ export default function OngoingTasksPanel() {
 
   /**
    * Load ongoing sessions from backend API
+   * Includes request deduplication to prevent multiple simultaneous calls
    */
   const loadOngoingSessions = useCallback(async () => {
+    // Request deduplication: skip if already loading
+    if (isLoadingRef.current) {
+      logger.debug('OngoingTasksPanel: Skipping duplicate loadOngoingSessions call');
+      return;
+    }
+    
     try {
+      isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
       
@@ -102,7 +119,7 @@ export default function OngoingTasksPanel() {
       
       if (response.success && response.data) {
         // Transform API response to Session format
-        const transformedSessions: Session[] = response.data.map((session: OngoingSessionDto) => ({
+        let transformedSessions: Session[] = response.data.map((session: OngoingSessionDto) => ({
           id: String(session.sessionId), // Ensure sessionId is string (Guid serialized as string)
           sessionId: String(session.sessionId),
           queueId: session.queueId,
@@ -125,6 +142,13 @@ export default function OngoingTasksPanel() {
             isPaused: p.isPaused,
           } as Patient & { isPaused?: boolean })),
         }));
+        
+        // Filter by selectedQueueId if one is selected
+        if (selectedQueueId) {
+          transformedSessions = transformedSessions.filter(
+            session => String(session.queueId) === String(selectedQueueId)
+          );
+        }
         
         setSessions(transformedSessions);
         
@@ -150,68 +174,148 @@ export default function OngoingTasksPanel() {
       }
     } finally {
       setIsLoading(false);
+      isLoadingRef.current = false;
     }
-  }, [addToast]);
+  }, [addToast, selectedQueueId]);
+
+  /**
+   * Load global pause state for moderator
+   */
+  const loadGlobalPauseState = useCallback(async () => {
+    const moderatorId = user?.role === 'moderator'
+      ? Number(user.id)
+      : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+
+    if (!moderatorId) return;
+
+    try {
+      const state = await whatsappApiClient.getGlobalPauseState(moderatorId);
+      setGlobalPauseState(state);
+    } catch (err) {
+      logger.error('Failed to load global pause state:', err);
+    }
+  }, [user]);
+
+  /**
+   * Handle global pause (pause all moderator tasks)
+   */
+  const handleGlobalPause = useCallback(async () => {
+    const moderatorId = user?.role === 'moderator'
+      ? Number(user.id)
+      : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+
+    if (!moderatorId) return;
+
+    try {
+      await whatsappApiClient.pauseAllModeratorTasks(moderatorId, 'User paused');
+      addToast('تم إيقاف جميع المهام للمشرف', 'success');
+      await loadGlobalPauseState();
+      await loadOngoingSessions();
+    } catch (err) {
+      logger.error('Failed to pause moderator tasks:', err);
+      addToast('فشل إيقاف المهام', 'error');
+    }
+  }, [user, addToast, loadGlobalPauseState, loadOngoingSessions]);
+
+  /**
+   * Handle global resume (resume all moderator tasks)
+   */
+  const handleGlobalResume = useCallback(async () => {
+    const moderatorId = user?.role === 'moderator'
+      ? Number(user.id)
+      : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+
+    if (!moderatorId) return;
+
+    try {
+      await whatsappApiClient.resumeAllModeratorTasks(moderatorId);
+      addToast('تم استئناف جميع المهام للمشرف', 'success');
+      await loadGlobalPauseState();
+      await loadOngoingSessions();
+    } catch (err) {
+      logger.error('Failed to resume moderator tasks:', err);
+      addToast('فشل استئناف المهام', 'error');
+    }
+  }, [user, addToast, loadGlobalPauseState, loadOngoingSessions]);
 
   /**
    * Load sessions on mount and when data updates
    */
   useEffect(() => {
     loadOngoingSessions();
-  }, [loadOngoingSessions]);
+    loadGlobalPauseState();
+  }, [loadOngoingSessions, loadGlobalPauseState, selectedQueueId]);
 
   /**
-   * Polling mechanism for real-time updates (every 10 seconds)
-   * Ensures all users see the same updated state
-   * Reduced frequency to reduce server load and CPU usage
+   * SignalR Integration - Real-time updates (replaces polling)
+   * Listens for SessionUpdated, MessageUpdated, and PatientUpdated events
    */
+  const { connection, isConnected, on, off } = useSignalR();
+
+  // Debounced refresh function to prevent rapid-fire API calls
+  const debouncedRefresh = React.useMemo(
+    () => debounce(() => {
+      loadOngoingSessions();
+    }, 2000), // 2 second debounce
+    [loadOngoingSessions]
+  );
+
+  // Subscribe to SignalR events for real-time updates
   useEffect(() => {
-    // Only poll if tab is visible (reduce CPU when tab is inactive)
-    if (document.hidden) return;
-    
-    const pollInterval = setInterval(() => {
-      // Check if tab is still visible before polling
-      if (!document.hidden) {
-        loadOngoingSessions();
-      }
-    }, 10000); // Increased from 5 seconds to 10 seconds
+    if (!connection || !isConnected) return;
 
-    // Pause polling when tab becomes hidden, resume when visible
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        clearInterval(pollInterval);
-      } else {
-        // Resume polling when tab becomes visible
-        const newInterval = setInterval(() => {
-          if (!document.hidden) {
-            loadOngoingSessions();
-          }
-        }, 10000);
-        return () => clearInterval(newInterval);
-      }
+    // Handler for session updates (debounced)
+    const handleSessionUpdate = (payload: any) => {
+      logger.debug('OngoingTasksPanel: Received SessionUpdated event', payload);
+      debouncedRefresh();
+      loadGlobalPauseState(); // Global pause state doesn't need debouncing
     };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // Handler for message updates (affects session sent/failed counts) - debounced
+    const handleMessageUpdate = (payload: any) => {
+      logger.debug('OngoingTasksPanel: Received MessageUpdated event', payload);
+      debouncedRefresh();
+    };
+
+    // Handler for patient updates (affects session patient list) - debounced
+    const handlePatientUpdate = (payload: any) => {
+      logger.debug('OngoingTasksPanel: Received PatientUpdated event', payload);
+      debouncedRefresh();
+    };
+
+    // Subscribe to events using context helpers
+    on('SessionUpdated', handleSessionUpdate);
+    on('SessionDeleted', handleSessionUpdate);
+    on('MessageUpdated', handleMessageUpdate);
+    on('MessageDeleted', handleMessageUpdate);
+    on('PatientUpdated', handlePatientUpdate);
+    on('PatientDeleted', handlePatientUpdate);
+
+    // Cleanup subscriptions
     return () => {
-      clearInterval(pollInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      off('SessionUpdated', handleSessionUpdate);
+      off('SessionDeleted', handleSessionUpdate);
+      off('MessageUpdated', handleMessageUpdate);
+      off('MessageDeleted', handleMessageUpdate);
+      off('PatientUpdated', handlePatientUpdate);
+      off('PatientDeleted', handlePatientUpdate);
     };
-  }, [loadOngoingSessions]);
+  }, [connection, isConnected, on, off, debouncedRefresh, loadGlobalPauseState]);
 
   /**
-   * Listen for data updates and refetch
+   * Listen for data updates and refetch (debounced to prevent duplicate calls)
+   * Note: SignalR events are primary, window events are fallback for backwards compatibility
    */
   useEffect(() => {
-    const handleDataUpdate = async () => {
-      // Refetch ongoing tasks when data is updated
-      await loadOngoingSessions();
+    const handleDataUpdate = () => {
+      // Use debounced refresh to prevent rapid-fire API calls
+      debouncedRefresh();
       
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('ongoingTasksDataUpdated'));
     };
 
-    // Listen to all relevant update events
+    // Listen to all relevant update events (debounced)
     window.addEventListener('patientDataUpdated', handleDataUpdate);
     window.addEventListener('queueDataUpdated', handleDataUpdate);
     window.addEventListener('templateDataUpdated', handleDataUpdate);
@@ -227,7 +331,7 @@ export default function OngoingTasksPanel() {
       window.removeEventListener('conditionDataUpdated', handleDataUpdate);
       window.removeEventListener('messageSent', handleDataUpdate);
     };
-  }, [loadOngoingSessions]);
+  }, [debouncedRefresh]);
 
   /**
    * Toggle session expand - memoized
@@ -359,61 +463,6 @@ export default function OngoingTasksPanel() {
     }
   }, [sessions, addToast, loadOngoingSessions]);
 
-  /**
-   * Pause all sessions - memoized (uses backend API)
-   */
-  const pauseAllSessions = useCallback(async () => {
-    try {
-      // Get moderator ID from user
-      const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
-      
-      if (!moderatorId) {
-        addToast('لا يمكن تحديد معرف المشرف', 'error');
-        return;
-      }
-
-      // Pause all sessions for this moderator
-      await messageApiClient.pauseAllModeratorMessages(moderatorId);
-      addToast('تم إيقاف جميع الجلسات', 'success');
-
-      // Reload sessions to get updated state
-      await loadOngoingSessions();
-      
-      // Dispatch event to notify other components
-      window.dispatchEvent(new CustomEvent('messageDataUpdated'));
-    } catch (err) {
-      logger.error('Failed to pause all sessions:', err);
-      addToast('فشل إيقاف جميع الجلسات', 'error');
-    }
-  }, [user, addToast, loadOngoingSessions]);
-
-  /**
-   * Resume all sessions - memoized (uses backend API)
-   */
-  const resumeAllSessions = useCallback(async () => {
-    try {
-      // Get moderator ID from user
-      const moderatorId = user?.role === 'moderator' ? Number(user.id) : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
-      
-      if (!moderatorId) {
-        addToast('لا يمكن تحديد معرف المشرف', 'error');
-        return;
-      }
-
-      // Resume all sessions for this moderator
-      await messageApiClient.resumeAllModeratorMessages(moderatorId);
-      addToast('تم استئناف جميع الجلسات', 'success');
-
-      // Reload sessions to get updated state
-      await loadOngoingSessions();
-      
-      // Dispatch event to notify other components
-      window.dispatchEvent(new CustomEvent('messageDataUpdated'));
-    } catch (err) {
-      logger.error('Failed to resume all sessions:', err);
-      addToast('فشل استئناف جميع الجلسات', 'error');
-    }
-  }, [user, addToast, loadOngoingSessions]);
 
   /**
    * Toggle patient pause - memoized (uses backend API)
@@ -548,15 +597,6 @@ export default function OngoingTasksPanel() {
   /**
    * Memoize computed flags
    */
-  const { hasAnyPausedPatient, areAllSessionsPaused } = useMemo(() => {
-    const hasAnyPaused = sessions.some((session) =>
-      session.patients.some((patient) => patient.isPaused)
-    );
-    const allPaused = sessions.length > 0 && sessions.every((session) =>
-      session.patients.every((patient) => patient.isPaused)
-    );
-    return { hasAnyPausedPatient: hasAnyPaused, areAllSessionsPaused: allPaused };
-  }, [sessions]);
 
   /**
    * Memoize table columns for each session
@@ -574,7 +614,7 @@ export default function OngoingTasksPanel() {
   /**
    * Render patient row
    */
-  const renderPatientRow = useCallback((patient: Patient, sessionId: string) => ({
+  const renderPatientRow = useCallback((patient: Patient, sessionId: string, sessionIsPaused: boolean) => ({
     id: patient.id,
     checkbox: (
       <input
@@ -621,12 +661,23 @@ export default function OngoingTasksPanel() {
           onClick={() =>
             togglePatientPause(sessionId, patient.id)
           }
+          disabled={globalPauseState?.isPaused === true || sessionIsPaused}
           className={`px-2 py-1 rounded text-sm ${
-            patient.isPaused
+            globalPauseState?.isPaused === true || sessionIsPaused
+              ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+              : patient.isPaused
               ? 'bg-green-50 text-green-600 hover:bg-green-100'
               : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
           }`}
-          title={patient.isPaused ? 'استئناف' : 'إيقاف'}
+          title={
+            globalPauseState?.isPaused === true
+              ? 'تم إيقاف جميع المهام على مستوى المشرف'
+              : sessionIsPaused
+              ? 'تم إيقاف الجلسة'
+              : patient.isPaused
+              ? 'استئناف'
+              : 'إيقاف'
+          }
         >
           <i className={`fas fa-${patient.isPaused ? 'play' : 'pause'}`}></i>
         </button>
@@ -646,7 +697,7 @@ export default function OngoingTasksPanel() {
         </button>
       </div>
     ),
-  }), [selectedPatients, togglePatientSelection, togglePatientPause, handleEditPatient, handleDeletePatient, isMessagesExpanded]);
+  }), [selectedPatients, togglePatientSelection, togglePatientPause, handleEditPatient, handleDeletePatient, isMessagesExpanded, globalPauseState]);
 
   // Show loading state
   if (isLoading && sessions.length === 0) {
@@ -721,33 +772,39 @@ export default function OngoingTasksPanel() {
         stats={stats}
       />
 
-      {/* Action Buttons */}
-      <div className="flex gap-3 mb-6 justify-end flex-wrap">
-        <button
-          onClick={pauseAllSessions}
-          disabled={areAllSessionsPaused}
-          className={`px-6 py-3 rounded-lg transition-all flex items-center gap-2 font-medium ${
-            areAllSessionsPaused
-              ? 'bg-gray-400 text-white cursor-not-allowed'
-              : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          <i className="fas fa-pause-circle"></i>
-          <span>إيقاف الكل</span>
-        </button>
-        <button
-          onClick={resumeAllSessions}
-          disabled={!hasAnyPausedPatient}
-          className={`px-6 py-3 rounded-lg transition-all flex items-center gap-2 font-medium ${
-            !hasAnyPausedPatient
-              ? 'bg-gray-400 text-white cursor-not-allowed'
-              : 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:from-green-600 hover:to-green-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          <i className="fas fa-play-circle"></i>
-          <span>استئناف الكل</span>
-        </button>
-      </div>
+      {/* Global Pause/Resume Button */}
+      {globalPauseState && (
+        <div className="mb-4 px-6 pt-2">
+          <div className="flex items-center justify-between gap-4">
+            {globalPauseState.isPaused ? (
+              <>
+                <button
+                  onClick={handleGlobalResume}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium shadow-md hover:shadow-lg transition-all"
+                >
+                  <i className="fas fa-play"></i>
+                  <span>استئناف جميع مهام المشرف</span>
+                </button>
+                {globalPauseState.pauseReason && (
+                  <div className="text-sm text-yellow-600 flex items-center gap-2">
+                    <i className="fas fa-exclamation-triangle"></i>
+                    <span>{globalPauseState.pauseReason}</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={handleGlobalPause}
+                className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 flex items-center gap-2 font-medium shadow-md hover:shadow-lg transition-all"
+              >
+                <i className="fas fa-pause"></i>
+                <span>إيقاف جميع مهام المشرف</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
 
       {/* Sessions List */}
       <div className="space-y-4">
@@ -820,11 +877,15 @@ export default function OngoingTasksPanel() {
                           e.stopPropagation();
                           toggleSessionPause(session.id);
                         }}
+                        disabled={globalPauseState?.isPaused === true}
                         className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${
-                          session.isPaused
+                          globalPauseState?.isPaused === true
+                            ? 'bg-gray-400 text-white cursor-not-allowed opacity-50'
+                            : session.isPaused
                             ? 'bg-green-500 text-white hover:bg-green-600'
                             : 'bg-yellow-500 text-white hover:bg-yellow-600'
                         }`}
+                        title={globalPauseState?.isPaused === true ? 'تم إيقاف جميع المهام على مستوى المشرف' : (session.isPaused ? 'استئناف الجلسة' : 'إيقاف الجلسة')}
                       >
                         <i className={`fas fa-${session.isPaused ? 'play' : 'pause'}`}></i>
                       </button>
@@ -946,7 +1007,7 @@ export default function OngoingTasksPanel() {
                           </thead>
                           <tbody>
                             {session.patients.map((patient) => {
-                              const row = renderPatientRow(patient, session.id);
+                              const row = renderPatientRow(patient, session.id, session.isPaused || false);
                               return (
                                 <tr
                                   key={patient.id}

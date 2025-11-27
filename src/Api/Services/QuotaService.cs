@@ -370,12 +370,33 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
             // If unlimited, adding would be meaningless, so we skip it
             if (quota.MessagesQuota != -1)
             {
-                quota.MessagesQuota += addMessages;
+                // Check for overflow: if adding would exceed int.MaxValue, cap at int.MaxValue
+                // Use long arithmetic to detect overflow before assignment
+                // MessagesQuota is stored as long, but API uses int, so cap at int.MaxValue
+                long newMessagesQuota = quota.MessagesQuota + addMessages;
+                if (newMessagesQuota > int.MaxValue)
+                {
+                    quota.MessagesQuota = int.MaxValue;
+                }
+                else
+                {
+                    quota.MessagesQuota = newMessagesQuota;
+                }
             }
             
             if (quota.QueuesQuota != -1)
             {
-                quota.QueuesQuota += addQueues;
+                // Check for overflow: if adding would exceed int.MaxValue, cap at int.MaxValue
+                // Use long arithmetic to detect overflow before assignment
+                long newQueuesQuota = (long)quota.QueuesQuota + addQueues;
+                if (newQueuesQuota > int.MaxValue)
+                {
+                    quota.QueuesQuota = int.MaxValue;
+                }
+                else
+                {
+                    quota.QueuesQuota = (int)newQueuesQuota;
+                }
             }
             
             quota.UpdatedAt = DateTime.UtcNow;

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import * as messageApiClient from '@/services/api/messageApiClient';
 // Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
@@ -16,6 +17,20 @@ import { UserRole } from '@/types/roles';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
 import { formatLocalDateTime, formatLocalDate } from '@/utils/dateTimeUtils';
+import { useSignalR } from '@/contexts/SignalRContext';
+import { debounce } from '@/utils/debounce';
+
+interface SentMessage {
+  messageId: string;
+  patientId: number;
+  patientName: string;
+  patientPhone: string;
+  countryCode: string;
+  content: string;
+  sentAt: string;
+  createdBy?: number;
+  updatedBy?: number;
+}
 
 interface Session {
   id: string;
@@ -25,8 +40,10 @@ interface Session {
   createdAt: string;
   totalPatients: number;
   sentCount: number;
+  failedCount: number;
+  hasFailedMessages: boolean;
   completedAt: string;
-  patients: Patient[];
+  sentMessages: SentMessage[];
 }
 
 const COMPLETED_TASKS_GUIDE_ITEMS = [
@@ -52,6 +69,7 @@ export default function CompletedTasksPanel() {
   const { user, isAuthenticated } = useAuth();
   const { addToast } = useUI();
   const router = useRouter();
+  const { selectedQueueId } = useQueue();
   
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
@@ -80,9 +98,17 @@ export default function CompletedTasksPanel() {
 
   /**
    * Load completed sessions from backend API
+   * Includes request deduplication to prevent multiple simultaneous calls
    */
   const loadCompletedSessions = useCallback(async () => {
+    // Request deduplication: skip if already loading
+    if (isLoadingRef.current) {
+      logger.debug('CompletedTasksPanel: Skipping duplicate loadCompletedSessions call');
+      return;
+    }
+    
     try {
+      isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
       
@@ -99,22 +125,31 @@ export default function CompletedTasksPanel() {
           createdAt: session.startTime,
           totalPatients: session.total,
           sentCount: session.sent,
+          failedCount: session.failed || 0,
+          hasFailedMessages: session.hasFailedMessages || false,
           completedAt: session.completedAt,
-          patients: session.patients.map((p: any) => ({
-            id: String(p.patientId),
-            name: p.name,
-            phone: p.phone,
-            queueId: String(session.queueId),
-            countryCode: p.countryCode,
-            position: 0,
-            status: p.status,
-            isValidWhatsAppNumber: p.status === 'sent' ? true : null,
-            completedAt: session.completedAt,
-            messagePreview: p.messagePreview || 'تم الإرسال بنجاح',
-          } as Patient)),
+          sentMessages: (session.sentMessages || []).map((msg: any) => ({
+            messageId: msg.messageId,
+            patientId: msg.patientId,
+            patientName: msg.patientName,
+            patientPhone: msg.patientPhone,
+            countryCode: msg.countryCode,
+            content: msg.content,
+            sentAt: msg.sentAt,
+            createdBy: msg.createdBy,
+            updatedBy: msg.updatedBy,
+          } as SentMessage)),
         }));
         
-        setSessions(transformedSessions);
+        // Filter by selectedQueueId if one is selected
+        let filteredSessions = transformedSessions;
+        if (selectedQueueId) {
+          filteredSessions = transformedSessions.filter(
+            session => String(session.queueId) === String(selectedQueueId)
+          );
+        }
+        
+        setSessions(filteredSessions);
       }
     } catch (err: any) {
       // Check if error is due to PendingQR (authentication required)
@@ -131,8 +166,9 @@ export default function CompletedTasksPanel() {
       }
     } finally {
       setIsLoading(false);
+      isLoadingRef.current = false;
     }
-  }, [addToast]);
+  }, [addToast, selectedQueueId]);
 
   /**
    * Load sessions on mount and when data updates
@@ -142,22 +178,53 @@ export default function CompletedTasksPanel() {
   }, [loadCompletedSessions]);
 
   /**
-   * Listen for data updates and refetch
+   * SignalR Integration - Real-time updates for completed sessions
+   * Listens for SessionUpdated and MessageUpdated events
+   */
+  const { connection, isConnected, on, off } = useSignalR();
+
+  // Debounced refresh function to prevent rapid-fire API calls
+  const debouncedRefresh = React.useMemo(
+    () => debounce(() => {
+      loadCompletedSessions();
+    }, 2000), // 2 second debounce
+    [loadCompletedSessions]
+  );
+
+  // Subscribe to SignalR events for real-time completed session updates
+  useEffect(() => {
+    if (!connection || !isConnected) return;
+
+    // Handler for session/message updates (debounced)
+    const handleUpdate = (payload: any) => {
+      logger.debug('CompletedTasksPanel: Received update event', payload);
+      debouncedRefresh();
+    };
+
+    // Subscribe to events using context helpers
+    on('SessionUpdated', handleUpdate);
+    on('MessageUpdated', handleUpdate);
+    on('SessionDeleted', handleUpdate);
+
+    // Cleanup subscriptions
+    return () => {
+      off('SessionUpdated', handleUpdate);
+      off('MessageUpdated', handleUpdate);
+      off('SessionDeleted', handleUpdate);
+    };
+  }, [connection, isConnected, on, off, debouncedRefresh]);
+
+  /**
+   * Listen for data updates and refetch (debounced to prevent duplicate calls)
+   * Note: SignalR events are primary, window events are fallback for backwards compatibility
    */
   useEffect(() => {
-    const handleDataUpdate = async () => {
-      // Refetch completed tasks when data is updated
-      try {
-        // TODO: Implement API call when endpoint is ready
-        // For now, trigger a re-render to show updated state
-        // In the future, call: await messageApiClient.getCompletedTasks()
-        setSessions((prev) => [...prev]);
-        
-        // Dispatch event to notify other components
-        window.dispatchEvent(new CustomEvent('completedTasksDataUpdated'));
-      } catch (error) {
-        logger.error('Failed to refetch completed tasks:', error);
-      }
+    const handleDataUpdate = () => {
+      // Use debounced refresh to prevent rapid-fire API calls
+      debouncedRefresh();
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('completedTasksDataUpdated'));
     };
 
     // Listen to all relevant update events
@@ -174,7 +241,7 @@ export default function CompletedTasksPanel() {
       window.removeEventListener('messageDataUpdated', handleDataUpdate);
       window.removeEventListener('conditionDataUpdated', handleDataUpdate);
     };
-  }, []);
+  }, [debouncedRefresh]);
 
   /**
    * Toggle session expand - memoized
@@ -206,8 +273,8 @@ export default function CompletedTasksPanel() {
       icon: 'fa-check-circle',
     },
     {
-      label: 'إجمالي المرضى في الجلسة',
-      value: sessions.reduce((sum, s) => sum + s.patients.length, 0).toString(),
+      label: 'إجمالي الرسائل المرسلة',
+      value: sessions.reduce((sum, s) => sum + s.sentMessages.length, 0).toString(),
       icon: 'fa-users',
     },
   ], [sessions]);
@@ -223,23 +290,23 @@ export default function CompletedTasksPanel() {
   ], []);
 
   /**
-   * Render patient row - no checkbox since deletion is disabled, no status column
+   * Render sent message row - displays resolved content from backend
    */
-  const renderPatientRow = useCallback((patient: Patient) => ({
-    id: patient.id,
-    name: patient.name,
-    phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
+  const renderSentMessageRow = useCallback((message: SentMessage) => ({
+    id: message.messageId,
+    name: message.patientName,
+    phone: formatPhoneForDisplay(message.patientPhone, message.countryCode),
     message: (
       <div
         className={`text-sm text-gray-700 ${
           isMessagesExpanded ? '' : 'line-clamp-2'
         } max-w-xs`}
-        title={patient.messagePreview}
+        title={message.content}
       >
-        {patient.messagePreview || 'لا توجد رسالة'}
+        {message.content || 'لا توجد رسالة'}
       </div>
     ),
-    completedAt: patient.completedAt ? formatLocalDateTime(patient.completedAt) : 'غير معروف',
+    completedAt: message.sentAt ? formatLocalDateTime(message.sentAt) : 'غير معروف',
   }), [isMessagesExpanded]);
 
   if (sessions.length === 0) {
@@ -327,7 +394,7 @@ export default function CompletedTasksPanel() {
               {isExpanded && (
                 <div className="p-6 bg-gray-50">
                   {/* Session Stats */}
-                  <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="grid grid-cols-4 gap-4 mb-6">
                     <div className="bg-white rounded-lg p-4 border border-green-200">
                       <div className="text-sm text-gray-600">إجمالي المرضى</div>
                       <div className="text-2xl font-bold text-green-600">{session.totalPatients}</div>
@@ -335,6 +402,10 @@ export default function CompletedTasksPanel() {
                     <div className="bg-white rounded-lg p-4 border border-green-200">
                       <div className="text-sm text-gray-600">الرسائل المرسلة</div>
                       <div className="text-2xl font-bold text-green-600">{session.sentCount}</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-4 border border-red-200">
+                      <div className="text-sm text-gray-600">الرسائل الفاشلة</div>
+                      <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-green-200">
                       <div className="text-sm text-gray-600">معدل النجاح</div>
@@ -344,24 +415,38 @@ export default function CompletedTasksPanel() {
                     </div>
                   </div>
 
-                  {/* Patients Table */}
+                  {/* Failed Messages Disclaimer */}
+                  {session.hasFailedMessages && (
+                    <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+                      <i className="fas fa-exclamation-triangle text-yellow-600 text-lg mt-0.5"></i>
+                      <div className="flex-1">
+                        <h5 className="font-semibold text-yellow-800 mb-1">تنبيه: يوجد رسائل فاشلة في هذه الجلسة</h5>
+                        <p className="text-sm text-yellow-700">
+                          تحتوي هذه الجلسة على <strong>{session.failedCount}</strong> رسالة فاشلة. القائمة أدناه تعرض فقط الرسائل المرسلة بنجاح. 
+                          لعرض الرسائل الفاشلة وأسباب الفشل، يرجى زيارة لوحة المهام الفاشلة.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sent Messages Table */}
                   <div className="bg-white rounded-lg overflow-hidden border">
                     <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
                       <div className="flex items-center gap-4">
-                        <h4 className="font-bold text-gray-800">قائمة المرضى</h4>
+                        <h4 className="font-bold text-gray-800">الرسائل المرسلة بنجاح</h4>
                         <span className="text-sm text-gray-600">
-                          {session.patients.length} مريض
+                          {session.sentMessages.length} رسالة
                         </span>
                       </div>
                       <div className="flex gap-2">
-                        {/* Deletion and selection controls intentionally removed - completed patients cannot be deleted */}
+                        {/* Deletion and selection controls intentionally removed - completed messages cannot be deleted */}
                       </div>
                     </div>
 
-                    {session.patients.length === 0 ? (
+                    {session.sentMessages.length === 0 ? (
                       <div className="p-8 text-center text-gray-600">
                         <i className="fas fa-inbox text-3xl mb-2 opacity-50"></i>
-                        <p>لا يوجد مرضى في هذه الجلسة</p>
+                        <p>لا توجد رسائل مرسلة في هذه الجلسة</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
@@ -394,11 +479,11 @@ export default function CompletedTasksPanel() {
                             </tr>
                           </thead>
                           <tbody>
-                            {session.patients.map((patient) => {
-                              const row = renderPatientRow(patient);
+                            {session.sentMessages.map((message) => {
+                              const row = renderSentMessageRow(message);
                               return (
                                 <tr
-                                  key={patient.id}
+                                  key={message.messageId}
                                   className="border-b hover:bg-gray-50 transition-colors"
                                 >
                                   <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
