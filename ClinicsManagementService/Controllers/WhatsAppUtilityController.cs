@@ -30,7 +30,6 @@ namespace ClinicsManagementService.Controllers
         private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
         private readonly IWhatsAppSessionSyncService _sessionSyncService;
         private readonly ApplicationDbContext _dbContext;
-        private readonly OperationCoordinatorService _operationCoordinator;
 
 
         public WhatsAppUtilityController(
@@ -42,8 +41,7 @@ namespace ClinicsManagementService.Controllers
             IRetryService retryService,
             IWhatsAppSessionOptimizer sessionOptimizer,
             IWhatsAppSessionSyncService sessionSyncService,
-            ApplicationDbContext dbContext,
-            OperationCoordinatorService operationCoordinator)
+            ApplicationDbContext dbContext)
         {
             _whatsAppService = whatsAppService;
             _notifier = notifier;
@@ -54,7 +52,6 @@ namespace ClinicsManagementService.Controllers
             _sessionOptimizer = sessionOptimizer;
             _sessionSyncService = sessionSyncService;
             _dbContext = dbContext;
-            _operationCoordinator = operationCoordinator;
         }
 
         /// <summary>
@@ -102,9 +99,6 @@ namespace ClinicsManagementService.Controllers
             [FromQuery] int? userId = null,
             CancellationToken cancellationToken = default)
         {
-            int effectiveModeratorId = 0;
-            OperationCoordinatorService? coordinator = null;
-            
             try
             {
                 // Check if request was already cancelled
@@ -116,17 +110,7 @@ namespace ClinicsManagementService.Controllers
                     return BadRequest(new { error = "moderatorUserId is required and must be greater than 0" });
                 }
 
-                effectiveModeratorId = moderatorUserId.Value;
-
-                // ✅ Phase 12: Restore from backup at START (before any operations)
-                try
-                {
-                    await _sessionOptimizer.RestoreFromBackupAsync(effectiveModeratorId);
-                }
-                catch (Exception restoreEx)
-                {
-                    _notifier.Notify($"⚠️ [CHECK-WHATSAPP] Restore from backup failed (non-critical): {restoreEx.Message}");
-                }
+                int effectiveModeratorId = moderatorUserId.Value;
 
                 // Validate: Prevent checking your own WhatsApp number
                 // Get moderator's WhatsApp phone number
@@ -189,21 +173,6 @@ namespace ClinicsManagementService.Controllers
 
                 _notifier.Notify($"🔍 [Moderator {effectiveModeratorId}] Checking if {phoneNumber} has WhatsApp...");
 
-                // Wait for any current operations to complete (with 30s timeout)
-                coordinator = HttpContext.RequestServices.GetRequiredService<OperationCoordinatorService>();
-                var waitResult = await coordinator.WaitForCurrentOperationToFinishAsync(effectiveModeratorId, cancellationToken);
-                if (!waitResult)
-                {
-                    _notifier.Notify($"⚠️ [CHECK-WHATSAPP] Timeout waiting for operations to finish for moderator {effectiveModeratorId}");
-                }
-                
-                // Pause all ongoing tasks using global pause (WhatsAppSession.IsPaused)
-                var pauseSuccess = await coordinator.PauseAllOngoingTasksAsync(
-                    effectiveModeratorId, 
-                    userId ?? effectiveModeratorId, 
-                    "Check WhatsApp number");
-                _notifier.Notify($"⏸️ [CHECK-WHATSAPP] Global pause {(pauseSuccess ? "activated" : "failed")} for moderator {effectiveModeratorId}");
-
                 // Use the moderator-specific browser session
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 // Check and auto-restore if session size exceeds threshold for this moderator
@@ -236,22 +205,6 @@ namespace ClinicsManagementService.Controllers
                     else if (result.IsPendingNet())
                     {
                         _notifier.Notify($"❌ Internet connection unavailable to check number {phoneNumber}.");
-                        // PendingNET: Pause all tasks but do NOT update database (as per requirement)
-                        await coordinator.PauseAllOngoingTasksAsync(
-                            effectiveModeratorId, 
-                            userId ?? effectiveModeratorId, 
-                            "PendingNET - Network failure");
-                        _notifier.Notify($"⏸️ [CHECK-WHATSAPP] Tasks paused due to PendingNET for moderator {effectiveModeratorId}");
-                    }
-                    else if (result.IsPendingQr())
-                    {
-                        _notifier.Notify($"❌ WhatsApp authentication required to check number {phoneNumber}.");
-                        // PendingQR: Pause all tasks (authentication required)
-                        await coordinator.PauseAllOngoingTasksAsync(
-                            effectiveModeratorId, 
-                            userId ?? effectiveModeratorId, 
-                            "PendingQR - Authentication required");
-                        _notifier.Notify($"⏸️ [CHECK-WHATSAPP] Tasks paused due to PendingQR for moderator {effectiveModeratorId}");
                     }
                     else if (result.IsSuccess == false && result.State != OperationState.Failure)
                     {
@@ -275,60 +228,21 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                 }
-                
-                // Resume tasks that were paused for check-whatsapp
-                var resumeSuccess = await coordinator.ResumeTasksPausedForReasonAsync(
-                    effectiveModeratorId, 
-                    "Check WhatsApp number");
-                _notifier.Notify($"▶️ [CHECK-WHATSAPP] Global pause {(resumeSuccess ? "cleared" : "not cleared")} for moderator {effectiveModeratorId}");
                 return Ok(result);
             }
             catch (OperationCanceledException)
             {
                 _notifier.Notify($"⚠️ Request cancelled while checking WhatsApp number {phoneNumber}");
-                
-                // Try to resume tasks even on cancellation
-                if (coordinator != null && effectiveModeratorId > 0)
-                {
-                    try
-                    {
-                        await coordinator.ResumeTasksPausedForReasonAsync(effectiveModeratorId, "Check WhatsApp number");
-                    }
-                    catch { /* Ignore resume errors during exception handling */ }
-                }
-                
                 return Ok(OperationResult<bool>.Failure("Request was cancelled", false));
             }
             catch (TimeoutException tex)
             {
                 _notifier.Notify($"❌ Timeout checking WhatsApp number {phoneNumber}: {tex.Message}");
-                
-                // Try to resume tasks even on timeout
-                if (coordinator != null && effectiveModeratorId > 0)
-                {
-                    try
-                    {
-                        await coordinator.ResumeTasksPausedForReasonAsync(effectiveModeratorId, "Check WhatsApp number");
-                    }
-                    catch { /* Ignore resume errors during exception handling */ }
-                }
-                
                 return Ok(OperationResult<bool>.Failure($"Timeout checking WhatsApp number: {tex.Message}"));
             }
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ Exception checking WhatsApp number {phoneNumber}: {ex.Message}");
-                
-                // Try to resume tasks even on error
-                if (coordinator != null && effectiveModeratorId > 0)
-                {
-                    try
-                    {
-                        await coordinator.ResumeTasksPausedForReasonAsync(effectiveModeratorId, "Check WhatsApp number");
-                    }
-                    catch { /* Ignore resume errors during exception handling */ }
-                }
-                
                 return Ok(OperationResult<bool>.Failure($"Error checking WhatsApp number: {ex.Message}"));
             }
         }
@@ -344,10 +258,6 @@ namespace ClinicsManagementService.Controllers
             [FromQuery] int? moderatorUserId = null,
             [FromQuery] int? userId = null)
         {
-            int effectiveModeratorId = 0;
-            OperationCoordinatorService? coordinator = null;
-            bool isAlreadyPausedDueToPendingQR = false;
-            
             try
             {
                 // Validate and use moderatorUserId (REQUIRED now)
@@ -362,35 +272,8 @@ namespace ClinicsManagementService.Controllers
                     return BadRequest(new { error = "userId must be greater than 0 if provided" });
                 }
 
-                effectiveModeratorId = moderatorUserId.Value;
+                int effectiveModeratorId = moderatorUserId.Value;
                 _notifier.Notify($"🔐 [AUTH CHECK] Starting - ModeratorUserId: {effectiveModeratorId}");
-                
-                // CRITICAL: Check if already paused due to PendingQR - if so, allow access without pausing/resuming
-                isAlreadyPausedDueToPendingQR = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(effectiveModeratorId);
-                
-                if (!isAlreadyPausedDueToPendingQR)
-                {
-                    // Wait for any current operations to complete (with 30s timeout)
-                    coordinator = HttpContext.RequestServices.GetRequiredService<OperationCoordinatorService>();
-                    var waitResult = await coordinator.WaitForCurrentOperationToFinishAsync(effectiveModeratorId);
-                    if (!waitResult)
-                    {
-                        _notifier.Notify($"⚠️ [AUTH CHECK] Timeout waiting for operations to finish for moderator {effectiveModeratorId}");
-                    }
-                    
-                    // Pause all ongoing tasks using global pause (WhatsAppSession.IsPaused)
-                    var pauseSuccess = await coordinator.PauseAllOngoingTasksAsync(
-                        effectiveModeratorId, 
-                        userId ?? effectiveModeratorId, 
-                        "Authentication check");
-                    _notifier.Notify($"⏸️ [AUTH CHECK] Global pause {(pauseSuccess ? "activated" : "failed")} for moderator {effectiveModeratorId}");
-                }
-                else
-                {
-                    _notifier.Notify($"⚠️ [AUTH CHECK] System already paused due to PendingQR - allowing authentication check without additional pause/resume");
-                    coordinator = HttpContext.RequestServices.GetRequiredService<OperationCoordinatorService>();
-                }
-                
                 // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {
@@ -400,7 +283,6 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                 }
-                
                 // Get the moderator-specific session
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 await browserSession.InitializeAsync();
@@ -425,23 +307,11 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ [AUTH CHECK] Pending authentication - Updating DB for moderator {effectiveModeratorId}");
                     
-                    // PendingQR: Keep tasks paused (authentication required)
-                    // Note: Tasks were already paused at the beginning of this endpoint
-                    _notifier.Notify($"⏸️ [AUTH CHECK] Tasks remain paused due to PendingQR for moderator {effectiveModeratorId}");
-                    
                     // Update database: pending (track which user performed the check)
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=pending, ActivityUserId={userId ?? effectiveModeratorId}");
                 }
-                else if (waitUIResult.IsPendingNet())
-                {
-                    _notifier.Notify($"⚠️ [AUTH CHECK] Network failure detected for moderator {effectiveModeratorId}");
-                    
-                    // PendingNET: Keep tasks paused but do NOT update database (as per requirement)
-                    _notifier.Notify($"⏸️ [AUTH CHECK] Tasks remain paused due to PendingNET, database NOT updated for moderator {effectiveModeratorId}");
-                }
-                
-                // Check and auto-restore if session size exceeds threshold for this moderator
+                                // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {
                     await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
@@ -450,37 +320,12 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                 }
-                
-                // Resume tasks that were paused for authentication check (only if we paused them, not if already paused due to PendingQR)
-                if (!isAlreadyPausedDueToPendingQR)
-                {
-                    var resumeSuccess = await coordinator.ResumeTasksPausedForReasonAsync(
-                        effectiveModeratorId, 
-                        "Authentication check");
-                    _notifier.Notify($"▶️ [AUTH CHECK] Global pause {(resumeSuccess ? "cleared" : "not cleared")} for moderator {effectiveModeratorId}");
-                }
-                else
-                {
-                    _notifier.Notify($"⚠️ [AUTH CHECK] System remains paused due to PendingQR - not resuming tasks");
-                }
-                
                 return Ok(waitUIResult);
             }
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ [AUTH CHECK] Exception: {ex.Message}");
                 _notifier.Notify($"❌ [AUTH CHECK] Stack trace: {ex.StackTrace}");
-                
-                // Try to resume tasks even on error (only if we paused them, not if already paused due to PendingQR)
-                if (coordinator != null && effectiveModeratorId > 0 && !isAlreadyPausedDueToPendingQR)
-                {
-                    try
-                    {
-                        await coordinator.ResumeTasksPausedForReasonAsync(effectiveModeratorId, "Authentication check");
-                    }
-                    catch { /* Ignore resume errors during exception handling */ }
-                }
-                
                 return Ok(OperationResult<bool>.Failure($"Authentication check failed: {ex.Message}"));
             }
         }
@@ -547,36 +392,12 @@ namespace ClinicsManagementService.Controllers
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
                     
-                    // CRITICAL: Optimize session and create backup after successful authentication
-                    // This ensures a backup is created even when already authenticated
-                    try
-                    {
-                        await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
-                        _notifier.Notify($"✅ [AUTHENTICATE] Session optimized and backup created for moderator {effectiveModeratorId}");
-                    }
-                    catch (Exception optimizeEx)
-                    {
-                        _notifier.Notify($"⚠️ [AUTHENTICATE] Session optimization/backup failed (non-critical): {optimizeEx.Message}");
-                    }
-                    
                     return Ok(OperationResult<bool>.Success(true));
                 }
 
                 if (initial.IsPendingNet())
                 {
                     _notifier.Notify("❌ Internet connection issue detected during authentication check.");
-                    
-                    // Dispose browser session on PendingNET
-                    try
-                    {
-                        await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                        _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to PendingNET");
-                    }
-                    catch (Exception disposeEx)
-                    {
-                        _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                    }
-                    
                     return Ok(OperationResult<bool>.PendingNET(initial.ResultMessage ?? "Internet connection unavailable"));
                 }
 
@@ -617,16 +438,14 @@ namespace ClinicsManagementService.Controllers
                                         await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                                         _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
                                         
-                                        // CRITICAL: Optimize session and create backup after successful authentication
-                                        // OptimizeAuthenticatedSessionAsync already disposes the browser session internally
+                                        // Optimize session after successful authentication
                                         try
                                         {
                                             await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
-                                            _notifier.Notify($"✅ [AUTHENTICATE] Session optimized and backup created after QR scan for moderator {effectiveModeratorId}");
                                         }
                                         catch (Exception optimizeEx)
                                         {
-                                            _notifier.Notify($"⚠️ [AUTHENTICATE] Session optimization/backup failed (non-critical): {optimizeEx.Message}");
+                                            _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
                                         }
                                         
                                         return Ok(OperationResult<bool>.Success(true));
@@ -636,29 +455,9 @@ namespace ClinicsManagementService.Controllers
                                 {
                                     if (_retryService.IsBrowserClosedException(ex))
                                     {
-                                        _notifier.Notify("⚠️ Browser closed intentionally detected during authentication.");
-                                        // Pause all ongoing tasks (don't fail them)
-                                        if (moderatorUserId.HasValue && userId.HasValue)
-                                        {
-                                            await _operationCoordinator.PauseAllOngoingTasksAsync(
-                                                moderatorUserId.Value,
-                                                userId.Value,
-                                                "Browser closed intentionally",
-                                                cancellationToken);
-                                        }
-                                        // Dispose browser session on browser closure
-                                        try
-                                        {
-                                            await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                                            _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to browser closure");
-                                        }
-                                        catch (Exception disposeEx)
-                                        {
-                                            _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                                        }
-                                        
-                                        // Return warning status (not error)
-                                        return Ok(OperationResult<bool>.Warning("تم إغلاق المتصفح بشكل متعمد. تم إيقاف جميع المهام الجارية مؤقتًا."));
+                                        _notifier.Notify("❗ Browser closed detected during authentication while waiting for Chat UI.");
+                                        // Return a failure result instead of throwing to avoid terminating the host process
+                                        return Ok(OperationResult<bool>.Failure("Authentication failed: browser session was closed during authentication"));
                                     }
                                     _notifier.Notify($"⚠️ Error checking Chat UI selector {selector}: {ex.Message}");
                                 }
@@ -679,18 +478,6 @@ namespace ClinicsManagementService.Controllers
                                 if (monitoringResult.IsPendingNet())
                                 {
                                     _notifier.Notify("❌ Authentication interrupted due to network issues during wait.");
-                                    
-                                    // Dispose browser session on PendingNET
-                                    try
-                                    {
-                                        await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                                        _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to PendingNET");
-                                    }
-                                    catch (Exception disposeEx)
-                                    {
-                                        _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                                    }
-                                    
                                     return Ok(OperationResult<bool>.PendingNET(monitoringResult.ResultMessage ?? "Internet connection unavailable"));
                                 }
                                 if (monitoringResult.IsWaiting())
@@ -708,16 +495,14 @@ namespace ClinicsManagementService.Controllers
                                 {
                                     _notifier.Notify("✅ Authentication completed (monitoring detected success).");
                                     
-                                    // CRITICAL: Optimize session and create backup after successful authentication
-                                    // OptimizeAuthenticatedSessionAsync already disposes the browser session internally
+                                    // Optimize session after successful authentication
                                     try
                                     {
                                         await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
-                                        _notifier.Notify($"✅ [AUTHENTICATE] Session optimized and backup created (monitoring) for moderator {effectiveModeratorId}");
                                     }
                                     catch (Exception optimizeEx)
                                     {
-                                        _notifier.Notify($"⚠️ [AUTHENTICATE] Session optimization/backup failed (non-critical): {optimizeEx.Message}");
+                                        _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
                                     }
                                     
                                     return Ok(OperationResult<bool>.Success(true));
@@ -741,61 +526,17 @@ namespace ClinicsManagementService.Controllers
 
                         // Timed out waiting for QR scan
                         _notifier.Notify("❌ Authentication failed or timed out: still on QR page after wait period.");
-                        
-                        // Dispose browser session on timeout
-                        try
-                        {
-                            await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                            _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to timeout");
-                        }
-                        catch (Exception disposeEx)
-                        {
-                            _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                        }
-                        
                         return Ok(OperationResult<bool>.Failure("Authentication failed: still on QR page after wait period."));
                     }
                     catch (Exception ex)
                     {
                         if (_retryService.IsBrowserClosedException(ex))
                         {
-                            _notifier.Notify("⚠️ Browser closed intentionally detected during authentication.");
-                            // Pause all ongoing tasks (don't fail them)
-                            if (moderatorUserId.HasValue && userId.HasValue)
-                            {
-                                await _operationCoordinator.PauseAllOngoingTasksAsync(
-                                    moderatorUserId.Value,
-                                    userId.Value,
-                                    "Browser closed intentionally",
-                                    cancellationToken);
-                            }
-                            // Dispose browser session on browser closure
-                            try
-                            {
-                                await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                                _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to browser closure");
-                            }
-                            catch (Exception disposeEx)
-                            {
-                                _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                            }
-                            
-                            // Return warning status (not error)
-                            return Ok(OperationResult<bool>.Warning("تم إغلاق المتصفح بشكل متعمد. تم إيقاف جميع المهام الجارية مؤقتًا."));
+                            _notifier.Notify("❗ Browser closed detected during authentication. Consider recreating the browser session before retrying.");
+                            // Return a failure so the caller can decide to recreate a session instead of rethrowing
+                            return Ok(OperationResult<bool>.Failure("Authentication failed: browser session was closed during authentication."));
                         }
                         _notifier.Notify($"❌ Exception while waiting for QR scan: {ex.Message}");
-                        
-                        // Dispose browser session on exception
-                        try
-                        {
-                            await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                            _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to exception");
-                        }
-                        catch (Exception disposeEx)
-                        {
-                            _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                        }
-                        
                         return Ok(OperationResult<bool>.Failure($"Authentication failed: {ex.Message}"));
                     }
                 }
@@ -816,16 +557,14 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify("✅ Authentication completed: Chat UI detected.");
                     
-                    // CRITICAL: Optimize session and create backup after successful authentication
-                    // OptimizeAuthenticatedSessionAsync already disposes the browser session internally
+                    // Optimize session after successful authentication
                     try
                     {
                         await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
-                        _notifier.Notify($"✅ [AUTHENTICATE] Session optimized and backup created (waitForAuth) for moderator {effectiveModeratorId}");
                     }
                     catch (Exception optimizeEx)
                     {
-                        _notifier.Notify($"⚠️ [AUTHENTICATE] Session optimization/backup failed (non-critical): {optimizeEx.Message}");
+                        _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
                     }
                     
                     return Ok(OperationResult<bool>.Success(true));
@@ -835,36 +574,12 @@ namespace ClinicsManagementService.Controllers
                 if (waitForAuth.IsPendingQr())
                 {
                     _notifier.Notify("❌ Authentication failed: returned to QR code page after progress.");
-                    
-                    // Dispose browser session on failure
-                    try
-                    {
-                        await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                        _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to authentication failure");
-                    }
-                    catch (Exception disposeEx)
-                    {
-                        _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                    }
-                    
                     return Ok(OperationResult<bool>.Failure("Authentication failed: returned to QR code page after progress."));
                 }
 
                 if (waitForAuth.IsPendingNet())
                 {
                     _notifier.Notify("❌ Authentication interrupted due to network issues.");
-                    
-                    // Dispose browser session on PendingNET
-                    try
-                    {
-                        await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                        _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to PendingNET");
-                    }
-                    catch (Exception disposeEx)
-                    {
-                        _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                    }
-                    
                     return Ok(OperationResult<bool>.PendingNET(waitForAuth.ResultMessage ?? "Internet connection unavailable"));
                 }
 
@@ -876,70 +591,17 @@ namespace ClinicsManagementService.Controllers
 
                 // Any other failure
                 _notifier.Notify($"❌ Authentication failed: {waitForAuth.ResultMessage}");
-                
-                // Dispose browser session on failure
-                try
-                {
-                    await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                    _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to authentication failure");
-                }
-                catch (Exception disposeEx)
-                {
-                    _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                }
-                
                 return Ok(OperationResult<bool>.Failure(waitForAuth.ResultMessage ?? "Authentication failed"));
             }
             catch (Exception ex)
             {
                 if (_retryService.IsBrowserClosedException(ex))
                 {
-                    _notifier.Notify("⚠️ Browser closed intentionally detected during authentication.");
-                    // Pause all ongoing tasks (don't fail them)
-                    if (moderatorUserId.HasValue && userId.HasValue)
-                    {
-                        await _operationCoordinator.PauseAllOngoingTasksAsync(
-                            moderatorUserId.Value,
-                            userId.Value,
-                            "Browser closed intentionally",
-                            cancellationToken);
-                    }
-                    
-                    // Dispose browser session on browser closure
-                    if (moderatorUserId.HasValue)
-                    {
-                        try
-                        {
-                            await _sessionManager.DisposeSessionAsync(moderatorUserId.Value);
-                            _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to browser closure");
-                        }
-                        catch (Exception disposeEx)
-                        {
-                            _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                        }
-                    }
-                    
-                    // Return warning status (not error)
-                    return Ok(OperationResult<bool>.Warning("تم إغلاق المتصفح بشكل متعمد. تم إيقاف جميع المهام الجارية مؤقتًا."));
+                    _notifier.Notify("❗ Browser closed detected during authentication. Consider recreating the browser session before retrying.");
+                    throw;
                 }
-
-                _notifier.Notify($"❌ Exception during authentication check: {ex.Message}");
-                
-                // Dispose browser session on exception
-                if (moderatorUserId.HasValue)
-                {
-                    try
-                    {
-                        await _sessionManager.DisposeSessionAsync(moderatorUserId.Value);
-                        _notifier.Notify($"🗑️ [AUTHENTICATE] Browser session disposed due to exception");
-                    }
-                    catch (Exception disposeEx)
-                    {
-                        _notifier.Notify($"⚠️ [AUTHENTICATE] Failed to dispose browser session (non-critical): {disposeEx.Message}");
-                    }
-                }
-                
-                return Ok(OperationResult<bool>.Failure($"Authentication check failed: {ex.Message}"));
+                _notifier.Notify($"❌ Exception during WhatsApp authentication: {ex.Message}");
+                return Ok(OperationResult<bool>.Failure($"Authentication failed: {ex.Message}"));
             }
         }
 

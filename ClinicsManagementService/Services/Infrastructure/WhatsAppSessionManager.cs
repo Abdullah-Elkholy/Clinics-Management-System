@@ -4,8 +4,6 @@ using ClinicsManagementService.Models;
 using ClinicsManagementService.Configuration;
 using Microsoft.Playwright;
 using System.Collections.Concurrent;
-using Clinics.Infrastructure;
-using Microsoft.EntityFrameworkCore;
 
 namespace ClinicsManagementService.Services.Infrastructure
 {
@@ -13,7 +11,6 @@ namespace ClinicsManagementService.Services.Infrastructure
     {
         private readonly INotifier _notifier;
         private readonly Func<int, IBrowserSession> _browserSessionFactory;
-        private readonly ApplicationDbContext _dbContext;
         
         // Dictionary of sessions keyed by moderatorId
         private readonly ConcurrentDictionary<int, IBrowserSession> _sessions = new();
@@ -38,12 +35,10 @@ namespace ClinicsManagementService.Services.Infrastructure
 
         public WhatsAppSessionManager(
             INotifier notifier,
-            Func<int, IBrowserSession> browserSessionFactory,
-            ApplicationDbContext dbContext)
+            Func<int, IBrowserSession> browserSessionFactory)
         {
             _notifier = notifier;
             _browserSessionFactory = browserSessionFactory;
-            _dbContext = dbContext;
         }
 
         public async Task<IBrowserSession> GetOrCreateSessionAsync(int moderatorId)
@@ -66,39 +61,6 @@ namespace ClinicsManagementService.Services.Infrastructure
                 {
                     _notifier.Notify($"🔄 [Moderator {moderatorId}] Using existing WhatsApp session");
                     return existingSession;
-                }
-
-                // CRITICAL: Check if global pause is active before creating new session
-                // This prevents stuck browser recreation when system is paused due to PendingQR/PendingNET/BrowserClosure
-                // EXCEPTION: Allow browser creation for PendingQR and BrowserClosure (authentication/re-authentication needed)
-                var whatsappSession = await _dbContext.WhatsAppSessions
-                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted);
-                
-                if (whatsappSession != null && whatsappSession.IsPaused)
-                {
-                    var pauseReason = whatsappSession.PauseReason ?? "Unknown";
-                    
-                    // Allow browser creation for PendingQR (authentication will resolve it) and BrowserClosure (re-authentication needed)
-                    if (pauseReason.Contains("PendingQR"))
-                    {
-                        _notifier.Notify($"⚠️ [Moderator {moderatorId}] System is paused due to PendingQR - allowing browser creation for authentication");
-                        // Continue to create browser session - authentication will resolve the pause
-                    }
-                    else if (pauseReason.Contains("BrowserClosure"))
-                    {
-                        _notifier.Notify($"⚠️ [Moderator {moderatorId}] System is paused due to BrowserClosure - allowing browser recreation for re-authentication");
-                        // Continue to create browser session - re-authentication needed
-                    }
-                    else if (pauseReason.Contains("PendingNET"))
-                    {
-                        _notifier.Notify($"⏸️ [Moderator {moderatorId}] Cannot create browser session - system is paused due to PendingNET (network failure)");
-                        throw new InvalidOperationException($"Cannot create browser session: System is paused due to PendingNET (network failure). Please check internet connection.");
-                    }
-                    else
-                    {
-                        _notifier.Notify($"⏸️ [Moderator {moderatorId}] Cannot create browser session - system is paused: {pauseReason}");
-                        throw new InvalidOperationException($"Cannot create browser session: System is paused ({pauseReason}). Please resume operations first.");
-                    }
                 }
 
                 _notifier.Notify($"🆕 [Moderator {moderatorId}] Creating new WhatsApp session");

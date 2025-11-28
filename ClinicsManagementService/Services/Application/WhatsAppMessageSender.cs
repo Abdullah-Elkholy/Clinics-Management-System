@@ -162,76 +162,63 @@ namespace ClinicsManagementService.Services.Application
             cancellationToken.ThrowIfCancellationRequested();
 
             var browserSession = _browserSessionFactory(moderatorUserId);
-            OperationResult<string?> deliveryResult;
-            
+            // browserSession = await _sessionManager.GetOrCreateSessionAsync();
+            MessageSendResult result;
             try
             {
-                // REMOVED RETRY LOGIC: Call SendMessageWithIconTypeAsync directly without retry wrapper
-                // This allows immediate detection of PendingQR/PendingNET/BrowserClosure errors
-                browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
-                try
-                {
-                    // Check cancellation before sending
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    deliveryResult = await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession, cancellationToken);
-                }
-                finally
-                {
-                    // Check cancellation before disposing
-                    if (!cancellationToken.IsCancellationRequested)
+                var deliveryResult = await _retryService.ExecuteWithRetryAsync(
+                    async () =>
                     {
-                        await _whatsappService.DisposeBrowserSessionAsync(browserSession);
-                    }
-                }
+                        // Check cancellation before getting session
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
+                        try
+                        {
+                            // Check cancellation before sending
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession, cancellationToken);
+                        }
+                        finally
+                        {
+                            // Check cancellation before disposing
+                            if (!cancellationToken.IsCancellationRequested)
+                            {
+                                await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                            }
+                        }
+                    },
+                    maxAttempts: WhatsAppConfiguration.DefaultMaxRetryAttempts,
+                    shouldRetryResult: r => r?.IsWaiting() == true,
+                    isRetryable: null);
+
+                result = new MessageSendResult
+                {
+                    Phone = phoneNumber,
+                    Message = message,
+                    Sent = deliveryResult.IsSuccess == true,
+                    Error = deliveryResult.ResultMessage,
+                    IconType = deliveryResult.Data,
+                    Status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage)
+                };
             }
             catch (OperationCanceledException)
             {
-                // Browser closed or operation cancelled - this is BrowserClosure
-                _notifier.Notify($"⚠️ [SEND-SINGLE] Operation cancelled (BrowserClosure) for moderator {moderatorUserId}");
-                
-                // Get coordinator to pause global WhatsAppSession
-                // Note: coordinator should be injected, but for now we'll throw a special exception
-                // that will be caught in BulkMessagingController
-                throw new OperationCanceledException("BrowserClosure: Browser closed or operation cancelled");
-            }
-            catch (Exception ex) when (IsBrowserClosedException(ex))
-            {
-                // Browser closed exception - this is BrowserClosure
-                _notifier.Notify($"⚠️ [SEND-SINGLE] Browser closed (BrowserClosure) for moderator {moderatorUserId}: {ex.Message}");
-                throw new InvalidOperationException("BrowserClosure: Browser session terminated", ex);
+                _notifier.Notify($"⚠️ Operation cancelled while sending message to {phoneNumber}");
+                result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Operation was cancelled", IconType = null, Status = MessageOperationStatus.Failure };
             }
             catch (Exception ex)
             {
-                _notifier.Notify($"⚠️ [SEND-SINGLE] Unexpected error for moderator {moderatorUserId}: {ex.Message}");
-                throw; // Re-throw to be handled by caller
+                _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {phoneNumber}: {ex.Message}");
+                result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
             }
-
-            // Check for PendingQR, PendingNET, or other errors immediately (no retry)
-            if (deliveryResult.IsPendingQr())
+            if (!result.Sent && !string.IsNullOrEmpty(result.Error))
             {
-                _notifier.Notify($"❌ [SEND-SINGLE] PendingQR detected for moderator {moderatorUserId}: {deliveryResult.ResultMessage}");
-                // Throw special exception that will be caught in BulkMessagingController
-                throw new InvalidOperationException($"PendingQR: {deliveryResult.ResultMessage ?? "WhatsApp authentication required"}");
+                _notifier.Notify(result.Error);
             }
-            
-            if (deliveryResult.IsPendingNet())
-            {
-                _notifier.Notify($"❌ [SEND-SINGLE] PendingNET detected for moderator {moderatorUserId}: {deliveryResult.ResultMessage}");
-                // Throw special exception that will be caught in BulkMessagingController
-                throw new InvalidOperationException($"PendingNET: {deliveryResult.ResultMessage ?? "Internet connection unavailable"}");
-            }
-
-            // Success case
-            if (deliveryResult.IsSuccess == true)
-            {
-                _notifier.Notify($"✅ [SEND-SINGLE] Message sent successfully to {phoneNumber}");
-                return true;
-            }
-
-            // Generic failure
-            _notifier.Notify($"❌ [SEND-SINGLE] Message failed to send to {phoneNumber}: {deliveryResult.ResultMessage}");
-            return false;
+            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+            return result.Sent;
         }
 
         public async Task<List<MessageSendResult>> SendMessagesAsync(int moderatorUserId, string phoneNumber, IEnumerable<string> messages)
@@ -320,26 +307,6 @@ namespace ClinicsManagementService.Services.Application
             }
 
             return MessageOperationStatus.Failure;
-        }
-
-        /// <summary>
-        /// Helper method to detect browser closed exceptions
-        /// </summary>
-        private bool IsBrowserClosedException(Exception ex)
-        {
-            if (ex == null) return false;
-            
-            var message = ex.Message?.ToLower() ?? "";
-            var innerMessage = ex.InnerException?.Message?.ToLower() ?? "";
-            
-            return message.Contains("browser") && message.Contains("closed") ||
-                   message.Contains("target closed") ||
-                   message.Contains("session closed") ||
-                   message.Contains("browserclosure") ||
-                   innerMessage.Contains("browser") && innerMessage.Contains("closed") ||
-                   innerMessage.Contains("target closed") ||
-                   innerMessage.Contains("session closed") ||
-                   innerMessage.Contains("browserclosure");
         }
     }
 }

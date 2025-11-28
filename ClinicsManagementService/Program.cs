@@ -37,7 +37,6 @@ builder.Services.AddScoped<Func<int, IBrowserSession>>(sp =>
 });
 builder.Services.AddScoped<IWhatsAppSessionManager, WhatsAppSessionManager>();
 builder.Services.AddScoped<IWhatsAppSessionOptimizer, WhatsAppSessionOptimizer>();
-builder.Services.AddScoped<OperationCoordinatorService>();
 
 // Application Services
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
