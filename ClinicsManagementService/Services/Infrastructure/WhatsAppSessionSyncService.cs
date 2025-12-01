@@ -13,11 +13,13 @@ namespace ClinicsManagementService.Services.Infrastructure
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly INotifier _notifier;
+        private readonly ISignalRNotificationService _signalRNotificationService;
 
-        public WhatsAppSessionSyncService(ApplicationDbContext dbContext, INotifier notifier)
+        public WhatsAppSessionSyncService(ApplicationDbContext dbContext, INotifier notifier, ISignalRNotificationService signalRNotificationService)
         {
             _dbContext = dbContext;
             _notifier = notifier;
+            _signalRNotificationService = signalRNotificationService;
         }
 
         /// <summary>
@@ -93,6 +95,9 @@ namespace ClinicsManagementService.Services.Infrastructure
                 _notifier.Notify($"💾 [DB SYNC] Calling SaveChangesAsync...");
                 var changeCount = await _dbContext.SaveChangesAsync();
                 _notifier.Notify($"✅ [DB SYNC] SaveChangesAsync completed - Changes saved: {changeCount}");
+                
+                // Notify frontend via SignalR
+                await _signalRNotificationService.NotifyWhatsAppSessionUpdateAsync(moderatorUserId, status, null, null);
             }
             catch (Exception ex)
             {
@@ -167,6 +172,76 @@ namespace ClinicsManagementService.Services.Infrastructure
             {
                 _notifier.Notify($"❌ Error checking PendingQR pause state: {ex.Message}");
                 // On error, assume not paused to allow operations (fail-safe)
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Pause WhatsAppSession globally for the specified moderator due to PendingQR
+        /// This sets IsPaused=true on the WhatsAppSession entity with PauseReason="PendingQR"
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <param name="pausedBy">Optional user ID who triggered the pause</param>
+        /// <returns>True if session was paused successfully</returns>
+        public async Task<bool> PauseSessionDueToPendingQRAsync(int moderatorUserId, int? pausedBy = null, string pauseReason = "PendingQR")
+        {
+            try
+            {
+                _notifier.Notify($"⏸️ [DB SYNC] PauseSessionDueToPendingQRAsync called - ModeratorUserId: {moderatorUserId}, Reason: {pauseReason}");
+                
+                // Get or create WhatsAppSession
+                var whatsappSession = await _dbContext.WhatsAppSessions
+                    .FirstOrDefaultAsync(s => s.ModeratorUserId == moderatorUserId && !s.IsDeleted);
+
+                if (whatsappSession == null)
+                {
+                    // Create new WhatsAppSession if doesn't exist
+                    _notifier.Notify($"➕ [DB SYNC] Creating new WhatsAppSession for moderator {moderatorUserId}");
+                    whatsappSession = new WhatsAppSession
+                    {
+                        ModeratorUserId = moderatorUserId,
+                        // Only set status to "pending" for actual PendingQR/PendingNET, otherwise "connected" by default
+                        Status = (pauseReason == "PendingQR" || pauseReason == "PendingNET") ? "pending" : "connected",
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedByUserId = pausedBy,
+                        IsPaused = true,
+                        PausedAt = DateTime.UtcNow,
+                        PausedBy = pausedBy,
+                        PauseReason = pauseReason,
+                        SessionName = WhatsAppConfiguration.GetSessionDirectory(moderatorUserId)
+                    };
+                    _dbContext.WhatsAppSessions.Add(whatsappSession);
+                }
+                else
+                {
+                    // Update existing session with global pause
+                    _notifier.Notify($"🔄 [DB SYNC] Updating existing WhatsAppSession {whatsappSession.Id} to paused state");
+                    whatsappSession.IsPaused = true;
+                    whatsappSession.PausedAt = DateTime.UtcNow;
+                    whatsappSession.PausedBy = pausedBy;
+                    whatsappSession.PauseReason = pauseReason;
+                    // Only set status to "pending" for actual PendingQR/PendingNET, not for BrowserClosure
+                    if (pauseReason == "PendingQR" || pauseReason == "PendingNET")
+                    {
+                        whatsappSession.Status = "pending";
+                    }
+                    whatsappSession.UpdatedAt = DateTime.UtcNow;
+                    whatsappSession.UpdatedBy = pausedBy;
+                }
+
+                var changeCount = await _dbContext.SaveChangesAsync();
+                _notifier.Notify($"✅ [DB SYNC] WhatsAppSession paused globally - ModeratorUserId: {moderatorUserId}, Changes: {changeCount}");
+                
+                // Notify frontend via SignalR with appropriate status
+                var notifyStatus = (pauseReason == "PendingQR" || pauseReason == "PendingNET") ? "pending" : whatsappSession.Status;
+                await _signalRNotificationService.NotifyWhatsAppSessionUpdateAsync(moderatorUserId, notifyStatus, true, pauseReason);
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"❌ [DB SYNC] Error pausing WhatsAppSession: {ex.Message}");
+                _notifier.Notify($"❌ [DB SYNC] Stack trace: {ex.StackTrace}");
                 return false;
             }
         }

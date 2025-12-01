@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, ReactNode } from 'react';
+import logger from '@/utils/logger';
 
 interface ChunkErrorBoundaryProps {
   children: ReactNode;
@@ -22,7 +23,7 @@ export default function ChunkErrorBoundary({ children }: ChunkErrorBoundaryProps
         event.error?.name === 'ChunkLoadError';
       
       if (isChunkError) {
-        console.warn('Chunk load error detected, reloading page...', {
+        logger.warn('Chunk load error detected, reloading page...', {
           message: errorMessage,
           filename: event.filename,
           lineno: event.lineno,
@@ -49,7 +50,7 @@ export default function ChunkErrorBoundary({ children }: ChunkErrorBoundaryProps
         event.reason?.name === 'ChunkLoadError';
       
       if (isChunkError) {
-        console.warn('Chunk load error in promise, reloading page...', {
+        logger.warn('Chunk load error in promise, reloading page...', {
           reason: event.reason,
         });
         

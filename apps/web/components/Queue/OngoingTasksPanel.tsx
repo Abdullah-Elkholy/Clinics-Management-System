@@ -36,7 +36,7 @@ interface Session {
   totalPatients: number;
   sentCount: number;
   failedCount: number;
-  patients: (Patient & { isPaused?: boolean })[];
+  patients: (Patient & { isPaused?: boolean; messageId?: string })[];
   isPaused?: boolean;
 }
 
@@ -140,7 +140,8 @@ export default function OngoingTasksPanel() {
             status: p.status,
             isValidWhatsAppNumber: p.status === 'sent' ? true : null,
             isPaused: p.isPaused,
-          } as Patient & { isPaused?: boolean })),
+            messageId: p.messageId,
+          } as Patient & { isPaused?: boolean; messageId?: string })),
         }));
         
         // Filter by selectedQueueId if one is selected
@@ -186,13 +187,20 @@ export default function OngoingTasksPanel() {
       ? Number(user.id)
       : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
 
-    if (!moderatorId) return;
+    if (!moderatorId) {
+      // Set default state if no moderator ID
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null });
+      return;
+    }
 
     try {
       const state = await whatsappApiClient.getGlobalPauseState(moderatorId);
-      setGlobalPauseState(state);
+      // Ensure we always have a valid state object
+      setGlobalPauseState(state || { isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null });
     } catch (err) {
       logger.error('Failed to load global pause state:', err);
+      // Set default state on error
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null });
     }
   }, [user]);
 
@@ -219,6 +227,8 @@ export default function OngoingTasksPanel() {
 
   /**
    * Handle global resume (resume all moderator tasks)
+   * IMPORTANT: PendingQR pauses are UNRESUMABLE manually - only resumable when connection state = "connected"
+   * BrowserClosure and PendingNET pauses are RESUMABLE manually
    */
   const handleGlobalResume = useCallback(async () => {
     const moderatorId = user?.role === 'moderator'
@@ -227,16 +237,28 @@ export default function OngoingTasksPanel() {
 
     if (!moderatorId) return;
 
+    // Check if pause reason is PendingQR (unresumable)
+    if (globalPauseState?.pauseReason?.includes('PendingQR')) {
+      addToast('لا يمكن استئناف المهام حتى تتم المصادقة على جلسة الواتساب. يرجى الذهاب إلى لوحة مصادقة الواتساب.', 'warning');
+      return;
+    }
+
     try {
       await whatsappApiClient.resumeAllModeratorTasks(moderatorId);
       addToast('تم استئناف جميع المهام للمشرف', 'success');
       await loadGlobalPauseState();
       await loadOngoingSessions();
-    } catch (err) {
+    } catch (err: any) {
       logger.error('Failed to resume moderator tasks:', err);
-      addToast('فشل استئناف المهام', 'error');
+      
+      // Check if error is due to PendingQR (unresumable)
+      if (err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
+        addToast('لا يمكن استئناف المهام حتى تتم المصادقة على جلسة الواتساب.', 'warning');
+      } else {
+        addToast('فشل استئناف المهام', 'error');
+      }
     }
-  }, [user, addToast, loadGlobalPauseState, loadOngoingSessions]);
+  }, [user, addToast, loadGlobalPauseState, loadOngoingSessions, globalPauseState]);
 
   /**
    * Load sessions on mount and when data updates
@@ -470,22 +492,23 @@ export default function OngoingTasksPanel() {
   const togglePatientPause = useCallback(async (sessionId: string, patientId: string) => {
     try {
       // Find the message ID for this patient in this session
-      // Note: We need to get message ID from backend or store it in patient data
-      // For now, we'll use the session pause/resume which affects all messages
       const session = sessions.find(s => s.id === sessionId);
       const patient = session?.patients.find(p => p.id === patientId);
       
-      if (!patient) return;
+      if (!patient || !patient.messageId) {
+        addToast('لم يتم العثور على معرف الرسالة', 'error');
+        return;
+      }
 
       // If patient is paused, resume the message; otherwise pause it
-      // Since we don't have message ID directly, we'll pause/resume the session
-      // In a full implementation, we'd need to fetch message ID from backend
       if (patient.isPaused) {
-        // Resume - for now, resume entire session (can be optimized later)
-        await messageApiClient.resumeSession(sessionId);
+        // Resume individual message
+        await messageApiClient.resumeMessage(patient.messageId);
+        addToast('تم استئناف الرسالة بنجاح', 'success');
       } else {
-        // Pause - for now, pause entire session (can be optimized later)
-        await messageApiClient.pauseSession(sessionId);
+        // Pause individual message
+        await messageApiClient.pauseMessage(patient.messageId);
+        addToast('تم إيقاف الرسالة بنجاح', 'success');
       }
 
       // Reload sessions to get updated state
@@ -495,7 +518,7 @@ export default function OngoingTasksPanel() {
       window.dispatchEvent(new CustomEvent('messageDataUpdated'));
     } catch (err) {
       logger.error('Failed to toggle patient pause:', err);
-      addToast('فشل تحديث حالة المريض', 'error');
+      addToast('فشل تحديث حالة الرسالة', 'error');
     }
   }, [sessions, loadOngoingSessions, addToast]);
 
@@ -554,24 +577,32 @@ export default function OngoingTasksPanel() {
    * Delete patient - memoized (uses backend API)
    */
   const handleDeletePatient = useCallback(async (sessionId: string, patientId: string) => {
-    const confirmed = await confirm(createDeleteConfirmation('هذا المريض'));
+    // Find patient to get messageId
+    const session = sessions.find(s => s.id === sessionId);
+    const patient = session?.patients.find(p => p.id === patientId);
+    
+    if (!patient || !patient.messageId) {
+      addToast('لم يتم العثور على معرف الرسالة', 'error');
+      return;
+    }
+
+    const confirmed = await confirm(createDeleteConfirmation('هذه الرسالة'));
     if (confirmed) {
       try {
-        await patientsApiClient.deletePatient(Number(patientId));
-        addToast('تم حذف المريض بنجاح', 'success');
+        await messageApiClient.deleteMessage(patient.messageId);
+        addToast('تم حذف الرسالة بنجاح', 'success');
         
         // Reload sessions to get updated state
         await loadOngoingSessions();
         
         // Dispatch event to notify other components
-        window.dispatchEvent(new CustomEvent('patientDataUpdated'));
         window.dispatchEvent(new CustomEvent('messageDataUpdated'));
       } catch (err) {
-        logger.error('Failed to delete patient:', err);
-        addToast('فشل حذف المريض', 'error');
+        logger.error('Failed to delete message:', err);
+        addToast('فشل حذف الرسالة', 'error');
       }
     }
-  }, [confirm, addToast, loadOngoingSessions]);
+  }, [sessions, confirm, addToast, loadOngoingSessions]);
 
   /**
    * Memoize computed stats
@@ -780,15 +811,40 @@ export default function OngoingTasksPanel() {
               <>
                 <button
                   onClick={handleGlobalResume}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 font-medium shadow-md hover:shadow-lg transition-all"
+                  disabled={globalPauseState.pauseReason?.includes('PendingQR')}
+                  className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${
+                    globalPauseState.pauseReason?.includes('PendingQR')
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
+                  }`}
+                  title={globalPauseState.pauseReason?.includes('PendingQR') ? 'لا يمكن الاستئناف - يتطلب المصادقة أولاً' : 'استئناف جميع مهام المشرف'}
                 >
                   <i className="fas fa-play"></i>
-                  <span>استئناف جميع مهام المشرف</span>
+                  <span>
+                    {globalPauseState.pauseReason?.includes('PendingQR')
+                      ? 'الاستئناف غير متاح - يتطلب المصادقة'
+                      : 'استئناف جميع مهام المشرف'}
+                  </span>
                 </button>
                 {globalPauseState.pauseReason && (
-                  <div className="text-sm text-yellow-600 flex items-center gap-2">
-                    <i className="fas fa-exclamation-triangle"></i>
+                  <div className={`text-sm flex items-center gap-2 ${
+                    globalPauseState.pauseReason?.includes('PendingQR')
+                      ? 'text-yellow-700 font-semibold'
+                      : globalPauseState.pauseReason?.includes('BrowserClosure')
+                      ? 'text-red-600'
+                      : 'text-orange-600'
+                  }`}>
+                    <i className={`fas ${
+                      globalPauseState.pauseReason?.includes('PendingQR')
+                        ? 'fa-exclamation-triangle'
+                        : globalPauseState.pauseReason?.includes('BrowserClosure')
+                        ? 'fa-times-circle'
+                        : 'fa-wifi'
+                    }`}></i>
                     <span>{globalPauseState.pauseReason}</span>
+                    {globalPauseState.pauseReason?.includes('PendingQR') && (
+                      <span className="text-xs">(يجب المصادقة أولاً)</span>
+                    )}
                   </div>
                 )}
               </>

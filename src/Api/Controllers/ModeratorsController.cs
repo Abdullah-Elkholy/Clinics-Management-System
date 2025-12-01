@@ -5,6 +5,7 @@ using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
 using Clinics.Api.Helpers;
+using Clinics.Api.Services;
 using System.Security.Claims;
 
 namespace Clinics.Api.Controllers
@@ -16,11 +17,13 @@ namespace Clinics.Api.Controllers
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<ModeratorsController> _logger;
+        private readonly CircuitBreakerService _circuitBreaker;
 
-        public ModeratorsController(ApplicationDbContext db, ILogger<ModeratorsController> logger)
+        public ModeratorsController(ApplicationDbContext db, ILogger<ModeratorsController> logger, CircuitBreakerService circuitBreaker)
         {
             _db = db;
             _logger = logger;
+            _circuitBreaker = circuitBreaker;
         }
 
         /// <summary>
@@ -656,6 +659,8 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Resume all tasks for a moderator (sets WhatsAppSession.IsPaused = false)
+        /// IMPORTANT: PendingQR pauses are UNRESUMABLE manually - they can only be resumed when WhatsApp connection state changes to "connected"
+        /// BrowserClosure and PendingNET pauses are RESUMABLE manually from OngoingTasksPanel
         /// </summary>
         [HttpPost("{moderatorId}/resume-all")]
         [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
@@ -704,6 +709,19 @@ namespace Clinics.Api.Controllers
                     return Ok(new { success = true, message = "لا توجد مهام موقوفة" });
                 }
 
+                // CRITICAL: Prevent manual resume for PendingQR (unresumable until connection state is "connected")
+                // BrowserClosure and PendingNET are resumable manually
+                if (whatsappSession.PauseReason?.Contains("PendingQR", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    _logger.LogWarning("Attempted to manually resume PendingQR pause for moderator {ModeratorId}. PendingQR is unresumable until authentication.", moderatorId);
+                    return BadRequest(new
+                    {
+                        success = false,
+                        error = "PendingQR",
+                        message = "لا يمكن استئناف المهام حتى تتم المصادقة على جلسة الواتساب. يرجى الذهاب إلى لوحة مصادقة الواتساب."
+                    });
+                }
+
                 // Resume global pause ONLY (no cascade resume needed)
                 // Messages will be automatically processable when global pause is removed
                 whatsappSession.IsPaused = false;
@@ -714,6 +732,11 @@ namespace Clinics.Api.Controllers
                 whatsappSession.UpdatedBy = userId;
 
                 await _db.SaveChangesAsync();
+
+                // Reset circuit breaker when resuming tasks (especially after authentication)
+                _logger.LogWarning("🔄 About to reset circuit breaker for moderator {ModeratorId}", moderatorId);
+                _circuitBreaker.Reset(moderatorId);
+                _logger.LogWarning("✅ Circuit breaker RESET completed for moderator {ModeratorId}", moderatorId);
 
                 _logger.LogInformation("Moderator {ModeratorId} tasks resumed by user {UserId}", moderatorId, userId);
 
@@ -775,6 +798,7 @@ namespace Clinics.Api.Controllers
                     .AsNoTracking()
                     .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId);
 
+                // Return proper object structure even when session doesn't exist
                 if (whatsappSession == null)
                 {
                     return Ok(new

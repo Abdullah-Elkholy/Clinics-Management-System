@@ -12,6 +12,7 @@ namespace ClinicsManagementService.Services.Infrastructure
     {
         private readonly INotifier _notifier;
         private readonly IWhatsAppSessionManager _sessionManager;
+        private readonly IWhatsAppSessionSyncService _sessionSyncService;
         private static readonly SemaphoreSlim _optimizationLock = new(1, 1);
         private DateTime? _lastCleanup;
         private DateTime? _lastBackup;
@@ -21,10 +22,12 @@ namespace ClinicsManagementService.Services.Infrastructure
 
         public WhatsAppSessionOptimizer(
             INotifier notifier,
-            IWhatsAppSessionManager sessionManager)
+            IWhatsAppSessionManager sessionManager,
+            IWhatsAppSessionSyncService sessionSyncService)
         {
             _notifier = notifier;
             _sessionManager = sessionManager;
+            _sessionSyncService = sessionSyncService;
         }
 
         public async Task OptimizeAuthenticatedSessionAsync(int moderatorId)
@@ -47,8 +50,8 @@ namespace ClinicsManagementService.Services.Infrastructure
                 // 2. Ensure file locks are released
                 await EnsureNoFileLocksAsync(moderatorId);
 
-                // 3. Clean non-essential caches
-                await CleanupCachesAsync(moderatorId);
+                // 3. Clean non-essential caches (disabled for now as the session is malfunctioning)
+                // await CleanupCachesAsync(moderatorId);
 
                 // 4. Create compressed backup
                 await CreateCompressedBackupAsync(moderatorId);
@@ -163,6 +166,29 @@ namespace ClinicsManagementService.Services.Infrastructure
         {
             var sessionDir = GetSessionDirectory(moderatorId);
             var backupPath = GetBackupPath(moderatorId);
+            
+            // Check database status first (source of truth), then fallback to browser session check
+            bool isAuthenticated = false;
+            try
+            {
+                var dbSession = await _sessionSyncService.GetSessionStatusAsync(moderatorId);
+                if (dbSession != null && dbSession.Status == "connected")
+                {
+                    isAuthenticated = true;
+                }
+                else
+                {
+                    // Fallback to browser session check if database says not connected
+                    isAuthenticated = await _sessionManager.IsSessionReadyAsync(moderatorId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"⚠️ Error checking authentication status, using browser session check: {ex.Message}");
+                // Fallback to browser session check on error
+                isAuthenticated = await _sessionManager.IsSessionReadyAsync(moderatorId);
+            }
+            
             var metrics = new SessionHealthMetrics
             {
                 CurrentSizeBytes = GetDirectorySize(sessionDir),
@@ -171,7 +197,7 @@ namespace ClinicsManagementService.Services.Infrastructure
                 LastCleanup = _lastCleanup,
                 LastBackup = _lastBackup,
                 ThresholdBytes = WhatsAppConfiguration.MaxSessionSizeBytes,
-                IsAuthenticated = await _sessionManager.IsSessionReadyAsync(moderatorId),
+                IsAuthenticated = isAuthenticated,
                 ProviderSessionId = _sessionManager.GetProviderSessionId(moderatorId)
             };
 

@@ -7,22 +7,32 @@ import { useModal } from '@/contexts/ModalContext';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 export default function WhatsAppAuthTabContent() {
-  const { sessionStatus, sessionData, globalPauseState, startAuthentication, checkAuthentication, refreshGlobalPauseState } = useWhatsAppSession();
+  const { sessionStatus, sessionData, globalPauseState, startAuthentication, checkAuthentication, refreshGlobalPauseState, refreshSessionStatus } = useWhatsAppSession();
   const { addToast } = useUI();
   const { openModal } = useModal();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
 
   const handleStartAuthentication = async () => {
     setIsAuthenticating(true);
     try {
       const result = await startAuthentication();
       
-      // Refresh global pause state after authentication attempt
-      await refreshGlobalPauseState();
+      // Refresh both session status and global pause state after authentication attempt
+      // This ensures the UI reflects the latest state from the database
+      await Promise.all([
+        refreshSessionStatus(),
+        refreshGlobalPauseState()
+      ]);
       
       // Check using isSuccess property as primary indicator
       if (result.isSuccess === true || result.state === 'Success') {
         addToast('تم الاتصال بواتساب بنجاح', 'success');
+        // Ensure states are refreshed one more time after success to clear any PendingQR state
+        await Promise.all([
+          refreshSessionStatus(),
+          refreshGlobalPauseState()
+        ]);
       } else if (result.state === 'PendingQR') {
         addToast('يرجى مسح رمز QR من تطبيق واتساب', 'info');
         // Open QR code modal to show QR code
@@ -41,15 +51,25 @@ export default function WhatsAppAuthTabContent() {
   };
 
   const handleCheckAuthentication = async () => {
+    setIsChecking(true);
     try {
       const result = await checkAuthentication();
       
-      // Refresh global pause state after check
-      await refreshGlobalPauseState();
+      // Refresh both session status and global pause state after check
+      // This ensures the UI reflects the latest state from the database
+      await Promise.all([
+        refreshSessionStatus(),
+        refreshGlobalPauseState()
+      ]);
       
       // Check using isSuccess property as primary indicator
       if (result.isSuccess === true || result.state === 'Success') {
         addToast('واتساب متصل بنجاح', 'success');
+        // Ensure states are refreshed one more time after success to clear any PendingQR state
+        await Promise.all([
+          refreshSessionStatus(),
+          refreshGlobalPauseState()
+        ]);
       } else if (result.state === 'PendingQR') {
         addToast('في انتظار مسح رمز QR', 'info');
       } else if (result.state === 'PendingNET') {
@@ -60,6 +80,8 @@ export default function WhatsAppAuthTabContent() {
       // Don't show toast for other states (Waiting, etc.) unless there's a message
     } catch (error: any) {
       addToast(error.message || 'فشل التحقق من حالة الاتصال', 'error');
+    } finally {
+      setIsChecking(false);
     }
   };
 
@@ -174,9 +196,9 @@ export default function WhatsAppAuthTabContent() {
           <div className="flex gap-3 pt-4">
             <button
               onClick={handleStartAuthentication}
-              disabled={isAuthenticating || sessionStatus === 'connected'}
+              disabled={isAuthenticating || isChecking || sessionStatus === 'connected'}
               className={`flex-1 inline-flex items-center justify-center gap-2 rounded-lg px-6 py-3 text-white font-medium transition-colors ${
-                isAuthenticating || sessionStatus === 'connected'
+                isAuthenticating || isChecking || sessionStatus === 'connected'
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
@@ -186,10 +208,15 @@ export default function WhatsAppAuthTabContent() {
             </button>
             <button
               onClick={handleCheckAuthentication}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700 transition-colors font-medium"
+              disabled={isChecking || isAuthenticating}
+              className={`inline-flex items-center justify-center gap-2 rounded-lg px-6 py-3 text-white font-medium transition-colors ${
+                isChecking || isAuthenticating
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              <i className="fas fa-sync-alt"></i>
-              <span>تحديث الحالة</span>
+              <i className={`fas fa-sync-alt ${isChecking ? 'animate-spin' : ''}`}></i>
+              <span>{isChecking ? 'جاري التحقق...' : 'تحديث الحالة'}</span>
             </button>
           </div>
         </div>

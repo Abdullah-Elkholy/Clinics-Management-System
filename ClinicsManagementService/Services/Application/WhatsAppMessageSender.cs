@@ -7,6 +7,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Threading;
+using ClinicsManagementService.Services;
 
 namespace ClinicsManagementService.Services.Application
 {
@@ -20,7 +21,16 @@ namespace ClinicsManagementService.Services.Application
         private readonly IRetryService _retryService;
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly IWhatsAppUIService _whatsappUIService;
-        public WhatsAppMessageSender(IWhatsAppService whatsappService, Func<int, IBrowserSession> browserSessionFactory, INotifier notifier, IRetryService retryService, IWhatsAppSessionManager sessionManager, IWhatsAppUIService whatsappUIService)
+        private readonly IWhatsAppSessionSyncService _sessionSyncService;
+        
+        public WhatsAppMessageSender(
+            IWhatsAppService whatsappService, 
+            Func<int, IBrowserSession> browserSessionFactory, 
+            INotifier notifier, 
+            IRetryService retryService, 
+            IWhatsAppSessionManager sessionManager, 
+            IWhatsAppUIService whatsappUIService,
+            IWhatsAppSessionSyncService sessionSyncService)
         {
             _whatsappService = whatsappService;
             _browserSessionFactory = browserSessionFactory;
@@ -28,6 +38,7 @@ namespace ClinicsManagementService.Services.Application
             _retryService = retryService;
             _sessionManager = sessionManager;
             _whatsappUIService = whatsappUIService;
+            _sessionSyncService = sessionSyncService;
         }
 
         // Send multiple phone/message pairs with random throttling between each send, returning MessageSendResult for each.
@@ -39,9 +50,6 @@ namespace ClinicsManagementService.Services.Application
             string? networkErrorMessage = null;
             int total = items.Count();
             int counter = 1;
-
-            var browserSession = _browserSessionFactory(moderatorUserId);
-            browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
 
             foreach (var item in items)
             {
@@ -64,26 +72,24 @@ namespace ClinicsManagementService.Services.Application
                 }
                 _notifier.Notify($"[{counter}/{total}] Sending message to {item.Phone}...");
                 MessageSendResult result;
+                var session = _browserSessionFactory(moderatorUserId);
+                session = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
                 try
                 {
-                    var deliveryResult = await _retryService.ExecuteWithRetryAsync<string?>(
-                        async () =>
-                        {
-                            var session = _browserSessionFactory(moderatorUserId);
-                            session = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
-                            try
-                            {
-                                return await _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, session);
-                            }
-                            finally
-                            {
-                                await _whatsappService.DisposeBrowserSessionAsync(session);
-                            }
-                        },
-                        maxAttempts: 3,
-                        shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
-                        isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
-
+                    // Mark operation as in progress - if browser closes now, it's manual
+                    if (session is PlaywrightBrowserSession pbs)
+                    {
+                        pbs.IsOperationInProgress = true;
+                    }
+                    
+                    var deliveryResult = await _whatsappService.SendMessageWithIconTypeAsync(item.Phone, item.Message, session);
+                    
+                    // Mark operation as complete
+                    if (session is PlaywrightBrowserSession pbs2)
+                    {
+                        pbs2.IsOperationInProgress = false;
+                    }
+                    
                     result = new MessageSendResult
                     {
                         Phone = item.Phone,
@@ -96,8 +102,74 @@ namespace ClinicsManagementService.Services.Application
                 }
                 catch (Exception ex)
                 {
-                    _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {item.Phone}: {ex.Message}");
-                    result = new MessageSendResult { Phone = item.Phone, Message = item.Message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
+                    // Check if browser was closed DURING active operation (manual closure)
+                    if (_retryService.IsBrowserClosedException(ex))
+                    {
+                        bool wasOperationInProgress = (session is PlaywrightBrowserSession pbs) && pbs.IsOperationInProgress;
+                        
+                        if (wasOperationInProgress)
+                        {
+                            // Manual browser closure during active operation - trigger BrowserClosure pause
+                            _notifier.Notify($"⏸️ [Moderator {moderatorUserId}] Manual browser closure detected for {item.Phone} - pausing session");
+                            result = new MessageSendResult
+                            {
+                                Phone = item.Phone,
+                                Message = item.Message,
+                                Sent = false,
+                                Error = "BrowserClosure: تم إغلاق المتصفح أثناء المهمة",
+                                IconType = null,
+                                Status = MessageOperationStatus.BrowserClosure
+                            };
+                            // Trigger global pause - user can resume when ready
+                            try
+                            {
+                                await _sessionSyncService.PauseSessionDueToPendingQRAsync(moderatorUserId, pausedBy: null, pauseReason: "BrowserClosure");
+                            }
+                            catch (Exception pauseEx)
+                            {
+                                _notifier.Notify($"⚠️ [Moderator {moderatorUserId}] Failed to pause session: {pauseEx.Message}");
+                            }
+                        }
+                        else
+                        {
+                            // Browser crashed outside active operation - treat as failure
+                            _notifier.Notify($"❌ [Moderator {moderatorUserId}] Browser crash/failure for {item.Phone}: {ex.Message}");
+                            result = new MessageSendResult
+                            {
+                                Phone = item.Phone,
+                                Message = item.Message,
+                                Sent = false,
+                                Error = $"Browser failure: {ex.Message}",
+                                IconType = null,
+                                Status = MessageOperationStatus.Failure
+                            };
+                        }
+                        
+                        // Reset flag
+                        if (session is PlaywrightBrowserSession pbs3)
+                        {
+                            pbs3.IsOperationInProgress = false;
+                        }
+                    }
+                    else
+                    {
+                        // Other errors: Preserve actual error reason
+                        _notifier.Notify($"⚠️ ❌ [Moderator {moderatorUserId}] Error sending to {item.Phone}: {ex.Message}");
+                        result = new MessageSendResult
+                        {
+                            Phone = item.Phone,
+                            Message = item.Message,
+                            Sent = false,
+                            Error = ex.Message,  // Preserve actual error reason
+                            IconType = null,
+                            Status = MessageOperationStatus.Failure
+                        };
+                    }
+                }
+                finally
+                {
+                    // Normal disposal: Don't manipulate flag here
+                    await _whatsappService.DisposeBrowserSessionAsync(session);
                 }
                 _notifier.Notify($"[{counter}/{total}] Result for {item.Phone}: Sent={result.Sent}, Error={result.Error}, IconType={result.IconType}");
                 results.Add(new MessageSendResult
@@ -123,7 +195,7 @@ namespace ClinicsManagementService.Services.Application
                     OperationResult<bool>? monitoringResult = null;
                     try
                     {
-                        monitoringResult = await _whatsappUIService.ContinuousMonitoringAsync(browserSession, delay);
+                        monitoringResult = await _whatsappUIService.ContinuousMonitoringAsync(session, delay);
                     }
                     catch (Exception ex)
                     {
@@ -151,7 +223,6 @@ namespace ClinicsManagementService.Services.Application
                 }
                 counter++;
             }
-            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             _notifier.Notify("Bulk send process completed.");
             return results;
         }
@@ -162,36 +233,42 @@ namespace ClinicsManagementService.Services.Application
             cancellationToken.ThrowIfCancellationRequested();
 
             var browserSession = _browserSessionFactory(moderatorUserId);
-            // browserSession = await _sessionManager.GetOrCreateSessionAsync();
             MessageSendResult result;
             try
             {
-                var deliveryResult = await _retryService.ExecuteWithRetryAsync(
-                    async () =>
+                // Check cancellation before getting session
+                cancellationToken.ThrowIfCancellationRequested();
+
+                browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
+                OperationResult<string?> deliveryResult;
+                try
+                {
+                    // Check cancellation before sending
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Mark operation as in progress
+                    if (browserSession is PlaywrightBrowserSession pbs)
                     {
-                        // Check cancellation before getting session
-                        cancellationToken.ThrowIfCancellationRequested();
+                        pbs.IsOperationInProgress = true;
+                    }
 
-                        browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
-                        try
-                        {
-                            // Check cancellation before sending
-                            cancellationToken.ThrowIfCancellationRequested();
-
-                            return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession, cancellationToken);
-                        }
-                        finally
-                        {
-                            // Check cancellation before disposing
-                            if (!cancellationToken.IsCancellationRequested)
-                            {
-                                await _whatsappService.DisposeBrowserSessionAsync(browserSession);
-                            }
-                        }
-                    },
-                    maxAttempts: WhatsAppConfiguration.DefaultMaxRetryAttempts,
-                    shouldRetryResult: r => r?.IsWaiting() == true,
-                    isRetryable: null);
+                    deliveryResult = await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession, cancellationToken);
+                    
+                    // Mark operation as complete
+                    if (browserSession is PlaywrightBrowserSession pbs2)
+                    {
+                        pbs2.IsOperationInProgress = false;
+                    }
+                }
+                finally
+                {
+                    // Check cancellation before disposing
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        // Normal disposal: Don't manipulate flag here
+                        await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                    }
+                }
 
                 result = new MessageSendResult
                 {
@@ -205,19 +282,87 @@ namespace ClinicsManagementService.Services.Application
             }
             catch (OperationCanceledException)
             {
-                _notifier.Notify($"⚠️ Operation cancelled while sending message to {phoneNumber}");
-                result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Operation was cancelled", IconType = null, Status = MessageOperationStatus.Failure };
+                _notifier.Notify($"⚠️ ❌ [Moderator {moderatorUserId}] Operation cancelled while sending message to {phoneNumber}");
+                result = new MessageSendResult 
+                { 
+                    Phone = phoneNumber, 
+                    Message = message, 
+                    Sent = false, 
+                    Error = "❌ العملية ملغاة: تم إلغاء عملية الإرسال", 
+                    IconType = null, 
+                    Status = MessageOperationStatus.Failure 
+                };
             }
             catch (Exception ex)
             {
-                _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {phoneNumber}: {ex.Message}");
-                result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
+                // Check if browser was closed DURING active operation (manual closure)
+                if (_retryService.IsBrowserClosedException(ex))
+                {
+                    bool wasOperationInProgress = (browserSession is PlaywrightBrowserSession pbs) && pbs.IsOperationInProgress;
+                    
+                    if (wasOperationInProgress)
+                    {
+                        // Manual browser closure during active operation - trigger BrowserClosure pause
+                        _notifier.Notify($"⏸️ [Moderator {moderatorUserId}] Manual browser closure detected for {phoneNumber} - pausing session");
+                        result = new MessageSendResult 
+                        { 
+                            Phone = phoneNumber, 
+                            Message = message, 
+                            Sent = false, 
+                            Error = "BrowserClosure: تم إغلاق المتصفح أثناء المهمة", 
+                            IconType = null, 
+                            Status = MessageOperationStatus.BrowserClosure 
+                        };
+                        // Trigger global pause - user can resume when ready
+                        try
+                        {
+                            await _sessionSyncService.PauseSessionDueToPendingQRAsync(moderatorUserId, pausedBy: null, pauseReason: "BrowserClosure");
+                        }
+                        catch (Exception pauseEx)
+                        {
+                            _notifier.Notify($"⚠️ [Moderator {moderatorUserId}] Failed to pause session: {pauseEx.Message}");
+                        }
+                    }
+                    else
+                    {
+                        // Browser crashed outside active operation - treat as failure
+                        _notifier.Notify($"❌ [Moderator {moderatorUserId}] Browser crash/failure for {phoneNumber}: {ex.Message}");
+                        result = new MessageSendResult 
+                        { 
+                            Phone = phoneNumber, 
+                            Message = message, 
+                            Sent = false, 
+                            Error = $"Browser failure: {ex.Message}", 
+                            IconType = null, 
+                            Status = MessageOperationStatus.Failure 
+                        };
+                    }
+                    
+                    // Reset flag
+                    if (browserSession is PlaywrightBrowserSession pbs3)
+                    {
+                        pbs3.IsOperationInProgress = false;
+                    }
+                }
+                else
+                {
+                    // Other errors: Preserve actual error reason
+                    _notifier.Notify($"⚠️ ❌ [Moderator {moderatorUserId}] Error for {phoneNumber}: {ex.Message}");
+                    result = new MessageSendResult 
+                    { 
+                        Phone = phoneNumber, 
+                        Message = message, 
+                        Sent = false, 
+                        Error = ex.Message,  // Preserve actual error reason
+                        IconType = null, 
+                        Status = MessageOperationStatus.Failure 
+                    };
+                }
             }
             if (!result.Sent && !string.IsNullOrEmpty(result.Error))
             {
                 _notifier.Notify(result.Error);
             }
-            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             return result.Sent;
         }
 
@@ -231,22 +376,28 @@ namespace ClinicsManagementService.Services.Application
                 MessageSendResult result;
                 try
                 {
-                    var deliveryResult = await _retryService.ExecuteWithRetryAsync(
-                        async () =>
+                    browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
+                    OperationResult<string?> deliveryResult;
+                    try
+                    {
+                        // Mark operation as in progress
+                        if (browserSession is PlaywrightBrowserSession pbs)
                         {
-                            browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
-                            try
-                            {
-                                return await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
-                            }
-                            finally
-                            {
-                                await _whatsappService.DisposeBrowserSessionAsync(browserSession);
-                            }
-                        },
-                        maxAttempts: WhatsAppConfiguration.DefaultMaxRetryAttempts,
-                        shouldRetryResult: r => r?.IsWaiting() == true || r?.IsPendingNet() == true,
-                        isRetryable: ex => ex.Message.Contains("net::ERR_NAME_NOT_RESOLVED") || ex.Message.Contains("net::ERR_INTERNET_DISCONNECTED") || ex.Message.Contains("Navigation failed"));
+                            pbs.IsOperationInProgress = true;
+                        }
+                        
+                        deliveryResult = await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession);
+                        
+                        // Mark operation as complete
+                        if (browserSession is PlaywrightBrowserSession pbs2)
+                        {
+                            pbs2.IsOperationInProgress = false;
+                        }
+                    }
+                    finally
+                    {
+                        await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                    }
 
                     result = new MessageSendResult
                     {
@@ -260,8 +411,69 @@ namespace ClinicsManagementService.Services.Application
                 }
                 catch (Exception ex)
                 {
-                    _notifier.Notify($"⚠️ Error in SendMessageWithIconTypeAsync for {phoneNumber}: {ex.Message}");
-                    result = new MessageSendResult { Phone = phoneNumber, Message = message, Sent = false, Error = "Unknown error", IconType = null, Status = MessageOperationStatus.Failure };
+                    // Check if browser was closed DURING active operation (manual closure)
+                    if (_retryService.IsBrowserClosedException(ex))
+                    {
+                        bool wasOperationInProgress = (browserSession is PlaywrightBrowserSession pbs) && pbs.IsOperationInProgress;
+                        
+                        if (wasOperationInProgress)
+                        {
+                            // Manual browser closure during active operation - trigger BrowserClosure pause
+                            _notifier.Notify($"⏸️ [Moderator {moderatorUserId}] Manual browser closure detected for {phoneNumber} - pausing session");
+                            result = new MessageSendResult 
+                            { 
+                                Phone = phoneNumber, 
+                                Message = message, 
+                                Sent = false, 
+                                Error = "BrowserClosure: تم إغلاق المتصفح أثناء المهمة", 
+                                IconType = null, 
+                                Status = MessageOperationStatus.BrowserClosure 
+                            };
+                            // Trigger global pause - user can resume when ready
+                            try
+                            {
+                                await _sessionSyncService.PauseSessionDueToPendingQRAsync(moderatorUserId, pausedBy: null, pauseReason: "BrowserClosure");
+                            }
+                            catch (Exception pauseEx)
+                            {
+                                _notifier.Notify($"⚠️ [Moderator {moderatorUserId}] Failed to pause session: {pauseEx.Message}");
+                            }
+                        }
+                        else
+                        {
+                            // Browser crashed outside active operation - treat as failure
+                            _notifier.Notify($"❌ [Moderator {moderatorUserId}] Browser crash/failure for {phoneNumber}: {ex.Message}");
+                            result = new MessageSendResult 
+                            { 
+                                Phone = phoneNumber, 
+                                Message = message, 
+                                Sent = false, 
+                                Error = $"Browser failure: {ex.Message}", 
+                                IconType = null, 
+                                Status = MessageOperationStatus.Failure 
+                            };
+                        }
+                        
+                        // Reset flag
+                        if (browserSession is PlaywrightBrowserSession pbs3)
+                        {
+                            pbs3.IsOperationInProgress = false;
+                        }
+                    }
+                    else
+                    {
+                        // Other errors: Preserve actual error reason
+                        _notifier.Notify($"⚠️ ❌ [Moderator {moderatorUserId}] Error for {phoneNumber}: {ex.Message}");
+                        result = new MessageSendResult 
+                        { 
+                            Phone = phoneNumber, 
+                            Message = message, 
+                            Sent = false, 
+                            Error = ex.Message,  // Preserve actual error reason
+                            IconType = null, 
+                            Status = MessageOperationStatus.Failure 
+                        };
+                    }
                 }
                 if (!result.Sent && !string.IsNullOrEmpty(result.Error))
                 {
@@ -280,7 +492,6 @@ namespace ClinicsManagementService.Services.Application
                     IconType = result.IconType
                 });
             }
-            await _whatsappService.DisposeBrowserSessionAsync(browserSession);
             return results;
         }
 

@@ -23,10 +23,12 @@ import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 import { debounce } from '@/utils/debounce';
 import { useSignalR } from '@/contexts/SignalRContext';
 import logger from '@/utils/logger';
+import { RetryPreviewModalWithProps as RetryPreviewModal } from '@/components/Modals/RetryPreviewModal';
 
 interface Session {
   id: string;
   sessionId: string;
+  queueId: number;
   clinicName: string;
   doctorName: string;
   createdAt: string;
@@ -71,6 +73,10 @@ export default function FailedTasksPanel() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
+  
+  // Retry preview modal state
+  const [showRetryPreview, setShowRetryPreview] = useState(false);
+  const [retrySessionId, setRetrySessionId] = useState<string | null>(null);
   
   // Request deduplication: track in-flight requests
   const isLoadingRef = React.useRef(false);
@@ -591,8 +597,25 @@ export default function FailedTasksPanel() {
   }, [sessions, addToast, loadFailedSessions]);
 
   /**
+   * Show retry preview modal for all sessions
+   * Opens preview modal to show retryable vs non-retryable messages
+   */
+  const showRetryAllPreview = useCallback(() => {
+    // Get first session ID (for moderator-level retry, all sessions belong to same moderator)
+    const firstSession = sessions[0];
+    if (!firstSession) {
+      addToast('لا توجد جلسات فاشلة', 'warning');
+      return;
+    }
+    
+    setRetrySessionId(firstSession.sessionId);
+    setShowRetryPreview(true);
+  }, [sessions, addToast]);
+
+  /**
    * Retry all patients from all sessions (moderator-level retry)
    * Uses message-level retry for each message individually
+   * Called after user confirms in preview modal
    */
   const retryAllPatients = useCallback(async () => {
     // Collect all message IDs from all sessions
@@ -877,33 +900,7 @@ export default function FailedTasksPanel() {
         stats={stats}
       />
 
-      {/* Action Buttons */}
-      <div className="flex gap-3 mb-6 justify-end flex-wrap">
-        <button
-          onClick={retryAllPatients}
-          disabled={sessions.length === 0 || sessions.every((s) => s.patients.length === 0)}
-          className={`px-6 py-3 rounded-lg transition-all flex items-center gap-2 font-medium ${
-            sessions.length === 0 || sessions.every((s) => s.patients.length === 0)
-              ? 'bg-gray-400 text-white cursor-not-allowed'
-              : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          <i className="fas fa-redo-alt"></i>
-          <span>إعادة محاولة الكل</span>
-        </button>
-        <button
-          onClick={deleteAllPatients}
-          disabled={sessions.length === 0 || sessions.every((s) => s.patients.length === 0)}
-          className={`px-6 py-3 rounded-lg transition-all flex items-center gap-2 font-medium ${
-            sessions.length === 0 || sessions.every((s) => s.patients.length === 0)
-              ? 'bg-gray-400 text-white cursor-not-allowed'
-              : 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          <i className="fas fa-trash"></i>
-          <span>حذف الكل</span>
-        </button>
-      </div>
+
 
       {/* Sessions List */}
       <div className="space-y-4">
@@ -1112,6 +1109,19 @@ export default function FailedTasksPanel() {
         <UsageGuideSection
           items={FAILED_TASKS_GUIDE_ITEMS}
         />
+      
+      {/* Retry Preview Modal */}
+      {retrySessionId && (
+        <RetryPreviewModal
+          isOpen={showRetryPreview}
+          onClose={() => {
+            setShowRetryPreview(false);
+            setRetrySessionId(null);
+          }}
+          onConfirm={retryAllPatients}
+          sessionId={retrySessionId}
+        />
+      )}
     </PanelWrapper>
   );
 }

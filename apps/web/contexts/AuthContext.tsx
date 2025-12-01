@@ -12,6 +12,26 @@ import { registerAuthErrorHandler, unregisterAuthErrorHandler } from '@/utils/ap
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
 
+// Token refresh configuration
+const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // Refresh 5 minutes before expiry
+
+/**
+ * Helper function to decode JWT token payload
+ */
+function decodeJWT(token: string): { exp?: number; [key: string]: any } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    
+    const payload = parts[1];
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return decoded;
+  } catch (error) {
+    logger.error('[Auth] Failed to decode JWT:', error);
+    return null;
+  }
+}
+
 // Type definition for Auth context shape
 interface AuthContextType extends AuthState {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -153,6 +173,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     restoreAuth();
   }, []); // Empty deps - only run on mount
+
+  // Proactive token refresh - refresh token before expiration
+  useEffect(() => {
+    if (!hasToken || !authState.isAuthenticated) {
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const decoded = decodeJWT(token);
+    if (!decoded || !decoded.exp) {
+      logger.warn('[Auth] Token has no expiration, skipping proactive refresh');
+      return;
+    }
+
+    const expiryTime = decoded.exp * 1000; // Convert to milliseconds
+    const currentTime = Date.now();
+    const timeUntilRefresh = expiryTime - currentTime - TOKEN_REFRESH_BUFFER;
+
+    if (timeUntilRefresh <= 0) {
+      // Token already expired or about to expire, refresh immediately
+      logger.info('[Auth] Token expired or about to expire, refreshing immediately');
+      refreshAccessToken()
+        .then((refreshed) => {
+          if (refreshed?.accessToken) {
+            localStorage.setItem('token', refreshed.accessToken);
+            setHasToken(true);
+            logger.info('[Auth] Token refreshed successfully');
+          }
+        })
+        .catch((error) => {
+          logger.error('[Auth] Failed to refresh expired token:', error);
+        });
+      return;
+    }
+
+    logger.info(`[Auth] Scheduling token refresh in ${Math.round(timeUntilRefresh / 1000 / 60)} minutes`);
+
+    const timeoutId = setTimeout(async () => {
+      logger.info('[Auth] Proactively refreshing token');
+      try {
+        const refreshed = await refreshAccessToken();
+        if (refreshed?.accessToken) {
+          localStorage.setItem('token', refreshed.accessToken);
+          setHasToken(true);
+          logger.info('[Auth] Token refreshed successfully');
+        } else {
+          logger.warn('[Auth] Token refresh returned no access token');
+        }
+      } catch (error) {
+        logger.error('[Auth] Failed to proactively refresh token:', error);
+      }
+    }, timeUntilRefresh);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [hasToken, authState.isAuthenticated]);
 
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     // Increment attempt ID to enable preemption of older retry loops

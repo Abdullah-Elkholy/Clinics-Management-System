@@ -585,18 +585,41 @@ export default function MessagePreviewModal() {
       return;
     }
 
-    // Check ALL patients' IsValidWhatsAppNumber attribute from database
+    // Check ALL patients' IsValidWhatsAppNumber attribute
+    // CRITICAL: Use validationStatus (which has fresh data) instead of previewPatients (which may be stale)
+    // validationStatus is updated immediately after successful validation
     // Separate into: valid (true), invalid (false), and unvalidated (null)
-    const validPatients = patientsToSend.filter((item) => 
-      item.patient?.isValidWhatsAppNumber === true
-    );
-    const invalidPatients = patientsToSend.filter((item) => 
-      item.patient?.isValidWhatsAppNumber === false
-    );
-    const unvalidatedPatients = patientsToSend.filter((item) => 
-      item.patient?.isValidWhatsAppNumber !== true && 
-      item.patient?.isValidWhatsAppNumber !== false
-    );
+    const validPatients = patientsToSend.filter((item) => {
+      const patientId = String(item.patientId);
+      const status = validationStatus[patientId];
+      // Check validationStatus first (fresh data), then fallback to patient data
+      if (status) {
+        return status.isValid === true;
+      }
+      // Fallback to patient data if no validation status exists
+      return item.patient?.isValidWhatsAppNumber === true;
+    });
+    const invalidPatients = patientsToSend.filter((item) => {
+      const patientId = String(item.patientId);
+      const status = validationStatus[patientId];
+      // Check validationStatus first (fresh data), then fallback to patient data
+      if (status) {
+        return status.isValid === false;
+      }
+      // Fallback to patient data if no validation status exists
+      return item.patient?.isValidWhatsAppNumber === false;
+    });
+    const unvalidatedPatients = patientsToSend.filter((item) => {
+      const patientId = String(item.patientId);
+      const status = validationStatus[patientId];
+      // Check validationStatus first (fresh data), then fallback to patient data
+      if (status) {
+        return status.isValid !== true && status.isValid !== false;
+      }
+      // Fallback to patient data if no validation status exists
+      return item.patient?.isValidWhatsAppNumber !== true && 
+             item.patient?.isValidWhatsAppNumber !== false;
+    });
 
     // Reject if ANY patient is invalid (false) or unvalidated (null)
     if (invalidPatients.length > 0) {
@@ -911,6 +934,11 @@ export default function MessagePreviewModal() {
             await patientsApiClient.updatePatient(patientIdNum, {
               isValidWhatsAppNumber: true,
             });
+            
+            // Refresh patient data in context to update UI with latest database value
+            if (queueId) {
+              await refreshPatients(queueId);
+            }
           }
         } catch (dbError) {
           // Log error but don't block UI - validation succeeded, just DB update failed
@@ -935,6 +963,11 @@ export default function MessagePreviewModal() {
             await patientsApiClient.updatePatient(patientIdNum, {
               isValidWhatsAppNumber: false,
             });
+            
+            // Refresh patient data in context to update UI with latest database value
+            if (queueId) {
+              await refreshPatients(queueId);
+            }
           }
         } catch (dbError) {
           // Log error but don't block UI - validation succeeded, just DB update failed
@@ -1216,20 +1249,25 @@ export default function MessagePreviewModal() {
   // Refresh patient data and trigger validation when modal opens
   useEffect(() => {
     if (isOpen && queueId && selectedPatientIds.length > 0) {
+      // Reset all state first
+      setValidationStatus({});
+      setRemovedPatients([]);
+      setValidationProgress({ current: 0, total: 0 });
+      setValidationPaused(false);
+      setShouldResumeValidation(false);
+      abortValidationRef.current = false;
+      
       // Refresh patients from database to get latest IsValidWhatsAppNumber values
       refreshPatients(queueId).then(() => {
         // After refresh, wait a bit for state to update, then validate
         // Use a longer timeout to ensure React state has updated
         setTimeout(() => {
-          // Reset validation status when modal opens
-          setValidationStatus({});
           // Call validateAllPatients - it will use the fresh sortedPatients
           validateAllPatients();
         }, 200);
       }).catch((error) => {
         console.error('Failed to refresh patients:', error);
         // Still try to validate with existing data
-        setValidationStatus({});
         validateAllPatients();
       });
     }
@@ -1447,8 +1485,16 @@ export default function MessagePreviewModal() {
       setIsSending(false);
       setValidationPaused(false);
       setShouldResumeValidation(false);
+      
+      // Refresh patient data in context when modal closes to ensure latest data
+      // This ensures that any validation updates are reflected in the main patient list
+      if (queueId) {
+        refreshPatients(queueId).catch((error) => {
+          console.error('Failed to refresh patients on modal close:', error);
+        });
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, queueId, refreshPatients]);
 
   // Resume validation after single patient retry completes
   useEffect(() => {
@@ -1693,11 +1739,17 @@ export default function MessagePreviewModal() {
             onClick={handleConfirmSend}
             disabled={isSending || isValidating}
             className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            title={isValidating ? 'جاري التحقق من أرقام الواتساب... يرجى الانتظار' : ''}
           >
             {isSending ? (
               <>
                 <i className="fas fa-spinner fa-spin"></i>
                 جاري الإرسال...
+              </>
+            ) : isValidating ? (
+              <>
+                <i className="fas fa-lock"></i>
+                جاري التحقق... ({validationProgress.current}/{validationProgress.total})
               </>
             ) : (
               <>

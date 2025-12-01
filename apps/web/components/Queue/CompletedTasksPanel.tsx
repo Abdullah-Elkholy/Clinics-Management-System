@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
@@ -35,6 +35,7 @@ interface SentMessage {
 interface Session {
   id: string;
   sessionId: string;
+  queueId: number;
   clinicName: string;
   doctorName: string;
   createdAt: string;
@@ -77,6 +78,9 @@ export default function CompletedTasksPanel() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Ref for request deduplication
+  const isLoadingRef = useRef(false);
 
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {

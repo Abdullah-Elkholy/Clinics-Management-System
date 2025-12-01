@@ -87,13 +87,27 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<Message>().HasIndex(m => m.ModeratorId);
             modelBuilder.Entity<Message>().HasIndex(m => m.SessionId);
             modelBuilder.Entity<Message>().HasIndex(m => new { m.IsPaused, m.Status });
+            
+            // Performance: Composite indexes for ongoing/retry queries
+            modelBuilder.Entity<Message>().HasIndex(m => new { m.SessionId, m.Status, m.IsPaused, m.IsDeleted });
+            modelBuilder.Entity<Message>().HasIndex(m => new { m.ModeratorId, m.Status, m.IsPaused });
             modelBuilder.Entity<Message>()
                 .HasOne(m => m.Moderator)
                 .WithMany()
                 .HasForeignKey(m => m.ModeratorId)
                 .OnDelete(DeleteBehavior.Restrict);
+            
+            // Fix: Disable OUTPUT clause for Messages table due to database triggers
+            // SQL Server doesn't allow OUTPUT clause on tables with enabled triggers
+            // See: https://aka.ms/efcore-docs-sqlserver-save-changes-and-output-clause
+            modelBuilder.Entity<Message>()
+                .ToTable(tb => tb.UseSqlOutputClause(false));
 
             modelBuilder.Entity<FailedTask>().HasIndex(f => f.RetryCount);
+            
+            // Tightening: CHECK constraint for FailedTask-Message invariant
+            // Note: EF Core doesn't support CHECK constraints directly, this will be added in migration
+            // (Status='failed') should align with EXISTS(FailedTask WHERE MessageId=Id)
             
             // Quota: enforce one-to-one with Moderator via unique index
             modelBuilder.Entity<Quota>().HasIndex(q => q.ModeratorUserId).IsUnique();

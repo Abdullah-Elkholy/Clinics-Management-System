@@ -24,6 +24,9 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
     /// Get the effective moderator ID for a user.
     /// If user is a moderator, returns their own ID.
     /// If user has a moderator, returns the moderator's ID.
+    /// CRITICAL: Admins (ID=1) CANNOT send WhatsApp messages directly. 
+    /// They must use a moderator's session (ID > 1) via the moderatorUserId header.
+    /// This is because WhatsApp sessions are tied to moderator IDs, not admin IDs.
     /// </summary>
     public async Task<int> GetEffectiveModeratorIdAsync(int userId)
     {
@@ -37,21 +40,23 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         // This ensures moderators always use their own ID, even if ModeratorId is incorrectly set
         if (user.Role == "moderator")
             return user.Id;
-
-        // Admins can also send messages - they use their own ID as moderator
-        // They have unlimited quotas by default
-        if (user.Role == "primary_admin" || user.Role == "secondary_admin")
-            return user.Id;
-
+        
+        // CRITICAL FIX: Admins CANNOT send WhatsApp messages using their own ID
+        // Admin users (primary_admin, secondary_admin) do NOT have WhatsApp sessions
+        // Only moderators (role = "moderator", ID > 1) can have WhatsApp sessions
+        // If admin wants to send messages, they must:
+        // 1. Use the "x-moderator-id" header to specify which moderator's session to use
+        // 2. OR have a ModeratorId assigned in the database (for non-admin users)
+        // Removing the admin bypass ensures admins cannot create messages with ModeratorId=1
+        
         // If user has ModeratorId set, use that (users share moderator's quota)
         if (user.ModeratorId.HasValue)
             return user.ModeratorId.Value;
 
-        // Users must have a moderator assigned
-        throw new InvalidOperationException("User is not associated with any moderator");
-    }
-
-    /// <summary>
+        // CRITICAL: Admins and users without a moderator assignment cannot send messages
+        // This prevents creating messages with ModeratorId=1 (admin) which would be rejected by WhatsApp service
+        throw new InvalidOperationException($"User (ID={userId}, Role={user.Role}) is not associated with any moderator. Admins must specify a moderator ID to send WhatsApp messages.");
+    }    /// <summary>
     /// Get or create quota for the effective moderator.
     /// If quota exists, returns it. If missing, creates one with unlimited values.
     /// Quota is always tied to a moderator—never created standalone.

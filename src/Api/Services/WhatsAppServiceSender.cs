@@ -85,6 +85,10 @@ namespace Clinics.Api.Services
                 }
 
                 // Parse response to detect specific error types (PendingQR, PendingNET, BrowserClosure)
+                // IMPORTANT:
+                // - PendingQR: Causes UNRESUMABLE global pause (only resumable when connection state = "connected")
+                // - PendingNET: Causes RESUMABLE global pause (can be manually resumed from OngoingTasksPanel)
+                // - BrowserClosure: Causes RESUMABLE global pause (can be manually resumed from OngoingTasksPanel)
                 try
                 {
                     var errorResponse = JsonSerializer.Deserialize<ErrorResponse>(
@@ -94,7 +98,7 @@ namespace Clinics.Api.Services
 
                     if (errorResponse != null)
                     {
-                        // Check for PendingQR
+                        // Check for PendingQR (UNRESUMABLE - requires authentication)
                         if (errorResponse.Error == "PendingQR" || errorResponse.Code == "AUTHENTICATION_REQUIRED")
                         {
                             _logger.LogWarning("WhatsApp session requires authentication (PendingQR) for message {MessageId}. Response: {Response}", 
@@ -103,21 +107,21 @@ namespace Clinics.Api.Services
                             throw new InvalidOperationException($"PendingQR: {errorResponse.Message ?? "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل."}");
                         }
 
-                        // Check for PendingNET
+                        // Check for PendingNET (RESUMABLE - network failure can be manually resumed)
                         if (errorResponse.Error == "PendingNET" || errorResponse.Code == "NETWORK_FAILURE")
                         {
                             _logger.LogWarning("Network failure (PendingNET) detected for message {MessageId}. Response: {Response}", 
                                 message.Id, responseContent);
-                            // Throw exception to trigger global WhatsAppSession pause
+                            // Throw exception to trigger global WhatsAppSession pause (RESUMABLE)
                             throw new InvalidOperationException($"PendingNET: {errorResponse.Message ?? "فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية."}");
                         }
 
-                        // Check for BrowserClosure
+                        // Check for BrowserClosure (RESUMABLE - browser closure can be manually resumed)
                         if (errorResponse.Error == "BrowserClosure" || errorResponse.Code == "BROWSER_CLOSED")
                         {
                             _logger.LogWarning("Browser closed (BrowserClosure) detected for message {MessageId}. Response: {Response}", 
                                 message.Id, responseContent);
-                            // Throw exception to trigger global WhatsAppSession pause
+                            // Throw exception to trigger global WhatsAppSession pause (RESUMABLE)
                             throw new InvalidOperationException($"BrowserClosure: {errorResponse.Message ?? "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية."}");
                         }
                     }

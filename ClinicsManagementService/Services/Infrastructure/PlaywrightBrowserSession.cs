@@ -12,6 +12,8 @@ namespace ClinicsManagementService.Services
         private IPlaywright? _playwright;
         private IBrowserContext? _browser;
         private IPage? _page;
+        public bool IsIntentionalClose { get; set; } = false;
+        public bool IsOperationInProgress { get; set; } = false; // Track if operation is active
         private readonly SemaphoreSlim _lock = new(1, 1); // For operation thread safety
         private readonly SemaphoreSlim _initLock = new(1, 1); // For initialization/recreation safety
         private readonly int _moderatorId;

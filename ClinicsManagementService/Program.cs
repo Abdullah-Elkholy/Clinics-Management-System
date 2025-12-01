@@ -5,12 +5,18 @@ using ClinicsManagementService.Services.Interfaces;
 using ClinicsManagementService.Services.Domain;
 using Microsoft.EntityFrameworkCore;
 using Clinics.Infrastructure;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Serialize enums as strings instead of numbers
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 // Add Database Context
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -41,6 +47,10 @@ builder.Services.AddScoped<IWhatsAppSessionOptimizer, WhatsAppSessionOptimizer>(
 // Application Services
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<IMessageSender, WhatsAppMessageSender>();
+
+// HTTP client for SignalR notifications
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<ISignalRNotificationService, SignalRNotificationService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

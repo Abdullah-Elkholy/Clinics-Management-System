@@ -240,6 +240,7 @@ namespace Clinics.Infrastructure.Services
                 var (success, providerId, providerResponse) = await _messageSender.SendAsync(message);
 
                 // Check for PendingQR response - pause all operations if authentication required
+                // UNRESUMABLE: PendingQR pause can only be resumed when WhatsApp connection state = "connected"
                 if (providerResponse != null && providerResponse.Contains("PendingQR", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning($"WhatsApp authentication required (PendingQR detected). Pausing all message sending operations.");
@@ -274,6 +275,7 @@ namespace Clinics.Infrastructure.Services
                 }
 
                 // Check for PendingNET response - pause all operations if network failure
+                // RESUMABLE: PendingNET pause can be manually resumed from OngoingTasksPanel
                 if (providerResponse != null && (providerResponse.Contains("PendingNET", StringComparison.OrdinalIgnoreCase) || 
                     providerResponse.Contains("Internet connection unavailable", StringComparison.OrdinalIgnoreCase) ||
                     providerResponse.Contains("ERR_INTERNET_DISCONNECTED", StringComparison.OrdinalIgnoreCase)))
@@ -352,6 +354,7 @@ namespace Clinics.Infrastructure.Services
             catch (Exception ex)
             {
                 // If browser was closed, pause current task and set global pause
+                // RESUMABLE: BrowserClosure pause can be manually resumed from OngoingTasksPanel
                 if (IsBrowserClosedException(ex))
                 {
                     _logger.LogWarning($"Browser closed intentionally. Pausing message {message.Id} and all moderator tasks.");
@@ -360,7 +363,7 @@ namespace Clinics.Infrastructure.Services
                     message.IsPaused = true;
                     message.PausedAt = DateTime.UtcNow;
                     message.PausedBy = message.SenderUserId;
-                    message.PauseReason = "Browser closed intentionally";
+                    message.PauseReason = "BrowserClosure - Browser closed intentionally";
                     await _unitOfWork.Messages.UpdateAsync(message);
                     
                     // Set global moderator pause
@@ -375,7 +378,7 @@ namespace Clinics.Infrastructure.Services
                             whatsappSession.IsPaused = true;
                             whatsappSession.PausedAt = DateTime.UtcNow;
                             whatsappSession.PausedBy = message.SenderUserId;
-                            whatsappSession.PauseReason = "Browser closed intentionally";
+                            whatsappSession.PauseReason = "BrowserClosure - Browser closed intentionally";
                             await _unitOfWork.WhatsAppSessions.UpdateAsync(whatsappSession);
                         }
                     }

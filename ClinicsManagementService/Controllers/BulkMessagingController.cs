@@ -39,6 +39,7 @@ namespace ClinicsManagementService.Controllers
         private readonly IValidationService _validationService;
         private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
         private readonly IWhatsAppSessionSyncService _sessionSyncService;
+        private readonly IWhatsAppSessionManager _sessionManager;
         private readonly ApplicationDbContext _dbContext;
 
         public BulkMessagingController(
@@ -48,6 +49,7 @@ namespace ClinicsManagementService.Controllers
             IValidationService validationService,
             IWhatsAppSessionOptimizer sessionOptimizer,
             IWhatsAppSessionSyncService sessionSyncService,
+            IWhatsAppSessionManager sessionManager,
             ApplicationDbContext dbContext)
         {
             _messageSender = messageSender;
@@ -56,6 +58,7 @@ namespace ClinicsManagementService.Controllers
             _validationService = validationService;
             _sessionOptimizer = sessionOptimizer;
             _sessionSyncService = sessionSyncService;
+            _sessionManager = sessionManager;
             _dbContext = dbContext;
         }
         // Send a single message to a single phone number.
@@ -79,6 +82,33 @@ namespace ClinicsManagementService.Controllers
                 }
 
                 int effectiveModeratorId = moderatorUserId;
+
+                // Acquire exclusive operation lock for this moderator
+                // This prevents parallel send/restore operations from conflicting
+                using var operationLock = await _sessionManager.AcquireOperationLockAsync(effectiveModeratorId, 120000); // 2 minute timeout
+                if (operationLock == null)
+                {
+                    _notifier.Notify($"⏱️ [Moderator {effectiveModeratorId}] Another operation is in progress");
+                    return StatusCode(503, new 
+                    { 
+                        error = "OperationInProgress",
+                        code = "BUSY",
+                        message = "عملية أخرى قيد التنفيذ. يرجى الانتظار.",
+                        arabicMessage = "عملية أخرى قيد التنفيذ. يرجى الانتظار."
+                    });
+                }
+
+                // Restore session from backup before sending message
+                try
+                {
+                    await _sessionOptimizer.RestoreFromBackupAsync(effectiveModeratorId);
+                    _notifier.Notify($"✅ Session restored from backup for moderator {effectiveModeratorId}");
+                }
+                catch (Exception restoreEx)
+                {
+                    _notifier.Notify($"⚠️ Session restore failed (non-critical): {restoreEx.Message}");
+                }
+
                 // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {

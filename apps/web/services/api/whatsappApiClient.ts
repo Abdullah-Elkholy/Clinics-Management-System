@@ -589,6 +589,7 @@ export interface GlobalPauseState {
   isPaused: boolean;
   pauseReason: string | null;
   pausedAt: string | null;
+  pausedBy: number | null;
 }
 
 export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPauseState> {

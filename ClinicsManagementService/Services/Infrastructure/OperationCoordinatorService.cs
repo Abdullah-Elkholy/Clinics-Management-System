@@ -1,6 +1,7 @@
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Microsoft.EntityFrameworkCore;
+using ClinicsManagementService.Services.Interfaces;
 
 namespace ClinicsManagementService.Services.Infrastructure;
 
@@ -15,15 +16,18 @@ public class OperationCoordinatorService
 {
     private readonly ApplicationDbContext _db;
     private readonly ILogger<OperationCoordinatorService> _logger;
+    private readonly ISignalRNotificationService _signalRNotificationService;
     private static readonly Dictionary<int, SemaphoreSlim> _operationLocks = new();
     private static readonly object _lockCreationLock = new();
 
     public OperationCoordinatorService(
         ApplicationDbContext db,
-        ILogger<OperationCoordinatorService> logger)
+        ILogger<OperationCoordinatorService> logger,
+        ISignalRNotificationService signalRNotificationService)
     {
         _db = db;
         _logger = logger;
+        _signalRNotificationService = signalRNotificationService;
     }
 
     /// <summary>
@@ -123,6 +127,9 @@ public class OperationCoordinatorService
 
             await _db.SaveChangesAsync(cancellationToken);
             
+            // Notify frontend of WhatsAppSession update
+            await _signalRNotificationService.NotifyWhatsAppSessionUpdateAsync(moderatorId);
+            
             _logger.LogInformation("Global pause set for moderator {ModeratorId}. All tasks will be paused by QueuedMessageProcessor.", 
                 moderatorId);
 
@@ -174,6 +181,9 @@ public class OperationCoordinatorService
             whatsappSession.UpdatedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync(cancellationToken);
+            
+            // Notify frontend via SignalR
+            await _signalRNotificationService.NotifyWhatsAppSessionUpdateAsync(moderatorId, whatsappSession.Status, false, null);
             
             _logger.LogInformation("Global pause cleared for moderator {ModeratorId}. Tasks can now resume.", 
                 moderatorId);

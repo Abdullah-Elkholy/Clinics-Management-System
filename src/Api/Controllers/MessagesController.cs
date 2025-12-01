@@ -6,6 +6,8 @@ using Clinics.Api.DTOs;
 using Clinics.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Microsoft.AspNetCore.SignalR;
+using Clinics.Api.Hubs;
 
 namespace Clinics.Api.Controllers
 {
@@ -18,22 +20,38 @@ namespace Clinics.Api.Controllers
         private readonly QuotaService _quotaService;
         private readonly ILogger<MessagesController> _logger;
         private readonly IContentVariableResolver _variableResolver;
+        private readonly IdempotencyService _idempotencyService;
+        private readonly IHubContext<DataUpdateHub> _hubContext;
 
         public MessagesController(
             ApplicationDbContext db, 
             QuotaService quotaService,
             ILogger<MessagesController> logger,
-            IContentVariableResolver variableResolver)
+            IContentVariableResolver variableResolver,
+            IdempotencyService idempotencyService,
+            IHubContext<DataUpdateHub> hubContext)
         {
             _db = db;
             _quotaService = quotaService;
             _logger = logger;
             _variableResolver = variableResolver;
+            _idempotencyService = idempotencyService;
+            _hubContext = hubContext;
         }
 
         [HttpPost("send")]
         public async Task<IActionResult> Send([FromBody] SendMessageRequest req)
         {
+            // Generate or use provided correlation ID for request tracking and idempotency
+            var correlationId = req.CorrelationId ?? Guid.NewGuid();
+            
+            // Check idempotency - if this request was already processed, return cached response
+            if (_idempotencyService.TryGetCachedResponse(correlationId, out var cachedResponse))
+            {
+                _logger.LogInformation("Returning cached response for correlation ID {CorrelationId}", correlationId);
+                return Ok(cachedResponse);
+            }
+            
             // Get current user ID with fallback claim types (declared outside try block for catch block access)
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 ?? User.FindFirst("sub")?.Value
@@ -43,6 +61,9 @@ namespace Clinics.Api.Controllers
             {
                 return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
             }
+            
+            _logger.LogInformation("Processing send request with correlation ID {CorrelationId} for user {UserId}", 
+                correlationId, userId);
             
             try
             {
@@ -379,7 +400,8 @@ namespace Clinics.Api.Controllers
                         FailedMessages = 0,
                         OngoingMessages = patients.Count, // All messages start as queued
                         StartTime = creationTimestamp,
-                        LastUpdated = creationTimestamp
+                        LastUpdated = creationTimestamp,
+                        CorrelationId = correlationId // Link session to request correlation ID
                     };
                     _db.MessageSessions.Add(messageSession);
                     
@@ -460,6 +482,7 @@ namespace Clinics.Api.Controllers
                             Attempts = 0,  // Initialize attempts counter
                             CreatedAt = creationTimestamp,
                             SessionId = sessionId.ToString(),  // Link to MessageSession
+                            CorrelationId = correlationId,  // Propagate correlation ID for distributed tracing
                             IsPaused = false
                         };
                         messages.Add(msg);
@@ -467,6 +490,19 @@ namespace Clinics.Api.Controllers
 
                     if (messages.Count > 0)
                     {
+                        // GAP FIX 3.2: Validate TotalMessages consistency
+                        // Ensure MessageSession.TotalMessages matches actual created message count
+                        if (messageSession.TotalMessages != messages.Count)
+                        {
+                            _logger.LogWarning(
+                                "TotalMessages mismatch in session {SessionId}: Expected {Expected}, got {Actual}. Correcting to actual count.",
+                                sessionId, messageSession.TotalMessages, messages.Count);
+                            
+                            // Correct the TotalMessages to match reality
+                            messageSession.TotalMessages = messages.Count;
+                            messageSession.OngoingMessages = messages.Count;
+                        }
+                        
                         await _db.Messages.AddRangeAsync(messages);
                         await _db.SaveChangesAsync();
                         await transaction.CommitAsync();
@@ -474,11 +510,31 @@ namespace Clinics.Api.Controllers
                         // NOTE: Quota is now consumed on successful send (in MessageProcessor), not on queueing
                         // This ensures quota is only consumed for messages that are actually sent
                         
-                        _logger.LogInformation("User {UserId} queued {Count} messages in session {SessionId} (quota will be consumed on successful send)", 
-                            userId, messages.Count, sessionId);
+                        _logger.LogInformation("User {UserId} queued {Count} messages in session {SessionId} with correlation ID {CorrelationId} (quota will be consumed on successful send)", 
+                            userId, messages.Count, sessionId, correlationId);
+                        
+                        // Cache response for idempotency
+                        var response = new SendMessageResponse 
+                        { 
+                            Success = true, 
+                            Queued = messages.Count, 
+                            SessionId = sessionId.ToString(),
+                            CorrelationId = correlationId
+                        };
+                        _idempotencyService.CacheResponse(correlationId, response);
+                        
+                        return Ok(response);
                     }
 
-                    return Ok(new { success = true, queued = messages.Count, sessionId = sessionId.ToString() });
+                    var emptyResponse = new SendMessageResponse 
+                    { 
+                        Success = true, 
+                        Queued = 0, 
+                        SessionId = sessionId.ToString(),
+                        CorrelationId = correlationId
+                    };
+                    _idempotencyService.CacheResponse(correlationId, emptyResponse);
+                    return Ok(emptyResponse);
                 }
                 catch (Exception ex)
                 {
@@ -551,6 +607,7 @@ namespace Clinics.Api.Controllers
             var requeued = 0;
             var skipped = 0;
             var invalidPatients = new List<string>();
+            var updatedMessages = new List<(Guid messageId, int moderatorId)>();
             
             foreach(var f in failed)
             {
@@ -590,11 +647,24 @@ namespace Clinics.Api.Controllers
                         msg.LastAttemptAt = DateTime.UtcNow;  // Update last attempt timestamp
                         _db.FailedTasks.Remove(f);
                         requeued++;
+                        
+                        if (msg.ModeratorId.HasValue)
+                        {
+                            updatedMessages.Add((msg.Id, msg.ModeratorId.Value));
+                        }
                     }
                 }
             }
             
             await _db.SaveChangesAsync();
+            
+            // Broadcast MessageUpdated events via SignalR for each retried message
+            foreach (var (messageId, moderatorId) in updatedMessages)
+            {
+                await _hubContext.Clients
+                    .Group($"moderator-{moderatorId}")
+                    .SendAsync("MessageUpdated", new { messageId, isPaused = false, status = "queued" });
+            }
             
             if (skipped > 0)
             {
@@ -641,6 +711,16 @@ namespace Clinics.Api.Controllers
                 }
 
                 await _db.SaveChangesAsync();
+                
+                // Broadcast MessageUpdated event via SignalR
+                var moderatorId = message.ModeratorId ?? 0;
+                if (moderatorId > 0)
+                {
+                    await _hubContext.Clients
+                        .Group($"moderator-{moderatorId}")
+                        .SendAsync("MessageUpdated", new { messageId = message.Id, isPaused = true, status = message.Status });
+                }
+                
                 return Ok(new { success = true, message = "Message paused successfully" });
             }
             catch (Exception ex)
@@ -673,6 +753,16 @@ namespace Clinics.Api.Controllers
                 message.PauseReason = null;
 
                 await _db.SaveChangesAsync();
+                
+                // Broadcast MessageUpdated event via SignalR
+                var moderatorId = message.ModeratorId ?? 0;
+                if (moderatorId > 0)
+                {
+                    await _hubContext.Clients
+                        .Group($"moderator-{moderatorId}")
+                        .SendAsync("MessageUpdated", new { messageId = message.Id, isPaused = false, status = message.Status });
+                }
+                
                 return Ok(new { success = true, message = "Message resumed successfully" });
             }
             catch (Exception ex)
@@ -718,6 +808,16 @@ namespace Clinics.Api.Controllers
                 message.UpdatedAt = DateTime.UtcNow;
 
                 await _db.SaveChangesAsync();
+                
+                // Broadcast MessageDeleted event via SignalR
+                var moderatorId = message.ModeratorId ?? 0;
+                if (moderatorId > 0)
+                {
+                    await _hubContext.Clients
+                        .Group($"moderator-{moderatorId}")
+                        .SendAsync("MessageDeleted", new { messageId = message.Id, isDeleted = true });
+                }
+                
                 return Ok(new { success = true, message = "Message deleted successfully" });
             }
             catch (Exception ex)
@@ -770,6 +870,22 @@ namespace Clinics.Api.Controllers
                 }
 
                 await _db.SaveChangesAsync();
+                
+                // Broadcast MessageUpdated events via SignalR for each paused message
+                if (messages.Any())
+                {
+                    var moderatorId = messages.First().ModeratorId ?? 0;
+                    if (moderatorId > 0)
+                    {
+                        foreach (var msg in messages)
+                        {
+                            await _hubContext.Clients
+                                .Group($"moderator-{moderatorId}")
+                                .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = true, status = msg.Status });
+                        }
+                    }
+                }
+                
                 return Ok(new { success = true, pausedCount = messages.Count });
             }
             catch (Exception ex)
@@ -816,6 +932,22 @@ namespace Clinics.Api.Controllers
                 }
 
                 await _db.SaveChangesAsync();
+                
+                // Broadcast MessageUpdated events via SignalR for each resumed message
+                if (messages.Any())
+                {
+                    var moderatorId = messages.First().ModeratorId ?? 0;
+                    if (moderatorId > 0)
+                    {
+                        foreach (var msg in messages)
+                        {
+                            await _hubContext.Clients
+                                .Group($"moderator-{moderatorId}")
+                                .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = false, status = msg.Status });
+                        }
+                    }
+                }
+                
                 return Ok(new { success = true, resumedCount = messages.Count });
             }
             catch (Exception ex)
@@ -882,6 +1014,18 @@ namespace Clinics.Api.Controllers
                 }
 
                 await _db.SaveChangesAsync();
+                
+                // Broadcast MessageUpdated events via SignalR for each paused message
+                if (messages.Any())
+                {
+                    foreach (var msg in messages)
+                    {
+                        await _hubContext.Clients
+                            .Group($"moderator-{moderatorId}")
+                            .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = true, status = msg.Status });
+                    }
+                }
+                
                 return Ok(new { success = true, pausedMessages = messages.Count, pausedSessions = sessions.Count });
             }
             catch (Exception ex)
@@ -942,12 +1086,165 @@ namespace Clinics.Api.Controllers
                 }
 
                 await _db.SaveChangesAsync();
+                
+                // Broadcast MessageUpdated events via SignalR for each resumed message
+                if (messages.Any())
+                {
+                    foreach (var msg in messages)
+                    {
+                        await _hubContext.Clients
+                            .Group($"moderator-{moderatorId}")
+                            .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = false, status = msg.Status });
+                    }
+                }
+                
                 return Ok(new { success = true, resumedMessages = messages.Count, resumedSessions = sessions.Count });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error resuming all moderator messages {ModeratorId}", moderatorId);
                 return StatusCode(500, new { success = false, error = "Error resuming all messages" });
+            }
+        }
+
+        /// <summary>
+        /// Preview retry operation for a session - shows which messages can be retried vs skipped
+        /// </summary>
+        [HttpPost("sessions/{sessionId}/retry-preview")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
+        public async Task<IActionResult> RetryPreview(Guid sessionId)
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+                
+                // Get all failed messages for this session
+                var failedMessages = await _db.Messages
+                    .Where(m => m.SessionId == sessionId.ToString() && m.Status == "failed")
+                    .Select(m => new { m.Id, m.PatientId })
+                    .ToListAsync();
+
+                if (!failedMessages.Any())
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        retryable = new { count = 0, reasons = new List<object>() },
+                        nonRetryable = new { count = 0, reasons = new List<object>() },
+                        requiresAction = new { count = 0, reasons = new List<object>() }
+                    });
+                }
+
+                // Get failed tasks for these messages
+                var messageIds = failedMessages.Select(m => m.Id).ToList();
+                var failedTasks = await _db.FailedTasks
+                    .Where(ft => messageIds.Contains(ft.MessageId ?? Guid.Empty))
+                    .Select(ft => new { ft.MessageId, ft.Reason })
+                    .ToDictionaryAsync(ft => ft.MessageId ?? Guid.Empty, ft => ft.Reason ?? "Unknown");
+
+                // Get patients for deleted check
+                var patientIds = failedMessages.Where(m => m.PatientId.HasValue).Select(m => m.PatientId!.Value).Distinct().ToList();
+                var deletedPatients = await _db.Patients
+                    .Where(p => patientIds.Contains(p.Id) && (p.IsDeleted || p.IsValidWhatsAppNumber == false))
+                    .Select(p => p.Id)
+                    .ToListAsync();
+                var deletedPatientIds = new HashSet<int>(deletedPatients);
+
+                // Classify messages based on failure reason
+                var retryable = new List<(Guid msgId, string reason)>();
+                var nonRetryable = new List<(Guid msgId, string reason)>();
+                var requiresAction = new List<(Guid msgId, string reason)>();
+
+                foreach (var msg in failedMessages)
+                {
+                    var failureReason = failedTasks.TryGetValue(msg.Id, out var reason) ? reason : "Unknown";
+                    
+                    // Check if patient is deleted or invalid
+                    var patientIssue = msg.PatientId.HasValue && deletedPatientIds.Contains(msg.PatientId.Value);
+                    
+                    // Retryable: Temporary failures
+                    if (!patientIssue && (
+                        failureReason.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+                        failureReason.Contains("network", StringComparison.OrdinalIgnoreCase) ||
+                        failureReason.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
+                        failureReason.Contains("QR", StringComparison.OrdinalIgnoreCase) ||
+                        failureReason.Contains("connection", StringComparison.OrdinalIgnoreCase) ||
+                        failureReason.Contains("مهلة", StringComparison.OrdinalIgnoreCase) ||
+                        failureReason.Contains("شبكة", StringComparison.OrdinalIgnoreCase) ||
+                        failureReason.Contains("اتصال", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        retryable.Add((msg.Id, failureReason));
+                    }
+                    // Non-retryable: Permanent failures
+                    else if (patientIssue ||
+                             failureReason.Contains("invalid phone", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("deleted", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("validation", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("رقم غير صالح", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("محذوف", StringComparison.OrdinalIgnoreCase))
+                    {
+                        nonRetryable.Add((msg.Id, failureReason));
+                    }
+                    // Requires Action: Session/account issues
+                    else if (failureReason.Contains("paused", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("suspended", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("متوقف", StringComparison.OrdinalIgnoreCase) ||
+                             failureReason.Contains("معلق", StringComparison.OrdinalIgnoreCase))
+                    {
+                        requiresAction.Add((msg.Id, failureReason));
+                    }
+                    // Default: treat as retryable if unknown
+                    else
+                    {
+                        retryable.Add((msg.Id, failureReason));
+                    }
+                }
+
+                // Group by failure reason and count
+                var groupRetryable = retryable
+                    .GroupBy(x => x.reason)
+                    .Select(g => new { reason = g.Key, count = g.Count() })
+                    .OrderByDescending(x => x.count)
+                    .ToList();
+
+                var groupNonRetryable = nonRetryable
+                    .GroupBy(x => x.reason)
+                    .Select(g => new { reason = g.Key, count = g.Count() })
+                    .OrderByDescending(x => x.count)
+                    .ToList();
+
+                var groupRequiresAction = requiresAction
+                    .GroupBy(x => x.reason)
+                    .Select(g => new { reason = g.Key, count = g.Count() })
+                    .OrderByDescending(x => x.count)
+                    .ToList();
+
+                return Ok(new
+                {
+                    success = true,
+                    retryable = new
+                    {
+                        count = retryable.Count,
+                        reasons = groupRetryable
+                    },
+                    nonRetryable = new
+                    {
+                        count = nonRetryable.Count,
+                        reasons = groupNonRetryable
+                    },
+                    requiresAction = new
+                    {
+                        count = requiresAction.Count,
+                        reasons = groupRequiresAction
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating retry preview for session {SessionId}", sessionId);
+                return StatusCode(500, new { success = false, error = "Error generating retry preview" });
             }
         }
     }

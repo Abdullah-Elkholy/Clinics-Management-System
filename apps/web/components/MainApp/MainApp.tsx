@@ -6,11 +6,13 @@ import { useQueue } from '../../contexts/QueueContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalProvider } from '../../contexts/ModalContext';
 import { WhatsAppSessionProvider } from '../../contexts/WhatsAppSessionContext';
+import { GlobalProgressProvider } from '../../contexts/GlobalProgressContext';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import Header from '../Layout/Header';
 import Navigation from '../Layout/Navigation';
 import WelcomeScreen from '../Content/WelcomeScreen';
 import ToastContainer from '../Common/ToastContainer';
+import GlobalProgressIndicator from '../Common/GlobalProgressIndicator';
 import QueueDashboard from '../Queue/QueueDashboard';
 import OngoingTasksPanel from '../Queue/OngoingTasksPanel';
 import FailedTasksPanel from '../Queue/FailedTasksPanel';
@@ -152,25 +154,30 @@ function MainAppContent() {
 export default function MainApp() {
   // Providers are already in app/layout.tsx, so we don't need to wrap here
   return (
-    <ModalProvider>
-      <MainAppContent />
-      <Modals.AddQueueModal />
-      <Modals.AddPatientModal />
-      <Modals.UploadModal />
-      <Modals.AddTemplateModal />
-      <Modals.EditTemplateModal />
-      <Modals.AccountInfoModal />
-      <Modals.WhatsAppAuthModal />
-      <Modals.EditQueueModal />
-      <Modals.EditUserModal />
-      <Modals.AddUserModal />
-      <Modals.EditPatientModal />
-      <Modals.MessageSelectionModal />
-      <Modals.MessagePreviewModal />
-      <Modals.ManageConditionsModal />
-      <Modals.RetryPreviewModal />
-      <Modals.QuotaManagementModal />
-      <Modals.QRCodeModal />
-    </ModalProvider>
+    <GlobalProgressProvider>
+      <ModalProvider>
+        <MainAppContent />
+        <Modals.AddQueueModal />
+        <Modals.AddPatientModal />
+        <Modals.UploadModal />
+        <Modals.AddTemplateModal />
+        <Modals.EditTemplateModal />
+        <Modals.AccountInfoModal />
+        <Modals.WhatsAppAuthModal />
+        <Modals.EditQueueModal />
+        <Modals.EditUserModal />
+        <Modals.AddUserModal />
+        <Modals.EditPatientModal />
+        <Modals.MessageSelectionModal />
+        <Modals.MessagePreviewModal />
+        <Modals.ManageConditionsModal />
+        <Modals.RetryPreviewModal />
+        <Modals.QuotaManagementModal />
+        <Modals.QRCodeModal />
+      </ModalProvider>
+      
+      {/* Global Progress Indicator - Visible on ALL pages */}
+      <GlobalProgressIndicator />
+    </GlobalProgressProvider>
   );
 }

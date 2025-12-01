@@ -21,6 +21,7 @@ namespace ClinicsManagementService.Services
         private readonly IRetryService _retryService;
         private readonly IWhatsAppUIService _uiService;
         private readonly IWhatsAppSessionManager _sessionManager;
+        private readonly IWhatsAppSessionSyncService _sessionSyncService;
         private readonly CancellationTokenSource _cts = new();
         private int? _lastModeratorId;
 
@@ -29,13 +30,15 @@ namespace ClinicsManagementService.Services
             INetworkService networkService,
             IWhatsAppUIService uiService,
             IWhatsAppSessionManager sessionManager,
-            IRetryService retryService)
+            IRetryService retryService,
+            IWhatsAppSessionSyncService sessionSyncService)
         {
             _notifier = notifier;
             _networkService = networkService;
             _retryService = retryService;
             _uiService = uiService;
             _sessionManager = sessionManager;
+            _sessionSyncService = sessionSyncService;
         }
 
         public async Task<OperationResult<string?>> SendMessageWithIconTypeAsync(string phoneNumber, string message, IBrowserSession browserSession, CancellationToken cancellationToken = default)
@@ -85,18 +88,14 @@ namespace ClinicsManagementService.Services
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // Check for WhatsApp error dialog (e.g., number not registered) before attempting to type/send
-                var hasWhatsApp = await _retryService.ExecuteWithRetryAsync(
-                    () => CheckForWhatsAppErrorDialog(browserSession),
-                    maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
-                    shouldRetryResult: r => r?.IsWaiting() == true,
-                    isRetryable: null);
+                var hasWhatsApp = await CheckForWhatsAppErrorDialog(browserSession);
 
                 // Check cancellation after error dialog check
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (hasWhatsApp.IsWaiting())
                 {
-                    _notifier.Notify($"Could not determine WhatsApp chat status in single pass: {hasWhatsApp.ResultMessage}");
+                    _notifier.Notify($"Could not determine WhatsApp chat status: {hasWhatsApp.ResultMessage}");
                     return OperationResult<string?>.Waiting(hasWhatsApp.ResultMessage ?? "Could not determine chat status");
                 }
                 if (hasWhatsApp.IsPendingNet())
@@ -298,18 +297,20 @@ namespace ClinicsManagementService.Services
             }
             catch (OperationCanceledException)
             {
-                _notifier.Notify($"⚠️ Operation cancelled while sending message to {phoneNumber}");
-                return OperationResult<string?>.Failure("Operation was cancelled");
+                _notifier.Notify($"⚠️ ❌ Operation cancelled while sending message to {phoneNumber}");
+                return OperationResult<string?>.Failure("❌ تم إلغاء العملية");
             }
             catch (Exception ex)
             {
                 if (_retryService.IsBrowserClosedException(ex))
                 {
-                    _notifier.Notify($"❌ Browser closed during SendMessageWithIconTypeAsync: {ex.Message}");
-                    return OperationResult<string?>.Failure("Failed: Browser session terminated during send");
+                    // ALL browser closures during operations are handled upstream
+                    _notifier.Notify($"❌ Browser session closed during SendMessageWithIconTypeAsync: {ex.Message}");
+                    // Re-throw to let WhatsAppMessageSender handle BrowserClosure status and pause
+                    throw;
                 }
                 _notifier.Notify($"❌ Exception in SendMessageWithIconTypeAsync: {ex.Message}");
-                return OperationResult<string?>.Failure($"Failed: {ex.Message}");
+                return OperationResult<string?>.Failure($"❌ خطأ في الإرسال: {ex.Message}");
             }
         }
 
@@ -354,14 +355,8 @@ namespace ClinicsManagementService.Services
 
         public Task<OperationResult<bool>> CheckWhatsAppNumberAsync(string phoneNumber, IBrowserSession browserSession, CancellationToken cancellationToken = default)
         {
-            // Apply full-operation retry at the public entry point so callers get retries on Waiting results
-            // and Playwright/browser-closed exceptions. This keeps the internal method single-pass and
-            // simpler to reason about.
-            return _retryService.ExecuteWithRetryAsync<bool>(
-                () => CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession, cancellationToken),
-                maxAttempts: Math.Max(1, WhatsAppConfiguration.DefaultMaxRetryAttempts),
-                shouldRetryResult: r => r?.IsWaiting() == true,
-                isRetryable: ex => _retryService.IsBrowserClosedException(ex));
+            // Execute directly without retries
+            return CheckWhatsAppNumberInternalAsync(phoneNumber, browserSession, cancellationToken);
         }
 
         private async Task<OperationResult<bool>> CheckWhatsAppNumberInternalAsync(string phoneNumber, IBrowserSession browserSession, CancellationToken cancellationToken)
@@ -463,18 +458,14 @@ namespace ClinicsManagementService.Services
                 }
 
                 // Only check error dialog after success page load
-                var hasWhatsApp = await _retryService.ExecuteWithRetryAsync<bool>(
-                    () => CheckForWhatsAppErrorDialog(browserSession),
-                    maxAttempts: WhatsAppConfiguration.DefaultMaxRetryErrorDialog,
-                    shouldRetryResult: r => r?.IsWaiting() == true,
-                    isRetryable: null);
+                var hasWhatsApp = await CheckForWhatsAppErrorDialog(browserSession);
                 
                 // Check cancellation after error dialog check
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (hasWhatsApp.IsWaiting())
                 {
-                    _notifier.Notify($"Could not determine WhatsApp status in single pass: {hasWhatsApp.ResultMessage}");
+                    _notifier.Notify($"Could not determine WhatsApp status: {hasWhatsApp.ResultMessage}");
                     return OperationResult<bool>.Waiting(hasWhatsApp.ResultMessage, false);
                 }
                 else if (hasWhatsApp.IsPendingNet())
@@ -522,16 +513,6 @@ namespace ClinicsManagementService.Services
         {
             _lastModeratorId = moderatorId;
             return await _sessionManager.GetOrCreateSessionAsync(moderatorId);
-        }
-
-        // Delegate retry logic to central IRetryService
-        public async Task<OperationResult<string?>> ExecuteWithRetryAsync(
-            Func<Task<OperationResult<string?>>> taskFunc, int maxAttempts,
-            Func<OperationResult<string?>, bool>? shouldRetryResult = null,
-            Func<Exception, bool>? isRetryable = null)
-        {
-            // Delegate to domain retry service's OperationResult-aware overload.
-            return await _retryService.ExecuteWithRetryAsync<string?>(taskFunc, maxAttempts, shouldRetryResult, isRetryable);
         }
 
         public async void Dispose()

@@ -6,6 +6,12 @@ namespace Clinics.Api.DTOs
         public int[] PatientIds { get; set; } = new int[0];
         public string? Channel { get; set; }
         public string? OverrideContent { get; set; }
+        
+        /// <summary>
+        /// Optional correlation ID for request tracking and idempotency.
+        /// If not provided, a new Guid will be generated.
+        /// </summary>
+        public Guid? CorrelationId { get; set; }
     }
 
     public class SendMessageResponse
@@ -17,5 +23,10 @@ namespace Clinics.Api.DTOs
         public string? Code { get; set; }
         public string? Message { get; set; }
         public bool? Warning { get; set; }
+        
+        /// <summary>
+        /// Correlation ID for tracking this request through logs and retry flows
+        /// </summary>
+        public Guid? CorrelationId { get; set; }
     }
 }

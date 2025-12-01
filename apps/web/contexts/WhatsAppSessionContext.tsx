@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { whatsappApiClient, GlobalPauseState } from '@/services/api/whatsappApiClient';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSignalR } from '@/contexts/SignalRContext';
 
 // Reuse API base URL logic (mirrors other api clients)
 const getApiBaseUrl = (): string => {
@@ -73,6 +74,7 @@ interface WhatsAppSessionProviderProps {
 
 export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessionProviderProps) {
   const { user } = useAuth();
+  const { on, off } = useSignalR();
   const [sessionStatus, setSessionStatus] = useState<WhatsAppSessionStatus>(null);
   const [sessionData, setSessionData] = useState<WhatsAppSessionData | null>(null);
   const [sessionHealth, setSessionHealth] = useState<WhatsAppSessionHealth | null>(null);
@@ -210,8 +212,11 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         setSessionStatus('disconnected');
       }
       
-      // Also refresh from database to sync
-      await refreshSessionStatus();
+      // Refresh both session status and global pause state from database to sync
+      await Promise.all([
+        refreshSessionStatus(),
+        refreshGlobalPauseState()
+      ]);
       
       return result;
     } catch (err: any) {
@@ -222,7 +227,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         resultMessage: err.message || 'فشل التحقق من المصادقة',
       };
     }
-  }, [moderatorId, refreshSessionStatus]);
+  }, [moderatorId, refreshSessionStatus, refreshGlobalPauseState, user]);
 
   const refreshSessionHealth = useCallback(async () => {
     if (!moderatorId) {
@@ -254,8 +259,11 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         setSessionStatus('pending');
       }
       
-      // Refresh from database to sync
-      await refreshSessionStatus();
+      // Refresh both session status and global pause state from database to sync
+      await Promise.all([
+        refreshSessionStatus(),
+        refreshGlobalPauseState()
+      ]);
       
       return result;
     } catch (err: any) {
@@ -267,7 +275,53 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         resultMessage: err.message || 'فشل بدء المصادقة',
       };
     }
-  }, [moderatorId, refreshSessionStatus]);
+  }, [moderatorId, refreshSessionStatus, refreshGlobalPauseState]);
+
+  // Listen for WhatsAppSessionUpdated SignalR events
+  useEffect(() => {
+    if (!moderatorId) return;
+
+    const handleWhatsAppSessionUpdate = (payload: any) => {
+      // Only process events for this moderator
+      if (payload.moderatorUserId === moderatorId) {
+        console.log('[WhatsAppSessionContext] WhatsAppSessionUpdated event received', payload);
+        
+        // Update session data
+        if (payload.status) {
+          setSessionStatus(payload.status as WhatsAppSessionStatus);
+        }
+        
+        // Update session data state
+        setSessionData({
+          id: payload.id,
+          moderatorUserId: payload.moderatorUserId,
+          sessionName: payload.sessionName,
+          status: payload.status,
+          lastSyncAt: payload.lastSyncAt,
+          createdAt: payload.createdAt || new Date().toISOString(),
+          providerSessionId: payload.providerSessionId,
+        });
+
+        // Update global pause state
+        setGlobalPauseState({
+          isPaused: payload.isPaused || false,
+          pauseReason: payload.pauseReason,
+          pausedAt: payload.pausedAt,
+          pausedBy: payload.pausedBy,
+        });
+
+        // Optionally refresh from database for full sync
+        refreshSessionStatus();
+        refreshGlobalPauseState();
+      }
+    };
+
+    on('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
+
+    return () => {
+      off('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
+    };
+  }, [moderatorId, on, off, refreshSessionStatus, refreshGlobalPauseState]);
 
   // Listen for pendingQR events from API calls
   useEffect(() => {

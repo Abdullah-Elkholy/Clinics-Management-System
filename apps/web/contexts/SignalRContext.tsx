@@ -12,9 +12,16 @@ interface SignalRContextType {
   // Event subscription helpers
   on: (eventName: string, callback: (...args: any[]) => void) => void;
   off: (eventName: string, callback: (...args: any[]) => void) => void;
+  
+  // Reconnection callbacks
+  onReconnected: (callback: () => void) => void;
+  offReconnected: (callback: () => void) => void;
 }
 
 const SignalRContext = createContext<SignalRContextType | undefined>(undefined);
+
+// Set to track reconnection callbacks
+const reconnectionHandlers = new Set<() => void>();
 
 // Connection state management constants
 const CONNECTION_RETRY_DELAY = 5000; // 5 seconds
@@ -57,10 +64,7 @@ export function SignalRProvider({ children }: { children: React.ReactNode }) {
     }
     if (connectionRef.current) {
       try {
-        // Remove all event handlers before stopping
-        connectionRef.current.offclose();
-        connectionRef.current.offreconnecting();
-        connectionRef.current.offreconnected();
+        // Stop connection - handlers will be cleaned up automatically
         await connectionRef.current.stop();
       } catch (err) {
         console.error('Error stopping SignalR connection:', err);
@@ -190,6 +194,16 @@ export function SignalRProvider({ children }: { children: React.ReactNode }) {
           setIsConnected(true);
           setError(null);
           connectionAttemptRef.current = 0; // Reset retry counter on successful reconnect
+          
+          // Trigger all reconnection callbacks
+          console.log(`SignalR: Triggering ${reconnectionHandlers.size} reconnection handlers`);
+          reconnectionHandlers.forEach(handler => {
+            try {
+              handler();
+            } catch (err) {
+              console.error('SignalR: Error in reconnection handler:', err);
+            }
+          });
         });
 
         // Start connection
@@ -254,12 +268,24 @@ export function SignalRProvider({ children }: { children: React.ReactNode }) {
     }
   }, [connection]);
 
+  // Reconnection callback registration
+  const onReconnected = useCallback((callback: () => void) => {
+    reconnectionHandlers.add(callback);
+  }, []);
+
+  // Reconnection callback unregistration
+  const offReconnected = useCallback((callback: () => void) => {
+    reconnectionHandlers.delete(callback);
+  }, []);
+
   const value: SignalRContextType = {
     connection,
     isConnected,
     error,
     on,
     off,
+    onReconnected,
+    offReconnected,
   };
 
   return (

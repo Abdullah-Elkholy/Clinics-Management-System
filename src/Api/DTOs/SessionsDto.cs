@@ -10,6 +10,16 @@ public class OngoingSessionDto
     public int Sent { get; set; }
     public string Status { get; set; } = "active"; // active, paused
     public List<SessionPatientDto> Patients { get; set; } = new();
+    
+    /// <summary>
+    /// Correlation ID for tracking this session through logs and retry flows
+    /// </summary>
+    public Guid? CorrelationId { get; set; }
+    
+    /// <summary>
+    /// Detailed pause reason structure
+    /// </summary>
+    public PauseReasonDetails? PauseDetails { get; set; }
 }
 
 public class SessionPatientDto
@@ -23,6 +33,11 @@ public class SessionPatientDto
     public bool IsPaused { get; set; } = false;
     public int Attempts { get; set; } = 0;
     public string? FailedReason { get; set; } // ErrorMessage from Message entity
+    
+    /// <summary>
+    /// Current attempt number for this message (1-based)
+    /// </summary>
+    public int AttemptNumber { get; set; } = 1;
 }
 
 public class FailedSessionDto
@@ -64,4 +79,35 @@ public class SentMessageDto
     public DateTime SentAt { get; set; }
     public int? CreatedBy { get; set; }
     public int? UpdatedBy { get; set; }
+}
+
+/// <summary>
+/// Detailed pause reason structure for sessions
+/// </summary>
+public class PauseReasonDetails
+{
+    /// <summary>
+    /// Pause reason code: USER_INITIATED, AUTO_PAUSED_ON_ERROR, RATE_LIMIT, etc.
+    /// </summary>
+    public string ReasonCode { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Human-readable pause reason message
+    /// </summary>
+    public string Message { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// When the pause occurred
+    /// </summary>
+    public DateTime PausedAt { get; set; }
+    
+    /// <summary>
+    /// User ID who initiated the pause (if applicable)
+    /// </summary>
+    public int? PausedBy { get; set; }
+    
+    /// <summary>
+    /// Associated error details if pause was triggered by an error
+    /// </summary>
+    public string? ErrorDetails { get; set; }
 }

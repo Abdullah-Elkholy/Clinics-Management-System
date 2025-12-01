@@ -4,6 +4,9 @@ using System.Threading.Tasks;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Microsoft.EntityFrameworkCore;
+using Clinics.Api.Controllers;
+using Microsoft.AspNetCore.SignalR;
+using Clinics.Api.Hubs;
 
 namespace Clinics.Api.Services
 {
@@ -17,12 +20,24 @@ namespace Clinics.Api.Services
         private readonly ApplicationDbContext _db;
         private readonly IMessageSender _sender;
         private readonly Clinics.Application.Interfaces.IQuotaService _quotaService;
+        private readonly CircuitBreakerService _circuitBreaker;
+        private readonly ILogger<MessageProcessor> _logger;
+        private readonly IHubContext<DataUpdateHub> _hubContext;
 
-        public MessageProcessor(ApplicationDbContext db, IMessageSender sender, Clinics.Application.Interfaces.IQuotaService quotaService)
+        public MessageProcessor(
+            ApplicationDbContext db, 
+            IMessageSender sender, 
+            Clinics.Application.Interfaces.IQuotaService quotaService,
+            CircuitBreakerService circuitBreaker,
+            ILogger<MessageProcessor> logger,
+            IHubContext<DataUpdateHub> hubContext)
         {
             _db = db;
             _sender = sender;
             _quotaService = quotaService;
+            _circuitBreaker = circuitBreaker;
+            _logger = logger;
+            _hubContext = hubContext;
         }
 
         public async Task ProcessQueuedMessagesAsync(int maxBatch = 50)
@@ -34,41 +49,26 @@ namespace Clinics.Api.Services
             //    - Messages ordered by their MessageSession.StartTime (earliest first)
             //    - Within a session, messages ordered by Message.CreatedAt
             
-            // Fetch queued messages with limit to prevent memory issues
-            // Process in batches to avoid loading too many messages at once
-            var msgs = await _db.Messages
-                .AsNoTracking() // Read-only, no need to track entities
-                .Where(m => m.Status == "queued" && !m.IsPaused && !string.IsNullOrEmpty(m.SessionId))
-                .Include(m => m.Queue) // May need for additional filtering
-                .Take(maxBatch * 2) // Limit to 2x batch size to prevent excessive memory usage
-                .ToListAsync();
+            // PERFORMANCE OPTIMIZATION: Use SQL-level ordering via join instead of in-memory ordering
+            // This prevents loading 2x messages into memory just for ordering
+            var msgs = await (
+                from m in _db.Messages
+                join s in _db.MessageSessions on m.SessionId equals s.Id.ToString()
+                where m.Status == "queued" 
+                    && !m.IsPaused 
+                    && !string.IsNullOrEmpty(m.SessionId)
+                    && !s.IsDeleted
+                orderby s.StartTime, m.CreatedAt
+                select m
+            )
+            .Include(m => m.Queue)
+            .AsNoTracking()
+            .Take(maxBatch) // Only take exactly what we need
+            .ToListAsync();
 
-            // Get sessions for ordering
-            var sessionIds = msgs
-                .Where(m => !string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out _))
-                .Select(m => Guid.Parse(m.SessionId!))
-                .Distinct()
-                .ToList();
-
-            var sessions = await _db.MessageSessions
-                .Where(s => sessionIds.Contains(s.Id))
-                .ToDictionaryAsync(s => s.Id, s => s);
-
-            // Order messages: by session StartTime (earliest first), then by CreatedAt within session
-            msgs = msgs
-                .OrderBy(m => 
-                {
-                    if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid) &&
-                        sessions.TryGetValue(sessionGuid, out var session))
-                    {
-                        return session.StartTime;
-                    }
-                    return DateTime.MaxValue; // Messages without sessions go last
-                })
-                .ThenBy(m => m.CreatedAt)
-                .ToList();
             var totalMessages = msgs.Count;
             var processedCount = 0;
+            var errorCount = 0;
             
             foreach (var m in msgs)
             {
@@ -79,13 +79,56 @@ namespace Clinics.Api.Services
                     {
                         continue; // Skip paused messages
                     }
+                    
+                    // Check circuit breaker state before attempting send
+                    if (m.ModeratorId.HasValue)
+                    {
+                        var circuitState = _circuitBreaker.GetState(m.ModeratorId.Value);
+                        if (circuitState == CircuitBreakerState.Open)
+                        {
+                            _logger.LogWarning("Skipping message {MessageId} - circuit is OPEN for moderator {ModeratorId}", 
+                                m.Id, m.ModeratorId.Value);
+                            continue; // Skip this message, circuit is open
+                        }
+                    }
 
                     m.Status = "sending";
                     m.Attempts += 1;
                     m.LastAttemptAt = DateTime.UtcNow;
                     await _db.SaveChangesAsync();
 
-                    var result = await _sender.SendAsync(m);
+                    // Execute send through circuit breaker
+                    (bool success, string? providerId, string? providerResponse) result;
+                    try
+                    {
+                        if (m.ModeratorId.HasValue)
+                        {
+                            result = await _circuitBreaker.ExecuteAsync(m.ModeratorId.Value, async () => 
+                            {
+                                return await _sender.SendAsync(m);
+                            });
+                        }
+                        else
+                        {
+                            // No moderator ID - send without circuit breaker (fallback)
+                            result = await _sender.SendAsync(m);
+                        }
+                    }
+                    catch (CircuitBreakerOpenException cbEx)
+                    {
+                        _logger.LogWarning("Circuit breaker open for moderator {ModeratorId}: {Message}", 
+                            m.ModeratorId, cbEx.Message);
+                        
+                        // Pause this message until circuit recovers
+                        m.Status = "queued";
+                        m.IsPaused = true;
+                        m.PausedAt = DateTime.UtcNow;
+                        m.PauseReason = "CircuitBreakerOpen";
+                        m.ErrorMessage = $"Circuit breaker open. Retry after {cbEx.RetryAfter.TotalSeconds:F0}s";
+                        m.Attempts -= 1; // Don't count circuit breaker trips as attempts
+                        await _db.SaveChangesAsync();
+                        continue;
+                    }
                     
                     // Check for PendingQR response - automatically pause ALL messages for this moderator
                     if (result.providerResponse != null && result.providerResponse.Contains("PendingQR", StringComparison.OrdinalIgnoreCase))
@@ -150,6 +193,10 @@ namespace Clinics.Api.Services
                         m.SentAt = DateTime.UtcNow;
                         m.ProviderMessageId = result.providerId;
                         
+                        // CRITICAL: Save immediately to ensure this success is persisted
+                        // even if the next message in the batch throws an exception
+                        await _db.SaveChangesAsync();
+                        
                         // Update MessageSession if this message is part of a session
                         if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid))
                         {
@@ -165,8 +212,16 @@ namespace Clinics.Api.Services
                                     session.Status = "completed";
                                     session.EndTime = DateTime.UtcNow;
                                 }
+                                
+                                await _db.SaveChangesAsync();
+                                
+                                // Notify via SignalR for real-time UI updates
+                                await NotifySessionUpdate(session, "updated");
                             }
                         }
+                        
+                        // Notify via SignalR for real-time UI updates
+                        await NotifyMessageUpdate(m, "sent");
                         
                         // Consume quota on successful send (moved from queueing phase for fair billing)
                         if (m.SenderUserId.HasValue)
@@ -176,11 +231,97 @@ namespace Clinics.Api.Services
                     }
                     else
                     {
-                        m.Status = "failed";
-                        m.ErrorMessage = result.providerResponse ?? "Provider returned failure";
-                        // create or update failed tasks
-                        var ft = new FailedTask { MessageId = m.Id, PatientId = m.PatientId, QueueId = m.QueueId, Reason = "provider_failure", ProviderResponse = result.providerResponse, CreatedAt = DateTime.UtcNow, RetryCount = 0 };
-                        _db.FailedTasks.Add(ft);
+                        // Failure - check if we should retry with backoff or mark as failed
+                        const int maxRetryAttempts = 3;
+                        
+                        if (m.Attempts < maxRetryAttempts)
+                        {
+                            // Calculate exponential backoff delay
+                            var delayMs = ExponentialBackoff.CalculateDelayMs(m.Attempts, baseDelaySeconds: 1, maxDelaySeconds: 30);
+                            var delayDesc = ExponentialBackoff.GetDelayDescription(m.Attempts);
+                            
+                            _logger.LogWarning("Message {MessageId} failed (attempt {Attempt}/{Max}). Retrying with backoff: {Delay}", 
+                                m.Id, m.Attempts, maxRetryAttempts, delayDesc);
+                            
+                            // Re-queue with backoff delay
+                            m.Status = "queued";
+                            m.IsPaused = true; // Temporarily pause for backoff
+                            m.PausedAt = DateTime.UtcNow;
+                            m.PauseReason = $"ExponentialBackoff_{delayDesc}";
+                            m.ErrorMessage = $"Attempt {m.Attempts}/{maxRetryAttempts} failed: {result.providerResponse}. Retrying in {delayDesc}";
+                            
+                            await _db.SaveChangesAsync();
+                            
+                            // Schedule resume after backoff (background task)
+                            _ = Task.Run(async () =>
+                            {
+                                await Task.Delay(delayMs);
+                                
+                                // Resume message after backoff
+                                using var scope = _db.Database.BeginTransaction();
+                                try
+                                {
+                                    var msgToResume = await _db.Messages.FindAsync(m.Id);
+                                    if (msgToResume != null && msgToResume.IsPaused && msgToResume.PauseReason?.StartsWith("ExponentialBackoff") == true)
+                                    {
+                                        msgToResume.IsPaused = false;
+                                        msgToResume.PauseReason = null;
+                                        msgToResume.PausedAt = null;
+                                        await _db.SaveChangesAsync();
+                                        await scope.CommitAsync();
+                                        
+                                        _logger.LogInformation("Message {MessageId} resumed after backoff delay", m.Id);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Error resuming message {MessageId} after backoff", m.Id);
+                                    await scope.RollbackAsync();
+                                }
+                            });
+                        }
+                        else
+                        {
+                            // Max attempts reached - mark as permanently failed
+                            _logger.LogError("Message {MessageId} permanently failed after {Attempts} attempts", m.Id, m.Attempts);
+                            
+                            m.Status = "failed";
+                            m.ErrorMessage = result.providerResponse ?? "Provider returned failure";
+                            
+                            // Create failed task
+                            var ft = new FailedTask 
+                            { 
+                                MessageId = m.Id, 
+                                PatientId = m.PatientId, 
+                                QueueId = m.QueueId, 
+                                Reason = "provider_failure", 
+                                ProviderResponse = result.providerResponse, 
+                                CreatedAt = DateTime.UtcNow, 
+                                RetryCount = 0 
+                            };
+                            _db.FailedTasks.Add(ft);
+                            
+                            // Update session failed count
+                            if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid))
+                            {
+                                var session = await _db.MessageSessions.FindAsync(sessionGuid);
+                                if (session != null)
+                                {
+                                    session.FailedMessages++;
+                                    session.LastUpdated = DateTime.UtcNow;
+                                    
+                                    await _db.SaveChangesAsync();
+                                    
+                                    // Notify via SignalR
+                                    await NotifySessionUpdate(session, "updated");
+                                }
+                            }
+                            
+                            await _db.SaveChangesAsync();
+                            
+                            // Notify via SignalR for real-time UI updates
+                            await NotifyMessageUpdate(m, "failed");
+                        }
                     }
                     await _db.SaveChangesAsync();
                     processedCount++;
@@ -190,7 +331,11 @@ namespace Clinics.Api.Services
                     ex.Message.StartsWith("PendingNET:", StringComparison.OrdinalIgnoreCase) ||
                     ex.Message.StartsWith("BrowserClosure:", StringComparison.OrdinalIgnoreCase))
                 {
-                    // PendingQR, PendingNET, or BrowserClosure detected - pause global WhatsAppSession
+                    // Global pause handling for connection/browser issues
+                    // IMPORTANT:
+                    // - PendingQR: UNRESUMABLE global pause (only resumable when WhatsApp connection state = "connected")
+                    // - PendingNET: RESUMABLE global pause (can be manually resumed from OngoingTasksPanel)
+                    // - BrowserClosure: RESUMABLE global pause (can be manually resumed from OngoingTasksPanel)
                     string pauseReason;
                     string errorType;
                     
@@ -267,12 +412,93 @@ namespace Clinics.Api.Services
                     }
                     
                     // For other exceptions, log and mark failed
+                    errorCount++;
                     m.Status = "failed";
                     m.ErrorMessage = ex.Message;
                     _db.FailedTasks.Add(new FailedTask { MessageId = m.Id, PatientId = m.PatientId, QueueId = m.QueueId, Reason = "exception", ProviderResponse = ex.Message, CreatedAt = DateTime.UtcNow, RetryCount = m.Attempts });
                     await _db.SaveChangesAsync();
                 }
             }
+            
+            // Update health metrics
+            HealthController.UpdateProcessorState(processedCount, errorCount);
         }
+
+        #region SignalR Notification Helpers
+
+        /// <summary>
+        /// Notify clients about message status change via SignalR
+        /// </summary>
+        private async Task NotifyMessageUpdate(Message message, string eventType = "updated")
+        {
+            if (!message.ModeratorId.HasValue) return;
+
+            try
+            {
+                var payload = new
+                {
+                    id = message.Id,
+                    patientId = message.PatientId,
+                    sessionId = message.SessionId,
+                    status = message.Status,
+                    attempts = message.Attempts,
+                    isPaused = message.IsPaused,
+                    pauseReason = message.PauseReason,
+                    errorMessage = message.ErrorMessage,
+                    sentAt = message.SentAt,
+                    eventType = eventType
+                };
+
+                // Send to moderator's group for real-time updates
+                await _hubContext.Clients
+                    .Group($"moderator-{message.ModeratorId.Value}")
+                    .SendAsync("MessageUpdated", payload);
+
+                _logger.LogDebug("SignalR: Sent MessageUpdated event to moderator-{ModeratorId} for message {MessageId}",
+                    message.ModeratorId.Value, message.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending SignalR MessageUpdated notification for message {MessageId}", message.Id);
+                // Don't throw - notification failures shouldn't stop processing
+            }
+        }
+
+        /// <summary>
+        /// Notify clients about session status change via SignalR
+        /// </summary>
+        private async Task NotifySessionUpdate(MessageSession session, string eventType = "updated")
+        {
+            try
+            {
+                var payload = new
+                {
+                    id = session.Id,
+                    queueId = session.QueueId,
+                    status = session.Status,
+                    isPaused = session.IsPaused,
+                    totalMessages = session.TotalMessages,
+                    sentMessages = session.SentMessages,
+                    failedMessages = session.FailedMessages,
+                    ongoingMessages = session.OngoingMessages,
+                    eventType = eventType
+                };
+
+                // Send to moderator's group for real-time updates
+                await _hubContext.Clients
+                    .Group($"moderator-{session.ModeratorId}")
+                    .SendAsync("SessionUpdated", payload);
+
+                _logger.LogDebug("SignalR: Sent SessionUpdated event to moderator-{ModeratorId} for session {SessionId}",
+                    session.ModeratorId, session.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending SignalR SessionUpdated notification for session {SessionId}", session.Id);
+                // Don't throw - notification failures shouldn't stop processing
+            }
+        }
+
+        #endregion
     }
 }

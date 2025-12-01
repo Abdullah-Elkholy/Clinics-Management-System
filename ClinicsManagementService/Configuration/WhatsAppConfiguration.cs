@@ -233,9 +233,9 @@ namespace ClinicsManagementService.Configuration
 
         #region Session Optimization
         /// <summary>
-        /// Maximum session size before auto-restore (10 MB)
+        /// Maximum session size before auto-restore (60 MB)
         /// </summary>
-        public const long MaxSessionSizeBytes = 10 * 1024 * 1024;
+        public const long MaxSessionSizeBytes = 60 * 1024 * 1024;
 
         /// <summary>
         /// Get backup file name for a specific moderator

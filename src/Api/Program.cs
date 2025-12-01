@@ -64,6 +64,8 @@ builder.Services.AddScoped<IPatientPositionService, PatientPositionService>();  
 builder.Services.AddScoped<IPhonePlaceholderService, PhonePlaceholderService>();  // Add phone placeholder service
 builder.Services.AddScoped<IArabicErrorMessageService, ArabicErrorMessageService>();  // Arabic error message translation
 builder.Services.AddScoped<IContentVariableResolver, ContentVariableResolver>();  // Template variable resolution
+builder.Services.AddSingleton<IdempotencyService>();  // Idempotency service for request deduplication
+builder.Services.AddSingleton<CircuitBreakerService>();  // Circuit breaker for WhatsApp service resilience
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
 builder.Services.AddScoped<IAuditService, AuditService>();

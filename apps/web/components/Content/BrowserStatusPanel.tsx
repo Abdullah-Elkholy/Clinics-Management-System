@@ -21,7 +21,7 @@ export default function BrowserStatusPanel() {
   const { user } = useAuth();
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
-  const { sessionStatus, sessionData, sessionHealth, globalPauseState, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState } = useWhatsAppSession();
+  const { sessionStatus, sessionData, sessionHealth, globalPauseState, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState, checkAuthentication } = useWhatsAppSession();
   const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -95,6 +95,11 @@ export default function BrowserStatusPanel() {
       // Handle different states from OperationResult
       if (result.isSuccess && result.state === 'Success') {
         addToast('تم تحديث حالة المتصفح بنجاح - واتساب مصادق عليه', 'success');
+        // Ensure states are refreshed one more time after success to clear any PendingQR state
+        await Promise.all([
+          refreshSessionStatus(),
+          refreshGlobalPauseState()
+        ]);
       } else if (result.state === 'PendingQR') {
         addToast('تحديث الحالة: يتطلب مسح رمز QR للمصادقة', 'warning');
       } else if (result.state === 'PendingNET') {

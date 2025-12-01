@@ -761,11 +761,12 @@ export interface OngoingSessionDto {
 }
 
 export interface SessionPatientDto {
+  messageId?: string; // NEW: Message ID for tracking
   patientId: number;
   name: string;
   phone: string;
   countryCode: string;
-  status: string; // sent, pending, failed
+  status: string; // sent, pending, failed, queued, sending
   isPaused: boolean;
   attempts?: number;
   failedReason?: string;
@@ -947,6 +948,20 @@ export function formatApiError(error: unknown): string {
 // Export default client object for convenience
 // ============================================
 
+/**
+ * Get retry preview for a session - shows which messages can be retried vs skipped
+ */
+export async function getRetryPreview(sessionId: string) {
+  return fetchAPI<{
+    success: boolean;
+    retryable: { count: number; reasons: Array<{ reason: string; count: number }> };
+    nonRetryable: { count: number; reasons: Array<{ reason: string; count: number }> };
+    requiresAction: { count: number; reasons: Array<{ reason: string; count: number }> };
+  }>(`/messages/sessions/${sessionId}/retry-preview`, {
+    method: 'POST',
+  });
+}
+
 export const messageApiClient = {
   // Templates
   getTemplates,
@@ -979,6 +994,7 @@ export const messageApiClient = {
   retryMessage,
   pauseMessage,
   resumeMessage,
+  deleteMessage,
   pauseSessionMessages,
   resumeSessionMessages,
   pauseAllModeratorMessages,
@@ -990,6 +1006,7 @@ export const messageApiClient = {
   getCompletedSessions,
   pauseSession,
   resumeSession,
+  retrySession,
   deleteSession,
   
   // Failed Tasks
@@ -997,6 +1014,9 @@ export const messageApiClient = {
   getFailedTask,
   retryFailedTask,
   dismissFailedTask,
+  
+  // Retry Preview
+  getRetryPreview,
   
   // Utilities
   formatApiError,

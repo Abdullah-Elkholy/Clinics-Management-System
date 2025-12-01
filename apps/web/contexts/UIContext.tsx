@@ -241,24 +241,78 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => {
     setToasts((prev) => {
       const now = Date.now();
-      // Prevent duplicate toasts with the same message and type within 1 second
-      const recentDuplicate = prev.find(
+      
+      // Aggressive deduplication with message similarity check for toast aggregation
+      // This prevents toast spam by grouping similar errors (e.g., multiple PendingQR)
+      const normalizeMessage = (msg: string) => msg.toLowerCase().trim().replace(/\s+/g, ' ');
+      const normalizedMessage = normalizeMessage(message);
+      
+      // Check for exact duplicates within 1 second
+      const recentExactDuplicate = prev.find(
         (t) => t.message === message && t.type === type && 
         (now - parseInt(t.id.split('-')[0])) < 1000
       );
       
-      if (recentDuplicate) {
-        // Toast already exists, don't add duplicate
-        return prev;
+      if (recentExactDuplicate) {
+        return prev; // Toast already exists, don't add duplicate
+      }
+      
+      // Check for similar messages within 3 seconds (toast aggregation)
+      // Group messages with similar content to prevent spam
+      const recentSimilar = prev.find(
+        (t) => {
+          const timeDiff = now - parseInt(t.id.split('-')[0]);
+          if (timeDiff > 3000) return false; // Only aggregate within 3 seconds
+          if (t.type !== type) return false; // Must be same type
+          
+          const normalizedExisting = normalizeMessage(t.message);
+          
+          // Check for keyword overlap for common error patterns
+          const commonErrorKeywords = [
+            'واتساب', 'whatsapp', 'قر', 'qr', 'شبكة', 'network',
+            'مصادقة', 'authentication', 'متصفح', 'browser', 'فشل', 'failed'
+          ];
+          
+          const hasCommonKeyword = commonErrorKeywords.some(keyword => 
+            normalizedMessage.includes(keyword) && normalizedExisting.includes(keyword)
+          );
+          
+          // If messages share error keywords and are same type, aggregate them
+          return hasCommonKeyword;
+        }
+      );
+      
+      if (recentSimilar) {
+        // Similar toast exists, update its message to indicate multiple occurrences
+        return prev.map(t => {
+          if (t.id === recentSimilar.id) {
+            // Check if already shows count
+            const countMatch = t.message.match(/\((\d+)\s*\u0645\u0631\u0629\)$/); // matches "(N مرة)" in Arabic
+            const currentCount = countMatch ? parseInt(countMatch[1]) : 1;
+            const newCount = currentCount + 1;
+            
+            // Update message to show count
+            const baseMessage = countMatch 
+              ? t.message.replace(/\(\d+\s*\u0645\u0631\u0629\)$/, '') 
+              : t.message;
+            
+            return {
+              ...t,
+              message: `${baseMessage.trim()} (${newCount} \u0645\u0631\u0629)`,
+              debugData: debugData || t.debugData
+            };
+          }
+          return t;
+        });
       }
       
       const id = `${now}-${++toastCounterRef.current}`;
-    const toast: Toast = { id, message, type, debugData };
+      const toast: Toast = { id, message, type, debugData };
 
       // Auto-remove toast after 3 seconds
-    setTimeout(() => {
-      setToasts((current) => current.filter((t) => t.id !== id));
-    }, 3000);
+      setTimeout(() => {
+        setToasts((current) => current.filter((t) => t.id !== id));
+      }, 3000);
       
       return [...prev, toast];
     });

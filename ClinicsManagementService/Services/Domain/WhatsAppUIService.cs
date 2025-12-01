@@ -117,6 +117,13 @@ namespace ClinicsManagementService.Services.Domain
                 }
                 // await Task.Delay(delayMs);
 
+                // Skip authentication checks if browser is being intentionally closed
+                if (browserSession is PlaywrightBrowserSession pbs && pbs.IsIntentionalClose)
+                {
+                    // Browser is being disposed intentionally, skip QR/auth checks
+                    return null;
+                }
+
                 // Check for authentication issues
                 foreach (var selector in WhatsAppConfiguration.LoginPromptTexts)
                 {
@@ -128,6 +135,12 @@ namespace ClinicsManagementService.Services.Domain
                             _notifier.Notify($"🔐 Authentication issue detected during monitoring ({selector})");
                             return OperationResult<bool>.PendingQR("WhatsApp authentication required. Please scan QR code.");
                         }
+                    }
+                    catch (Exception ex) when (IsBrowserClosedException(ex))
+                    {
+                        // Browser is being closed - this is normal cleanup, not an auth issue
+                        _notifier.Notify($"🔄 Browser closing during auth check ({selector}) - ignoring");
+                        return null; // No issue, just cleanup
                     }
                     catch (Exception ex)
                     {
@@ -147,6 +160,12 @@ namespace ClinicsManagementService.Services.Domain
                             return OperationResult<bool>.PendingQR("WhatsApp authentication required. Please scan QR code.");
                         }
                     }
+                    catch (Exception ex) when (IsBrowserClosedException(ex))
+                    {
+                        // Browser is being closed - this is normal cleanup, not an auth issue
+                        _notifier.Notify($"🔄 Browser closing during QR check ({selector}) - ignoring");
+                        return null; // No issue, just cleanup
+                    }
                     catch (Exception ex)
                     {
                         _notifier.Notify($"⚠️ Error checking auth selector {selector}: {ex.Message}");
@@ -162,6 +181,12 @@ namespace ClinicsManagementService.Services.Domain
                         _notifier.Notify("🔐 Logout detected during monitoring - session needs authentication");
                         return OperationResult<bool>.PendingQR("WhatsApp session expired. Please scan QR code.");
                     }
+                }
+                catch (Exception ex) when (IsBrowserClosedException(ex))
+                {
+                    // Browser is being closed - this is normal cleanup, not an auth issue
+                    _notifier.Notify("🔄 Browser closing during URL check - ignoring");
+                    return null; // No issue, just cleanup
                 }
                 catch (Exception ex)
                 {

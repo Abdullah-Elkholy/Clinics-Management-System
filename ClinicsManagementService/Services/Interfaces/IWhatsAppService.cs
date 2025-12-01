@@ -9,11 +9,6 @@ namespace ClinicsManagementService.Services.Interfaces
         Task<IBrowserSession> PrepareSessionAsync(int moderatorId);
         Task<OperationResult<string?>> SendMessageWithIconTypeAsync(
             string phoneNumber, string message, IBrowserSession browserSession, CancellationToken cancellationToken = default);
-        Task<OperationResult<string?>> ExecuteWithRetryAsync(
-            Func<Task<OperationResult<string?>>> taskFunc,
-            int maxAttempts,
-            Func<OperationResult<string?>, bool>? shouldRetryResult = null,
-            Func<Exception, bool>? isRetryable = null);
         string SanitizeSelector(string selector);
         Task TakeScreenshotAsync(IBrowserSession browserSession, string path);
         Task DisposeBrowserSessionAsync(IBrowserSession browserSession);

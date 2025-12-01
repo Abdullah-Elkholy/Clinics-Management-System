@@ -87,6 +87,16 @@ public class ChangeNotificationInterceptor : SaveChangesInterceptor
                 case MessageSession session:
                     moderatorId = session.ModeratorId;
                     eventName = state == EntityState.Deleted ? "SessionDeleted" : "SessionUpdated";
+                    
+                    // Load Queue navigation property if not already loaded (needed for queueName in payload)
+                    if (entry.State != EntityState.Deleted && session.Queue == null)
+                    {
+                        var queue = await eventData.Context.Set<Queue>()
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(q => q.Id == session.QueueId, cancellationToken);
+                        session.Queue = queue;
+                    }
+                    
                     pendingNotifications.Add(async () => await NotifySessionChange(session, moderatorId, eventName));
                     break;
 
@@ -279,10 +289,16 @@ public class ChangeNotificationInterceptor : SaveChangesInterceptor
                 id = session.Id,
                 moderatorId = session.ModeratorId,
                 queueId = session.QueueId,
+                queueName = session.Queue?.DoctorName ?? "غير محدد", // Include queue name for frontend
                 status = session.Status,
                 startTime = session.StartTime,
                 endTime = session.EndTime,
-                isPaused = session.IsPaused
+                isPaused = session.IsPaused,
+                pauseReason = session.PauseReason,           // Include pause reason
+                totalMessages = session.TotalMessages,       // Include message counters
+                sentMessages = session.SentMessages,
+                failedMessages = session.FailedMessages,
+                ongoingMessages = session.OngoingMessages
             };
 
             await _hubContext.Clients.Group($"moderator-{moderatorId.Value}")

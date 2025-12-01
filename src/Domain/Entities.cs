@@ -404,6 +404,12 @@ namespace Clinics.Domain
         public string? SessionId { get; set; }
 
         /// <summary>
+        /// Correlation ID for tracing this message through distributed logs and retry flows.
+        /// Propagated from MessageSession.CorrelationId for end-to-end tracking.
+        /// </summary>
+        public Guid? CorrelationId { get; set; }
+
+        /// <summary>
         /// WhatsApp session name being used in that process.
         /// Stored from WhatsAppSession.SessionName for the moderator.
         /// </summary>
@@ -758,6 +764,11 @@ namespace Clinics.Domain
         /// </summary>
         [StringLength(100)]
         public string? PauseReason { get; set; }
+
+        /// <summary>
+        /// Correlation ID for tracking this session through logs and retry flows
+        /// </summary>
+        public Guid? CorrelationId { get; set; }
 
         // Soft-delete fields
         [Required]
