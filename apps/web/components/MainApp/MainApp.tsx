@@ -6,11 +6,13 @@ import { useQueue } from '../../contexts/QueueContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { ModalProvider } from '../../contexts/ModalContext';
 import { WhatsAppSessionProvider } from '../../contexts/WhatsAppSessionContext';
+import { GlobalProgressProvider } from '../../contexts/GlobalProgressContext';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
 import Header from '../Layout/Header';
 import Navigation from '../Layout/Navigation';
 import WelcomeScreen from '../Content/WelcomeScreen';
 import ToastContainer from '../Common/ToastContainer';
+import GlobalProgressIndicator from '../Common/GlobalProgressIndicator';
 import QueueDashboard from '../Queue/QueueDashboard';
 import OngoingTasksPanel from '../Queue/OngoingTasksPanel';
 import FailedTasksPanel from '../Queue/FailedTasksPanel';
@@ -114,31 +116,33 @@ function MainAppContent() {
                 <p className="text-gray-600">جاري التحميل...</p>
               </div>
             </div>
-          ) : isQueueSelected ? (
+          ) : (
+            // Render based on currentPanel state (which is synced with URL)
+            // Priority: currentPanel determines what to show, regardless of queue selection
+            // This ensures the displayed panel always matches the URL
             currentPanel === 'ongoing' ? (
               <OngoingTasksPanel />
             ) : currentPanel === 'failed' ? (
               <FailedTasksPanel />
             ) : currentPanel === 'completed' ? (
               <CompletedTasksPanel />
-            ) : (
-              <QueueDashboard />
-            )
-          ) : currentPanel === 'messages' ? (
-            <MessagesPanel />
-          ) : currentPanel === 'management' ? (
-            // ManagementPanel has its own authentication guard
-            <ManagementPanel />
-          ) : currentPanel === 'browserStatus' ? (
-            isAdmin ? (
-              <BrowserStatusOverview />
-            ) : (
-              <WhatsAppSessionProvider moderatorId={user?.role === 'moderator' ? parseInt(user.id) : user?.assignedModerator ? parseInt(user.assignedModerator) : undefined}>
+            ) : currentPanel === 'welcome' ? (
+              // Welcome panel: queue dashboard if queue selected, home screen otherwise
+              isQueueSelected ? <QueueDashboard /> : <WelcomeScreen />
+            ) : currentPanel === 'messages' ? (
+              <MessagesPanel />
+            ) : currentPanel === 'management' ? (
+              <ManagementPanel />
+            ) : currentPanel === 'browserStatus' ? (
+              isAdmin ? (
+                <BrowserStatusOverview />
+              ) : (
                 <BrowserStatusPanel />
-              </WhatsAppSessionProvider>
+              )
+            ) : (
+              // Default fallback - should only happen on initial load before URL sync
+              <WelcomeScreen />
             )
-          ) : (
-            <WelcomeScreen />
           )}
         </div>
       </div>
@@ -150,25 +154,30 @@ function MainAppContent() {
 export default function MainApp() {
   // Providers are already in app/layout.tsx, so we don't need to wrap here
   return (
-    <ModalProvider>
-      <MainAppContent />
-      <Modals.AddQueueModal />
-      <Modals.AddPatientModal />
-      <Modals.UploadModal />
-      <Modals.AddTemplateModal />
-      <Modals.EditTemplateModal />
-      <Modals.AccountInfoModal />
-      <Modals.WhatsAppAuthModal />
-      <Modals.EditQueueModal />
-      <Modals.EditUserModal />
-      <Modals.AddUserModal />
-      <Modals.EditPatientModal />
-      <Modals.MessageSelectionModal />
-      <Modals.MessagePreviewModal />
-      <Modals.ManageConditionsModal />
-      <Modals.RetryPreviewModal />
-      <Modals.QuotaManagementModal />
-      <Modals.QRCodeModal />
-    </ModalProvider>
+    <GlobalProgressProvider>
+      <ModalProvider>
+        <MainAppContent />
+        <Modals.AddQueueModal />
+        <Modals.AddPatientModal />
+        <Modals.UploadModal />
+        <Modals.AddTemplateModal />
+        <Modals.EditTemplateModal />
+        <Modals.AccountInfoModal />
+        <Modals.WhatsAppAuthModal />
+        <Modals.EditQueueModal />
+        <Modals.EditUserModal />
+        <Modals.AddUserModal />
+        <Modals.EditPatientModal />
+        <Modals.MessageSelectionModal />
+        <Modals.MessagePreviewModal />
+        <Modals.ManageConditionsModal />
+        <Modals.RetryPreviewModal />
+        <Modals.QuotaManagementModal />
+        <Modals.QRCodeModal />
+      </ModalProvider>
+      
+      {/* Global Progress Indicator - Visible on ALL pages */}
+      <GlobalProgressIndicator />
+    </GlobalProgressProvider>
   );
 }

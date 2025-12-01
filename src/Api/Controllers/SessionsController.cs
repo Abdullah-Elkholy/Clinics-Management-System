@@ -5,6 +5,9 @@ using Clinics.Api.DTOs;
 using Clinics.Infrastructure;
 using Clinics.Api.Services;
 using System.Security.Claims;
+using Clinics.Domain;
+using Microsoft.AspNetCore.SignalR;
+using Clinics.Api.Hubs;
 
 namespace Clinics.Api.Controllers;
 
@@ -17,17 +20,20 @@ public class SessionsController : ControllerBase
     private readonly ILogger<SessionsController> _logger;
     private readonly QuotaService _quotaService;
     private readonly IMessageSessionCascadeService _messageSessionCascadeService;
+    private readonly IHubContext<DataUpdateHub> _hubContext;
 
     public SessionsController(
         ApplicationDbContext context, 
         ILogger<SessionsController> logger, 
         QuotaService quotaService,
-        IMessageSessionCascadeService messageSessionCascadeService)
+        IMessageSessionCascadeService messageSessionCascadeService,
+        IHubContext<DataUpdateHub> hubContext)
     {
         _context = context;
         _logger = logger;
         _quotaService = quotaService;
         _messageSessionCascadeService = messageSessionCascadeService;
+        _hubContext = hubContext;
     }
 
     /// <summary>
@@ -132,7 +138,11 @@ public class SessionsController : ControllerBase
                     PatientId = m.PatientId,
                     MessageId = m.Id,
                     Status = m.Status,
-                    CreatedAt = m.CreatedAt
+                    CreatedAt = m.CreatedAt,
+                    IsPaused = m.IsPaused,
+                    Attempts = m.Attempts,
+                    PauseReason = m.PauseReason,
+                    ErrorMessage = m.ErrorMessage
                 })
                 .ToListAsync();
 
@@ -190,13 +200,15 @@ public class SessionsController : ControllerBase
                     return new SessionPatientDto
                     {
                         PatientId = p.Id,
-                        MessageId = message?.MessageId, // Use MessageId from anonymous type
+                        MessageId = message?.MessageId,
                         Name = p.FullName ?? "غير محدد",
                         Phone = p.PhoneNumber ?? "",
                         CountryCode = p.CountryCode ?? "+966",
                         Status = MapMessageStatus(message?.Status),
-                        IsPaused = false, // Anonymous type doesn't include IsPaused
-                        Attempts = 0 // Anonymous type doesn't include Attempts
+                        IsPaused = message?.IsPaused ?? false,
+                        Attempts = message?.Attempts ?? 0,
+                        AttemptNumber = (message?.Attempts ?? 0) + 1,
+                        FailedReason = message?.ErrorMessage
                     };
                 }).ToList();
 
@@ -209,6 +221,25 @@ public class SessionsController : ControllerBase
                     Total = session.TotalMessages,
                     Sent = session.SentMessages,
                     Status = session.IsPaused ? "paused" : session.Status,
+                    CorrelationId = session.CorrelationId,
+                    PauseDetails = session.IsPaused ? new PauseReasonDetails
+                    {
+                        ReasonCode = session.PauseReason?.Contains("PendingQR") == true ? "AUTO_PAUSED_ON_ERROR" 
+                                   : session.PauseReason?.Contains("PendingNET") == true ? "AUTO_PAUSED_ON_ERROR"
+                                   : session.PauseReason?.Contains("BrowserClosure") == true ? "AUTO_PAUSED_ON_ERROR"
+                                   : session.PauseReason?.Contains("User") == true ? "USER_INITIATED" 
+                                   : "UNKNOWN",
+                        Message = session.PauseReason ?? "غير محدد",
+                        PausedAt = session.PausedAt ?? DateTime.UtcNow,
+                        PausedBy = session.PausedBy,
+                        ErrorDetails = session.PauseReason?.Contains("PendingQR") == true 
+                            ? "جلسة الواتساب تحتاج إلى المصادقة" 
+                            : session.PauseReason?.Contains("PendingNET") == true
+                            ? "فشل الاتصال بالإنترنت"
+                            : session.PauseReason?.Contains("BrowserClosure") == true
+                            ? "تم إغلاق المتصفح"
+                            : null
+                    } : null,
                     Patients = patientDtos
                 });
             }
@@ -267,9 +298,39 @@ public class SessionsController : ControllerBase
                 session.PausedBy = userId;
                 session.PauseReason = "UserPaused";
                 session.LastUpdated = DateTime.UtcNow;
+                
+                // GAP FIX 1.5: Recalculate OngoingMessages counter after pause
+                // Count messages that are still actively processing (queued/sending and not paused)
+                var ongoingCount = await _context.Messages
+                    .Where(m => m.SessionId == id.ToString() 
+                        && (m.Status == "queued" || m.Status == "sending") 
+                        && !m.IsPaused
+                        && !m.IsDeleted)
+                    .CountAsync();
+                
+                session.OngoingMessages = ongoingCount;
+                
+                _logger.LogInformation("Recalculated OngoingMessages for session {SessionId} after pause: {OngoingCount}", 
+                    id, ongoingCount);
             }
 
             await _context.SaveChangesAsync();
+            
+            // Broadcast MessageUpdated events via SignalR for each paused message
+            if (messages.Any())
+            {
+                var moderatorId = messages.First().ModeratorId ?? 0;
+                if (moderatorId > 0)
+                {
+                    foreach (var msg in messages)
+                    {
+                        await _hubContext.Clients
+                            .Group($"moderator-{moderatorId}")
+                            .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = true, status = msg.Status });
+                    }
+                }
+            }
+            
             return Ok(new { success = true, pausedCount = messages.Count });
         }
         catch (Exception ex)
@@ -311,15 +372,265 @@ public class SessionsController : ControllerBase
                 session.PausedBy = null;
                 session.PauseReason = null;
                 session.LastUpdated = DateTime.UtcNow;
+                
+                // GAP FIX 1.5: Recalculate OngoingMessages counter after resume
+                // Count messages that are now actively processing (queued/sending and not paused)
+                var ongoingCount = await _context.Messages
+                    .Where(m => m.SessionId == id.ToString() 
+                        && (m.Status == "queued" || m.Status == "sending") 
+                        && !m.IsPaused
+                        && !m.IsDeleted)
+                    .CountAsync();
+                
+                session.OngoingMessages = ongoingCount;
+                
+                _logger.LogInformation("Recalculated OngoingMessages for session {SessionId} after resume: {OngoingCount}", 
+                    id, ongoingCount);
             }
 
             await _context.SaveChangesAsync();
+            
+            // Broadcast MessageUpdated events via SignalR for each resumed message
+            if (messages.Any())
+            {
+                var moderatorId = messages.First().ModeratorId ?? 0;
+                if (moderatorId > 0)
+                {
+                    foreach (var msg in messages)
+                    {
+                        await _hubContext.Clients
+                            .Group($"moderator-{moderatorId}")
+                            .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = false, status = msg.Status });
+                    }
+                }
+            }
+            
             return Ok(new { success = true, resumedCount = messages.Count });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error resuming session {SessionId}", id);
             return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استئناف الجلسة" });
+        }
+    }
+
+    /// <summary>
+    /// Retry all failed messages in a session
+    /// IMPORTANT: Validates WhatsApp numbers before retrying
+    /// </summary>
+    [HttpPost("{id}/retry")]
+    public async Task<IActionResult> RetrySession(Guid id)
+    {
+        try
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User.FindFirst("sub")?.Value
+                ?? User.FindFirst("userId")?.Value;
+            
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+            }
+
+            // Get current user to check role and authorization
+            var currentUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+            if (currentUser == null)
+                return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+            // Get session to verify it exists and check authorization
+            var session = await _context.MessageSessions
+                .Include(s => s.Queue)
+                .FirstOrDefaultAsync(s => s.Id == id && !s.IsDeleted);
+
+            if (session == null)
+                return NotFound(new { success = false, error = "الجلسة غير موجودة" });
+
+            // Check authorization: users can only retry sessions from their assigned moderator
+            var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+            if (!isAdmin)
+            {
+                if (currentUser.Role == "moderator" && session.ModeratorId != userId)
+                {
+                    return Forbid();
+                }
+                else if (currentUser.Role == "user" && (!currentUser.ModeratorId.HasValue || currentUser.ModeratorId.Value != session.ModeratorId))
+                {
+                    return Forbid();
+                }
+            }
+
+            // Get all failed messages in this session
+            // Failed messages are those with status "failed" or in FailedTasks table
+            var failedMessages = await _context.Messages
+                .Include(m => m.Queue)
+                .Where(m => m.SessionId == id.ToString() 
+                    && (m.Status == "failed" || _context.FailedTasks.Any(ft => ft.MessageId == m.Id))
+                    && !m.IsDeleted)
+                .ToListAsync();
+
+            if (failedMessages.Count == 0)
+            {
+                return Ok(new 
+                { 
+                    success = true, 
+                    requeued = 0, 
+                    skipped = 0,
+                    message = "لا توجد رسائل فاشلة في هذه الجلسة" 
+                });
+            }
+
+            // GAP FIX 2.2: Remove orphaned FailedTask records before retrying
+            // This handles cases where FailedTask exists but the Message no longer does or is in inconsistent state
+            var failedMessageIds = failedMessages.Select(m => m.Id).ToList();
+            var orphanedFailedTasks = await _context.FailedTasks
+                .Where(ft => ft.MessageId.HasValue && !failedMessageIds.Contains(ft.MessageId.Value))
+                .ToListAsync();
+            
+            if (orphanedFailedTasks.Any())
+            {
+                _context.FailedTasks.RemoveRange(orphanedFailedTasks);
+                _logger.LogWarning("Removed {OrphanedCount} orphaned FailedTask records before retrying session {SessionId}", 
+                    orphanedFailedTasks.Count, id);
+            }
+
+            // GAP FIX 2.3: Prevent retrying messages to moderator's own WhatsApp number
+            var moderatorSettings = await _context.Set<ModeratorSettings>()
+                .FirstOrDefaultAsync(m => m.ModeratorUserId == session.ModeratorId);
+            
+            if (moderatorSettings != null && !string.IsNullOrEmpty(moderatorSettings.WhatsAppPhoneNumber))
+            {
+                var normalizePhone = (string? phone) => 
+                {
+                    if (string.IsNullOrEmpty(phone)) return null;
+                    return new string(phone.Where(char.IsDigit).ToArray());
+                };
+                
+                var moderatorPhoneNormalized = normalizePhone(moderatorSettings.WhatsAppPhoneNumber);
+                
+                // Filter out messages to moderator's own number
+                var selfNumberMessages = failedMessages.Where(msg => 
+                {
+                    if (string.IsNullOrEmpty(moderatorPhoneNormalized)) return false;
+                    
+                    var patientPhoneNormalized = normalizePhone(msg.PatientPhone);
+                    var patientPhoneWithCountry = normalizePhone($"{msg.CountryCode}{msg.PatientPhone}");
+                    
+                    return patientPhoneNormalized == moderatorPhoneNormalized ||
+                           patientPhoneWithCountry == moderatorPhoneNormalized ||
+                           (moderatorPhoneNormalized.EndsWith(patientPhoneNormalized ?? "") && 
+                            patientPhoneNormalized?.Length >= 7) ||
+                           (patientPhoneNormalized?.EndsWith(moderatorPhoneNormalized) == true &&
+                            moderatorPhoneNormalized.Length >= 7);
+                }).ToList();
+                
+                if (selfNumberMessages.Any())
+                {
+                    _logger.LogWarning("Skipped {SelfNumberCount} messages to moderator's own WhatsApp number in session {SessionId} retry", 
+                        selfNumberMessages.Count, id);
+                    
+                    // Remove self-number messages from retry list
+                    failedMessages = failedMessages.Except(selfNumberMessages).ToList();
+                }
+            }
+
+            if (failedMessages.Count == 0)
+            {
+                return Ok(new 
+                { 
+                    success = true, 
+                    requeued = 0, 
+                    skipped = 0,
+                    message = "لا توجد رسائل فاشلة قابلة للمحاولة مرة أخرى في هذه الجلسة" 
+                });
+            }
+
+            var requeued = 0;
+            var skipped = 0;
+            var invalidPatients = new List<string>();
+            var updatedMessages = new List<(Guid messageId, int moderatorId)>();
+
+            foreach (var msg in failedMessages)
+            {
+                // CRITICAL: Validate WhatsApp number before retrying
+                // Get patient to check IsValidWhatsAppNumber (Message doesn't have Patient navigation property)
+                if (msg.PatientId.HasValue)
+                {
+                    var patient = await _context.Patients.FindAsync(msg.PatientId.Value);
+                    
+                    if (patient != null)
+                    {
+                        // Skip if IsValidWhatsAppNumber is null or false
+                        if (!patient.IsValidWhatsAppNumber.HasValue || patient.IsValidWhatsAppNumber.Value == false)
+                        {
+                            skipped++;
+                            invalidPatients.Add(patient.FullName ?? $"Patient ID: {patient.Id}");
+                            _logger.LogWarning("Skipped retry for message {MessageId} in session {SessionId} - Patient {PatientId} has unvalidated WhatsApp number", 
+                                msg.Id, id, patient.Id);
+                            continue;
+                        }
+                    }
+                }
+
+                // Requeue the message
+                msg.Status = "queued";
+                msg.IsPaused = false; // Resume paused messages on retry
+                msg.PausedAt = null;
+                msg.PauseReason = null;
+                msg.LastAttemptAt = DateTime.UtcNow;
+
+                // Remove from FailedTasks if it exists
+                var failedTask = await _context.FailedTasks
+                    .FirstOrDefaultAsync(ft => ft.MessageId == msg.Id);
+                if (failedTask != null)
+                {
+                    _context.FailedTasks.Remove(failedTask);
+                }
+
+                requeued++;
+                
+                if (msg.ModeratorId.HasValue)
+                {
+                    updatedMessages.Add((msg.Id, msg.ModeratorId.Value));
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            
+            // Broadcast MessageUpdated events via SignalR for each retried message
+            foreach (var (messageId, moderatorId) in updatedMessages)
+            {
+                await _hubContext.Clients
+                    .Group($"moderator-{moderatorId}")
+                    .SendAsync("MessageUpdated", new { messageId, isPaused = false, status = "queued" });
+            }
+
+            _logger.LogInformation("Retried {RequeuedCount} messages from session {SessionId} by user {UserId}. Skipped {SkippedCount} messages with unvalidated WhatsApp numbers.", 
+                requeued, id, userId, skipped);
+
+            if (skipped > 0)
+            {
+                return Ok(new 
+                { 
+                    success = true, 
+                    requeued,
+                    skipped,
+                    message = $"تم إعادة إضافة {requeued} رسالة إلى قائمة الانتظار. تم تخطي {skipped} رسالة بسبب أرقام واتساب غير محققة.",
+                    invalidPatients = invalidPatients.Take(5).ToList()
+                });
+            }
+            
+            return Ok(new 
+            { 
+                success = true, 
+                requeued,
+                skipped = 0,
+                message = $"تم إعادة إضافة {requeued} رسالة إلى قائمة الانتظار بنجاح"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrying session {SessionId}", id);
+            return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إعادة محاولة الجلسة" });
         }
     }
 
@@ -834,66 +1145,29 @@ public class SessionsController : ControllerBase
                         .Where(m => Guid.TryParse(m.SessionId, out var msgSessionId) && msgSessionId == sessionIdGuid)
                         .ToList();
 
-                    // Get unique patient IDs from messages
-                    var patientIds = sessionMessages
-                        .Where(m => m.PatientId.HasValue)
-                        .Select(m => m.PatientId!.Value)
-                        .Distinct()
+                    // Filter to get only successfully sent messages (Status = "sent" AND ErrorMessage IS NULL)
+                    var sentMessages = sessionMessages
+                        .Where(m => m.Status == "sent" && string.IsNullOrEmpty(m.ErrorMessage))
                         .ToList();
 
-                    List<SessionPatientDto> patientDtos;
-                    
-                    if (patientIds.Count == 0)
-                    {
-                        // No patient IDs - create DTOs from message data directly
-                        patientDtos = sessionMessages
-                            .Where(m => m.PatientId.HasValue)
-                            .Select(m => new SessionPatientDto
-                            {
-                                PatientId = m.PatientId!.Value,
-                                MessageId = m.Id,
-                                Name = m.FullName ?? "غير محدد",
-                                Phone = m.PatientPhone ?? "",
-                                CountryCode = m.CountryCode ?? "+966",
-                                Status = MapMessageStatus(m.Status),
-                                Attempts = m.Attempts
-                            })
-                            .ToList();
-                    }
-                    else
-                    {
-                        // Materialize patients from database first
-                        var patients = await _context.Patients
-                            .Where(p => patientIds.Contains(p.Id))
-                            .Select(p => new
-                            {
-                                p.Id,
-                                p.FullName,
-                                p.PhoneNumber,
-                                p.CountryCode,
-                            })
-                            .ToListAsync();
+                    // Get failed message count from MessageSession.FailedMessages (accurate, auto-updated)
+                    var failedMessageCount = session.FailedMessages;
 
-                        // Then join with messages in memory (not in LINQ query)
-                        patientDtos = patients.Select(p =>
+                    // Create SentMessageDto list
+                    var sentMessageDtos = sentMessages
+                        .Select(m => new SentMessageDto
                         {
-                            var message = sessionMessages
-                                .Where(m => m.PatientId == p.Id)
-                                .OrderByDescending(m => m.CreatedAt)
-                                .FirstOrDefault();
-                            
-                            return new SessionPatientDto
-                            {
-                                PatientId = p.Id,
-                                MessageId = message?.Id,
-                                Name = p.FullName ?? "غير محدد",
-                                Phone = p.PhoneNumber ?? "",
-                                CountryCode = p.CountryCode ?? "+966",
-                                Status = MapMessageStatus(message?.Status),
-                                Attempts = message?.Attempts ?? 0
-                            };
-                        }).ToList();
-                    }
+                            MessageId = m.Id,
+                            PatientId = m.PatientId ?? 0,
+                            PatientName = m.FullName ?? "غير محدد",
+                            PatientPhone = m.PatientPhone ?? "",
+                            CountryCode = m.CountryCode ?? "+966",
+                            Content = m.Content ?? "", // Already resolved content from database
+                            SentAt = m.SentAt ?? m.UpdatedAt,
+                            CreatedBy = m.CreatedBy,
+                            UpdatedBy = m.UpdatedBy
+                        })
+                        .ToList();
 
                     sessionDtos.Add(new CompletedSessionDto
                     {
@@ -904,7 +1178,9 @@ public class SessionsController : ControllerBase
                         CompletedAt = session.EndTime,
                         Total = session.TotalMessages,
                         Sent = session.SentMessages,
-                        Patients = patientDtos
+                        Failed = failedMessageCount,
+                        HasFailedMessages = failedMessageCount > 0,
+                        SentMessages = sentMessageDtos
                     });
                 }
                 catch (Exception ex)

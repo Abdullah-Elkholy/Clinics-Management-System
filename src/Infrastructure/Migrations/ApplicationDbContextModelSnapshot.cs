@@ -88,8 +88,8 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("LastRetryAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<long?>("MessageId")
-                        .HasColumnType("bigint");
+                    b.Property<Guid?>("MessageId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int?>("PatientId")
                         .HasColumnType("int");
@@ -123,13 +123,14 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Clinics.Domain.Message", b =>
                 {
-                    b.Property<long>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CalculatedPosition")
                         .HasColumnType("int");
 
                     b.Property<string>("Channel")
@@ -141,6 +142,14 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid?>("CorrelationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CountryCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -159,6 +168,11 @@ namespace Infrastructure.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -190,22 +204,14 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("PausedBy")
                         .HasColumnType("int");
 
+                    b.Property<int>("Position")
+                        .HasColumnType("int");
+
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<int?>("QueueId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("RecipientPhone")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<DateTime?>("RestoredAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("RestoredBy")
                         .HasColumnType("int");
 
                     b.Property<int?>("SenderUserId")
@@ -245,6 +251,10 @@ namespace Infrastructure.Migrations
                     b.HasIndex("IsPaused", "Status");
 
                     b.HasIndex("Status", "CreatedAt");
+
+                    b.HasIndex("ModeratorId", "Status", "IsPaused");
+
+                    b.HasIndex("SessionId", "Status", "IsPaused", "IsDeleted");
 
                     b.ToTable("Messages");
                 });
@@ -321,8 +331,23 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("CorrelationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeletedBy")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("EndTime")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("FailedMessages")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsPaused")
                         .HasColumnType("bit");
@@ -331,6 +356,9 @@ namespace Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("ModeratorId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OngoingMessages")
                         .HasColumnType("int");
 
                     b.Property<string>("PauseReason")
@@ -804,6 +832,9 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsPaused")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime?>("LastActivityAt")
                         .HasColumnType("datetime2");
 
@@ -814,6 +845,16 @@ namespace Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("ModeratorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PauseReason")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("PausedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("PausedBy")
                         .HasColumnType("int");
 
                     b.Property<string>("ProviderSessionId")

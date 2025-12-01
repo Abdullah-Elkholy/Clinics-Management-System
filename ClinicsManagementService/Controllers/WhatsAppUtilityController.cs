@@ -32,6 +32,7 @@ namespace ClinicsManagementService.Controllers
         private readonly ApplicationDbContext _dbContext;
 
 
+
         public WhatsAppUtilityController(
             IWhatsAppService whatsAppService,
             INotifier notifier,
@@ -112,6 +113,44 @@ namespace ClinicsManagementService.Controllers
 
                 int effectiveModeratorId = moderatorUserId.Value;
 
+                // Prevent admin users from using WhatsApp operations
+                // Only actual moderators should have WhatsApp sessions (ID > 1)
+                if (effectiveModeratorId == 1)
+                {
+                    _notifier.Notify($"❌ Admin user (ID=1) attempted to use WhatsApp session. Admins should specify a moderator ID.");
+                    return BadRequest(new 
+                    { 
+                        error = "InvalidModeratorId",
+                        code = "ADMIN_CANNOT_HAVE_SESSION",
+                        message = "المسؤول لا يمكنه استخدام جلسة واتساب. يجب تحديد معرف أحد المشرفين.",
+                        arabicMessage = "المسؤول لا يمكنه استخدام جلسة واتساب. يجب تحديد معرف أحد المشرفين."
+                    });
+                }
+
+                // Acquire exclusive operation lock for this moderator
+                using var operationLock = await _sessionManager.AcquireOperationLockAsync(effectiveModeratorId, 120000);
+                if (operationLock == null)
+                {
+                    _notifier.Notify($"⏱️ [Moderator {effectiveModeratorId}] Another operation is in progress");
+                    return StatusCode(503, new 
+                    { 
+                        error = "OperationInProgress",
+                        code = "BUSY",
+                        message = "عملية أخرى قيد التنفيذ. يرجى الانتظار."
+                    });
+                }
+                
+                // Restore session from backup before checking WhatsApp number
+                try
+                {
+                    await _sessionOptimizer.RestoreFromBackupAsync(effectiveModeratorId);
+                    _notifier.Notify($"✅ Session restored from backup for moderator {effectiveModeratorId}");
+                }
+                catch (Exception restoreEx)
+                {
+                    _notifier.Notify($"⚠️ Session restore failed (non-critical): {restoreEx.Message}");
+                }
+
                 // Validate: Prevent checking your own WhatsApp number
                 // Get moderator's WhatsApp phone number
                 var moderatorSettings = await _dbContext.Set<ModeratorSettings>()
@@ -173,9 +212,8 @@ namespace ClinicsManagementService.Controllers
 
                 _notifier.Notify($"🔍 [Moderator {effectiveModeratorId}] Checking if {phoneNumber} has WhatsApp...");
 
-                // Use the moderator-specific browser session
-                var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
-                // Check and auto-restore if session size exceeds threshold for this moderator
+                // Check and auto-restore if session size exceeds threshold BEFORE getting session
+                // This prevents disposing a session that we're about to use
                 try
                 {
                     await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
@@ -184,8 +222,12 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                 }
+
                 // Check cancellation before starting operation
                 cancellationToken.ThrowIfCancellationRequested();
+
+                // Use the moderator-specific browser session (AFTER auto-restore check)
+                var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 
                 var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession, cancellationToken);
 
@@ -258,6 +300,7 @@ namespace ClinicsManagementService.Controllers
             [FromQuery] int? moderatorUserId = null,
             [FromQuery] int? userId = null)
         {
+            int effectiveModeratorId = 0; // Declare outside try block for catch block access
             try
             {
                 // Validate and use moderatorUserId (REQUIRED now)
@@ -272,8 +315,33 @@ namespace ClinicsManagementService.Controllers
                     return BadRequest(new { error = "userId must be greater than 0 if provided" });
                 }
 
-                int effectiveModeratorId = moderatorUserId.Value;
+                effectiveModeratorId = moderatorUserId.Value;
                 _notifier.Notify($"🔐 [AUTH CHECK] Starting - ModeratorUserId: {effectiveModeratorId}");
+
+                // Acquire exclusive operation lock for this moderator
+                using var operationLock = await _sessionManager.AcquireOperationLockAsync(effectiveModeratorId, 120000);
+                if (operationLock == null)
+                {
+                    _notifier.Notify($"⏱️ [Moderator {effectiveModeratorId}] Another operation is in progress");
+                    return StatusCode(503, new 
+                    { 
+                        error = "OperationInProgress",
+                        code = "BUSY",
+                        message = "عملية أخرى قيد التنفيذ. يرجى الانتظار."
+                    });
+                }
+                
+                // Restore session from backup before checking authentication
+                try
+                {
+                    await _sessionOptimizer.RestoreFromBackupAsync(effectiveModeratorId);
+                    _notifier.Notify($"✅ Session restored from backup for moderator {effectiveModeratorId}");
+                }
+                catch (Exception restoreEx)
+                {
+                    _notifier.Notify($"⚠️ Session restore failed (non-critical): {restoreEx.Message}");
+                }
+                
                 // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {
@@ -302,6 +370,7 @@ namespace ClinicsManagementService.Controllers
                     // Update database: connected (track which user performed the check)
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
+                    _notifier.Notify($"ℹ️ [AUTH CHECK] Tasks remain paused - user must click Resume button to continue");
                 }
                 else if (waitUIResult.IsPendingQr())
                 {
@@ -320,13 +389,41 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                 }
+                
+                // Dispose the browser session after authentication check is complete
+                try
+                {
+                    _notifier.Notify($"🗑️ [AUTH CHECK] Disposing browser session for moderator {effectiveModeratorId}");
+                    await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
+                    _notifier.Notify($"✅ [AUTH CHECK] Browser session disposed successfully");
+                }
+                catch (Exception disposeEx)
+                {
+                    _notifier.Notify($"⚠️ [AUTH CHECK] Failed to dispose session (non-critical): {disposeEx.Message}");
+                }
+                
                 return Ok(waitUIResult);
             }
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ [AUTH CHECK] Exception: {ex.Message}");
                 _notifier.Notify($"❌ [AUTH CHECK] Stack trace: {ex.StackTrace}");
-                return Ok(OperationResult<bool>.Failure($"Authentication check failed: {ex.Message}"));
+                
+                // Ensure session is disposed even if error occurred
+                if (effectiveModeratorId > 0)
+                {
+                    try
+                    {
+                        await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
+                    }
+                    catch
+                    {
+                        // Ignore dispose errors in exception handler
+                    }
+                }
+                
+                // Return only the error message without stack trace to avoid large toast messages
+                return Ok(OperationResult<bool>.Failure($"فشل التحقق من المصادقة: {ex.Message}"));
             }
         }
 
@@ -361,15 +458,45 @@ namespace ClinicsManagementService.Controllers
                 }
 
                 int effectiveModeratorId = moderatorUserId.Value;
-                // Check and auto-restore if session size exceeds threshold for this moderator
+
+                // Prevent admin users from creating WhatsApp sessions
+                // Only actual moderators should have WhatsApp sessions (ID > 1)
+                if (effectiveModeratorId == 1)
+                {
+                    _notifier.Notify($"❌ Admin user (ID=1) attempted to create WhatsApp session. Admins should use moderator sessions.");
+                    return BadRequest(new 
+                    { 
+                        error = "InvalidModeratorId",
+                        code = "ADMIN_CANNOT_HAVE_SESSION",
+                        message = "المسؤول لا يمكنه إنشاء جلسة واتساب. يجب استخدام جلسة أحد المشرفين.",
+                        arabicMessage = "المسؤول لا يمكنه إنشاء جلسة واتساب. يجب استخدام جلسة أحد المشرفين."
+                    });
+                }
+
+                // Acquire exclusive operation lock for this moderator
+                using var operationLock = await _sessionManager.AcquireOperationLockAsync(effectiveModeratorId, 300000); // 5 minutes for auth
+                if (operationLock == null)
+                {
+                    _notifier.Notify($"⏱️ [Moderator {effectiveModeratorId}] Another operation is in progress");
+                    return StatusCode(503, new 
+                    { 
+                        error = "OperationInProgress",
+                        code = "BUSY",
+                        message = "عملية أخرى قيد التنفيذ. يرجى الانتظار."
+                    });
+                }
+
+                // Restore session from backup before authentication
                 try
                 {
-                    await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
+                    await _sessionOptimizer.RestoreFromBackupAsync(effectiveModeratorId);
+                    _notifier.Notify($"✅ Session restored from backup for moderator {effectiveModeratorId}");
                 }
-                catch (Exception optimizeEx)
+                catch (Exception restoreEx)
                 {
-                    _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                    _notifier.Notify($"⚠️ Session restore failed (non-critical): {restoreEx.Message}");
                 }
+
                 _notifier.Notify($"🔐 [AUTHENTICATE] Starting - ModeratorUserId: {effectiveModeratorId}");
 
                 // Use the moderator-specific session
@@ -391,6 +518,7 @@ namespace ClinicsManagementService.Controllers
                     // Update database: connected (track which user performed authentication)
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
+                    _notifier.Notify($"ℹ️ [AUTHENTICATE] Tasks remain paused - user must click Resume button to continue");
                     
                     return Ok(OperationResult<bool>.Success(true));
                 }
@@ -437,8 +565,9 @@ namespace ClinicsManagementService.Controllers
                                         // Update database: connected (track which user completed authentication)
                                         await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                                         _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
+                                        _notifier.Notify($"ℹ️ [AUTHENTICATE] Tasks remain paused - user must click Resume button to continue");
                                         
-                                        // Optimize session after successful authentication
+                                        // Optimize and backup authenticated session
                                         try
                                         {
                                             await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
@@ -495,7 +624,7 @@ namespace ClinicsManagementService.Controllers
                                 {
                                     _notifier.Notify("✅ Authentication completed (monitoring detected success).");
                                     
-                                    // Optimize session after successful authentication
+                                    // Optimize and backup authenticated session
                                     try
                                     {
                                         await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);
@@ -557,7 +686,7 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify("✅ Authentication completed: Chat UI detected.");
                     
-                    // Optimize session after successful authentication
+                    // Optimize and backup authenticated session
                     try
                     {
                         await _sessionOptimizer.OptimizeAuthenticatedSessionAsync(effectiveModeratorId);

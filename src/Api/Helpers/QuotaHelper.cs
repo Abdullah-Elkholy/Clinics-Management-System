@@ -20,11 +20,16 @@ public static class QuotaHelper
     /// <summary>
     /// Convert database quota value to API format.
     /// -1 (unlimited) is passed through as-is.
-    /// For messages quota, converts long to int (safe for API since -1 fits in int).
+    /// For messages quota, converts long to long (no conversion needed, but caps at int.MaxValue for consistency).
+    /// Values greater than int.MaxValue are capped to int.MaxValue to prevent issues in frontend.
     /// </summary>
-    public static int ToApiMessagesQuota(long dbQuota)
+    public static long ToApiMessagesQuota(long dbQuota)
     {
-        return dbQuota == -1 ? -1 : (int)dbQuota;
+        if (dbQuota == -1) return -1;
+        // Cap at int.MaxValue to prevent overflow issues in frontend (JavaScript number precision)
+        // Frontend uses int.MaxValue (2147483647) as the maximum safe value
+        if (dbQuota > int.MaxValue) return int.MaxValue;
+        return dbQuota;
     }
 
     /// <summary>

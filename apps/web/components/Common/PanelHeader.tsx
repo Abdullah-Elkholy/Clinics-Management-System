@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import { formatArabicNumber } from '@/utils/numberUtils';
 
 interface Stat {
   label: string;
@@ -115,7 +116,13 @@ export function PanelHeader({
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium opacity-75">{stat.label}</p>
-                  <p className="text-lg font-bold mt-1">{stat.value}</p>
+                  <p className="text-lg font-bold mt-1">
+                    {typeof stat.value === 'number' 
+                      ? formatArabicNumber(stat.value)
+                      : typeof stat.value === 'string' && /^\d+$/.test(stat.value)
+                      ? formatArabicNumber(parseInt(stat.value, 10))
+                      : stat.value}
+                  </p>
                 </div>
                 {stat.icon && (
                   <i className={`fas ${stat.icon} text-2xl opacity-30`}></i>

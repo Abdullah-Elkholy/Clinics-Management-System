@@ -28,6 +28,15 @@ const getClinicsManagementBaseUrl = (): string => {
 };
 
 /**
+ * Get main API base URL (for endpoints that are on the main API server, not ClinicsManagementService)
+ */
+const getMainApiBaseUrl = (): string => {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  // Ensure /api is appended if not already present
+  return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+};
+
+/**
  * Make fetch request to ClinicsManagementService
  */
 async function fetchAPI<T>(
@@ -37,10 +46,18 @@ async function fetchAPI<T>(
   const BASE_URL = getClinicsManagementBaseUrl();
   const url = `${BASE_URL}${endpoint}`;
 
+  // Get auth token from localStorage
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
+
+  // Add Authorization header if token exists
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   try {
     const response = await fetch(url, {
@@ -436,6 +453,159 @@ export async function getQRCode(moderatorUserId: number): Promise<QRCodeResponse
   }
 }
 
+/**
+ * Make fetch request to main API server (for moderator endpoints)
+ * These endpoints are on the main API, not ClinicsManagementService
+ */
+async function fetchMainAPI<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const BASE_URL = getMainApiBaseUrl();
+  const url = `${BASE_URL}${endpoint}`;
+
+  // Get auth token from localStorage
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  // Add Authorization header if token exists
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal,
+    });
+
+    // Handle non-JSON responses
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
+
+    if (!response.ok) {
+      // Try to extract meaningful error messages
+      let message: string | undefined;
+      if (typeof data === 'string') {
+        message = data;
+      } else if (data && typeof data === 'object') {
+        const obj = data as any;
+        if (obj.message) message = obj.message;
+        else if (obj.error) message = obj.error;
+        else if (obj.resultMessage) message = obj.resultMessage;
+        else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
+      }
+
+      throw {
+        message: message || 'API request failed',
+        statusCode: response.status,
+      } as ApiError;
+    }
+
+    return data as T;
+  } catch (error) {
+    // Translate network errors to Arabic
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      // This is already an ApiError, re-throw it
+      throw error;
+    }
+    
+    // This is a network/fetch error, translate it
+    const translatedMessage = translateNetworkError(error);
+    throw {
+      message: translatedMessage,
+      statusCode: 0, // Network errors don't have status codes
+    } as ApiError;
+  }
+}
+
+/**
+ * Pause all tasks for a moderator (sets WhatsAppSession.IsPaused = true)
+ * @param moderatorId - Moderator ID
+ * @param reason - Optional pause reason
+ * @returns Success response
+ */
+export interface PauseAllResponse {
+  success: boolean;
+  message: string;
+  error?: string;
+}
+
+export async function pauseAllModeratorTasks(
+  moderatorId: number, 
+  reason?: string
+): Promise<PauseAllResponse> {
+  try {
+    const result = await fetchMainAPI<PauseAllResponse>(
+      `/Moderators/${moderatorId}/pause-all`,
+      { 
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || 'User paused' })
+      }
+    );
+    
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] pauseAllModeratorTasks error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Resume all tasks for a moderator (sets WhatsAppSession.IsPaused = false)
+ * @param moderatorId - Moderator ID
+ * @returns Success response
+ */
+export async function resumeAllModeratorTasks(moderatorId: number): Promise<PauseAllResponse> {
+  try {
+    const result = await fetchMainAPI<PauseAllResponse>(
+      `/Moderators/${moderatorId}/resume-all`,
+      { method: 'POST' }
+    );
+    
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] resumeAllModeratorTasks error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get global pause state for a moderator
+ * @param moderatorId - Moderator ID
+ * @returns Pause state
+ */
+export interface GlobalPauseState {
+  isPaused: boolean;
+  pauseReason: string | null;
+  pausedAt: string | null;
+  pausedBy: number | null;
+}
+
+export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPauseState> {
+  try {
+    const result = await fetchMainAPI<GlobalPauseState>(
+      `/Moderators/${moderatorId}/pause-state`,
+      { method: 'GET' }
+    );
+    
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] getGlobalPauseState error:', error);
+    throw error;
+  }
+}
+
 // Export the client object for consistency with other API clients
 export const whatsappApiClient = {
   checkWhatsAppNumber,
@@ -447,4 +617,7 @@ export const whatsappApiClient = {
   refreshBrowserStatus,
   closeBrowserSession,
   getQRCode,
+  pauseAllModeratorTasks,
+  resumeAllModeratorTasks,
+  getGlobalPauseState,
 };

@@ -10,7 +10,7 @@ interface TabItemProps {
   icon: string;
   label: string;
   isActive: boolean;
-  onClick: () => void;
+  onClick: (e?: React.MouseEvent) => void;
   className?: string;
   ariaLabel?: string;
 }

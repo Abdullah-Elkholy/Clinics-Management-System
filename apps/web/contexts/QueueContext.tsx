@@ -486,6 +486,10 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           content: templateUpdates.content,
         });
 
+        // Dispatch event to notify other components (MessagesPanel, ModeratorMessagesOverview)
+        // This will trigger their refresh logic via event listeners
+        window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+
         toast?.('تم تحديث القالب بنجاح', 'success');
       } catch (error) {
         // Rollback on error
@@ -683,6 +687,10 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           maxValue: conditionUpdates.maxValue,
         });
 
+        // Dispatch event to notify other components (MessagesPanel, ModeratorMessagesOverview)
+        // This will trigger their refresh logic via event listeners
+        window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
+
         toast?.('تم تحديث الشرط بنجاح', 'success');
       } catch (error) {
         // Rollback on error
@@ -741,9 +749,43 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           );
           
           // Update templates: replace templates for this queue, keep others
+          // CRITICAL FIX: Only update if templates actually changed to prevent infinite loops
           setMessageTemplates((prevTemplates) => {
             const templatesForOtherQueues = prevTemplates.filter(t => String(t.queueId) !== String(queueId));
-            return [...templatesForOtherQueues, ...newTemplates];
+            const existingTemplatesForQueue = prevTemplates.filter(t => String(t.queueId) === String(queueId));
+            
+            // Compare new templates with existing ones by ID and key properties
+            // Only update if there are actual changes (different IDs, count, or content)
+            const existingIds = new Set(existingTemplatesForQueue.map(t => t.id));
+            const newIds = new Set(newTemplates.map(t => t.id));
+            const idsChanged = existingIds.size !== newIds.size || 
+                              ![...existingIds].every(id => newIds.has(id)) ||
+                              ![...newIds].every(id => existingIds.has(id));
+            
+            // Also check if content changed (simple comparison by JSON stringify of key fields)
+            const existingTemplatesStr = JSON.stringify(existingTemplatesForQueue.map(t => ({
+              id: t.id,
+              title: t.title,
+              content: t.content,
+              queueId: t.queueId
+            })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
+            
+            const newTemplatesStr = JSON.stringify(newTemplates.map(t => ({
+              id: t.id,
+              title: t.title,
+              content: t.content,
+              queueId: t.queueId
+            })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
+            
+            const contentChanged = existingTemplatesStr !== newTemplatesStr;
+            
+            // Only create new array if data actually changed
+            if (idsChanged || contentChanged) {
+              return [...templatesForOtherQueues, ...newTemplates];
+            }
+            
+            // Return previous array reference if nothing changed (prevents unnecessary re-renders)
+            return prevTemplates;
           });
           
           if (newTemplates.length > 0) {
@@ -773,15 +815,60 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           
           // Update conditions state: replace conditions for this queue, keep others
+          // CRITICAL FIX: Only update if conditions actually changed to prevent infinite loops
           setMessageConditions((prevConditions) => {
             const conditionsForOtherQueues = prevConditions.filter(c => String(c.queueId) !== String(queueId));
-            return [...conditionsForOtherQueues, ...conditions];
+            const existingConditionsForQueue = prevConditions.filter(c => String(c.queueId) === String(queueId));
+            
+            // Compare new conditions with existing ones
+            const existingIds = new Set(existingConditionsForQueue.map(c => c.id));
+            const newIds = new Set(conditions.map(c => c.id));
+            const idsChanged = existingIds.size !== newIds.size || 
+                              ![...existingIds].every(id => newIds.has(id)) ||
+                              ![...newIds].every(id => existingIds.has(id));
+            
+            // Also check if condition properties changed
+            const existingConditionsStr = JSON.stringify(existingConditionsForQueue.map(c => ({
+              id: c.id,
+              operator: c.operator,
+              value: c.value,
+              minValue: c.minValue,
+              maxValue: c.maxValue,
+              templateId: c.templateId,
+              queueId: c.queueId
+            })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
+            
+            const newConditionsStr = JSON.stringify(conditions.map(c => ({
+              id: c.id,
+              operator: c.operator,
+              value: c.value,
+              minValue: c.minValue,
+              maxValue: c.maxValue,
+              templateId: c.templateId,
+              queueId: c.queueId
+            })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
+            
+            const contentChanged = existingConditionsStr !== newConditionsStr;
+            
+            // Only create new array if data actually changed
+            if (idsChanged || contentChanged) {
+              return [...conditionsForOtherQueues, ...conditions];
+            }
+            
+            // Return previous array reference if nothing changed (prevents unnecessary re-renders)
+            return prevConditions;
           });
         } else {
           // If no conditions for this queue, remove them
-          setMessageConditions((prevConditions) => 
-            prevConditions.filter(c => String(c.queueId) !== String(queueId))
-          );
+          // CRITICAL FIX: Only update if there were actually conditions to remove
+          setMessageConditions((prevConditions) => {
+            const hasConditionsForQueue = prevConditions.some(c => String(c.queueId) === String(queueId));
+            if (hasConditionsForQueue) {
+              return prevConditions.filter(c => String(c.queueId) !== String(queueId));
+            }
+            // Return previous array reference if nothing to remove
+            return prevConditions;
+          });
         }
       } catch (error) {
         logger.error('Unexpected error refreshing queue data:', error);

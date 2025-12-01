@@ -17,7 +17,7 @@ export default function QRCodeModal() {
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
   const { user } = useAuth();
-  const { checkAuthentication } = useWhatsAppSession();
+  const { checkAuthentication, refreshSessionStatus, refreshGlobalPauseState } = useWhatsAppSession();
   const isOpen = openModals.has('qrCode');
 
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
@@ -74,6 +74,11 @@ export default function QRCodeModal() {
     try {
       const result = await checkAuthentication();
       if (result.isSuccess === true || result.state === 'Success') {
+        // Authenticated! Refresh both states to clear any PendingQR state
+        await Promise.all([
+          refreshSessionStatus(),
+          refreshGlobalPauseState()
+        ]);
         // Authenticated! Close modal and show success
         addToast('تم المصادقة بنجاح!', 'success');
         closeModal('qrCode');
@@ -82,7 +87,7 @@ export default function QRCodeModal() {
       // Silently fail - don't show error for auth checks
       // Error is intentionally ignored for background auth checks
     }
-  }, [moderatorId, isOpen, checkAuthentication, addToast, closeModal]);
+  }, [moderatorId, isOpen, checkAuthentication, addToast, closeModal, refreshSessionStatus, refreshGlobalPauseState]);
 
   useEffect(() => {
     if (isOpen) {

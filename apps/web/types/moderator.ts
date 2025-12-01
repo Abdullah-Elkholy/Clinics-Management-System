@@ -118,7 +118,7 @@ export interface MessageTemplateWithModerator extends MessageTemplate {
 
 // Message Types
 export interface Message {
-  id: number;
+  id: string; // Changed from number to string (Guid)
   patientId?: number;
   templateId?: number;
   queueId?: number;
@@ -139,6 +139,8 @@ export interface Message {
   sentAt?: Date;
   createdAt: Date;
   updatedAt?: Date;
+  createdBy?: number; // User who created this message
+  updatedBy?: number; // User who last updated this message
 }
 
 export interface MessageWithDetails extends Message {
@@ -352,7 +354,7 @@ export interface QuotaEvent {
 
 export interface MessageEvent {
   type: 'sent' | 'failed';
-  messageId: number;
+  messageId: string; // Changed from number to string (Guid)
   status: MessageStatus;
   moderatorId: number;
   timestamp: Date;

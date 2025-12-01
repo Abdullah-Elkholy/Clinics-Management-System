@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { createBulkDeleteConfirmation, createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 // Mock data removed - using API data instead
@@ -19,10 +20,15 @@ import { Patient } from '@/types';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { debounce } from '@/utils/debounce';
+import { useSignalR } from '@/contexts/SignalRContext';
+import logger from '@/utils/logger';
+import { RetryPreviewModalWithProps as RetryPreviewModal } from '@/components/Modals/RetryPreviewModal';
 
 interface Session {
   id: string;
   sessionId: string;
+  queueId: number;
   clinicName: string;
   doctorName: string;
   createdAt: string;
@@ -56,6 +62,7 @@ export default function FailedTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const router = useRouter();
+  const { selectedQueueId } = useQueue();
   
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
@@ -66,6 +73,13 @@ export default function FailedTasksPanel() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
+  
+  // Retry preview modal state
+  const [showRetryPreview, setShowRetryPreview] = useState(false);
+  const [retrySessionId, setRetrySessionId] = useState<string | null>(null);
+  
+  // Request deduplication: track in-flight requests
+  const isLoadingRef = React.useRef(false);
 
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {
@@ -86,32 +100,39 @@ export default function FailedTasksPanel() {
   }, [isAuthenticated, user, router]);
 
   /**
-   * Load failed sessions from API on component mount
+   * Load failed sessions from backend API
+   * Includes request deduplication to prevent multiple simultaneous calls
    */
-  useEffect(() => {
-    const loadFailedSessions = async () => {
-      console.log('[FailedTasksPanel] Starting loadFailedSessions', { page, pageSize, userId: user?.id });
-      try {
-        setIsLoading(true);
-        setError(null);
-        console.log('[FailedTasksPanel] Set loading to true, cleared error');
-        
-        console.log('[FailedTasksPanel] Calling messageApiClient.getFailedSessions()...');
-        const response = await messageApiClient.getFailedSessions();
-        console.log('[FailedTasksPanel] Received response:', { 
+  const loadFailedSessions = useCallback(async () => {
+    // Request deduplication: skip if already loading
+    if (isLoadingRef.current) {
+      logger.debug('[FailedTasksPanel] Skipping duplicate loadFailedSessions call');
+      return;
+    }
+    
+    logger.debug('[FailedTasksPanel] Starting loadFailedSessions', { page, pageSize, userId: user?.id });
+    try {
+      isLoadingRef.current = true;
+      setIsLoading(true);
+      setError(null);
+      logger.debug('[FailedTasksPanel] Set loading to true, cleared error');
+      
+      logger.debug('[FailedTasksPanel] Calling messageApiClient.getFailedSessions()...');
+      const response = await messageApiClient.getFailedSessions();
+        logger.debug('[FailedTasksPanel] Received response:', { 
           success: response.success, 
           hasData: !!response.data, 
           dataLength: response.data?.length || 0 
         });
         
         if (response.success && response.data) {
-          console.log('[FailedTasksPanel] Transforming sessions data...', { 
+          logger.debug('[FailedTasksPanel] Transforming sessions data...', { 
             sessionsCount: response.data.length 
           });
           
           // Transform API response to Session format
           const transformedSessions: Session[] = response.data.map((session: any) => {
-            console.log('[FailedTasksPanel] Transforming session:', { 
+            logger.debug('[FailedTasksPanel] Transforming session:', { 
               sessionId: session.sessionId, 
               queueName: session.queueName,
               patientsCount: session.patients?.length || 0 
@@ -128,7 +149,7 @@ export default function FailedTasksPanel() {
               failedCount: session.failed,
               patients: session.patients.map((p: any) => ({
                 id: String(p.patientId),
-                messageId: p.messageId ? Number(p.messageId) : undefined, // Message ID for retry
+                messageId: p.messageId, // Message ID as string (Guid)
                 name: p.name,
                 phone: p.phone,
                 queueId: String(session.queueId),
@@ -143,20 +164,28 @@ export default function FailedTasksPanel() {
             };
           });
           
-          console.log('[FailedTasksPanel] Setting transformed sessions:', { 
-            count: transformedSessions.length 
+          // Filter by selectedQueueId if one is selected
+          let filteredSessions = transformedSessions;
+          if (selectedQueueId) {
+            filteredSessions = transformedSessions.filter(
+              session => String(session.queueId) === String(selectedQueueId)
+            );
+          }
+          
+          logger.debug('[FailedTasksPanel] Setting transformed sessions:', { 
+            count: filteredSessions.length 
           });
-          setSessions(transformedSessions);
-          console.log('[FailedTasksPanel] Sessions set successfully');
+          setSessions(filteredSessions);
+          logger.debug('[FailedTasksPanel] Sessions set successfully');
         } else {
-          console.warn('[FailedTasksPanel] Response not successful or no data:', { 
+          logger.warn('[FailedTasksPanel] Response not successful or no data:', { 
             success: response.success, 
             hasData: !!response.data 
           });
           setSessions([]);
         }
       } catch (err: any) {
-        console.error('[FailedTasksPanel] Error in loadFailedSessions:', {
+        logger.error('[FailedTasksPanel] Error in loadFailedSessions:', {
           error: err,
           message: err?.message,
           code: err?.code,
@@ -166,101 +195,47 @@ export default function FailedTasksPanel() {
         
         // Check if error is due to PendingQR (authentication required)
         if (err?.code === 'AUTHENTICATION_REQUIRED' || err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
-          console.warn('[FailedTasksPanel] WhatsApp session requires authentication (PendingQR):', err);
+          logger.warn('[FailedTasksPanel] WhatsApp session requires authentication (PendingQR):', err);
           addToast('جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً.', 'warning');
           setSessions([]);
           setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
         } else {
           const errorMessage = err instanceof Error ? err.message : 'Failed to load failed sessions';
           setError(errorMessage);
-          console.error('[FailedTasksPanel] Failed to load failed sessions:', err);
+          logger.error('[FailedTasksPanel] Failed to load failed sessions:', err);
           addToast('فشل تحميل الجلسات الفاشلة', 'error');
           setSessions([]);
         }
       } finally {
-        console.log('[FailedTasksPanel] Setting loading to false');
+        logger.debug('[FailedTasksPanel] Setting loading to false');
         setIsLoading(false);
+        isLoadingRef.current = false;
       }
-    };
-
-    loadFailedSessions();
-  }, [page, pageSize, user, addToast]);
+  }, [page, pageSize, user, addToast, selectedQueueId]);
 
   /**
-   * Listen for data updates and refetch
+   * Load sessions on mount and when dependencies change
    */
   useEffect(() => {
-    const handleDataUpdate = async () => {
-      console.log('[FailedTasksPanel] handleDataUpdate triggered - refetching failed sessions');
-      // Refetch failed sessions when data is updated
-      try {
-        setIsLoading(true);
-        setError(null);
-        console.log('[FailedTasksPanel] handleDataUpdate - Set loading to true');
-        
-        const response = await messageApiClient.getFailedSessions();
-        console.log('[FailedTasksPanel] handleDataUpdate - Received response:', { 
-          success: response.success, 
-          hasData: !!response.data, 
-          dataLength: response.data?.length || 0 
-        });
-        
-        if (response.success && response.data) {
-          // Transform API response to Session format
-          const transformedSessions: Session[] = response.data.map((session: any) => ({
-            id: String(session.sessionId),
-            sessionId: String(session.sessionId),
-            queueId: session.queueId,
-            clinicName: session.queueName,
-            doctorName: session.queueName,
-            createdAt: session.startTime,
-            totalPatients: session.total,
-            failedCount: session.failed,
-            patients: session.patients.map((p: any) => ({
-              id: String(p.patientId),
-              name: p.name,
-              phone: p.phone,
-              queueId: String(session.queueId),
-              countryCode: p.countryCode,
-              position: 0,
-              status: p.status,
-              isValidWhatsAppNumber: false,
-              messagePreview: p.failedReason || 'فشل الإرسال',
-              attempts: p.attempts || 0,
-            } as Patient)),
-          }));
-          
-          console.log('[FailedTasksPanel] handleDataUpdate - Setting sessions:', { 
-            count: transformedSessions.length 
-          });
-          setSessions(transformedSessions);
-        } else {
-          console.warn('[FailedTasksPanel] handleDataUpdate - Response not successful or no data');
-          setSessions([]);
-        }
-      } catch (err: any) {
-        console.error('[FailedTasksPanel] handleDataUpdate - Error:', {
-          error: err,
-          message: err?.message,
-          code: err?.code,
-          statusCode: err?.statusCode
-        });
-        
-        // Check if error is due to PendingQR (authentication required)
-        if (err?.code === 'AUTHENTICATION_REQUIRED' || err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
-          console.warn('[FailedTasksPanel] handleDataUpdate - WhatsApp session requires authentication (PendingQR):', err);
-          setSessions([]);
-          setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
-        } else {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to load failed sessions';
-          setError(errorMessage);
-          console.error('[FailedTasksPanel] handleDataUpdate - Failed to load failed sessions:', err);
-          setSessions([]);
-        }
-      } finally {
-        console.log('[FailedTasksPanel] handleDataUpdate - Setting loading to false');
-        setIsLoading(false);
-      }
+    loadFailedSessions();
+  }, [loadFailedSessions]);
+
+  // Debounced refresh function to prevent rapid-fire API calls
+  const debouncedRefresh = React.useMemo(
+    () => debounce(() => {
+      loadFailedSessions();
+    }, 2000), // 2 second debounce
+    [loadFailedSessions]
+  );
+
+  /**
+   * Listen for data updates and refetch (debounced to prevent duplicate calls)
+   * Note: SignalR events are primary, window events are fallback for backwards compatibility
+   */
+  useEffect(() => {
+    const handleDataUpdate = () => {
+      // Use debounced refresh to prevent rapid-fire API calls
+      debouncedRefresh();
     };
 
     window.addEventListener('patientDataUpdated', handleDataUpdate);
@@ -276,7 +251,42 @@ export default function FailedTasksPanel() {
       window.removeEventListener('messageSent', handleDataUpdate);
       window.removeEventListener('messageFailed', handleDataUpdate);
     };
-  }, [page, pageSize]);
+  }, [debouncedRefresh]);
+
+  /**
+   * SignalR Integration: Listen for real-time message updates
+   * Replaces polling with push-based updates for failed messages
+   */
+  const { connection, isConnected, on, off } = useSignalR();
+
+  useEffect(() => {
+    if (!connection || !isConnected) return;
+
+    // Handler for message updates (debounced)
+    const handleMessageUpdate = () => {
+      logger.debug('FailedTasksPanel: Received MessageUpdated event via SignalR');
+      debouncedRefresh();
+    };
+
+    const handleMessageDelete = () => {
+      logger.debug('FailedTasksPanel: Received MessageDeleted event via SignalR');
+      debouncedRefresh();
+    };
+
+    // Subscribe to SignalR events using context helpers
+    on('MessageUpdated', handleMessageUpdate);
+    on('MessageDeleted', handleMessageDelete);
+    on('SessionUpdated', handleMessageUpdate);
+    on('SessionDeleted', handleMessageUpdate);
+
+    return () => {
+      // Cleanup: unsubscribe from events
+      off('MessageUpdated', handleMessageUpdate);
+      off('MessageDeleted', handleMessageDelete);
+      off('SessionUpdated', handleMessageUpdate);
+      off('SessionDeleted', handleMessageUpdate);
+    };
+  }, [connection, isConnected, on, off, debouncedRefresh]);
 
   /**
    * Toggle session expand - memoized
@@ -377,7 +387,7 @@ export default function FailedTasksPanel() {
     const patientsToRetry = session.patients.filter((p) => selected.has(p.id));
     const messageIds = patientsToRetry
       .map((p) => p.messageId)
-      .filter((id): id is number => id !== undefined);
+      .filter((id): id is string => id !== undefined && id !== null);
 
     if (messageIds.length === 0) {
       addToast('لا توجد رسائل محددة لإعادة المحاولة', 'warning');
@@ -393,7 +403,7 @@ export default function FailedTasksPanel() {
           const result = await messageApiClient.retryFailedTask(messageId);
           return { success: true, messageId, result };
         } catch (err: any) {
-          console.error(`[FailedTasksPanel] Failed to retry message ${messageId}:`, err);
+          logger.error(`[FailedTasksPanel] Failed to retry message ${messageId}:`, err);
           return { success: false, messageId, error: err };
         }
       });
@@ -427,7 +437,7 @@ export default function FailedTasksPanel() {
           failedCount: session.failed,
           patients: session.patients.map((p: any) => ({
             id: String(p.patientId),
-            messageId: p.messageId ? Number(p.messageId) : undefined,
+            messageId: p.messageId,
             name: p.name,
             phone: p.phone,
             queueId: String(session.queueId),
@@ -440,7 +450,15 @@ export default function FailedTasksPanel() {
             attempts: p.attempts || 0,
           } as Patient)),
         }));
-        setSessions(transformedSessions);
+        
+        // Filter by selectedQueueId if one is selected
+        let filteredSessions = transformedSessions;
+        if (selectedQueueId) {
+          filteredSessions = transformedSessions.filter(
+            session => String(session.queueId) === String(selectedQueueId)
+          );
+        }
+        setSessions(filteredSessions);
       }
 
       setSelectedPatients((prev) => {
@@ -449,7 +467,7 @@ export default function FailedTasksPanel() {
         return newMap;
       });
     } catch (error: any) {
-      console.error('[FailedTasksPanel] Error retrying selected patients:', error);
+      logger.error('[FailedTasksPanel] Error retrying selected patients:', error);
       addToast('حدث خطأ أثناء إعادة المحاولة', 'error');
     } finally {
       setIsLoading(false);
@@ -457,11 +475,15 @@ export default function FailedTasksPanel() {
   }, [selectedPatients, sessions, addToast]);
 
   /**
-   * Retry single patient - memoized
+   * Retry single patient (message-level retry)
+   * Uses the 3-tier hierarchy: message-level retry endpoint
    */
   const retrySinglePatient = useCallback(async (sessionId: string, patientId: string) => {
     const session = sessions.find((s) => s.id === sessionId);
-    if (!session) return;
+    if (!session) {
+      addToast('الجلسة غير موجودة', 'error');
+      return;
+    }
 
     const patient = session.patients.find((p) => p.id === patientId);
     if (!patient || !patient.messageId) {
@@ -478,42 +500,22 @@ export default function FailedTasksPanel() {
         addToast('تم إعادة محاولة المريض بنجاح', 'success');
         
         // Reload sessions to get updated status
-        const response = await messageApiClient.getFailedSessions();
-        if (response.success && response.data) {
-          const transformedSessions: Session[] = response.data.map((session: any) => ({
-            id: String(session.sessionId),
-            sessionId: String(session.sessionId),
-            queueId: session.queueId,
-            clinicName: session.queueName,
-            doctorName: session.queueName,
-            createdAt: session.startTime,
-            totalPatients: session.total,
-            failedCount: session.failed,
-            patients: session.patients.map((p: any) => ({
-              id: String(p.patientId),
-              messageId: p.messageId ? Number(p.messageId) : undefined,
-              name: p.name,
-              phone: p.phone,
-              queueId: String(session.queueId),
-              countryCode: p.countryCode,
-              position: 0,
-              status: p.status,
-              isValidWhatsAppNumber: false,
-              messagePreview: p.failedReason || 'فشل الإرسال',
-              failedReason: p.failedReason || 'فشل الإرسال',
-              attempts: p.attempts || 0,
-            } as Patient)),
-          }));
-          setSessions(transformedSessions);
-        }
+        await loadFailedSessions();
       }
     } catch (error: any) {
-      console.error('[FailedTasksPanel] Error retrying patient:', error);
+      logger.error('[FailedTasksPanel] Error retrying patient:', error);
       
-      // Handle WhatsApp validation error (400 BadRequest with WhatsAppValidationRequired)
+      // Handle specific error types with Arabic messages
       if (error?.error === 'WhatsAppValidationRequired' || 
           (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
-        addToast(error?.message || 'يجب التحقق من رقم الواتساب أولاً', 'warning');
+        addToast(
+          error?.message || 'يجب التحقق من رقم الواتساب أولاً باستخدام زر "التحقق من الرقم" قبل إعادة المحاولة',
+          'warning'
+        );
+      } else if (error?.statusCode === 403) {
+        addToast('ليس لديك صلاحية لإعادة محاولة هذه الرسالة', 'error');
+      } else if (error?.statusCode === 404) {
+        addToast('الرسالة غير موجودة', 'error');
       } else {
         const errorMessage = error?.message || error?.error || 'حدث خطأ أثناء إعادة المحاولة';
         addToast(errorMessage, 'error');
@@ -521,14 +523,103 @@ export default function FailedTasksPanel() {
     } finally {
       setIsLoading(false);
     }
+  }, [sessions, addToast, loadFailedSessions]);
+
+  /**
+   * Retry all failed messages in a specific session (session-level retry)
+   * Uses the 3-tier hierarchy: session-level retry endpoint
+   */
+  const retrySessionPatients = useCallback(async (sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) {
+      addToast('الجلسة غير موجودة', 'error');
+      return;
+    }
+
+    if (session.patients.length === 0) {
+      addToast('لا توجد رسائل فاشلة في هذه الجلسة', 'warning');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Use session-level retry endpoint (validates WhatsApp numbers automatically)
+      const result = await messageApiClient.retrySession(sessionId);
+
+      if (result.success) {
+        if (result.skipped && result.skipped > 0) {
+          // Some messages were skipped due to unvalidated WhatsApp numbers
+          const skippedMessage = result.message || `تم إعادة إضافة ${result.requeued} رسالة. تم تخطي ${result.skipped} رسالة بسبب أرقام واتساب غير محققة.`;
+          addToast(skippedMessage, 'warning');
+          
+          // Show details about invalid patients if available
+          if (result.invalidPatients && result.invalidPatients.length > 0) {
+            const patientNames = result.invalidPatients.slice(0, 3).join('، ');
+            const moreCount = result.invalidPatients.length > 3 ? ` و${result.invalidPatients.length - 3} آخرين` : '';
+            logger.warn(`[FailedTasksPanel] Skipped retry for patients: ${patientNames}${moreCount}`);
+          }
+        } else if (result.requeued > 0) {
+          addToast(
+            result.message || `تم إعادة إضافة ${result.requeued} رسالة إلى قائمة الانتظار بنجاح`,
+            'success'
+          );
+        } else {
+          addToast('لا توجد رسائل فاشلة في هذه الجلسة', 'info');
+        }
+      } else {
+        throw new Error(result.message || 'فشل إعادة محاولة الجلسة');
+      }
+
+      // Reload sessions to get updated status
+      await loadFailedSessions();
+    } catch (error: any) {
+      logger.error('[FailedTasksPanel] Error retrying session patients:', error);
+      
+      // Handle specific error types with Arabic messages
+      if (error?.error === 'WhatsAppValidationRequired' || 
+          (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
+        addToast(
+          error?.message || 'يجب التحقق من رقم الواتساب أولاً قبل إعادة المحاولة',
+          'warning'
+        );
+      } else if (error?.statusCode === 403) {
+        addToast('ليس لديك صلاحية لإعادة محاولة هذه الجلسة', 'error');
+      } else if (error?.statusCode === 404) {
+        addToast('الجلسة غير موجودة', 'error');
+      } else {
+        const errorMessage = error?.message || error?.error || 'حدث خطأ أثناء إعادة المحاولة';
+        addToast(errorMessage, 'error');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessions, addToast, loadFailedSessions]);
+
+  /**
+   * Show retry preview modal for all sessions
+   * Opens preview modal to show retryable vs non-retryable messages
+   */
+  const showRetryAllPreview = useCallback(() => {
+    // Get first session ID (for moderator-level retry, all sessions belong to same moderator)
+    const firstSession = sessions[0];
+    if (!firstSession) {
+      addToast('لا توجد جلسات فاشلة', 'warning');
+      return;
+    }
+    
+    setRetrySessionId(firstSession.sessionId);
+    setShowRetryPreview(true);
   }, [sessions, addToast]);
 
   /**
-   * Retry all patients - memoized
+   * Retry all patients from all sessions (moderator-level retry)
+   * Uses message-level retry for each message individually
+   * Called after user confirms in preview modal
    */
   const retryAllPatients = useCallback(async () => {
     // Collect all message IDs from all sessions
-    const allMessageIds: number[] = [];
+    const allMessageIds: string[] = [];
     sessions.forEach((session) => {
       session.patients.forEach((patient) => {
         if (patient.messageId) {
@@ -545,13 +636,13 @@ export default function FailedTasksPanel() {
     try {
       setIsLoading(true);
       
-      // Retry each message individually
+      // Retry each message individually (message-level retry)
       const retryPromises = allMessageIds.map(async (messageId) => {
         try {
           const result = await messageApiClient.retryFailedTask(messageId);
           return { success: true, messageId, result };
         } catch (err: any) {
-          console.error(`[FailedTasksPanel] Failed to retry message ${messageId}:`, err);
+          logger.error(`[FailedTasksPanel] Failed to retry message ${messageId}:`, err);
           return { success: false, messageId, error: err };
         }
       });
@@ -562,7 +653,25 @@ export default function FailedTasksPanel() {
       ).length;
       const failedCount = results.length - successCount;
 
-      if (failedCount > 0) {
+      // Handle validation errors
+      const validationErrors: string[] = [];
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value && !r.value.success) {
+          const err = r.value.error;
+          if (err?.error === 'WhatsAppValidationRequired' || 
+              (err?.statusCode === 400 && err?.message?.includes('واتساب'))) {
+            validationErrors.push(err?.message || 'رقم واتساب غير محقق');
+          }
+        }
+      });
+
+      if (validationErrors.length > 0) {
+        const uniqueErrors = [...new Set(validationErrors)];
+        addToast(
+          `تم إعادة محاولة ${successCount} رسالة. ${failedCount} رسالة فشلت: ${uniqueErrors[0]}`,
+          failedCount === allMessageIds.length ? 'error' : 'warning'
+        );
+      } else if (failedCount > 0) {
         addToast(
           `تم إعادة محاولة ${successCount} رسالة بنجاح. فشل ${failedCount} رسالة.`,
           failedCount === allMessageIds.length ? 'error' : 'warning'
@@ -572,43 +681,27 @@ export default function FailedTasksPanel() {
       }
 
       // Reload sessions to get updated status
-      const response = await messageApiClient.getFailedSessions();
-      if (response.success && response.data) {
-        const transformedSessions: Session[] = response.data.map((session: any) => ({
-          id: String(session.sessionId),
-          sessionId: String(session.sessionId),
-          queueId: session.queueId,
-          clinicName: session.queueName,
-          doctorName: session.queueName,
-          createdAt: session.startTime,
-          totalPatients: session.total,
-          failedCount: session.failed,
-          patients: session.patients.map((p: any) => ({
-            id: String(p.patientId),
-            messageId: p.messageId ? Number(p.messageId) : undefined,
-            name: p.name,
-            phone: p.phone,
-            queueId: String(session.queueId),
-            countryCode: p.countryCode,
-            position: 0,
-            status: p.status,
-            isValidWhatsAppNumber: false,
-            messagePreview: p.failedReason || 'فشل الإرسال',
-            failedReason: p.failedReason || 'فشل الإرسال',
-            attempts: p.attempts || 0,
-          } as Patient)),
-        }));
-        setSessions(transformedSessions);
-      }
+      await loadFailedSessions();
 
       setSelectedPatients(new Map());
     } catch (error: any) {
-      console.error('[FailedTasksPanel] Error retrying all patients:', error);
-      addToast('حدث خطأ أثناء إعادة المحاولة', 'error');
+      logger.error('[FailedTasksPanel] Error retrying all patients:', error);
+      
+      // Handle specific error types with Arabic messages
+      if (error?.error === 'WhatsAppValidationRequired' || 
+          (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
+        addToast(
+          error?.message || 'يجب التحقق من رقم الواتساب أولاً قبل إعادة المحاولة',
+          'warning'
+        );
+      } else {
+        const errorMessage = error?.message || error?.error || 'حدث خطأ أثناء إعادة المحاولة';
+        addToast(errorMessage, 'error');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [sessions, addToast]);
+  }, [sessions, addToast, loadFailedSessions]);
 
   /**
    * Delete all patients - memoized
@@ -807,33 +900,7 @@ export default function FailedTasksPanel() {
         stats={stats}
       />
 
-      {/* Action Buttons */}
-      <div className="flex gap-3 mb-6 justify-end flex-wrap">
-        <button
-          onClick={retryAllPatients}
-          disabled={sessions.length === 0 || sessions.every((s) => s.patients.length === 0)}
-          className={`px-6 py-3 rounded-lg transition-all flex items-center gap-2 font-medium ${
-            sessions.length === 0 || sessions.every((s) => s.patients.length === 0)
-              ? 'bg-gray-400 text-white cursor-not-allowed'
-              : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          <i className="fas fa-redo-alt"></i>
-          <span>إعادة محاولة الكل</span>
-        </button>
-        <button
-          onClick={deleteAllPatients}
-          disabled={sessions.length === 0 || sessions.every((s) => s.patients.length === 0)}
-          className={`px-6 py-3 rounded-lg transition-all flex items-center gap-2 font-medium ${
-            sessions.length === 0 || sessions.every((s) => s.patients.length === 0)
-              ? 'bg-gray-400 text-white cursor-not-allowed'
-              : 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          <i className="fas fa-trash"></i>
-          <span>حذف الكل</span>
-        </button>
-      </div>
+
 
       {/* Sessions List */}
       <div className="space-y-4">
@@ -884,10 +951,10 @@ export default function FailedTasksPanel() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          retryAllPatients();
+                          retrySessionPatients(session.id);
                         }}
                         className="bg-orange-500 text-white hover:bg-orange-600 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors"
-                        title="إعادة محاولة جميع المرضى"
+                        title="إعادة محاولة جميع رسائل هذه الجلسة"
                       >
                         <i className="fas fa-redo-alt"></i>
                       </button>
@@ -1042,6 +1109,20 @@ export default function FailedTasksPanel() {
         <UsageGuideSection
           items={FAILED_TASKS_GUIDE_ITEMS}
         />
+      
+      {/* Retry Preview Modal */}
+      {retrySessionId && (
+        <RetryPreviewModal
+          isOpen={showRetryPreview}
+          onClose={() => {
+            setShowRetryPreview(false);
+            setRetrySessionId(null);
+          }}
+          onConfirm={retryAllPatients}
+          sessionId={retrySessionId}
+        />
+      )}
     </PanelWrapper>
   );
 }
+

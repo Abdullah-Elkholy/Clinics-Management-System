@@ -9,7 +9,7 @@ import { User } from '../../types';
 export default function Header() {
   const { user, logout } = useAuth();
   const { openModal } = useModal();
-  const { sessionStatus } = useWhatsAppSession();
+  const { sessionStatus, globalPauseState } = useWhatsAppSession();
 
   if (!user) return null;
 
@@ -70,11 +70,23 @@ export default function Header() {
                   ? 'text-yellow-700' 
                   : 'text-red-700'
               }`}>
-                {sessionStatus === 'connected' 
-                  ? 'واتساب متصل' 
-                  : sessionStatus === 'pending' 
-                  ? 'في انتظار المصادقة' 
-                  : 'واتساب غير متصل'}
+                {globalPauseState?.isPaused
+                  ? globalPauseState.pauseReason?.includes('PendingQR')
+                    ? 'في انتظار المصادقة (PendingQR)'
+                    : globalPauseState.pauseReason?.includes('PendingNET')
+                    ? 'فشل الاتصال بالإنترنت (PendingNET)'
+                    : globalPauseState.pauseReason?.includes('BrowserClosure')
+                    ? 'تم إغلاق المتصفح'
+                    : sessionStatus === 'connected' 
+                      ? 'واتساب متصل' 
+                      : sessionStatus === 'pending' 
+                      ? 'في انتظار المصادقة' 
+                      : 'واتساب غير متصل'
+                  : sessionStatus === 'connected' 
+                    ? 'واتساب متصل' 
+                    : sessionStatus === 'pending' 
+                    ? 'في انتظار المصادقة' 
+                    : 'واتساب غير متصل'}
               </span>
             </div>
           )}

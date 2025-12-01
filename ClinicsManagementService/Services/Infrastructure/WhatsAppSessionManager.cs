@@ -7,6 +7,34 @@ using System.Collections.Concurrent;
 
 namespace ClinicsManagementService.Services.Infrastructure
 {
+    /// <summary>
+    /// Disposable lock handle that releases the semaphore when disposed
+    /// </summary>
+    public sealed class OperationLockHandle : IDisposable
+    {
+        private readonly SemaphoreSlim _semaphore;
+        private readonly int _moderatorId;
+        private readonly INotifier _notifier;
+        private bool _disposed;
+
+        public OperationLockHandle(SemaphoreSlim semaphore, int moderatorId, INotifier notifier)
+        {
+            _semaphore = semaphore;
+            _moderatorId = moderatorId;
+            _notifier = notifier;
+        }
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+                _semaphore.Release();
+                _notifier.Notify($"🔓 [Moderator {_moderatorId}] Operation lock released");
+            }
+        }
+    }
+
     public class WhatsAppSessionManager : IWhatsAppSessionManager
     {
         private readonly INotifier _notifier;
@@ -23,6 +51,9 @@ namespace ClinicsManagementService.Services.Infrastructure
         
         // Dictionary of semaphores per moderator for concurrency control
         private readonly ConcurrentDictionary<int, SemaphoreSlim> _sessionLocks = new();
+        
+        // Dictionary of operation locks per moderator (for entire operation lifecycle)
+        private readonly ConcurrentDictionary<int, SemaphoreSlim> _operationLocks = new();
         
         // Global lock for dictionary operations
         private readonly SemaphoreSlim _dictionaryLock = new(1, 1);
@@ -172,6 +203,23 @@ namespace ClinicsManagementService.Services.Infrastructure
         {
             _providerSessionIds.TryGetValue(moderatorId, out var id);
             return id;
+        }
+
+        public async Task<IDisposable?> AcquireOperationLockAsync(int moderatorId, int timeoutMs = 60000)
+        {
+            var operationLock = _operationLocks.GetOrAdd(moderatorId, _ => new SemaphoreSlim(1, 1));
+            
+            _notifier.Notify($"🔒 [Moderator {moderatorId}] Attempting to acquire operation lock...");
+            
+            bool acquired = await operationLock.WaitAsync(timeoutMs);
+            if (!acquired)
+            {
+                _notifier.Notify($"⏱️ [Moderator {moderatorId}] Failed to acquire operation lock - another operation in progress");
+                return null;
+            }
+            
+            _notifier.Notify($"🔐 [Moderator {moderatorId}] Operation lock acquired");
+            return new OperationLockHandle(operationLock, moderatorId, _notifier);
         }
     }
 }

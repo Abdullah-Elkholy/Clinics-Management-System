@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { useSelectDialog } from '@/contexts/SelectDialogContext';
+import { useSignalR as useSignalRContext } from '@/contexts/SignalRContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import ModeratorMessagesOverview from './ModeratorMessagesOverview';
@@ -21,7 +22,6 @@ import logger from '@/utils/logger';
 import type { MessageCondition } from '@/types/messageCondition';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import { getConditionRange, conditionsOverlap } from '@/utils/moderatorAggregation';
-// Mock data removed - using API data instead
 
 /**
  * Minimal Messages Panel - Focused on Queue Template Management
@@ -115,47 +115,130 @@ export default function MessagesPanel() {
       userManagementActions.fetchUsers();
       userManagementActions.fetchModerators();
     }
-  }, [user, userManagementActions]);
+  }, [user]); // Only depend on user, not userManagementActions to prevent infinite loops
 
   /**
    * Listen for data updates and refetch queue data
-   * Debounced to prevent excessive API calls when multiple events fire simultaneously
+   * FIXED: Prevents infinite loop by using stable queue IDs and refs
+   * See: PERFORMANCE_RESEARCH_AND_CDC_ANALYSIS.md Section 14.3.2
    */
+  // Stable queue IDs to prevent effect re-runs when queue array reference changes
+  // Compute IDs string and use a ref to track previous value for comparison
+  const queueIdsRef = useRef<string>('');
+  const queueIds = useMemo(() => {
+    // Compute sorted IDs string
+    const sortedIds = [...queues]
+      .map(q => String(q.id))
+      .sort((a, b) => a.localeCompare(b));
+    const idsString = sortedIds.join(',');
+    
+    // Only return new value if IDs actually changed (value comparison, not reference)
+    if (idsString !== queueIdsRef.current) {
+      queueIdsRef.current = idsString;
+    }
+    
+    return queueIdsRef.current;
+  }, [
+    // Depend on length and a stable representation of the IDs
+    // The sorted/joined string will be the same if IDs are the same, even if computed multiple times
+    queues.length,
+    // Create a stable string by sorting and joining - this creates a new string each time,
+    // but useMemo will only trigger effects when the actual value changes (React compares by value for strings)
+    queues.map(q => String(q.id)).sort((a, b) => a.localeCompare(b)).join(',')
+  ]);
+  
+  // Refs for preventing concurrent refreshes and rapid successive calls
+  const isRefreshingRef = useRef(false);
+  const lastRefreshTimeRef = useRef<Map<string, number>>(new Map());
+  const refreshQueueDataRef = useRef(refreshQueueData);
+  // Track which queues are currently being loaded to prevent duplicate requests
+  const loadingQueuesRef = useRef<Set<string>>(new Set());
+
+  // Keep ref updated
+  useEffect(() => {
+    refreshQueueDataRef.current = refreshQueueData;
+  }, [refreshQueueData]);
+
   useEffect(() => {
     let debounceTimer: NodeJS.Timeout | null = null;
-    let isRefreshing = false;
+    let lastThrottleTime = 0;
+    const DEBOUNCE_MS = 2000; // Increased from 1000ms to 2000ms for better batching
+    const THROTTLE_MS = 10000; // Increased from 5s to 10s - max once per 10 seconds
+    const MIN_REFRESH_INTERVAL_MS = 5000; // Increased from 2s to 5s - min 5 seconds between same queue refreshes
 
-    const handleDataUpdate = async () => {
-      // Debounce: wait 500ms before executing to batch multiple rapid events
+    const handleDataUpdate = async (event?: Event) => {
+      // Debounce: wait before executing to batch multiple rapid events
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
 
       debounceTimer = setTimeout(async () => {
+        // Throttle: prevent execution if called too frequently
+        const now = Date.now();
+        if (now - lastThrottleTime < THROTTLE_MS) {
+          logger.debug('MessagesPanel: Throttled refresh (too soon after last refresh)');
+          return;
+        }
+        lastThrottleTime = now;
+
         // Prevent concurrent refreshes
-        if (isRefreshing) return;
-        isRefreshing = true;
+        if (isRefreshingRef.current) {
+          logger.debug('MessagesPanel: Skipping refresh (already in progress)');
+          return;
+        }
+
+        isRefreshingRef.current = true;
 
         try {
-          // Only refresh if queues exist and function is available
-          if (queues.length > 0 && typeof refreshQueueData === 'function') {
-            // Batch queue refreshes: process in chunks of 5 to avoid overwhelming the server
-            const queueChunks = [];
-            for (let i = 0; i < queues.length; i += 5) {
-              queueChunks.push(queues.slice(i, i + 5));
-            }
+          // Extract queueId from event detail if available (for targeted refresh)
+          const queueIdFromEvent = (event as CustomEvent)?.detail?.queueId;
+          const queueIdsArray = queueIds.split(',').filter(Boolean);
 
-            // Process chunks sequentially to limit concurrent requests
-            for (const chunk of queueChunks) {
-              await Promise.all(
-                chunk.map(async (queue) => {
-                  try {
-                    await refreshQueueData(String(queue.id));
-                  } catch (err) {
-                    logger.error(`Failed to refresh queue ${queue.id}:`, err);
-                  }
-                })
-              );
+          if (queueIdFromEvent) {
+            // Targeted refresh: only refresh the specific queue that changed
+            const queueId = String(queueIdFromEvent);
+            const lastRefreshTime = lastRefreshTimeRef.current.get(queueId) || 0;
+            
+            if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
+              logger.debug(`MessagesPanel: Skipping queue ${queueId} refresh (too soon after last refresh)`);
+            } else {
+              try {
+                await refreshQueueDataRef.current(queueId);
+                lastRefreshTimeRef.current.set(queueId, now);
+                logger.debug(`MessagesPanel: Refreshed queue ${queueId}`);
+              } catch (err) {
+                logger.error(`MessagesPanel: Failed to refresh queue ${queueId}:`, err);
+              }
+            }
+          } else {
+            // Fallback: refresh all queues (but with deduplication and sequential processing)
+            // OPTIMIZED: Process queues sequentially (one at a time) instead of in batches
+            // This reduces server load significantly
+            if (queueIdsArray.length > 0 && typeof refreshQueueDataRef.current === 'function') {
+              const DELAY_BETWEEN_REQUESTS_MS = 400; // 400ms delay between each request
+              
+              // Process queues sequentially with delays to reduce server load
+              for (const queueId of queueIdsArray) {
+                const lastRefreshTime = lastRefreshTimeRef.current.get(queueId) || 0;
+                
+                if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
+                  logger.debug(`MessagesPanel: Skipping queue ${queueId} refresh (too soon)`);
+                  continue;
+                }
+
+                try {
+                  await refreshQueueDataRef.current(queueId);
+                  lastRefreshTimeRef.current.set(queueId, now);
+                  logger.debug(`MessagesPanel: Refreshed queue ${queueId}`);
+                } catch (err) {
+                  logger.error(`MessagesPanel: Failed to refresh queue ${queueId}:`, err);
+                }
+                
+                // Add delay between requests (except for the last one)
+                if (queueIdsArray.indexOf(queueId) < queueIdsArray.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_REQUESTS_MS));
+                }
+              }
             }
           }
           
@@ -165,11 +248,12 @@ export default function MessagesPanel() {
             setUserQuota(quota);
           } catch (err) {
             // Silently fail quota refetch
+            logger.debug('MessagesPanel: Failed to refresh quota:', err);
           }
         } finally {
-          isRefreshing = false;
+          isRefreshingRef.current = false;
         }
-      }, 500); // 500ms debounce
+      }, DEBOUNCE_MS);
     };
 
     // Listen to all relevant update events
@@ -189,16 +273,117 @@ export default function MessagesPanel() {
       window.removeEventListener('conditionDataUpdated', handleDataUpdate);
       window.removeEventListener('messageDataUpdated', handleDataUpdate);
     };
-  }, [queues, refreshQueueData]);
+  }, [queueIds]); // Only depends on stable queueIds string
 
-  // Toggle queue expansion
+  /**
+   * SignalR Integration: Listen for real-time updates
+   * Uses shared SignalRContext connection to avoid duplicate connections
+   * Replaces polling with push-based updates for templates, queues, conditions
+   */
+  const { connection, isConnected } = useSignalRContext();
+
+  useEffect(() => {
+    // Only subscribe when connection is ready and connected
+    if (!connection || !isConnected) {
+      logger.debug('MessagesPanel: SignalR connection not ready, skipping event subscription');
+      return;
+    }
+
+    const handleTemplateUpdate = () => {
+      logger.debug('MessagesPanel: Received TemplateUpdated event via SignalR');
+      // Trigger data refresh (will be debounced by handleDataUpdate logic)
+      window.dispatchEvent(new Event('templateDataUpdated'));
+    };
+
+    const handleTemplateDelete = () => {
+      logger.debug('MessagesPanel: Received TemplateDeleted event via SignalR');
+      window.dispatchEvent(new Event('templateDataUpdated'));
+    };
+
+    const handleQueueUpdate = () => {
+      logger.debug('MessagesPanel: Received QueueUpdated event via SignalR');
+      window.dispatchEvent(new Event('queueDataUpdated'));
+    };
+
+    const handleConditionUpdate = () => {
+      logger.debug('MessagesPanel: Received ConditionUpdated event via SignalR');
+      window.dispatchEvent(new Event('conditionDataUpdated'));
+    };
+
+    const handleConditionDelete = () => {
+      logger.debug('MessagesPanel: Received ConditionDeleted event via SignalR');
+      window.dispatchEvent(new Event('conditionDataUpdated'));
+    };
+
+    // Subscribe to relevant SignalR events only when connected
+    try {
+      connection.on('TemplateUpdated', handleTemplateUpdate);
+      connection.on('TemplateDeleted', handleTemplateDelete);
+      connection.on('QueueUpdated', handleQueueUpdate);
+      connection.on('ConditionUpdated', handleConditionUpdate);
+      connection.on('ConditionDeleted', handleConditionDelete);
+      logger.debug('MessagesPanel: Successfully subscribed to SignalR events');
+    } catch (error) {
+      logger.error('MessagesPanel: Error subscribing to SignalR events:', error);
+    }
+
+    return () => {
+      // Cleanup: unsubscribe from events
+      if (connection) {
+        try {
+          connection.off('TemplateUpdated', handleTemplateUpdate);
+          connection.off('TemplateDeleted', handleTemplateDelete);
+          connection.off('QueueUpdated', handleQueueUpdate);
+          connection.off('ConditionUpdated', handleConditionUpdate);
+          connection.off('ConditionDeleted', handleConditionDelete);
+          logger.debug('MessagesPanel: Unsubscribed from SignalR events');
+        } catch (error) {
+          logger.error('MessagesPanel: Error unsubscribing from SignalR events:', error);
+        }
+      }
+    };
+  }, [connection, isConnected]);
+
+  // Toggle queue expansion with lazy loading
   const toggleQueueExpanded = useCallback((queueId: string | number) => {
     setExpandedQueues((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(queueId)) {
-        newSet.delete(queueId);
+      const queueIdStr = String(queueId);
+      const isCurrentlyExpanded = newSet.has(queueIdStr);
+      
+      if (isCurrentlyExpanded) {
+        // Collapsing - just remove from set
+        newSet.delete(queueIdStr);
       } else {
-        newSet.add(queueId);
+        // Expanding - add to set and trigger lazy load
+        newSet.add(queueIdStr);
+        // Lazy load queue data when expanded (with debounce to avoid rapid clicks)
+        setTimeout(async () => {
+          // Prevent duplicate requests
+          if (loadingQueuesRef.current.has(queueIdStr)) return;
+          
+          // Check if recently loaded (within last 5 seconds)
+          const lastRefreshTime = lastRefreshTimeRef.current.get(queueIdStr) || 0;
+          const now = Date.now();
+          const MIN_REFRESH_INTERVAL_MS = 5000;
+          
+          if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
+            logger.debug(`MessagesPanel: Queue ${queueIdStr} was recently loaded, skipping`);
+            return;
+          }
+          
+          loadingQueuesRef.current.add(queueIdStr);
+          
+          try {
+            await refreshQueueDataRef.current(queueIdStr);
+            lastRefreshTimeRef.current.set(queueIdStr, now);
+            logger.debug(`MessagesPanel: Loaded queue ${queueIdStr} on expand`);
+          } catch (err) {
+            logger.error(`MessagesPanel: Failed to load queue ${queueIdStr}:`, err);
+          } finally {
+            loadingQueuesRef.current.delete(queueIdStr);
+          }
+        }, 100); // Small delay to allow UI to update first
       }
       return newSet;
     });
@@ -390,7 +575,12 @@ export default function MessagesPanel() {
     const baseStats = {
       total: quotaData.limit,
       used: quotaData.used,
-      remaining: quotaData.limit - quotaData.used,
+      remaining: quotaData.limit === -1 ? -1 : quotaData.limit - quotaData.used,
+    };
+
+    // Format value for display: show "غير محدود" for -1
+    const formatQuotaValue = (value: number): string => {
+      return value === -1 ? 'غير محدود' : value.toLocaleString('ar-SA');
     };
 
     // Since we're in moderator view (admins are redirected to ModeratorMessagesOverview)
@@ -398,19 +588,19 @@ export default function MessagesPanel() {
     return [
       {
         label: 'حصتي من الرسائل',
-        value: baseStats.total.toString(),
+        value: formatQuotaValue(baseStats.total),
         color: 'blue' as const,
         info: 'عدد الرسائل المسموح لي بإرسالها'
       },
       {
         label: 'الرسائل المستخدمة',
-        value: baseStats.used.toString(),
+        value: baseStats.used.toLocaleString('ar-SA'),
         color: 'yellow' as const,
         info: 'من حصتي الشخصية'
       },
       {
         label: 'الرسائل المتبقية',
-        value: baseStats.remaining.toString(),
+        value: formatQuotaValue(baseStats.remaining),
         color: 'green' as const,
         info: ''
       },

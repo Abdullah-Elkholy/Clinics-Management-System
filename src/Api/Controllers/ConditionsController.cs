@@ -33,6 +33,35 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
+        /// Helper method to get effective moderator ID for the current user.
+        /// Moderators use their own ID, regular users use their assigned ModeratorId.
+        /// </summary>
+        private async Task<(int? moderatorId, bool isAdmin)> GetEffectiveModeratorIdAsync()
+        {
+            var userId = _userContext.GetUserId();
+            var currentUser = await _context.Set<Domain.User>()
+                .Where(u => u.Id == userId && !u.IsDeleted)
+                .FirstOrDefaultAsync();
+
+            if (currentUser == null)
+                return (null, false);
+
+            var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+            
+            int? moderatorId = null;
+            if (currentUser.Role == "moderator")
+            {
+                moderatorId = currentUser.Id;
+            }
+            else if (currentUser.Role == "user" && currentUser.ModeratorId.HasValue)
+            {
+                moderatorId = currentUser.ModeratorId.Value;
+            }
+
+            return (moderatorId, isAdmin);
+        }
+
+        /// <summary>
     /// GET /api/conditions?queueId=1
     /// Get all conditions for a specific queue.
     /// Returns only real conditions from the database (no synthetic items).
@@ -47,8 +76,14 @@ namespace Clinics.Api.Controllers
             if (queue == null)
                 return NotFound(new { message = "Queue not found" });
 
-            var moderatorId = _userContext.GetModeratorId();
-            if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
+            // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+            var (moderatorId, isAdmin) = await GetEffectiveModeratorIdAsync();
+            
+            if (moderatorId == null && !isAdmin)
+                return Unauthorized(new { message = "User not found or invalid" });
+
+            // Verify access: queue must belong to the user's moderator, or user must be admin
+            if (!isAdmin && (!moderatorId.HasValue || queue.ModeratorId != moderatorId.Value))
                 return Forbid();
 
             // Get all non-deleted conditions for this queue (no need to Include Template - we use TemplateId FK directly)
@@ -123,8 +158,35 @@ namespace Clinics.Api.Controllers
             if (queue == null)
                 return NotFound(new { message = "Queue not found" });
 
-            var moderatorId = _userContext.GetModeratorId();
-            if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
+            // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+            // This matches the logic in TemplatesController to ensure consistency
+            var userId = _userContext.GetUserId();
+            var currentUser = await _context.Set<Domain.User>()
+                .Where(u => u.Id == userId && !u.IsDeleted)
+                .FirstOrDefaultAsync();
+
+            if (currentUser == null)
+                return Unauthorized(new { message = "User not found" });
+
+            var isAdmin = _userContext.IsAdmin();
+            
+            int? moderatorId = null;
+            if (currentUser.Role == "moderator")
+            {
+                moderatorId = currentUser.Id;
+            }
+            else if (currentUser.Role == "user" && currentUser.ModeratorId.HasValue)
+            {
+                moderatorId = currentUser.ModeratorId.Value;
+            }
+            else if (isAdmin)
+            {
+                // Admins can access any queue
+                moderatorId = null; // Will be checked with IsAdmin() below
+            }
+
+            // Verify access: queue must belong to the user's moderator, or user must be admin
+            if (!isAdmin && (!moderatorId.HasValue || queue.ModeratorId != moderatorId.Value))
                 return Forbid();
 
                 var dto = new ConditionDto
@@ -177,8 +239,14 @@ namespace Clinics.Api.Controllers
             if (queue == null)
                 return NotFound(new { message = "Queue not found" });
 
-            var moderatorId = _userContext.GetModeratorId();
-            if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
+            // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+            var (moderatorId, isAdmin) = await GetEffectiveModeratorIdAsync();
+            
+            if (moderatorId == null && !isAdmin)
+                return Unauthorized(new { message = "User not found or invalid" });
+
+            // Verify access: queue must belong to the user's moderator, or user must be admin
+            if (!isAdmin && (!moderatorId.HasValue || queue.ModeratorId != moderatorId.Value))
                 return Forbid();
 
             // Validate operator and values
@@ -289,8 +357,14 @@ namespace Clinics.Api.Controllers
             if (queue == null)
                 return NotFound(new { message = "Queue not found" });
 
-            var moderatorId = _userContext.GetModeratorId();
-            if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
+            // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+            var (moderatorId, isAdmin) = await GetEffectiveModeratorIdAsync();
+            
+            if (moderatorId == null && !isAdmin)
+                return Unauthorized(new { message = "User not found or invalid" });
+
+            // Verify access: queue must belong to the user's moderator, or user must be admin
+            if (!isAdmin && (!moderatorId.HasValue || queue.ModeratorId != moderatorId.Value))
                 return Forbid();
 
             // Track original operator to detect state changes (DEFAULT <-> active operator)
@@ -493,8 +567,14 @@ namespace Clinics.Api.Controllers
             if (queue == null)
                 return NotFound(new { message = "Queue not found" });
 
-            var moderatorId = _userContext.GetModeratorId();
-            if (queue.ModeratorId != moderatorId && !_userContext.IsAdmin())
+            // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
+            var (moderatorId, isAdmin) = await GetEffectiveModeratorIdAsync();
+            
+            if (moderatorId == null && !isAdmin)
+                return Unauthorized(new { message = "User not found or invalid" });
+
+            // Verify access: queue must belong to the user's moderator, or user must be admin
+            if (!isAdmin && (!moderatorId.HasValue || queue.ModeratorId != moderatorId.Value))
                 return Forbid();
 
             // Delete condition and update template's UpdatedAt atomically

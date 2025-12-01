@@ -31,5 +31,15 @@ namespace ClinicsManagementService.Services.Interfaces
         /// <param name="moderatorUserId">Moderator user ID</param>
         /// <returns>True if session is paused due to PendingQR</returns>
         Task<bool> CheckIfSessionPausedDueToPendingQRAsync(int moderatorUserId);
+
+        /// <summary>
+        /// Pause WhatsAppSession globally for the specified moderator
+        /// This sets IsPaused=true on the WhatsAppSession entity with the specified PauseReason
+        /// </summary>
+        /// <param name="moderatorUserId">Moderator user ID</param>
+        /// <param name="pausedBy">Optional user ID who triggered the pause</param>
+        /// <param name="pauseReason">Reason for pause (PendingQR, BrowserClosure, PendingNET, etc.)</param>
+        /// <returns>True if session was paused successfully</returns>
+        Task<bool> PauseSessionDueToPendingQRAsync(int moderatorUserId, int? pausedBy = null, string pauseReason = "PendingQR");
     }
 }

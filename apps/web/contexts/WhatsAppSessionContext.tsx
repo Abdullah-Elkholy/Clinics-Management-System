@@ -1,8 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { whatsappApiClient } from '@/services/api/whatsappApiClient';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { whatsappApiClient, GlobalPauseState } from '@/services/api/whatsappApiClient';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSignalR } from '@/contexts/SignalRContext';
 
 // Reuse API base URL logic (mirrors other api clients)
 const getApiBaseUrl = (): string => {
@@ -54,10 +55,12 @@ interface WhatsAppSessionContextValue {
   sessionStatus: WhatsAppSessionStatus;
   sessionData: WhatsAppSessionData | null;
   sessionHealth: WhatsAppSessionHealth | null;
+  globalPauseState: GlobalPauseState | null;
   isLoading: boolean;
   error: string | null;
   refreshSessionStatus: () => Promise<void>;
   refreshSessionHealth: () => Promise<void>;
+  refreshGlobalPauseState: () => Promise<void>;
   checkAuthentication: () => Promise<{ isSuccess?: boolean; state?: string; resultMessage?: string }>;
   startAuthentication: () => Promise<{ isSuccess?: boolean; state?: string; resultMessage?: string }>;
 }
@@ -71,11 +74,16 @@ interface WhatsAppSessionProviderProps {
 
 export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessionProviderProps) {
   const { user } = useAuth();
+  const { on, off } = useSignalR();
   const [sessionStatus, setSessionStatus] = useState<WhatsAppSessionStatus>(null);
   const [sessionData, setSessionData] = useState<WhatsAppSessionData | null>(null);
   const [sessionHealth, setSessionHealth] = useState<WhatsAppSessionHealth | null>(null);
+  const [globalPauseState, setGlobalPauseState] = useState<GlobalPauseState | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Track previous moderatorId to detect changes and force refresh
+  const previousModeratorIdRef = useRef<number | undefined>(moderatorId);
 
   const refreshSessionStatus = useCallback(async () => {
     if (!moderatorId) {
@@ -120,7 +128,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         const data: WhatsAppSessionData = result.data;
         setSessionData(data);
         
-        // Normalize status to our type
+        // Normalize status to our type (will be overridden by global pause state if needed)
         const status = data.status?.toLowerCase();
         if (status === 'connected' || status === 'pending' || status === 'disconnected') {
           setSessionStatus(status as WhatsAppSessionStatus);
@@ -131,6 +139,27 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         setSessionStatus('disconnected');
         setSessionData(null);
       }
+      
+      // After fetching session data, check global pause state to override status if needed
+      // This is done separately to avoid circular dependency
+      if (moderatorId) {
+        try {
+          const pauseState = await whatsappApiClient.getGlobalPauseState(moderatorId);
+          setGlobalPauseState(pauseState);
+          
+          // Override status based on global pause state
+          if (pauseState.isPaused) {
+            if (pauseState.pauseReason?.includes('PendingQR')) {
+              setSessionStatus('pending');
+            } else if (pauseState.pauseReason?.includes('PendingNET') || pauseState.pauseReason?.includes('BrowserClosure')) {
+              setSessionStatus('disconnected');
+            }
+          }
+        } catch (err) {
+          // Silently fail - don't break session status if pause state check fails
+          console.error('[WhatsAppSessionContext] Error fetching global pause state in refreshSessionStatus:', err);
+        }
+      }
     } catch (err: any) {
       console.error('Error fetching WhatsApp session status:', err);
       setError(err.message || 'فشل في جلب حالة جلسة الواتساب');
@@ -139,6 +168,33 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       setIsLoading(false);
     }
   }, [moderatorId]);
+  
+  const refreshGlobalPauseState = useCallback(async () => {
+    if (!moderatorId) {
+      setGlobalPauseState(null);
+      return;
+    }
+
+    try {
+      const state = await whatsappApiClient.getGlobalPauseState(moderatorId);
+      setGlobalPauseState(state);
+      
+      // Update session status based on global pause state
+      if (state.isPaused) {
+        if (state.pauseReason?.includes('PendingQR')) {
+          setSessionStatus('pending');
+        } else if (state.pauseReason?.includes('PendingNET') || state.pauseReason?.includes('BrowserClosure')) {
+          setSessionStatus('disconnected');
+        }
+      } else {
+        // Refresh session status from database when not paused
+        await refreshSessionStatus();
+      }
+    } catch (err: any) {
+      console.error('[WhatsAppSessionContext] Error fetching global pause state:', err);
+      // Don't set error state - just log it
+    }
+  }, [moderatorId, refreshSessionStatus]);
 
   const checkAuthentication = useCallback(async () => {
     try {
@@ -156,8 +212,11 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         setSessionStatus('disconnected');
       }
       
-      // Also refresh from database to sync
-      await refreshSessionStatus();
+      // Refresh both session status and global pause state from database to sync
+      await Promise.all([
+        refreshSessionStatus(),
+        refreshGlobalPauseState()
+      ]);
       
       return result;
     } catch (err: any) {
@@ -168,7 +227,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         resultMessage: err.message || 'فشل التحقق من المصادقة',
       };
     }
-  }, [moderatorId, refreshSessionStatus]);
+  }, [moderatorId, refreshSessionStatus, refreshGlobalPauseState, user]);
 
   const refreshSessionHealth = useCallback(async () => {
     if (!moderatorId) {
@@ -200,8 +259,11 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         setSessionStatus('pending');
       }
       
-      // Refresh from database to sync
-      await refreshSessionStatus();
+      // Refresh both session status and global pause state from database to sync
+      await Promise.all([
+        refreshSessionStatus(),
+        refreshGlobalPauseState()
+      ]);
       
       return result;
     } catch (err: any) {
@@ -213,7 +275,53 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         resultMessage: err.message || 'فشل بدء المصادقة',
       };
     }
-  }, [moderatorId, refreshSessionStatus]);
+  }, [moderatorId, refreshSessionStatus, refreshGlobalPauseState]);
+
+  // Listen for WhatsAppSessionUpdated SignalR events
+  useEffect(() => {
+    if (!moderatorId) return;
+
+    const handleWhatsAppSessionUpdate = (payload: any) => {
+      // Only process events for this moderator
+      if (payload.moderatorUserId === moderatorId) {
+        console.log('[WhatsAppSessionContext] WhatsAppSessionUpdated event received', payload);
+        
+        // Update session data
+        if (payload.status) {
+          setSessionStatus(payload.status as WhatsAppSessionStatus);
+        }
+        
+        // Update session data state
+        setSessionData({
+          id: payload.id,
+          moderatorUserId: payload.moderatorUserId,
+          sessionName: payload.sessionName,
+          status: payload.status,
+          lastSyncAt: payload.lastSyncAt,
+          createdAt: payload.createdAt || new Date().toISOString(),
+          providerSessionId: payload.providerSessionId,
+        });
+
+        // Update global pause state
+        setGlobalPauseState({
+          isPaused: payload.isPaused || false,
+          pauseReason: payload.pauseReason,
+          pausedAt: payload.pausedAt,
+          pausedBy: payload.pausedBy,
+        });
+
+        // Optionally refresh from database for full sync
+        refreshSessionStatus();
+        refreshGlobalPauseState();
+      }
+    };
+
+    on('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
+
+    return () => {
+      off('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
+    };
+  }, [moderatorId, on, off, refreshSessionStatus, refreshGlobalPauseState]);
 
   // Listen for pendingQR events from API calls
   useEffect(() => {
@@ -231,32 +339,86 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       }
     };
 
+    const handleNetworkFailure = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const eventModeratorId = customEvent.detail?.moderatorUserId;
+      
+      if (!eventModeratorId || eventModeratorId === moderatorId) {
+        console.log('[WhatsAppSessionContext] networkFailure event detected, refreshing status');
+        setSessionStatus('disconnected');
+        refreshGlobalPauseState();
+      }
+    };
+
+    const handleBrowserClosed = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const eventModeratorId = customEvent.detail?.moderatorUserId;
+      
+      if (!eventModeratorId || eventModeratorId === moderatorId) {
+        console.log('[WhatsAppSessionContext] browserClosed event detected, refreshing status');
+        setSessionStatus('disconnected');
+        refreshGlobalPauseState();
+      }
+    };
+
     window.addEventListener('whatsapp:pendingQR', handlePendingQR);
+    window.addEventListener('whatsapp:networkFailure', handleNetworkFailure);
+    window.addEventListener('whatsapp:browserClosed', handleBrowserClosed);
     
     return () => {
       window.removeEventListener('whatsapp:pendingQR', handlePendingQR);
+      window.removeEventListener('whatsapp:networkFailure', handleNetworkFailure);
+      window.removeEventListener('whatsapp:browserClosed', handleBrowserClosed);
     };
-  }, [moderatorId, refreshSessionStatus]);
+  }, [moderatorId, refreshSessionStatus, refreshGlobalPauseState]);
 
-  // Initial fetch
+  // Initial fetch - only if moderatorId is available
+  // Also refresh when moderatorId changes (e.g., user logs in/out or switches accounts)
   useEffect(() => {
-    refreshSessionStatus();
-    refreshSessionHealth();
-  }, [refreshSessionStatus, refreshSessionHealth]);
+    // Check if moderatorId changed
+    const moderatorIdChanged = previousModeratorIdRef.current !== moderatorId;
+    previousModeratorIdRef.current = moderatorId;
+    
+    if (moderatorId) {
+      // Refresh session status and global pause state when moderatorId is available or changed
+      // This ensures status updates when user logs in or switches accounts
+      refreshSessionStatus();
+      refreshSessionHealth();
+      refreshGlobalPauseState();
+    } else {
+      // No moderatorId - set disconnected state
+      setSessionStatus('disconnected');
+      setSessionData(null);
+      setSessionHealth(null);
+      setGlobalPauseState(null);
+    }
+  }, [moderatorId, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState]);
 
   // Poll every 15 seconds (reduced frequency to save resources)
-  // Only poll when tab is visible
+  // Only poll when tab is visible and moderatorId is available
   useEffect(() => {
-    if (!moderatorId) return;
+    if (!moderatorId) {
+      // No moderatorId - set disconnected state and stop polling
+      setSessionStatus('disconnected');
+      setSessionData(null);
+      setSessionHealth(null);
+      return;
+    }
     
     // Don't poll if tab is hidden
     if (document.hidden) return;
 
+    // Initial poll when moderatorId changes
+    refreshSessionStatus();
+    refreshSessionHealth();
+    refreshGlobalPauseState();
+
     const interval = setInterval(() => {
-      // Only poll if tab is visible
-      if (!document.hidden) {
+      // Only poll if tab is visible and moderatorId is still valid
+      if (!document.hidden && moderatorId) {
         refreshSessionStatus();
         refreshSessionHealth();
+        refreshGlobalPauseState();
       }
     }, 15000); // Increased from 10 seconds to 15 seconds
 
@@ -273,16 +435,18 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [moderatorId, refreshSessionStatus, refreshSessionHealth]);
+  }, [moderatorId, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState]);
 
   const value: WhatsAppSessionContextValue = {
     sessionStatus,
     sessionData,
     sessionHealth,
+    globalPauseState,
     isLoading,
     error,
     refreshSessionStatus,
     refreshSessionHealth,
+    refreshGlobalPauseState,
     checkAuthentication,
     startAuthentication,
   };

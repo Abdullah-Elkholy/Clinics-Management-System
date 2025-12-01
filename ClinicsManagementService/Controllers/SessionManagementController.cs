@@ -69,27 +69,6 @@ namespace ClinicsManagementService.Controllers
         }
 
         /// <summary>
-        /// Manually optimizes the current session (cleanup only, no backup)
-        /// </summary>
-        /// <returns>Optimization result</returns>
-        [HttpPost("optimize")]
-        public async Task<ActionResult<OperationResult<bool>>> OptimizeSession([FromQuery] int moderatorUserId)
-        {
-            try
-            {
-                _notifier.Notify("🔧 Manual session optimization requested...");
-                await _sessionOptimizer.OptimizeCurrentSessionOnlyAsync(moderatorUserId);
-                _notifier.Notify("✅ Session optimized successfully (no backup created)");
-                return Ok(OperationResult<bool>.Success(true));
-            }
-            catch (Exception ex)
-            {
-                _notifier.Notify($"❌ Session optimization failed: {ex.Message}");
-                return Ok(OperationResult<bool>.Failure($"Optimization failed: {ex.Message}"));
-            }
-        }
-
-        /// <summary>
         /// Checks if session size exceeds threshold and auto-restores if needed
         /// </summary>
         /// <returns>Check and restore result</returns>

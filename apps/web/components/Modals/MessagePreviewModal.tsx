@@ -585,18 +585,41 @@ export default function MessagePreviewModal() {
       return;
     }
 
-    // Check ALL patients' IsValidWhatsAppNumber attribute from database
+    // Check ALL patients' IsValidWhatsAppNumber attribute
+    // CRITICAL: Use validationStatus (which has fresh data) instead of previewPatients (which may be stale)
+    // validationStatus is updated immediately after successful validation
     // Separate into: valid (true), invalid (false), and unvalidated (null)
-    const validPatients = patientsToSend.filter((item) => 
-      item.patient?.isValidWhatsAppNumber === true
-    );
-    const invalidPatients = patientsToSend.filter((item) => 
-      item.patient?.isValidWhatsAppNumber === false
-    );
-    const unvalidatedPatients = patientsToSend.filter((item) => 
-      item.patient?.isValidWhatsAppNumber !== true && 
-      item.patient?.isValidWhatsAppNumber !== false
-    );
+    const validPatients = patientsToSend.filter((item) => {
+      const patientId = String(item.patientId);
+      const status = validationStatus[patientId];
+      // Check validationStatus first (fresh data), then fallback to patient data
+      if (status) {
+        return status.isValid === true;
+      }
+      // Fallback to patient data if no validation status exists
+      return item.patient?.isValidWhatsAppNumber === true;
+    });
+    const invalidPatients = patientsToSend.filter((item) => {
+      const patientId = String(item.patientId);
+      const status = validationStatus[patientId];
+      // Check validationStatus first (fresh data), then fallback to patient data
+      if (status) {
+        return status.isValid === false;
+      }
+      // Fallback to patient data if no validation status exists
+      return item.patient?.isValidWhatsAppNumber === false;
+    });
+    const unvalidatedPatients = patientsToSend.filter((item) => {
+      const patientId = String(item.patientId);
+      const status = validationStatus[patientId];
+      // Check validationStatus first (fresh data), then fallback to patient data
+      if (status) {
+        return status.isValid !== true && status.isValid !== false;
+      }
+      // Fallback to patient data if no validation status exists
+      return item.patient?.isValidWhatsAppNumber !== true && 
+             item.patient?.isValidWhatsAppNumber !== false;
+    });
 
     // Reject if ANY patient is invalid (false) or unvalidated (null)
     if (invalidPatients.length > 0) {
@@ -666,13 +689,36 @@ export default function MessagePreviewModal() {
     } catch (err: any) {
       // Handle PendingQR errors (authentication required)
       if (err?.error === 'PendingQR' || err?.code === 'AUTHENTICATION_REQUIRED' || err?.message?.includes('المصادقة')) {
-        addToast(
-          err?.message || 'جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.',
-          'error'
-        );
+        const message = err?.message || 'جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.';
+        addToast(message, err?.warning ? 'warning' : 'error');
+        
         // Dispatch event to notify WhatsApp session context
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
+            detail: { moderatorUserId: moderatorUserId, source: 'sendMessages' }
+          }));
+        }
+      }
+      // Handle PendingNET errors (network failure)
+      else if (err?.error === 'PendingNET' || err?.code === 'NETWORK_FAILURE' || err?.message?.includes('الاتصال بالإنترنت')) {
+        const message = err?.message || 'فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية. يرجى التحقق من الاتصال والمحاولة مرة أخرى.';
+        addToast(message, err?.warning ? 'warning' : 'error');
+        
+        // Dispatch event to notify about network failure
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('whatsapp:networkFailure', {
+            detail: { moderatorUserId: moderatorUserId, source: 'sendMessages' }
+          }));
+        }
+      }
+      // Handle BrowserClosure errors (browser closed)
+      else if (err?.error === 'BrowserClosure' || err?.code === 'BROWSER_CLOSED' || err?.message?.includes('إغلاق المتصفح')) {
+        const message = err?.message || 'تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية. يرجى إعادة فتح المتصفح والمحاولة مرة أخرى.';
+        addToast(message, err?.warning ? 'warning' : 'error');
+        
+        // Dispatch event to notify about browser closure
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('whatsapp:browserClosed', {
             detail: { moderatorUserId: moderatorUserId, source: 'sendMessages' }
           }));
         }
@@ -888,6 +934,11 @@ export default function MessagePreviewModal() {
             await patientsApiClient.updatePatient(patientIdNum, {
               isValidWhatsAppNumber: true,
             });
+            
+            // Refresh patient data in context to update UI with latest database value
+            if (queueId) {
+              await refreshPatients(queueId);
+            }
           }
         } catch (dbError) {
           // Log error but don't block UI - validation succeeded, just DB update failed
@@ -912,6 +963,11 @@ export default function MessagePreviewModal() {
             await patientsApiClient.updatePatient(patientIdNum, {
               isValidWhatsAppNumber: false,
             });
+            
+            // Refresh patient data in context to update UI with latest database value
+            if (queueId) {
+              await refreshPatients(queueId);
+            }
           }
         } catch (dbError) {
           // Log error but don't block UI - validation succeeded, just DB update failed
@@ -1193,20 +1249,25 @@ export default function MessagePreviewModal() {
   // Refresh patient data and trigger validation when modal opens
   useEffect(() => {
     if (isOpen && queueId && selectedPatientIds.length > 0) {
+      // Reset all state first
+      setValidationStatus({});
+      setRemovedPatients([]);
+      setValidationProgress({ current: 0, total: 0 });
+      setValidationPaused(false);
+      setShouldResumeValidation(false);
+      abortValidationRef.current = false;
+      
       // Refresh patients from database to get latest IsValidWhatsAppNumber values
       refreshPatients(queueId).then(() => {
         // After refresh, wait a bit for state to update, then validate
         // Use a longer timeout to ensure React state has updated
         setTimeout(() => {
-          // Reset validation status when modal opens
-          setValidationStatus({});
           // Call validateAllPatients - it will use the fresh sortedPatients
           validateAllPatients();
         }, 200);
       }).catch((error) => {
         console.error('Failed to refresh patients:', error);
         // Still try to validate with existing data
-        setValidationStatus({});
         validateAllPatients();
       });
     }
@@ -1424,8 +1485,16 @@ export default function MessagePreviewModal() {
       setIsSending(false);
       setValidationPaused(false);
       setShouldResumeValidation(false);
+      
+      // Refresh patient data in context when modal closes to ensure latest data
+      // This ensures that any validation updates are reflected in the main patient list
+      if (queueId) {
+        refreshPatients(queueId).catch((error) => {
+          console.error('Failed to refresh patients on modal close:', error);
+        });
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, queueId, refreshPatients]);
 
   // Resume validation after single patient retry completes
   useEffect(() => {
@@ -1532,9 +1601,8 @@ export default function MessagePreviewModal() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الترتيب</th>
+                  <th className="px-4 py-2 text-xs font-medium text-gray-600 text-center justify-center">الترتيب (المتبقي)</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الاسم</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الموضع = CQP</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الهاتف</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الرسالة</th>
                   <th className="px-4 py-2 text-center text-xs font-medium text-gray-600">الحالة</th>
@@ -1571,7 +1639,7 @@ export default function MessagePreviewModal() {
                     return (
                       <tr key={resolution.patientId} className="hover:bg-gray-50">
                         <td className="px-4 py-2">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center justify-center gap-1">
                             <span className="font-medium text-gray-900">
                               {resolution.patientPosition}
                             </span>
@@ -1581,20 +1649,6 @@ export default function MessagePreviewModal() {
                           </div>
                         </td>
                         <td className="px-4 py-2">{resolution.patientName}</td>
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900">
-                              {resolution.patientPosition}
-                            </span>
-                            <span className="text-xs text-gray-500">=</span>
-                            <span className="font-medium text-blue-700">
-                              {currentQueuePosition}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              ({resolution.offset > 0 ? '+' : ''}{resolution.offset})
-                            </span>
-                          </div>
-                        </td>
                         <td className={`px-4 py-2 ${
                           (() => {
                             const status = validationStatus[String(resolution.patientId)];
@@ -1651,7 +1705,7 @@ export default function MessagePreviewModal() {
                             <span className="text-red-500 italic text-xs">
                               {resolution.reason === 'EXCLUDED' 
                                 ? 'مستبعد (موضع سابق)' 
-                                : resolution.reason === 'NO_CONDITION_MATCHED'
+                                : resolution.reason === 'NO_MATCH'
                                 ? 'لا يوجد شرط مطابق'
                                 : `لا توجد رسالة (${resolution.reason})`}
                             </span>
@@ -1685,11 +1739,17 @@ export default function MessagePreviewModal() {
             onClick={handleConfirmSend}
             disabled={isSending || isValidating}
             className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            title={isValidating ? 'جاري التحقق من أرقام الواتساب... يرجى الانتظار' : ''}
           >
             {isSending ? (
               <>
                 <i className="fas fa-spinner fa-spin"></i>
                 جاري الإرسال...
+              </>
+            ) : isValidating ? (
+              <>
+                <i className="fas fa-lock"></i>
+                جاري التحقق... ({validationProgress.current}/{validationProgress.total})
               </>
             ) : (
               <>

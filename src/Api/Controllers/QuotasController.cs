@@ -206,12 +206,16 @@ namespace Clinics.Api.Controllers
                 if (existing != null)
                     return BadRequest(new { message = "Quota already exists for this moderator" });
 
+                // Cap values at int.MaxValue to prevent overflow when converting to API format
+                long messagesQuotaValue = request.Limit > int.MaxValue ? int.MaxValue : request.Limit;
+                int queuesQuotaValue = request.QueuesLimit > int.MaxValue ? int.MaxValue : request.QueuesLimit;
+                
                 var quota = new Quota
                 {
                     ModeratorUserId = moderatorId,
-                    MessagesQuota = QuotaHelper.ToDbMessagesQuota(request.Limit),
+                    MessagesQuota = QuotaHelper.ToDbMessagesQuota(messagesQuotaValue),
                     ConsumedMessages = 0,
-                    QueuesQuota = QuotaHelper.ToDbQueuesQuota(request.QueuesLimit),
+                    QueuesQuota = QuotaHelper.ToDbQueuesQuota(queuesQuotaValue),
                     ConsumedQueues = 0,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -252,13 +256,21 @@ namespace Clinics.Api.Controllers
                 if (request.Limit.HasValue)
                 {
                     if (request.Limit.Value == -1 || request.Limit.Value > 0)
-                        existing.MessagesQuota = QuotaHelper.ToDbMessagesQuota(request.Limit.Value);
+                    {
+                        // Cap at int.MaxValue to prevent overflow when converting to API format
+                        long quotaValue = request.Limit.Value > int.MaxValue ? int.MaxValue : request.Limit.Value;
+                        existing.MessagesQuota = QuotaHelper.ToDbMessagesQuota(quotaValue);
+                    }
                 }
                 
                 if (request.QueuesLimit.HasValue)
                 {
                     if (request.QueuesLimit.Value == -1 || request.QueuesLimit.Value > 0)
-                        existing.QueuesQuota = QuotaHelper.ToDbQueuesQuota(request.QueuesLimit.Value);
+                    {
+                        // Cap at int.MaxValue to prevent overflow
+                        int quotaValue = request.QueuesLimit.Value > int.MaxValue ? int.MaxValue : request.QueuesLimit.Value;
+                        existing.QueuesQuota = QuotaHelper.ToDbQueuesQuota(quotaValue);
+                    }
                 }
                 
                 existing.UpdatedAt = DateTime.UtcNow;

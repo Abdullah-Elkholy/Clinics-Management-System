@@ -92,7 +92,7 @@ export interface QuotaDto {
 }
 
 export interface FailedTaskDto {
-  id: number;
+  id: string; // Changed from number to string (Guid)
   queueId: number;
   queueName: string;
   moderatorId: number;
@@ -133,6 +133,10 @@ type LegacyListResponse<T> = Partial<ListResponse<T>> & {
 export interface ApiError {
   message: string;
   statusCode: number;
+  error?: string; // Error code (PendingQR, PendingNET, BrowserClosure, etc.)
+  code?: string; // HTTP error code (AUTHENTICATION_REQUIRED, NETWORK_FAILURE, BROWSER_CLOSED, etc.)
+  warning?: boolean; // Indicates if this is a warning (should show as warning toast, not error)
+  [key: string]: unknown; // Allow additional error fields
 }
 
 const DEFAULT_ERROR_MESSAGE = 'API request failed';
@@ -143,20 +147,16 @@ const extractErrorMessage = (payload: unknown, fallback = DEFAULT_ERROR_MESSAGE)
   }
 
   if (payload && typeof payload === 'object') {
-    // Check for 'error' field first (used by backend for BadRequest responses)
-    if ('error' in payload) {
-      const error = (payload as { error?: unknown }).error;
-      if (typeof error === 'string') {
-        return error || fallback;
-      }
+    const obj = payload as Record<string, unknown>;
+    
+    // Prioritize 'message' field (used by backend for detailed error messages, including Arabic)
+    if ('message' in obj && typeof obj.message === 'string' && obj.message.trim()) {
+      return obj.message;
     }
     
-    // Check for 'message' field (used by backend for other responses)
-    if ('message' in payload) {
-      const message = (payload as { message?: unknown }).message;
-      if (typeof message === 'string') {
-        return message || fallback;
-      }
+    // Fallback to 'error' field (used by backend for BadRequest responses)
+    if ('error' in obj && typeof obj.error === 'string' && obj.error.trim()) {
+      return obj.error;
     }
   }
 
@@ -241,13 +241,25 @@ export async function fetchAPI<T>(
     }
 
     if (!response.ok) {
+      // Extract error details from response (may include error, code, message, warning fields)
+      const errorData = typeof data === 'object' && data !== null ? data as Record<string, unknown> : null;
+      const errorMessage = extractErrorMessage(data);
+      const errorCode = errorData?.error as string | undefined;
+      const code = errorData?.code as string | undefined;
+      const warning = errorData?.warning as boolean | undefined;
+      
       const apiError = {
-        message: extractErrorMessage(data),
+        message: errorMessage,
         statusCode: response.status,
-      } as ApiError;
+        error: errorCode,
+        code: code,
+        warning: warning,
+        // Include full error data for detailed handling
+        ...(errorData || {}),
+      } as ApiError & { error?: string; code?: string; warning?: boolean };
 
-      // Handle auth errors globally
-      if (response.status === 401 || response.status === 403) {
+      // Handle auth errors globally (but not for PendingQR/PendingNET/BrowserClosure warnings)
+      if ((response.status === 401 || response.status === 403) && !warning) {
         const { handleApiError } = require('@/utils/apiInterceptor');
         handleApiError(apiError);
       }
@@ -664,7 +676,7 @@ export async function sendMessages(data: {
 /**
  * Retry sending a message
  */
-export async function retryMessage(messageId: number): Promise<{ status: string; attempts: number }> {
+export async function retryMessage(messageId: string): Promise<{ status: string; attempts: number }> {
   return fetchAPI(`/messages/${messageId}/retry`, {
     method: 'POST',
   });
@@ -673,7 +685,7 @@ export async function retryMessage(messageId: number): Promise<{ status: string;
 /**
  * Pause a single message
  */
-export async function pauseMessage(messageId: number): Promise<{ success: boolean; message: string }> {
+export async function pauseMessage(messageId: string): Promise<{ success: boolean; message: string }> {
   return fetchAPI(`/messages/${messageId}/pause`, {
     method: 'POST',
   });
@@ -682,7 +694,7 @@ export async function pauseMessage(messageId: number): Promise<{ success: boolea
 /**
  * Resume a paused message
  */
-export async function resumeMessage(messageId: number): Promise<{ success: boolean; message: string }> {
+export async function resumeMessage(messageId: string): Promise<{ success: boolean; message: string }> {
   return fetchAPI(`/messages/${messageId}/resume`, {
     method: 'POST',
   });
@@ -691,7 +703,7 @@ export async function resumeMessage(messageId: number): Promise<{ success: boole
 /**
  * Delete a message (soft delete)
  */
-export async function deleteMessage(messageId: number): Promise<{ success: boolean; message: string }> {
+export async function deleteMessage(messageId: string): Promise<{ success: boolean; message: string }> {
   return fetchAPI(`/messages/${messageId}`, {
     method: 'DELETE',
   });
@@ -749,11 +761,12 @@ export interface OngoingSessionDto {
 }
 
 export interface SessionPatientDto {
+  messageId?: string; // NEW: Message ID for tracking
   patientId: number;
   name: string;
   phone: string;
   countryCode: string;
-  status: string; // sent, pending, failed
+  status: string; // sent, pending, failed, queued, sending
   isPaused: boolean;
   attempts?: number;
   failedReason?: string;
@@ -769,6 +782,18 @@ export interface FailedSessionDto {
   patients: SessionPatientDto[];
 }
 
+export interface SentMessageDto {
+  messageId: string;  // Guid from backend
+  patientId: number;
+  patientName: string;
+  patientPhone: string;
+  countryCode: string;
+  content: string;  // Resolved content (no variables)
+  sentAt: string;
+  createdBy?: number;
+  updatedBy?: number;
+}
+
 export interface CompletedSessionDto {
   sessionId: string;
   queueId: number;
@@ -777,7 +802,9 @@ export interface CompletedSessionDto {
   completedAt?: string;
   total: number;
   sent: number;
-  patients: SessionPatientDto[];
+  failed: number;  // New field
+  hasFailedMessages: boolean;  // New field
+  sentMessages: SentMessageDto[];  // Changed from patients
 }
 
 /**
@@ -815,6 +842,22 @@ export async function pauseSession(sessionId: string): Promise<{ success: boolea
  */
 export async function resumeSession(sessionId: string): Promise<{ success: boolean; resumedCount: number }> {
   return fetchAPI(`/sessions/${sessionId}/resume`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Retry all failed messages in a session
+ * IMPORTANT: Validates WhatsApp numbers before retrying
+ */
+export async function retrySession(sessionId: string): Promise<{ 
+  success: boolean; 
+  requeued: number; 
+  skipped: number; 
+  message?: string;
+  invalidPatients?: string[];
+}> {
+  return fetchAPI(`/sessions/${sessionId}/retry`, {
     method: 'POST',
   });
 }
@@ -869,7 +912,7 @@ export async function getFailedTask(id: number): Promise<FailedTaskDto> {
 /**
  * Retry a failed task
  */
-export async function retryFailedTask(id: number): Promise<FailedTaskDto> {
+export async function retryFailedTask(id: string): Promise<FailedTaskDto> {
   return fetchAPI(`/failed-tasks/${id}/retry`, {
     method: 'POST',
   });
@@ -878,7 +921,7 @@ export async function retryFailedTask(id: number): Promise<FailedTaskDto> {
 /**
  * Dismiss a failed task
  */
-export async function dismissFailedTask(id: number): Promise<void> {
+export async function dismissFailedTask(id: string): Promise<void> {
   return fetchAPI(`/failed-tasks/${id}/dismiss`, {
     method: 'POST',
   });
@@ -904,6 +947,20 @@ export function formatApiError(error: unknown): string {
 // ============================================
 // Export default client object for convenience
 // ============================================
+
+/**
+ * Get retry preview for a session - shows which messages can be retried vs skipped
+ */
+export async function getRetryPreview(sessionId: string) {
+  return fetchAPI<{
+    success: boolean;
+    retryable: { count: number; reasons: Array<{ reason: string; count: number }> };
+    nonRetryable: { count: number; reasons: Array<{ reason: string; count: number }> };
+    requiresAction: { count: number; reasons: Array<{ reason: string; count: number }> };
+  }>(`/messages/sessions/${sessionId}/retry-preview`, {
+    method: 'POST',
+  });
+}
 
 export const messageApiClient = {
   // Templates
@@ -937,6 +994,7 @@ export const messageApiClient = {
   retryMessage,
   pauseMessage,
   resumeMessage,
+  deleteMessage,
   pauseSessionMessages,
   resumeSessionMessages,
   pauseAllModeratorMessages,
@@ -948,6 +1006,7 @@ export const messageApiClient = {
   getCompletedSessions,
   pauseSession,
   resumeSession,
+  retrySession,
   deleteSession,
   
   // Failed Tasks
@@ -955,6 +1014,9 @@ export const messageApiClient = {
   getFailedTask,
   retryFailedTask,
   dismissFailedTask,
+  
+  // Retry Preview
+  getRetryPreview,
   
   // Utilities
   formatApiError,

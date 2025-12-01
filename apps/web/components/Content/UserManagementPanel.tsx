@@ -33,6 +33,7 @@ import { usersApiClient } from '@/services/api/usersApiClient';
 import queuesApiClient from '@/services/api/queuesApiClient';
 import { messageApiClient } from '@/services/api/messageApiClient';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { formatArabicPercentage } from '@/utils/numberUtils';
 import logger from '@/utils/logger';
 
 const TRASH_PAGE_SIZE = 10;
@@ -43,13 +44,26 @@ const TRASH_PAGE_SIZE = 10;
  */
 function QuotaTabContent({ currentUser }: { currentUser: User }) {
   // Determine which moderator ID to use for quota fetching
-  const moderatorIdForQuota = 
-    currentUser.role === UserRole.Moderator 
-      ? currentUser.id 
-      : currentUser.assignedModerator || currentUser.id; // Fallback to own ID if no moderator assigned
+  let moderatorIdForQuota: string | null = null;
   
-  // Fetch quota using the hook
-  const { quota, loading: quotaLoading, error: quotaError, refresh } = useModeratorQuota(moderatorIdForQuota);
+  if (currentUser.role === UserRole.Moderator) {
+    // Moderators use their own ID
+    moderatorIdForQuota = currentUser.id;
+  } else if (currentUser.role === UserRole.User) {
+    // Regular users use their assigned moderator's ID
+    // If no assigned moderator, show error instead of falling back to own ID
+    if (currentUser.assignedModerator) {
+      moderatorIdForQuota = currentUser.assignedModerator;
+    } else {
+      // No assigned moderator - don't fetch quota (will show error message)
+      moderatorIdForQuota = null;
+    }
+  }
+  
+  // Fetch quota using the hook (only if we have a valid moderator ID)
+  const { quota, loading: quotaLoading, error: quotaError, refresh } = useModeratorQuota(
+    moderatorIdForQuota || '0' // Pass '0' as placeholder if no moderator ID (hook will handle gracefully)
+  );
   
   // Listen for quota updates and refresh
   useEffect(() => {
@@ -164,7 +178,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
                         ? 'text-yellow-600' 
                         : 'text-gray-600'
                     }`}>
-                      {messagesPercentage.toFixed(1)}%
+                      {formatArabicPercentage(messagesPercentage, 1)}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
@@ -216,7 +230,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
                         ? 'text-yellow-600' 
                         : 'text-gray-600'
                     }`}>
-                      {queuesPercentage.toFixed(1)}%
+                      {formatArabicPercentage(queuesPercentage, 1)}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
@@ -230,7 +244,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
             </div>
           </div>
 
-          {/* Request Extra Quota Info - Only for Moderators */}
+          {/* Request Extra Quota Info - Only for Moderators
           {currentUser.role === UserRole.Moderator && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h4 className="font-semibold text-yellow-900 mb-2 flex items-center gap-2">
@@ -248,7 +262,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
                 <span>طلب حصة إضافية (قريباً)</span>
               </button>
             </div>
-          )}
+          )} */}
         </>
       )}
 
@@ -815,13 +829,11 @@ export default function UserManagementPanel() {
         // Update selectedQuota with fresh data from API before closing modal
         setSelectedQuota(result.data);
         
-        // Refresh users to get updated quota data in the list
+        // Refresh users to get updated quota data in the list (this updates the moderators tab)
         await actions.fetchUsers();
         
-        // Trigger event to notify other components
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
-        }, 100);
+        // Trigger event to notify other components (including ModeratorQuotaDisplay in moderators tab)
+        window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
         
         // Close modals after a brief delay to allow state update
         setTimeout(() => {
@@ -868,6 +880,8 @@ export default function UserManagementPanel() {
       if (refreshQueues) {
         await refreshQueues();
       }
+      // Dispatch event to notify quota components to refresh
+      window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
       window.dispatchEvent(new CustomEvent('queueDataUpdated'));
     } catch (error: any) {
       addToast(error?.message || 'فشل استعادة الطابور', 'error');
@@ -2330,8 +2344,21 @@ export default function UserManagementPanel() {
           updatedAt: new Date(),
         }}
         moderatorName={selectedModeratorForQuota ? getUserDisplayName(selectedModeratorForQuota) : ''}
-        onClose={() => {
+        onClose={async () => {
           setShowQuotaModal(false);
+          // Refresh quota data after modal closes
+          if (selectedModeratorForQuota) {
+            try {
+              const quotaResult = await moderatorQuotaService.getQuota(selectedModeratorForQuota.id);
+              if (quotaResult.success && quotaResult.data) {
+                // Update quota in the moderator list
+                await actions.fetchUsers();
+              }
+              // QuotaTabContent will refresh automatically via quotaDataUpdated event listener
+            } catch (error) {
+              logger.error('Failed to refresh quota after update:', error);
+            }
+          }
           setSelectedModeratorForQuota(null);
           setSelectedQuota(null);
         }}
@@ -2352,14 +2379,14 @@ export default function UserManagementPanel() {
         moderatorData={selectedModeratorForQuota}
         onClose={async () => {
           setShowMessagesQuotaModal(false);
-          // Refresh quota data after modal closes
+          // Refresh quota data after modal closes (for moderators tab)
           if (selectedModeratorForQuota) {
             try {
-              const quotaResult = await moderatorQuotaService.getQuota(selectedModeratorForQuota.id);
-              if (quotaResult.success && quotaResult.data) {
-                // Update quota in the moderator list
-                await actions.fetchUsers();
-              }
+              // Refresh users list to update quota in moderators tab
+              await actions.fetchUsers();
+              
+              // Trigger event to notify ModeratorQuotaDisplay components and QuotaTabContent
+              window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
             } catch (error) {
               logger.error('Failed to refresh quota after update:', error);
             }
@@ -2384,14 +2411,14 @@ export default function UserManagementPanel() {
         moderatorData={selectedModeratorForQuota}
         onClose={async () => {
           setShowQueuesQuotaModal(false);
-          // Refresh quota data after modal closes
+          // Refresh quota data after modal closes (for moderators tab)
           if (selectedModeratorForQuota) {
             try {
-              const quotaResult = await moderatorQuotaService.getQuota(selectedModeratorForQuota.id);
-              if (quotaResult.success && quotaResult.data) {
-                // Update quota in the moderator list
-                await actions.fetchUsers();
-              }
+              // Refresh users list to update quota in moderators tab
+              await actions.fetchUsers();
+              
+              // Trigger event to notify ModeratorQuotaDisplay components and QuotaTabContent
+              window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
             } catch (error) {
               logger.error('Failed to refresh quota after update:', error);
             }

@@ -347,7 +347,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "primary_admin,secondary_admin")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
         public async Task<IActionResult> Update(int id, [FromBody] QueueUpdateRequest req)
         {
             // Get current user ID for audit
@@ -365,6 +365,42 @@ namespace Clinics.Api.Controllers
 
             var q = await _db.Queues.FirstOrDefaultAsync(x => x.Id == id);
             if (q == null) return NotFound(new { success = false });
+
+            // Authorization check: Only admins can update any queue
+            // Moderators and users can only update queues they own
+            var isAdmin = User.IsInRole("primary_admin") || User.IsInRole("secondary_admin");
+            
+            if (!isAdmin)
+            {
+                // Get current user to check ownership
+                var currentUser = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+                if (currentUser == null)
+                {
+                    return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+                }
+
+                var isModerator = currentUser.Role == "moderator";
+                var isUser = currentUser.Role == "user";
+
+                // Check ownership based on role
+                if (isModerator)
+                {
+                    // Moderator can only update queues they own (ModeratorId == userId)
+                    if (q.ModeratorId != userId)
+                    {
+                        return Forbid();
+                    }
+                }
+                else if (isUser)
+                {
+                    // User can only update queues belonging to their assigned moderator
+                    if (!currentUser.ModeratorId.HasValue || q.ModeratorId != currentUser.ModeratorId.Value)
+                    {
+                        return Forbid();
+                    }
+                }
+            }
+
             q.DoctorName = req.DoctorName;
             if (req.EstimatedWaitMinutes.HasValue) q.EstimatedWaitMinutes = req.EstimatedWaitMinutes.Value;
             if (req.CurrentPosition.HasValue) q.CurrentPosition = req.CurrentPosition.Value;
@@ -426,7 +462,6 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting queue {QueueId}", id);
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء حذف الطابور", message = "حدث خطأ أثناء حذف الطابور." });
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء حذف الطابور" });
             }
         }

@@ -17,7 +17,9 @@ namespace ClinicsManagementService.Models
         [EnumMember(Value = "PendingQR")]
         PendingQR,
         [EnumMember(Value = "PendingNET")]
-        PendingNET
+        PendingNET,
+        [EnumMember(Value = "BrowserClosure")]
+        BrowserClosure
     }
 
     /// <summary>
