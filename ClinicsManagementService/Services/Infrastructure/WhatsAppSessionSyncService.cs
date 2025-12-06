@@ -96,8 +96,15 @@ namespace ClinicsManagementService.Services.Infrastructure
                 var changeCount = await _dbContext.SaveChangesAsync();
                 _notifier.Notify($"✅ [DB SYNC] SaveChangesAsync completed - Changes saved: {changeCount}");
                 
-                // Notify frontend via SignalR
-                await _signalRNotificationService.NotifyWhatsAppSessionUpdateAsync(moderatorUserId, status, null, null);
+                // Notify frontend via SignalR - include current pause state so frontend knows to enable/disable resume button
+                // IMPORTANT: When status becomes "connected" after PendingQR, we keep isPaused=true but frontend enables resume button
+                await _signalRNotificationService.NotifyWhatsAppSessionUpdateAsync(
+                    moderatorUserId, 
+                    status, 
+                    session.IsPaused,  // Include current pause state
+                    session.PauseReason  // Include current pause reason
+                );
+                _notifier.Notify($"📢 [DB SYNC] SignalR notification sent - Status: {status}, IsPaused: {session.IsPaused}, PauseReason: {session.PauseReason}");
             }
             catch (Exception ex)
             {

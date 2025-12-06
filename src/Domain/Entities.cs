@@ -674,6 +674,20 @@ namespace Clinics.Domain
         [StringLength(100)]
         public string? PauseReason { get; set; }
 
+        /// <summary>
+        /// Computed property indicating whether the session can be resumed.
+        /// A paused session is resumable if:
+        /// - It is paused AND
+        /// - Either the pause reason is NOT PendingQR (user can resume immediately)
+        /// - OR the pause reason IS PendingQR but session is now connected (authenticated successfully)
+        /// This simplifies frontend logic by providing a single boolean to check.
+        /// </summary>
+        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+        public bool IsResumable => IsPaused && (
+            PauseReason != "PendingQR" ||
+            (PauseReason == "PendingQR" && Status == "connected")
+        );
+
         // Soft-delete fields
         public bool IsDeleted { get; set; } = false;
         public DateTime? DeletedAt { get; set; }

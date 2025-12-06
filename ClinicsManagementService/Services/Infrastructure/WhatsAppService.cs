@@ -18,7 +18,7 @@ namespace ClinicsManagementService.Services
     {
         private readonly INotifier _notifier;
         private readonly INetworkService _networkService;
-        private readonly IRetryService _retryService;
+        private readonly IBrowserExceptionService _browserExceptionService;
         private readonly IWhatsAppUIService _uiService;
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly IWhatsAppSessionSyncService _sessionSyncService;
@@ -30,12 +30,12 @@ namespace ClinicsManagementService.Services
             INetworkService networkService,
             IWhatsAppUIService uiService,
             IWhatsAppSessionManager sessionManager,
-            IRetryService retryService,
+            IBrowserExceptionService browserExceptionService,
             IWhatsAppSessionSyncService sessionSyncService)
         {
             _notifier = notifier;
             _networkService = networkService;
-            _retryService = retryService;
+            _browserExceptionService = browserExceptionService;
             _uiService = uiService;
             _sessionManager = sessionManager;
             _sessionSyncService = sessionSyncService;
@@ -156,7 +156,7 @@ namespace ClinicsManagementService.Services
                     }
                     catch (Exception ex)
                     {
-                        if (_retryService.IsBrowserClosedException(ex))
+                        if (_browserExceptionService.IsBrowserClosedException(ex))
                         {
                             _notifier.Notify("❌ Browser closed while querying input selector");
                             return OperationResult<string?>.Failure("Failed: Browser session terminated while querying input field");
@@ -201,7 +201,7 @@ namespace ClinicsManagementService.Services
                     }
                     catch (Exception ex)
                     {
-                        if (_retryService.IsBrowserClosedException(ex))
+                        if (_browserExceptionService.IsBrowserClosedException(ex))
                         {
                             _notifier.Notify("❌ Browser closed while querying send button");
                             return OperationResult<string?>.Failure("Failed: Browser session terminated while querying send button");
@@ -302,7 +302,7 @@ namespace ClinicsManagementService.Services
             }
             catch (Exception ex)
             {
-                if (_retryService.IsBrowserClosedException(ex))
+                if (_browserExceptionService.IsBrowserClosedException(ex))
                 {
                     // ALL browser closures during operations are handled upstream
                     _notifier.Notify($"❌ Browser session closed during SendMessageWithIconTypeAsync: {ex.Message}");
@@ -583,7 +583,7 @@ namespace ClinicsManagementService.Services
                     }
                     catch (Exception ex)
                     {
-                        if (_retryService.IsBrowserClosedException(ex)) break;
+                        if (_browserExceptionService.IsBrowserClosedException(ex)) break;
                         _notifier.Notify($"⚠️ Error checking textbox selector {selector}: {ex.Message}");
                     }
                 }
@@ -603,7 +603,7 @@ namespace ClinicsManagementService.Services
                     }
                     catch (Exception ex)
                     {
-                        if (_retryService.IsBrowserClosedException(ex)) break;
+                        if (_browserExceptionService.IsBrowserClosedException(ex)) break;
                         _notifier.Notify($"⚠️ Error checking selector {selector}: {ex.Message}");
                     }
                 }

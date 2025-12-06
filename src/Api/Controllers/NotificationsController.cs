@@ -69,6 +69,7 @@ public class NotificationsController : ControllerBase
                 pauseReason = whatsappSession.PauseReason,
                 pausedAt = whatsappSession.PausedAt,
                 pausedBy = whatsappSession.PausedBy,
+                isResumable = whatsappSession.IsResumable,  // Computed property for frontend
                 lastSyncAt = whatsappSession.LastSyncAt,
                 sessionName = whatsappSession.SessionName,
                 providerSessionId = whatsappSession.ProviderSessionId,

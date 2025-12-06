@@ -302,12 +302,13 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
           providerSessionId: payload.providerSessionId,
         });
 
-        // Update global pause state
+        // Update global pause state (includes backend-computed isResumable)
         setGlobalPauseState({
           isPaused: payload.isPaused || false,
           pauseReason: payload.pauseReason,
           pausedAt: payload.pausedAt,
           pausedBy: payload.pausedBy,
+          isResumable: payload.isResumable || false,
         });
 
         // Optionally refresh from database for full sync

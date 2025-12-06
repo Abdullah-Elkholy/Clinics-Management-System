@@ -85,9 +85,29 @@ export default function WhatsAppAuthTabContent() {
     }
   };
 
-  // Determine status display - consider global pause state
+  // Determine status display - prioritize WhatsAppSession.Status when connected
   const getStatusDisplay = () => {
-    // Check global pause state first
+    // PRIORITY 1: If WhatsAppSession.Status is 'connected', always show connected
+    // (even if paused - pause is for task control, not connection status)
+    if (sessionStatus === 'connected') {
+      // Show connected with pause indicator if paused
+      if (globalPauseState?.isPaused) {
+        return {
+          bgColor: 'bg-green-100',
+          textColor: 'text-green-800',
+          icon: 'fa-check-circle',
+          label: 'متصل (متوقف مؤقتاً)',
+        };
+      }
+      return {
+        bgColor: 'bg-green-100',
+        textColor: 'text-green-800',
+        icon: 'fa-check-circle',
+        label: 'متصل',
+      };
+    }
+
+    // PRIORITY 2: Check global pause state for specific reasons (only when NOT connected)
     if (globalPauseState?.isPaused) {
       if (globalPauseState.pauseReason?.includes('PendingQR')) {
         return {
@@ -113,15 +133,8 @@ export default function WhatsAppAuthTabContent() {
       }
     }
     
-    // Fallback to session status
+    // PRIORITY 3: Fallback to WhatsAppSession.Status
     switch (sessionStatus) {
-      case 'connected':
-        return {
-          bgColor: 'bg-green-100',
-          textColor: 'text-green-800',
-          icon: 'fa-check-circle',
-          label: 'متصل',
-        };
       case 'pending':
         return {
           bgColor: 'bg-yellow-100',

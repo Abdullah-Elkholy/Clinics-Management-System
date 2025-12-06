@@ -6,12 +6,89 @@ import { useWhatsAppSession } from '../../contexts/WhatsAppSessionContext';
 import { getRoleDisplayName } from '../../lib/auth';
 import { User } from '../../types';
 
+// Helper function to get status display based on WhatsAppSession.Status and globalPauseState
+// PRIORITY: WhatsAppSession.Status takes precedence - if connected, show connected
+const getWhatsAppStatusDisplay = (
+  sessionStatus: 'connected' | 'disconnected' | 'pending' | null,
+  globalPauseState: { isPaused: boolean; pauseReason?: string } | null
+) => {
+  // PRIORITY 1: If WhatsAppSession.Status is 'connected', always show connected
+  // (even if paused - pause is for task control, not connection status)
+  if (sessionStatus === 'connected') {
+    // Show connected with pause indicator if paused
+    if (globalPauseState?.isPaused) {
+      return {
+        bgColor: 'bg-green-100',
+        dotColor: 'bg-green-500', // No animation when paused
+        textColor: 'text-green-700',
+        label: 'واتساب متصل (متوقف مؤقتاً)'
+      };
+    }
+    return {
+      bgColor: 'bg-green-100',
+      dotColor: 'bg-green-500 animate-pulse',
+      textColor: 'text-green-700',
+      label: 'واتساب متصل'
+    };
+  }
+
+  // PRIORITY 2: Check global pause state for specific error reasons (only when NOT connected)
+  if (globalPauseState?.isPaused && globalPauseState.pauseReason) {
+    if (globalPauseState.pauseReason.includes('PendingQR')) {
+      return {
+        bgColor: 'bg-yellow-100',
+        dotColor: 'bg-yellow-500 animate-pulse',
+        textColor: 'text-yellow-700',
+        label: 'في انتظار المصادقة (PendingQR)'
+      };
+    }
+    if (globalPauseState.pauseReason.includes('PendingNET')) {
+      return {
+        bgColor: 'bg-orange-100',
+        dotColor: 'bg-orange-500',
+        textColor: 'text-orange-700',
+        label: 'فشل الاتصال بالإنترنت (PendingNET)'
+      };
+    }
+    if (globalPauseState.pauseReason.includes('BrowserClosure')) {
+      return {
+        bgColor: 'bg-red-100',
+        dotColor: 'bg-red-500',
+        textColor: 'text-red-700',
+        label: 'تم إغلاق المتصفح'
+      };
+    }
+  }
+
+  // PRIORITY 3: Fallback to WhatsAppSession.Status
+  switch (sessionStatus) {
+    case 'pending':
+      return {
+        bgColor: 'bg-yellow-100',
+        dotColor: 'bg-yellow-500 animate-pulse',
+        textColor: 'text-yellow-700',
+        label: 'في انتظار المصادقة'
+      };
+    case 'disconnected':
+    default:
+      return {
+        bgColor: 'bg-red-100',
+        dotColor: 'bg-red-500',
+        textColor: 'text-red-700',
+        label: 'واتساب غير متصل'
+      };
+  }
+};
+
 export default function Header() {
   const { user, logout } = useAuth();
   const { openModal } = useModal();
   const { sessionStatus, globalPauseState } = useWhatsAppSession();
 
   if (!user) return null;
+
+  // Get status display based on WhatsAppSession.Status
+  const statusDisplay = getWhatsAppStatusDisplay(sessionStatus, globalPauseState);
 
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
@@ -49,44 +126,10 @@ export default function Header() {
         <div className="flex items-center space-x-4 space-x-reverse">
           {/* WhatsApp Status - Hidden for admin, shown for moderator and user */}
           {user.role !== 'primary_admin' && user.role !== 'secondary_admin' && (
-            <div className={`hidden sm:flex items-center space-x-2 space-x-reverse px-3 py-1 rounded-full ${
-              sessionStatus === 'connected' 
-                ? 'bg-green-100' 
-                : sessionStatus === 'pending' 
-                ? 'bg-yellow-100' 
-                : 'bg-red-100'
-            }`}>
-              <div className={`w-2 h-2 rounded-full ${
-                sessionStatus === 'connected' 
-                  ? 'bg-green-500 animate-pulse' 
-                  : sessionStatus === 'pending' 
-                  ? 'bg-yellow-500 animate-pulse' 
-                  : 'bg-red-500'
-              }`}></div>
-              <span className={`text-sm ${
-                sessionStatus === 'connected' 
-                  ? 'text-green-700' 
-                  : sessionStatus === 'pending' 
-                  ? 'text-yellow-700' 
-                  : 'text-red-700'
-              }`}>
-                {globalPauseState?.isPaused
-                  ? globalPauseState.pauseReason?.includes('PendingQR')
-                    ? 'في انتظار المصادقة (PendingQR)'
-                    : globalPauseState.pauseReason?.includes('PendingNET')
-                    ? 'فشل الاتصال بالإنترنت (PendingNET)'
-                    : globalPauseState.pauseReason?.includes('BrowserClosure')
-                    ? 'تم إغلاق المتصفح'
-                    : sessionStatus === 'connected' 
-                      ? 'واتساب متصل' 
-                      : sessionStatus === 'pending' 
-                      ? 'في انتظار المصادقة' 
-                      : 'واتساب غير متصل'
-                  : sessionStatus === 'connected' 
-                    ? 'واتساب متصل' 
-                    : sessionStatus === 'pending' 
-                    ? 'في انتظار المصادقة' 
-                    : 'واتساب غير متصل'}
+            <div className={`hidden sm:flex items-center space-x-2 space-x-reverse px-3 py-1 rounded-full ${statusDisplay.bgColor}`}>
+              <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
+              <span className={`text-sm ${statusDisplay.textColor}`}>
+                {statusDisplay.label}
               </span>
             </div>
           )}

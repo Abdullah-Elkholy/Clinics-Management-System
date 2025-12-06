@@ -98,6 +98,40 @@ namespace ClinicsManagementService.Controllers
                     });
                 }
 
+                // ========== FIX 1: Check pause state BEFORE any browser/restore operations ==========
+                // This prevents browser launch when session is paused (especially during PendingQR)
+                var pauseCheckBeforeRestore = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(effectiveModeratorId);
+                if (pauseCheckBeforeRestore)
+                {
+                    _notifier.Notify($"🛑 [Moderator {effectiveModeratorId}] Session is paused - skipping all browser operations");
+                    return BadRequest(new 
+                    { 
+                        error = "PendingQR",
+                        code = "AUTHENTICATION_REQUIRED",
+                        message = "جلسة الواتساب متوقفة وتحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.",
+                        isPaused = true,
+                        isResumable = false
+                    });
+                }
+
+                // Also check WhatsAppSession.IsPaused flag directly for any pause reason
+                var whatsappSession = await _dbContext.WhatsAppSessions
+                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == effectiveModeratorId && !ws.IsDeleted);
+                if (whatsappSession?.IsPaused == true)
+                {
+                    _notifier.Notify($"🛑 [Moderator {effectiveModeratorId}] Session is globally paused (Reason: {whatsappSession.PauseReason}) - skipping all browser operations");
+                    return BadRequest(new 
+                    { 
+                        error = whatsappSession.PauseReason ?? "Paused",
+                        code = "SESSION_PAUSED",
+                        message = $"جلسة الواتساب متوقفة ({whatsappSession.PauseReason}). يرجى استئناف الجلسة أولاً.",
+                        isPaused = true,
+                        pauseReason = whatsappSession.PauseReason,
+                        isResumable = whatsappSession.PauseReason != "PendingQR"
+                    });
+                }
+                // ========== END FIX 1 ==========
+
                 // Restore session from backup before sending message
                 try
                 {
@@ -118,19 +152,8 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                 }
-                // Check if WhatsApp session is paused due to PendingQR (unified session per moderator)
-                // This check prevents operations when authentication is required
-                var hasPausedMessages = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(effectiveModeratorId);
-                if (hasPausedMessages)
-                {
-                    _notifier.Notify($"❌ [Moderator {effectiveModeratorId}] Cannot send message - session requires authentication (PendingQR)");
-                    return BadRequest(new 
-                    { 
-                        error = "PendingQR",
-                        code = "AUTHENTICATION_REQUIRED",
-                        message = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل."
-                    });
-                }
+                
+                // Note: PendingQR check was moved BEFORE restore operations (Fix 1)
 
                 var phoneValidation = _validationService.ValidatePhoneNumber(request.Phone);
                 var messageValidation = _validationService.ValidateMessage(request.Message);
@@ -185,9 +208,10 @@ namespace ClinicsManagementService.Controllers
                 // Check cancellation before sending
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var sent = await _messageSender.SendMessageAsync(effectiveModeratorId, request.Phone, request.Message, cancellationToken);
+                // Use SendMessageWithResultAsync to get detailed status (PendingQR, BrowserClosure, etc.)
+                var result = await _messageSender.SendMessageWithResultAsync(effectiveModeratorId, request.Phone, request.Message, cancellationToken);
                 
-                if (sent)
+                if (result.Sent)
                 {
                     // Update session status on successful send to track activity
                     try
@@ -203,39 +227,107 @@ namespace ClinicsManagementService.Controllers
                     {
                         _notifier.Notify($"⚠️ Failed to sync session status after successful send: {syncEx.Message}");
                     }
-                    return Ok("Message sent successfully.");
+                    return Ok(new 
+                    { 
+                        success = true, 
+                        message = "Message sent successfully.",
+                        status = "Success"
+                    });
                 }
                 else
                 {
-                    // Message failed - check if it's due to PendingQR by calling check-authentication
-                    try
+                    // Return structured error response based on status type
+                    // This allows the main API to detect specific error types and handle them accordingly
+                    switch (result.Status)
                     {
-                        var browserSession = await _whatsappService.PrepareSessionAsync(effectiveModeratorId);
-                        await browserSession.InitializeAsync();
-                        await browserSession.NavigateToAsync(Configuration.WhatsAppConfiguration.WhatsAppBaseUrl);
-                        var authCheck = await _whatsappService.CheckInternetConnectivityDetailedAsync();
+                        case Models.MessageOperationStatus.PendingQR:
+                            // PendingQR: Authentication required - UNRESUMABLE pause
+                            // Update database status for consistency
+                            try
+                            {
+                                await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
+                            }
+                            catch (Exception syncEx)
+                            {
+                                _notifier.Notify($"⚠️ Failed to sync session status after PendingQR: {syncEx.Message}");
+                            }
+                            return BadRequest(new 
+                            { 
+                                success = false,
+                                error = "PendingQR",
+                                code = "AUTHENTICATION_REQUIRED",
+                                message = result.Error ?? "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.",
+                                status = "PendingQR",
+                                isRecoverable = true,
+                                shouldPause = true,
+                                isResumable = false // Only resumable after authentication completes
+                            });
                         
-                        // If authentication is pending, update database status
-                        if (authCheck.State == Models.OperationState.PendingQR)
-                        {
-                            _notifier.Notify($"⚠️ Message failed due to PendingQR - updating database status");
-                            await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
-                        }
+                        case Models.MessageOperationStatus.BrowserClosure:
+                            // BrowserClosure: Intentional browser close - RESUMABLE pause
+                            return StatusCode(503, new 
+                            { 
+                                success = false,
+                                error = "BrowserClosure",
+                                code = "BROWSER_CLOSED",
+                                message = result.Error ?? "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية.",
+                                status = "BrowserClosure",
+                                isRecoverable = true,
+                                shouldPause = true,
+                                isResumable = true // Can be manually resumed from OngoingTasksPanel
+                            });
+                        
+                        case Models.MessageOperationStatus.PendingNET:
+                            // PendingNET: Network failure - RESUMABLE pause
+                            return StatusCode(503, new 
+                            { 
+                                success = false,
+                                error = "PendingNET",
+                                code = "NETWORK_FAILURE",
+                                message = result.Error ?? "فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية.",
+                                status = "PendingNET",
+                                isRecoverable = true,
+                                shouldPause = true,
+                                isResumable = true // Can be manually resumed from OngoingTasksPanel
+                            });
+                        
+                        case Models.MessageOperationStatus.Waiting:
+                            // Waiting: Temporary state, can retry
+                            return StatusCode(503, new 
+                            { 
+                                success = false,
+                                error = "Waiting",
+                                code = "WAITING",
+                                message = result.Error ?? "في انتظار اكتمال العملية.",
+                                status = "Waiting",
+                                isRecoverable = true,
+                                shouldPause = false,
+                                isResumable = true
+                            });
+                        
+                        default:
+                            // Generic failure - NOT recoverable, mark as failed
+                            // Check and auto-restore if session size exceeds threshold
+                            try
+                            {
+                                await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
+                            }
+                            catch (Exception optimizeEx)
+                            {
+                                _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
+                            }
+                            return StatusCode(502, new 
+                            { 
+                                success = false,
+                                error = "Failure",
+                                code = "SEND_FAILED",
+                                message = result.Error ?? "فشل في إرسال الرسالة.",
+                                status = "Failure",
+                                isRecoverable = false,
+                                shouldPause = false,
+                                isResumable = false
+                            });
                     }
-                    catch (Exception syncEx)
-                    {
-                        _notifier.Notify($"⚠️ Failed to sync session status after send failure: {syncEx.Message}");
-                    }
-                    // Check and auto-restore if session size exceeds threshold
-                    try
-                    {
-                        await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
-                    }
-                    catch (Exception optimizeEx)
-                    {
-                        _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
-                    }
-                    return StatusCode(502, "Message failed to be sent.");
                 }
             }, this, _notifier, nameof(SendSingle));
         }

@@ -590,6 +590,11 @@ export interface GlobalPauseState {
   pauseReason: string | null;
   pausedAt: string | null;
   pausedBy: number | null;
+  /** 
+   * Computed by backend: true when session is paused and can be resumed
+   * (either not PendingQR, or PendingQR but now connected/authenticated)
+   */
+  isResumable: boolean;
 }
 
 export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPauseState> {

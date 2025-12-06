@@ -197,6 +197,7 @@ namespace Clinics.Api.Services
         }
 
         // Helper class to deserialize error response from send-single endpoint
+        // Updated to include new status fields for PendingQR/BrowserClosure handling
         private class ErrorResponse
         {
             public bool? Success { get; set; }
@@ -204,6 +205,10 @@ namespace Clinics.Api.Services
             public string? Code { get; set; }
             public string? Message { get; set; }
             public bool? Warning { get; set; }
+            public string? Status { get; set; }
+            public bool? IsRecoverable { get; set; }
+            public bool? ShouldPause { get; set; }
+            public bool? IsResumable { get; set; }
         }
     }
 }

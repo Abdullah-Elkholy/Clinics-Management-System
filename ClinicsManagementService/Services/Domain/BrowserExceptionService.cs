@@ -5,11 +5,11 @@ using ClinicsManagementService.Configuration;
 
 namespace ClinicsManagementService.Services.Domain
 {
-    public class RetryService : IRetryService
+    public class BrowserExceptionService : IBrowserExceptionService
     {
         private readonly INotifier _notifier;
 
-        public RetryService(INotifier notifier)
+        public BrowserExceptionService(INotifier notifier)
         {
             _notifier = notifier;
         }

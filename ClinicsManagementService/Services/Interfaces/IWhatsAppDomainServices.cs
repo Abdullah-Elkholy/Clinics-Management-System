@@ -28,9 +28,9 @@ namespace ClinicsManagementService.Services.Domain
     }
 
     /// <summary>
-    /// Handles error detection utilities
+    /// Handles browser exception detection utilities
     /// </summary>
-    public interface IRetryService
+    public interface IBrowserExceptionService
     {
         // Determines if the exception indicates a closed browser scenario
         bool IsBrowserClosedException(Exception ex);

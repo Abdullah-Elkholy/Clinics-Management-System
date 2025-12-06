@@ -189,18 +189,18 @@ export default function OngoingTasksPanel() {
 
     if (!moderatorId) {
       // Set default state if no moderator ID
-      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null });
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false });
       return;
     }
 
     try {
       const state = await whatsappApiClient.getGlobalPauseState(moderatorId);
       // Ensure we always have a valid state object
-      setGlobalPauseState(state || { isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null });
+      setGlobalPauseState(state || { isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false });
     } catch (err) {
       logger.error('Failed to load global pause state:', err);
       // Set default state on error
-      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null });
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false });
     }
   }, [user]);
 
@@ -226,8 +226,20 @@ export default function OngoingTasksPanel() {
   }, [user, addToast, loadGlobalPauseState, loadOngoingSessions]);
 
   /**
+   * Determine if resume button should be disabled
+   * Now uses backend-computed isResumable property for consistency
+   * isResumable = true means session can be resumed (so button is enabled)
+   */
+  const isResumeDisabled = useMemo(() => {
+    if (!globalPauseState?.isPaused) return false;
+    
+    // Use backend-computed isResumable (negated: isResumable=true means NOT disabled)
+    return !globalPauseState.isResumable;
+  }, [globalPauseState]);
+
+  /**
    * Handle global resume (resume all moderator tasks)
-   * IMPORTANT: PendingQR pauses are UNRESUMABLE manually - only resumable when connection state = "connected"
+   * Uses backend-computed isResumable for consistency
    * BrowserClosure and PendingNET pauses are RESUMABLE manually
    */
   const handleGlobalResume = useCallback(async () => {
@@ -237,8 +249,8 @@ export default function OngoingTasksPanel() {
 
     if (!moderatorId) return;
 
-    // Check if pause reason is PendingQR (unresumable)
-    if (globalPauseState?.pauseReason?.includes('PendingQR')) {
+    // Check if session is NOT resumable (using backend-computed property)
+    if (globalPauseState?.isPaused && !globalPauseState.isResumable) {
       addToast('لا يمكن استئناف المهام حتى تتم المصادقة على جلسة الواتساب. يرجى الذهاب إلى لوحة مصادقة الواتساب.', 'warning');
       return;
     }
@@ -811,39 +823,48 @@ export default function OngoingTasksPanel() {
               <>
                 <button
                   onClick={handleGlobalResume}
-                  disabled={globalPauseState.pauseReason?.includes('PendingQR')}
+                  disabled={isResumeDisabled}
                   className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${
-                    globalPauseState.pauseReason?.includes('PendingQR')
+                    isResumeDisabled
                       ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                       : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
                   }`}
-                  title={globalPauseState.pauseReason?.includes('PendingQR') ? 'لا يمكن الاستئناف - يتطلب المصادقة أولاً' : 'استئناف جميع مهام المشرف'}
+                  title={isResumeDisabled ? 'لا يمكن الاستئناف - يتطلب المصادقة أولاً' : 'استئناف جميع مهام المشرف'}
                 >
                   <i className="fas fa-play"></i>
                   <span>
-                    {globalPauseState.pauseReason?.includes('PendingQR')
+                    {isResumeDisabled
                       ? 'الاستئناف غير متاح - يتطلب المصادقة'
-                      : 'استئناف جميع مهام المشرف'}
+                      : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
+                        ? 'استئناف المهام (تم المصادقة ✓)'
+                        : 'استئناف جميع مهام المشرف'}
                   </span>
                 </button>
                 {globalPauseState.pauseReason && (
                   <div className={`text-sm flex items-center gap-2 ${
-                    globalPauseState.pauseReason?.includes('PendingQR')
+                    globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
                       ? 'text-yellow-700 font-semibold'
+                      : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
+                      ? 'text-green-600 font-semibold'
                       : globalPauseState.pauseReason?.includes('BrowserClosure')
                       ? 'text-red-600'
                       : 'text-orange-600'
                   }`}>
                     <i className={`fas ${
-                      globalPauseState.pauseReason?.includes('PendingQR')
+                      globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
                         ? 'fa-exclamation-triangle'
+                        : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
+                        ? 'fa-check-circle'
                         : globalPauseState.pauseReason?.includes('BrowserClosure')
                         ? 'fa-times-circle'
                         : 'fa-wifi'
                     }`}></i>
                     <span>{globalPauseState.pauseReason}</span>
-                    {globalPauseState.pauseReason?.includes('PendingQR') && (
+                    {globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable && (
                       <span className="text-xs">(يجب المصادقة أولاً)</span>
+                    )}
+                    {globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable && (
+                      <span className="text-xs text-green-600">(تم المصادقة - اضغط استئناف)</span>
                     )}
                   </div>
                 )}

@@ -275,15 +275,7 @@ namespace ClinicsManagementService.Configuration
         /// Delay to ensure file handles are released (milliseconds)
         /// </summary>
         public const int FileReleasedDelayMs = 3000;
-
-        /// <summary>
-        /// Maximum retries for file lock operations
-        /// </summary>
-        public const int MaxFileLockRetries = 5;
-
-        /// <summary>
-        /// Delay between file lock retries (milliseconds)
-        /// </summary>
+        public const int MaxFileLockRetries = 3;
         public const int FileLockRetryDelayMs = 2000;
         #endregion
 

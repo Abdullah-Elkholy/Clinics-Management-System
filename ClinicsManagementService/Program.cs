@@ -6,8 +6,16 @@ using ClinicsManagementService.Services.Domain;
 using Microsoft.EntityFrameworkCore;
 using Clinics.Infrastructure;
 using System.Text.Json.Serialization;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+// Configure Serilog to log to the same global folder as the main API
+// This ensures all logs are in one place for easier monitoring.
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .CreateLogger();
+
+builder.Host.UseSerilog();
 
 // Add services to the container.
 
@@ -31,7 +39,7 @@ builder.Services.AddScoped<IWhatsAppSessionSyncService, WhatsAppSessionSyncServi
 // Domain Services
 builder.Services.AddScoped<INetworkService, NetworkService>();
 builder.Services.AddScoped<IScreenshotService, ScreenshotService>();
-builder.Services.AddScoped<IRetryService, RetryService>();
+builder.Services.AddScoped<IBrowserExceptionService, BrowserExceptionService>();
 builder.Services.AddScoped<IWhatsAppUIService, WhatsAppUIService>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
 

@@ -18,7 +18,7 @@ namespace ClinicsManagementService.Services.Application
         private readonly IWhatsAppService _whatsappService;
         private readonly Func<int, IBrowserSession> _browserSessionFactory;
         private readonly INotifier _notifier;
-        private readonly IRetryService _retryService;
+        private readonly IBrowserExceptionService _browserExceptionService;
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly IWhatsAppUIService _whatsappUIService;
         private readonly IWhatsAppSessionSyncService _sessionSyncService;
@@ -27,7 +27,7 @@ namespace ClinicsManagementService.Services.Application
             IWhatsAppService whatsappService, 
             Func<int, IBrowserSession> browserSessionFactory, 
             INotifier notifier, 
-            IRetryService retryService, 
+            IBrowserExceptionService browserExceptionService, 
             IWhatsAppSessionManager sessionManager, 
             IWhatsAppUIService whatsappUIService,
             IWhatsAppSessionSyncService sessionSyncService)
@@ -35,7 +35,7 @@ namespace ClinicsManagementService.Services.Application
             _whatsappService = whatsappService;
             _browserSessionFactory = browserSessionFactory;
             _notifier = notifier;
-            _retryService = retryService;
+            _browserExceptionService = browserExceptionService;
             _sessionManager = sessionManager;
             _whatsappUIService = whatsappUIService;
             _sessionSyncService = sessionSyncService;
@@ -50,6 +50,27 @@ namespace ClinicsManagementService.Services.Application
             string? networkErrorMessage = null;
             int total = items.Count();
             int counter = 1;
+
+            // ========== FIX 5: Short-circuit if session is paused ==========
+            var isPausedDueToPendingQR = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(moderatorUserId);
+            if (isPausedDueToPendingQR)
+            {
+                _notifier.Notify($"🛑 [Moderator {moderatorUserId}] Session paused (PendingQR) - short-circuiting bulk send");
+                foreach (var item in items)
+                {
+                    results.Add(new MessageSendResult
+                    {
+                        Phone = item.Phone,
+                        Message = item.Message,
+                        Sent = false,
+                        Error = "Session requires authentication (PendingQR)",
+                        IconType = null,
+                        Status = MessageOperationStatus.PendingQR
+                    });
+                }
+                return results;
+            }
+            // ========== END FIX 5 ==========
 
             foreach (var item in items)
             {
@@ -103,7 +124,7 @@ namespace ClinicsManagementService.Services.Application
                 catch (Exception ex)
                 {
                     // Check if browser was closed DURING active operation (manual closure)
-                    if (_retryService.IsBrowserClosedException(ex))
+                    if (_browserExceptionService.IsBrowserClosedException(ex))
                     {
                         bool wasOperationInProgress = (session is PlaywrightBrowserSession pbs) && pbs.IsOperationInProgress;
                         
@@ -296,7 +317,7 @@ namespace ClinicsManagementService.Services.Application
             catch (Exception ex)
             {
                 // Check if browser was closed DURING active operation (manual closure)
-                if (_retryService.IsBrowserClosedException(ex))
+                if (_browserExceptionService.IsBrowserClosedException(ex))
                 {
                     bool wasOperationInProgress = (browserSession is PlaywrightBrowserSession pbs) && pbs.IsOperationInProgress;
                     
@@ -366,6 +387,204 @@ namespace ClinicsManagementService.Services.Application
             return result.Sent;
         }
 
+        /// <summary>
+        /// Send a single message and return detailed result with status (PendingQR, BrowserClosure, etc.)
+        /// This method provides full status information for the caller to handle different failure types.
+        /// </summary>
+        public async Task<MessageSendResult> SendMessageWithResultAsync(int moderatorUserId, string phoneNumber, string message, CancellationToken cancellationToken = default)
+        {
+            // Check cancellation before starting
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ========== FIX 5: Short-circuit if session is paused ==========
+            // Check pause state BEFORE any browser operations to prevent unnecessary browser launches
+            var isPausedDueToPendingQR = await _sessionSyncService.CheckIfSessionPausedDueToPendingQRAsync(moderatorUserId);
+            if (isPausedDueToPendingQR)
+            {
+                _notifier.Notify($"🛑 [Moderator {moderatorUserId}] Session paused (PendingQR) - short-circuiting message send for {phoneNumber}");
+                return new MessageSendResult
+                {
+                    Phone = phoneNumber,
+                    Message = message,
+                    Sent = false,
+                    Error = "Session requires authentication (PendingQR)",
+                    IconType = null,
+                    Status = MessageOperationStatus.PendingQR
+                };
+            }
+            // ========== END FIX 5 ==========
+
+            var browserSession = _browserSessionFactory(moderatorUserId);
+            MessageSendResult result;
+            try
+            {
+                // Check cancellation before getting session
+                cancellationToken.ThrowIfCancellationRequested();
+
+                browserSession = await _sessionManager.GetOrCreateSessionAsync(moderatorUserId);
+                OperationResult<string?> deliveryResult;
+                try
+                {
+                    // Check cancellation before sending
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Mark operation as in progress
+                    if (browserSession is PlaywrightBrowserSession pbs)
+                    {
+                        pbs.IsOperationInProgress = true;
+                    }
+
+                    deliveryResult = await _whatsappService.SendMessageWithIconTypeAsync(phoneNumber, message, browserSession, cancellationToken);
+                    
+                    // Mark operation as complete
+                    if (browserSession is PlaywrightBrowserSession pbs2)
+                    {
+                        pbs2.IsOperationInProgress = false;
+                    }
+                }
+                finally
+                {
+                    // Check cancellation before disposing
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        // Normal disposal: Don't manipulate flag here
+                        await _whatsappService.DisposeBrowserSessionAsync(browserSession);
+                    }
+                }
+
+                // Map OperationResult state to MessageOperationStatus
+                MessageOperationStatus status;
+                if (deliveryResult.IsSuccess == true)
+                {
+                    status = MessageOperationStatus.Success;
+                }
+                else if (deliveryResult.IsPendingQr())
+                {
+                    status = MessageOperationStatus.PendingQR;
+                }
+                else if (deliveryResult.IsPendingNet())
+                {
+                    status = MessageOperationStatus.PendingNET;
+                }
+                else if (deliveryResult.IsWaiting())
+                {
+                    status = MessageOperationStatus.Waiting;
+                }
+                else
+                {
+                    status = DetermineStatus(deliveryResult.IsSuccess == true, deliveryResult.ResultMessage);
+                }
+
+                result = new MessageSendResult
+                {
+                    Phone = phoneNumber,
+                    Message = message,
+                    Sent = deliveryResult.IsSuccess == true,
+                    Error = deliveryResult.ResultMessage,
+                    IconType = deliveryResult.Data,
+                    Status = status
+                };
+                
+                // Trigger global pause for PendingQR (authentication required)
+                if (status == MessageOperationStatus.PendingQR)
+                {
+                    _notifier.Notify($"⏸️ [Moderator {moderatorUserId}] PendingQR detected for {phoneNumber} - pausing session");
+                    try
+                    {
+                        await _sessionSyncService.PauseSessionDueToPendingQRAsync(moderatorUserId, pausedBy: null, pauseReason: "PendingQR");
+                    }
+                    catch (Exception pauseEx)
+                    {
+                        _notifier.Notify($"⚠️ [Moderator {moderatorUserId}] Failed to pause session for PendingQR: {pauseEx.Message}");
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _notifier.Notify($"⚠️ ❌ [Moderator {moderatorUserId}] Operation cancelled while sending message to {phoneNumber}");
+                result = new MessageSendResult 
+                { 
+                    Phone = phoneNumber, 
+                    Message = message, 
+                    Sent = false, 
+                    Error = "❌ العملية ملغاة: تم إلغاء عملية الإرسال", 
+                    IconType = null, 
+                    Status = MessageOperationStatus.Failure 
+                };
+            }
+            catch (Exception ex)
+            {
+                // Check if browser was closed DURING active operation (manual closure)
+                if (_browserExceptionService.IsBrowserClosedException(ex))
+                {
+                    bool wasOperationInProgress = (browserSession is PlaywrightBrowserSession pbs) && pbs.IsOperationInProgress;
+                    
+                    if (wasOperationInProgress)
+                    {
+                        // Manual browser closure during active operation - trigger BrowserClosure pause
+                        _notifier.Notify($"⏸️ [Moderator {moderatorUserId}] Manual browser closure detected for {phoneNumber} - pausing session");
+                        result = new MessageSendResult 
+                        { 
+                            Phone = phoneNumber, 
+                            Message = message, 
+                            Sent = false, 
+                            Error = "BrowserClosure: تم إغلاق المتصفح أثناء المهمة", 
+                            IconType = null, 
+                            Status = MessageOperationStatus.BrowserClosure 
+                        };
+                        // Trigger global pause - user can resume when ready
+                        try
+                        {
+                            await _sessionSyncService.PauseSessionDueToPendingQRAsync(moderatorUserId, pausedBy: null, pauseReason: "BrowserClosure");
+                        }
+                        catch (Exception pauseEx)
+                        {
+                            _notifier.Notify($"⚠️ [Moderator {moderatorUserId}] Failed to pause session: {pauseEx.Message}");
+                        }
+                    }
+                    else
+                    {
+                        // Browser crashed outside active operation - treat as failure
+                        _notifier.Notify($"❌ [Moderator {moderatorUserId}] Browser crash/failure for {phoneNumber}: {ex.Message}");
+                        result = new MessageSendResult 
+                        { 
+                            Phone = phoneNumber, 
+                            Message = message, 
+                            Sent = false, 
+                            Error = $"Browser failure: {ex.Message}", 
+                            IconType = null, 
+                            Status = MessageOperationStatus.Failure 
+                        };
+                    }
+                    
+                    // Reset flag
+                    if (browserSession is PlaywrightBrowserSession pbs3)
+                    {
+                        pbs3.IsOperationInProgress = false;
+                    }
+                }
+                else
+                {
+                    // Other errors: Preserve actual error reason
+                    _notifier.Notify($"⚠️ ❌ [Moderator {moderatorUserId}] Error for {phoneNumber}: {ex.Message}");
+                    result = new MessageSendResult 
+                    { 
+                        Phone = phoneNumber, 
+                        Message = message, 
+                        Sent = false, 
+                        Error = ex.Message,  // Preserve actual error reason
+                        IconType = null, 
+                        Status = MessageOperationStatus.Failure 
+                    };
+                }
+            }
+            if (!result.Sent && !string.IsNullOrEmpty(result.Error))
+            {
+                _notifier.Notify(result.Error);
+            }
+            return result;
+        }
+
         public async Task<List<MessageSendResult>> SendMessagesAsync(int moderatorUserId, string phoneNumber, IEnumerable<string> messages)
         {
             var browserSession = _browserSessionFactory(moderatorUserId);
@@ -412,7 +631,7 @@ namespace ClinicsManagementService.Services.Application
                 catch (Exception ex)
                 {
                     // Check if browser was closed DURING active operation (manual closure)
-                    if (_retryService.IsBrowserClosedException(ex))
+                    if (_browserExceptionService.IsBrowserClosedException(ex))
                     {
                         bool wasOperationInProgress = (browserSession is PlaywrightBrowserSession pbs) && pbs.IsOperationInProgress;
                         

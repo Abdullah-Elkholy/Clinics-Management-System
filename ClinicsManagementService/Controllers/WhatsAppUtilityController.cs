@@ -26,7 +26,7 @@ namespace ClinicsManagementService.Controllers
         private readonly IWhatsAppSessionManager _sessionManager;
         private readonly Func<int, IBrowserSession> _browserSessionFactory;
         private readonly IWhatsAppUIService _whatsAppUIService;
-        private readonly IRetryService _retryService;
+        private readonly IBrowserExceptionService _browserExceptionService;
         private readonly IWhatsAppSessionOptimizer _sessionOptimizer;
         private readonly IWhatsAppSessionSyncService _sessionSyncService;
         private readonly ApplicationDbContext _dbContext;
@@ -39,7 +39,7 @@ namespace ClinicsManagementService.Controllers
             IWhatsAppSessionManager sessionManager,
             Func<int, IBrowserSession> browserSessionFactory,
             IWhatsAppUIService whatsAppUIService,
-            IRetryService retryService,
+            IBrowserExceptionService browserExceptionService,
             IWhatsAppSessionOptimizer sessionOptimizer,
             IWhatsAppSessionSyncService sessionSyncService,
             ApplicationDbContext dbContext)
@@ -49,7 +49,7 @@ namespace ClinicsManagementService.Controllers
             _sessionManager = sessionManager;
             _browserSessionFactory = browserSessionFactory;
             _whatsAppUIService = whatsAppUIService;
-            _retryService = retryService;
+            _browserExceptionService = browserExceptionService;
             _sessionOptimizer = sessionOptimizer;
             _sessionSyncService = sessionSyncService;
             _dbContext = dbContext;
@@ -582,7 +582,7 @@ namespace ClinicsManagementService.Controllers
                                 }
                                 catch (Exception ex)
                                 {
-                                    if (_retryService.IsBrowserClosedException(ex))
+                                    if (_browserExceptionService.IsBrowserClosedException(ex))
                                     {
                                         _notifier.Notify("❗ Browser closed detected during authentication while waiting for Chat UI.");
                                         // Return a failure result instead of throwing to avoid terminating the host process
@@ -659,7 +659,7 @@ namespace ClinicsManagementService.Controllers
                     }
                     catch (Exception ex)
                     {
-                        if (_retryService.IsBrowserClosedException(ex))
+                        if (_browserExceptionService.IsBrowserClosedException(ex))
                         {
                             _notifier.Notify("❗ Browser closed detected during authentication. Consider recreating the browser session before retrying.");
                             // Return a failure so the caller can decide to recreate a session instead of rethrowing
@@ -724,7 +724,7 @@ namespace ClinicsManagementService.Controllers
             }
             catch (Exception ex)
             {
-                if (_retryService.IsBrowserClosedException(ex))
+                if (_browserExceptionService.IsBrowserClosedException(ex))
                 {
                     _notifier.Notify("❗ Browser closed detected during authentication. Consider recreating the browser session before retrying.");
                     throw;

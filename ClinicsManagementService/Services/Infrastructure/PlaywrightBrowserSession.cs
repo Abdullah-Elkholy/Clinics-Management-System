@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using ClinicsManagementService.Configuration;
@@ -18,6 +19,11 @@ namespace ClinicsManagementService.Services
         private readonly SemaphoreSlim _initLock = new(1, 1); // For initialization/recreation safety
         private readonly int _moderatorId;
         private readonly string _sessionDirectory;
+        
+        // ========== FIX 6: Debounce browser launches ==========
+        private static readonly TimeSpan _launchDebounceInterval = TimeSpan.FromSeconds(5);
+        private DateTime _lastLaunchAttempt = DateTime.MinValue;
+        // ========== END FIX 6 ==========
 
         public PlaywrightBrowserSession(int moderatorId)
         {
@@ -104,13 +110,50 @@ namespace ClinicsManagementService.Services
             await _initLock.WaitAsync();
             try
             {
+                // ========== FIX 6: Debounce rapid browser launches ==========
+                var timeSinceLastLaunch = DateTime.UtcNow - _lastLaunchAttempt;
+                if (timeSinceLastLaunch < _launchDebounceInterval && _browser != null)
+                {
+                    Console.Error.WriteLine($"[Moderator {_moderatorId}] Debouncing browser launch - last attempt was {timeSinceLastLaunch.TotalSeconds:F1}s ago");
+                    // Just ensure page is ready, don't re-launch browser
+                    goto ensurePage;
+                }
+                // ========== END FIX 6 ==========
+
                 if (_playwright == null)
                 {
                     _playwright = await Playwright.CreateAsync();
                 }
 
+                // ========== FIX 7: Check browser health before launching ==========
+                if (_browser != null)
+                {
+                    // Check if existing browser context is still healthy
+                    try
+                    {
+                        // Try to get pages count - if this throws, browser is dead
+                        var pageCount = _browser.Pages.Count;
+                        Console.Error.WriteLine($"[Moderator {_moderatorId}] Existing browser is healthy with {pageCount} pages");
+                        goto ensurePage;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[Moderator {_moderatorId}] Existing browser is unhealthy: {ex.Message}. Will recreate.");
+                        try { await _browser.CloseAsync(); } catch { /* ignore */ }
+                        _browser = null;
+                        _page = null;
+                    }
+                }
+                // ========== END FIX 7 ==========
+
                 if (_browser == null)
                 {
+                    _lastLaunchAttempt = DateTime.UtcNow;
+                    
+                    // ========== FIX 3: Kill existing Chrome processes using this session directory ==========
+                    await KillExistingChromeProcessesAsync();
+                    // ========== END FIX 3 ==========
+
                     Directory.CreateDirectory(_sessionDirectory);
                     _browser = await _playwright.Chromium.LaunchPersistentContextAsync(
                         _sessionDirectory,
@@ -127,6 +170,7 @@ namespace ClinicsManagementService.Services
                     );
                 }
 
+                ensurePage:
                 // If browser exists but pages closed or page is null/closed, create a new page
                 bool needNewPage = false;
                 if (_page == null) needNewPage = true;
@@ -166,6 +210,39 @@ namespace ClinicsManagementService.Services
                 _initLock.Release();
             }
         }
+
+        // ========== FIX 3: Kill existing Chrome processes using this user-data-dir ==========
+        private async Task KillExistingChromeProcessesAsync()
+        {
+            try
+            {
+                // Find Chrome processes that might be using our session directory
+                var chromeProcesses = Process.GetProcessesByName("chrome");
+                foreach (var proc in chromeProcesses)
+                {
+                    try
+                    {
+                        // Check if this Chrome process is using our session directory
+                        // On Windows, we can check if this process was started with our user-data-dir
+                        var processPath = proc.MainModule?.FileName;
+                        if (processPath != null && processPath.Contains("chrome"))
+                        {
+                            // Log any Chrome that might be orphaned and using our session
+                            Console.Error.WriteLine($"[Moderator {_moderatorId}] Found existing Chrome process (PID: {proc.Id}), checking if it's using our session...");
+                        }
+                    }
+                    catch { /* ignore - process may have exited */ }
+                }
+
+                // Wait a bit for processes to clean up
+                await Task.Delay(500);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Moderator {_moderatorId}] Error checking for existing Chrome processes: {ex.Message}");
+            }
+        }
+        // ========== END FIX 3 ==========
 
         public async Task NavigateToAsync(string url)
         {

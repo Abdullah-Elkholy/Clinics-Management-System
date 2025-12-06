@@ -20,15 +20,14 @@ using Hangfire.Dashboard;
 using Hangfire.MemoryStorage;
 using System.Security.Claims;
 
-// Configure Serilog early so startup logs are captured
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
+
+// Configure Serilog to log to the same global folder as the service API
+// This ensures all logs are in one place for easier monitoring.
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Debug()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-    .Enrich.FromLogContext()
-    .WriteTo.File("logs/clinics-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14)
+    .ReadFrom.Configuration(builder.Configuration)
     .CreateLogger();
 
-var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
 builder.Host.UseSerilog();
 
 // Add services

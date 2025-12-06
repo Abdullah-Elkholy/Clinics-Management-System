@@ -414,232 +414,174 @@ namespace ClinicsManagementService.Services.Domain
 
         public async Task<OperationResult<string?>> DeliverMessageAsync(IBrowserSession browserSession, string message, string? phoneNumber = null)
         {
-            // Modularized and robust async execution with retries and error handling
+            // Single-attempt message delivery without retries
             _notifier.Notify($"🚀 Starting message delivery task for phone: {phoneNumber ?? "N/A"}");
             _notifier.Notify($"📝 Message content: {message}");
 
-            int msgTimeRetries = 0;
-            int msgTimeoutRetries = 0;
-            const int msgTimeRetryCount = 3;
-            const int maxMsgTimeoutRetryCount = 3;
-
-            while (msgTimeoutRetries < maxMsgTimeoutRetryCount)
+            try
             {
-                OperationResult<string?>? result = null;
-                try
+                // Wait for UI elements to be ready with continuous monitoring
+                var uiWaitResult = await WaitWithMonitoringAsync(browserSession, async () =>
                 {
-                    // Wait for UI elements to be ready with continuous monitoring
-                    var uiWaitResult = await WaitWithMonitoringAsync(browserSession, async () =>
+                    foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
                     {
-                        foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
+                        var header = await browserSession.QuerySelectorAsync(selector);
+                        if (header != null)
                         {
-                            var header = await browserSession.QuerySelectorAsync(selector);
-                            if (header != null)
+                            foreach (var inputSelector in WhatsAppConfiguration.InputFieldSelectors)
                             {
-                                foreach (var inputSelector in WhatsAppConfiguration.InputFieldSelectors)
-                                {
-                                    var input = await browserSession.QuerySelectorAsync(inputSelector);
-                                    if (input != null)
-                                        return true;
-                                }
+                                var input = await browserSession.QuerySelectorAsync(inputSelector);
+                                if (input != null)
+                                    return true;
                             }
                         }
-                        return false;
-                    }, 20000, 1000);
-                    if (uiWaitResult.IsSuccess == false)
-                    {
-                        result = OperationResult<string?>.Failure(uiWaitResult?.ResultMessage ?? "Navigation interrupted by authentication or progress bar");
                     }
-                    else
-                    {
-                        IElementHandle? input = null;
-                        foreach (var inputSelector in WhatsAppConfiguration.InputFieldSelectors)
-                        {
-                            input = await browserSession.QuerySelectorAsync(inputSelector);
-                            if (input != null)
-                                break;
-                        }
+                    return false;
+                }, 20000, 1000);
+                
+                if (uiWaitResult.IsSuccess == false)
+                {
+                    return OperationResult<string?>.Failure(uiWaitResult?.ResultMessage ?? "Navigation interrupted by authentication or progress bar");
+                }
 
-                        if (input is null)
+                IElementHandle? input = null;
+                foreach (var inputSelector in WhatsAppConfiguration.InputFieldSelectors)
+                {
+                    input = await browserSession.QuerySelectorAsync(inputSelector);
+                    if (input != null)
+                        break;
+                }
+
+                if (input is null)
+                {
+                    _notifier.Notify("Message input box not found.");
+                    return OperationResult<string?>.Failure("Message input box not found.");
+                }
+
+                await input.FocusAsync();
+                await input.FillAsync(message);
+
+                // Send button selector from configuration
+                IElementHandle? sendButton = null;
+                foreach (var sendSelector in WhatsAppConfiguration.SendButtonSelectors)
+                {
+                    sendButton = await browserSession.QuerySelectorAsync(sendSelector);
+                    if (sendButton != null)
+                        break;
+                }
+
+                if (sendButton != null)
+                {
+                    _notifier.Notify("Clicking send button...");
+                    await sendButton.ClickAsync();
+                }
+                else
+                {
+                    _notifier.Notify("Send button not found, pressing Enter...");
+                    await input.PressAsync(WhatsAppConfiguration.SendEnterKey);
+                }
+
+                var maxWaitMs = 15000; // 15 seconds
+                var pollIntervalMs = 1000; // 1 second
+                int elapsed = 0;
+                bool sent = false;
+                string? iconType = null;
+
+                while (elapsed < maxWaitMs)
+                {
+                    // Run continuous monitoring during status polling
+                    var monitoringResult = await ContinuousMonitoringAsync(browserSession, pollIntervalMs);
+                    if (monitoringResult?.State == OperationState.Waiting)
+                    {
+                        return OperationResult<string?>.Failure(monitoringResult.ResultMessage ?? "Navigation interrupted by authentication or progress bar");
+                    }
+
+                    var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
+                    iconType = statusResult.IconType;
+                    _notifier.Notify($"Polling message status: iconType={iconType}, elapsed={elapsed}ms");
+
+                    if (iconType != null)
+                    {
+                        if (iconType == "msg-check" || iconType == "msg-dblcheck")
                         {
-                            _notifier.Notify("Message input box not found.");
-                            result = OperationResult<string?>.Failure("Message input box not found.");
+                            sent = true;
+                            _notifier.Notify($"Message sent successfully: iconType={iconType}");
+                            break;
+                        }
+                        else if (iconType == "msg-time")
+                        {
+                            _notifier.Notify($"Message still pending (msg-time), waiting...");
                         }
                         else
                         {
-                            await input.FocusAsync();
-                            await input.FillAsync(message);
-
-                            // Send button selector from configuration
-                            IElementHandle? sendButton = null;
-                            foreach (var sendSelector in WhatsAppConfiguration.SendButtonSelectors)
-                            {
-                                sendButton = await browserSession.QuerySelectorAsync(sendSelector);
-                                if (sendButton != null)
-                                    break;
-                            }
-
-                            if (sendButton != null)
-                            {
-                                _notifier.Notify("Clicking send button...");
-                                await sendButton.ClickAsync();
-                            }
-                            else
-                            {
-                                _notifier.Notify("Send button not found, pressing Enter...");
-                                await input.PressAsync(WhatsAppConfiguration.SendEnterKey);
-                            }
-
-                            var maxWaitMs = 15000; // 15 seconds
-                            var pollIntervalMs = 1000; // 1 second
-                            int elapsed = 0;
-                            bool sent = false;
-                            string? iconType = null;
-
-                            while (elapsed < maxWaitMs)
-                            {
-                                // Run continuous monitoring during status polling
-                                var monitoringResult = await ContinuousMonitoringAsync(browserSession, pollIntervalMs);
-                                if (monitoringResult?.State == OperationState.Waiting)
-                                {
-                                    result = OperationResult<string?>.Failure(monitoringResult.ResultMessage ?? "Navigation interrupted by authentication or progress bar");
-                                    break;
-                                }
-
-                                var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
-                                iconType = statusResult.IconType;
-                                _notifier.Notify($"Polling message status: iconType={iconType}, elapsed={elapsed}ms");
-
-                                if (iconType != null)
-                                {
-                                    if (iconType == "msg-check" || iconType == "msg-dblcheck")
-                                    {
-                                        sent = true;
-                                        _notifier.Notify($"Message sent successfully: iconType={iconType}");
-                                        break;
-                                    }
-                                    else if (iconType == "msg-time")
-                                    {
-                                        _notifier.Notify($"Message still pending (msg-time), waiting...");
-                                    }
-                                    else
-                                    {
-                                        _notifier.Notify($"Unexpected iconType: {iconType}");
-                                        string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-                                        await _screenshotService.TakeScreenshotAsync(browserSession, screenshotPath);
-                                        _notifier.Notify($"Screenshot taken for unexpected icon: {screenshotPath}");
-                                        await Task.Delay(pollIntervalMs);
-                                        continue;
-                                    }
-                                }
-                                else
-                                {
-                                    _notifier.Notify("Status icon for sent message not found, polling again...");
-                                }
-
-                                await Task.Delay(pollIntervalMs);
-                                elapsed += pollIntervalMs;
-                            }
-
-                            // If result is already set (failure during monitoring), return it
-                            if (result != null)
-                            {
-                                // nothing to do, result already populated
-                            }
-                            else if (iconType == null || iconType == "")
-                            {
-                                _notifier.Notify("No status icon found after polling - using existing retry logic");
-                                result = OperationResult<string?>.Waiting($"No status icon found after polling");
-                            }
-                            else
-                            {
-                                // Final extra wait if still pending with continuous monitoring
-                                if (!sent && iconType == "msg-time")
-                                {
-                                    _notifier.Notify("Final extra wait for msg-time status...");
-                                    var extraWaitResult = await WaitWithMonitoringAsync(browserSession, async () =>
-                                    {
-                                        var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
-                                        return statusResult.IconType == "msg-check" || statusResult.IconType == "msg-dblcheck";
-                                    }, 15000, 1000);
-
-                                    if (extraWaitResult.IsSuccess == false)
-                                    {
-                                        if (extraWaitResult.IsWaiting())
-                                            result = OperationResult<string?>.Waiting($"Waiting: {extraWaitResult.ResultMessage ?? "Final wait..."}");
-                                        else if (extraWaitResult.IsPendingQr())
-                                            result = OperationResult<string?>.PendingQR(extraWaitResult.ResultMessage ?? "Authentication required");
-                                        else if (extraWaitResult.IsPendingNet())
-                                            result = OperationResult<string?>.PendingNET(extraWaitResult.ResultMessage ?? "Internet issue");
-                                        else
-                                            result = OperationResult<string?>.Failure(extraWaitResult.ResultMessage ?? "Navigation interrupted by authentication or progress bar");
-                                    }
-                                    else
-                                    {
-                                        var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
-                                        iconType = statusResult.IconType;
-                                        if (iconType == "msg-check" || iconType == "msg-dblcheck")
-                                        {
-                                            sent = true;
-                                            _notifier.Notify($"Message sent after extra wait: iconType={iconType}");
-                                            result = OperationResult<string?>.Success(iconType);
-                                        }
-                                    }
-                                }
-
-                                if (result == null)
-                                {
-                                    if (sent && (iconType == "msg-check" || iconType == "msg-dblcheck"))
-                                    {
-                                        _notifier.Notify("DeliverMessageAsync completed: message sent.");
-                                        result = OperationResult<string?>.Success(iconType);
-                                    }
-                                    else if (!sent && iconType == "msg-time" && msgTimeRetries < msgTimeRetryCount)
-                                    {
-                                        msgTimeRetries++;
-                                        _notifier.Notify($"msg-time retry #{msgTimeRetries} of {msgTimeRetryCount}...");
-                                        result = OperationResult<string?>.Waiting($"msg-time retry #{msgTimeRetries} of {msgTimeRetryCount}...");
-                                    }
-                                    else if (msgTimeRetries == msgTimeRetryCount)
-                                    {
-                                        _notifier.Notify($"Message failed after {msgTimeRetries} msg-time retries.");
-                                        result = OperationResult<string?>.Failure($"Failed: msg-time after {msgTimeRetryCount} retries");
-                                    }
-                                    else
-                                    {
-                                        _notifier.Notify("Message not sent yet, re-checking...");
-                                        result = OperationResult<string?>.Waiting($"Message not sent yet, re-checking...");
-                                    }
-                                }
-                            }
+                            _notifier.Notify($"Unexpected iconType: {iconType}");
+                            string screenshotPath = $"Screenshots/unexpected_icon_{iconType}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                            await _screenshotService.TakeScreenshotAsync(browserSession, screenshotPath);
+                            _notifier.Notify($"Screenshot taken for unexpected icon: {screenshotPath}");
                         }
                     }
-                }
-                catch (Exception ex) when (IsBrowserClosedException(ex))
-                {
-                    _notifier.Notify($"⚠️ Error in DeliverMessageAsync: Browser was closed: {ex.Message}");
-                    result = OperationResult<string?>.Failure("DeliverMessageAsync failed: Browser closed");
-                }
-                catch (Exception ex)
-                {
-                    _notifier.Notify($"⚠️ Error in DeliverMessageAsync: {ex.Message}");
-                    result = OperationResult<string?>.Failure("DeliverMessageAsync failed");
+                    else
+                    {
+                        _notifier.Notify("Status icon for sent message not found, polling again...");
+                    }
+
+                    await Task.Delay(pollIntervalMs);
+                    elapsed += pollIntervalMs;
                 }
 
-                // Ensure result is not null before checking states
-                if (result == null)
+                // Check final status
+                if (sent && (iconType == "msg-check" || iconType == "msg-dblcheck"))
                 {
-                    result = OperationResult<string?>.Failure("DeliverMessageAsync failed");
+                    _notifier.Notify("DeliverMessageAsync completed: message sent.");
+                    return OperationResult<string?>.Success(iconType);
                 }
-                if (result.IsWaiting())
+
+                // Final extra wait if still pending (msg-time)
+                if (!sent && iconType == "msg-time")
                 {
-                    msgTimeoutRetries++;
-                    _notifier.Notify($"🔄 Retrying full task (attempt {msgTimeoutRetries}/{maxMsgTimeoutRetryCount})...");
-                    continue;
+                    _notifier.Notify("Final extra wait for msg-time status...");
+                    var extraWaitResult = await WaitWithMonitoringAsync(browserSession, async () =>
+                    {
+                        var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
+                        return statusResult.IconType == "msg-check" || statusResult.IconType == "msg-dblcheck";
+                    }, 15000, 1000);
+
+                    if (extraWaitResult.IsSuccess == true)
+                    {
+                        var statusResult = await GetLastOutgoingMessageStatusAsync(browserSession, message);
+                        iconType = statusResult.IconType;
+                        if (iconType == "msg-check" || iconType == "msg-dblcheck")
+                        {
+                            _notifier.Notify($"Message sent after extra wait: iconType={iconType}");
+                            return OperationResult<string?>.Success(iconType);
+                        }
+                    }
+                    
+                    // Still msg-time after extra wait - return as failure (no more retries)
+                    _notifier.Notify("Message still pending after extended wait.");
+                    return OperationResult<string?>.Failure("Failed: message still pending (msg-time) after extended wait");
                 }
-                return result;
+
+                // No status icon found
+                if (iconType == null || iconType == "")
+                {
+                    _notifier.Notify("No status icon found after polling.");
+                    return OperationResult<string?>.Failure("Failed: no status icon found after polling");
+                }
+
+                _notifier.Notify("Message delivery status unclear.");
+                return OperationResult<string?>.Failure("Failed: message delivery status unclear");
             }
-            return OperationResult<string?>.Failure($"Failed: No status icon found after {maxMsgTimeoutRetryCount} retries");
+            catch (Exception ex) when (IsBrowserClosedException(ex))
+            {
+                _notifier.Notify($"⚠️ Error in DeliverMessageAsync: Browser was closed: {ex.Message}");
+                return OperationResult<string?>.Failure("DeliverMessageAsync failed: Browser closed");
+            }
+            catch (Exception ex)
+            {
+                _notifier.Notify($"⚠️ Error in DeliverMessageAsync: {ex.Message}");
+                return OperationResult<string?>.Failure("DeliverMessageAsync failed");
+            }
         }
 
         /// <summary>
