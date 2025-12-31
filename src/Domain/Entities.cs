@@ -1008,5 +1008,392 @@ namespace Clinics.Domain
         [Column(TypeName = "nvarchar(max)")]
         public string? Metadata { get; set; }
     }
+
+    #region Extension Runner Entities
+
+    /// <summary>
+    /// Represents a paired browser extension device for a moderator.
+    /// Each moderator can have multiple paired devices, but only one active lease at a time.
+    /// </summary>
+    [Table("ExtensionDevices")]
+    public class ExtensionDevice
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator this device is paired with.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// Unique device identifier generated and stored by the extension.
+        /// Used to identify the same extension instance across sessions.
+        /// </summary>
+        [Required]
+        [StringLength(64)]
+        public string DeviceId { get; set; } = null!;
+
+        /// <summary>
+        /// Friendly name for the device (e.g., "Chrome on Desktop", "Work Laptop").
+        /// Set by user during pairing or auto-generated from user agent.
+        /// </summary>
+        [StringLength(100)]
+        public string? DeviceName { get; set; }
+
+        /// <summary>
+        /// Hash of the device token (never store plain token).
+        /// Token is issued during pairing and used for authentication.
+        /// </summary>
+        [Required]
+        [StringLength(128)]
+        public string TokenHash { get; set; } = null!;
+
+        /// <summary>
+        /// Extension version at time of pairing (e.g., "1.0.0").
+        /// </summary>
+        [StringLength(20)]
+        public string? ExtensionVersion { get; set; }
+
+        /// <summary>
+        /// Browser user agent at time of pairing.
+        /// </summary>
+        [StringLength(500)]
+        public string? UserAgent { get; set; }
+
+        /// <summary>
+        /// When the device token expires and requires re-pairing.
+        /// </summary>
+        [Required]
+        public DateTime TokenExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// When this device was first paired.
+        /// </summary>
+        [Required]
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Last time this device was seen (heartbeat or command completion).
+        /// </summary>
+        public DateTime? LastSeenAtUtc { get; set; }
+
+        /// <summary>
+        /// If device is revoked, this is when it was revoked.
+        /// </summary>
+        public DateTime? RevokedAtUtc { get; set; }
+
+        /// <summary>
+        /// Reason for revocation (e.g., "UserRevoked", "AdminRevoked", "TokenExpired", "Takeover").
+        /// </summary>
+        [StringLength(50)]
+        public string? RevokedReason { get; set; }
+
+        /// <summary>
+        /// Whether this device is currently active (not revoked).
+        /// </summary>
+        [NotMapped]
+        public bool IsActive => RevokedAtUtc == null && TokenExpiresAtUtc > DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Represents a pairing code for connecting an extension to a moderator account.
+    /// Short-lived (5 minutes) and single-use.
+    /// </summary>
+    [Table("ExtensionPairingCodes")]
+    public class ExtensionPairingCode
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator requesting to pair a device.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// Short numeric code for user to enter in extension (e.g., "12345678").
+        /// </summary>
+        [Required]
+        [StringLength(8)]
+        public string Code { get; set; } = null!;
+
+        /// <summary>
+        /// When this code was created.
+        /// </summary>
+        [Required]
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// When this code expires (typically 5 minutes after creation).
+        /// </summary>
+        [Required]
+        public DateTime ExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// When this code was used (null if not yet used).
+        /// </summary>
+        public DateTime? UsedAtUtc { get; set; }
+
+        /// <summary>
+        /// The device that used this code (null if not yet used).
+        /// </summary>
+        public Guid? UsedByDeviceId { get; set; }
+
+        [ForeignKey(nameof(UsedByDeviceId))]
+        public ExtensionDevice? UsedByDevice { get; set; }
+
+        /// <summary>
+        /// Whether this code is still valid (not expired, not used).
+        /// </summary>
+        [NotMapped]
+        public bool IsValid => UsedAtUtc == null && ExpiresAtUtc > DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Represents an active session lease for a browser extension.
+    /// Only one active lease per moderator at a time (enforced by unique index).
+    /// Lease must be renewed via heartbeat or it expires.
+    /// </summary>
+    [Table("ExtensionSessionLeases")]
+    public class ExtensionSessionLease
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator this lease is for.
+        /// Unique constraint ensures only one active lease per moderator.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// The device holding this lease.
+        /// </summary>
+        [Required]
+        public Guid DeviceId { get; set; }
+
+        [ForeignKey(nameof(DeviceId))]
+        public ExtensionDevice? Device { get; set; }
+
+        /// <summary>
+        /// Hash of lease token for validation.
+        /// </summary>
+        [Required]
+        [StringLength(128)]
+        public string LeaseTokenHash { get; set; } = null!;
+
+        /// <summary>
+        /// When this lease was acquired.
+        /// </summary>
+        [Required]
+        public DateTime AcquiredAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// When this lease expires if not renewed.
+        /// Typically 2-5 minutes from last heartbeat.
+        /// </summary>
+        [Required]
+        public DateTime ExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// Last heartbeat received from the extension.
+        /// </summary>
+        [Required]
+        public DateTime LastHeartbeatAtUtc { get; set; }
+
+        /// <summary>
+        /// If lease was revoked (takeover or explicit release), when it was revoked.
+        /// </summary>
+        public DateTime? RevokedAtUtc { get; set; }
+
+        /// <summary>
+        /// Reason for revocation (e.g., "Released", "Takeover", "Expired", "AdminRevoked").
+        /// </summary>
+        [StringLength(50)]
+        public string? RevokedReason { get; set; }
+
+        /// <summary>
+        /// Current WhatsApp Web tab URL as reported by extension.
+        /// </summary>
+        [StringLength(500)]
+        public string? CurrentUrl { get; set; }
+
+        /// <summary>
+        /// Current WhatsApp session status as reported by extension.
+        /// Values: "connected", "pending_qr", "pending_net", "disconnected", "unknown"
+        /// </summary>
+        [StringLength(20)]
+        public string? WhatsAppStatus { get; set; }
+
+        /// <summary>
+        /// Last error message from extension (for diagnostics).
+        /// </summary>
+        [StringLength(500)]
+        public string? LastError { get; set; }
+
+        /// <summary>
+        /// Whether this lease is currently active (not revoked, not expired).
+        /// </summary>
+        [NotMapped]
+        public bool IsActive => RevokedAtUtc == null && ExpiresAtUtc > DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Represents a command sent to the browser extension.
+    /// Commands are processed in order and must be acknowledged.
+    /// </summary>
+    [Table("ExtensionCommands")]
+    public class ExtensionCommand
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator/extension this command is for.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// Command type (e.g., "SendMessage", "Refresh", "HealthCheck", "Pause").
+        /// </summary>
+        [Required]
+        [StringLength(50)]
+        public string CommandType { get; set; } = null!;
+
+        /// <summary>
+        /// JSON payload with command-specific data.
+        /// For SendMessage: { phoneNumber, messageText, messageId, sessionId }
+        /// </summary>
+        [Required]
+        [Column(TypeName = "nvarchar(max)")]
+        public string PayloadJson { get; set; } = null!;
+
+        /// <summary>
+        /// Reference to the Message entity if this is a SendMessage command.
+        /// </summary>
+        public Guid? MessageId { get; set; }
+
+        [ForeignKey(nameof(MessageId))]
+        public Message? Message { get; set; }
+
+        /// <summary>
+        /// Command status: "pending", "sent", "acked", "completed", "failed", "expired"
+        /// </summary>
+        [Required]
+        [StringLength(20)]
+        public string Status { get; set; } = "pending";
+
+        /// <summary>
+        /// When this command was created.
+        /// </summary>
+        [Required]
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// When this command expires and should be considered failed.
+        /// </summary>
+        [Required]
+        public DateTime ExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// When command was sent to extension via SignalR/SSE.
+        /// </summary>
+        public DateTime? SentAtUtc { get; set; }
+
+        /// <summary>
+        /// When extension acknowledged receipt of command.
+        /// </summary>
+        public DateTime? AckedAtUtc { get; set; }
+
+        /// <summary>
+        /// When extension reported completion (success or failure).
+        /// </summary>
+        public DateTime? CompletedAtUtc { get; set; }
+
+        /// <summary>
+        /// JSON result from extension.
+        /// Contains status, error details, observations, etc.
+        /// </summary>
+        [Column(TypeName = "nvarchar(max)")]
+        public string? ResultJson { get; set; }
+
+        /// <summary>
+        /// Result status from extension (e.g., "success", "pendingQR", "pendingNET", "failed").
+        /// </summary>
+        [StringLength(20)]
+        public string? ResultStatus { get; set; }
+
+        /// <summary>
+        /// Number of times this command was retried.
+        /// </summary>
+        [Required]
+        public int RetryCount { get; set; } = 0;
+
+        /// <summary>
+        /// Priority for command ordering (lower = higher priority).
+        /// Default 100, urgent commands can use lower values.
+        /// </summary>
+        [Required]
+        public int Priority { get; set; } = 100;
+    }
+
+    /// <summary>
+    /// Enum for extension command types.
+    /// </summary>
+    public static class ExtensionCommandTypes
+    {
+        public const string SendMessage = "SendMessage";
+        public const string Refresh = "Refresh";
+        public const string HealthCheck = "HealthCheck";
+        public const string Pause = "Pause";
+        public const string Resume = "Resume";
+        public const string GetStatus = "GetStatus";
+        public const string GetQrCode = "GetQrCode";
+    }
+
+    /// <summary>
+    /// Enum for extension command statuses.
+    /// </summary>
+    public static class ExtensionCommandStatuses
+    {
+        public const string Pending = "pending";
+        public const string Sent = "sent";
+        public const string Acked = "acked";
+        public const string Completed = "completed";
+        public const string Failed = "failed";
+        public const string Expired = "expired";
+    }
+
+    /// <summary>
+    /// Enum for extension result statuses (from extension to server).
+    /// Maps to existing OperationResult categories.
+    /// </summary>
+    public static class ExtensionResultStatuses
+    {
+        public const string Success = "success";
+        public const string PendingQR = "pendingQR";
+        public const string PendingNET = "pendingNET";
+        public const string Waiting = "waiting";
+        public const string Failed = "failed";
+    }
+
+    #endregion
 }
 

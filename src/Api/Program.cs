@@ -152,6 +152,18 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowCredentials(); // Required for HttpOnly cookies and SignalR
     });
+    
+    // Separate policy for browser extensions (they don't need credentials for pairing)
+    options.AddPolicy("ExtensionPolicy", policy =>
+    {
+        policy.SetIsOriginAllowed(origin => 
+                origin.StartsWith("chrome-extension://") || 
+                origin.StartsWith("moz-extension://") ||
+                origin.StartsWith("http://localhost") ||
+                origin.StartsWith("https://localhost"))
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
 });
 
 // Add SignalR services for real-time updates
@@ -224,6 +236,15 @@ builder.Services.AddHttpClient<WhatsAppServiceSender>(client =>
 builder.Services.AddScoped<IMessageSender, WhatsAppServiceSender>();
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
 
+// Extension Runner services for browser extension-based WhatsApp automation
+builder.Services.Configure<Clinics.Api.Services.Extension.WhatsAppProviderOptions>(
+    builder.Configuration.GetSection(Clinics.Api.Services.Extension.WhatsAppProviderOptions.SectionName));
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionPairingService, Clinics.Api.Services.Extension.ExtensionPairingService>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionLeaseService, Clinics.Api.Services.Extension.ExtensionLeaseService>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionCommandService, Clinics.Api.Services.Extension.ExtensionCommandService>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProvider, Clinics.Api.Services.Extension.ExtensionRunnerProvider>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProviderFactory, Clinics.Api.Services.Extension.WhatsAppProviderFactory>();
+
 // Authorization policies
 builder.Services.AddAuthorization(options =>
 {
@@ -259,6 +280,9 @@ app.MapControllers();
 
 // Map SignalR hub endpoint
 app.MapHub<Clinics.Api.Hubs.DataUpdateHub>("/dataUpdateHub");
+
+// Map Extension SignalR hub endpoint for browser extension communication
+app.MapHub<Clinics.Api.Hubs.ExtensionHub>("/extensionHub");
 
 // Lightweight health endpoint for CI/CD readiness and Playwright waits
 // Returns 200 OK when the application has started routing/middleware.

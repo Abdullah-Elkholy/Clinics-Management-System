@@ -5,6 +5,7 @@ import { useWhatsAppSession } from '@/contexts/WhatsAppSessionContext';
 import { useUI } from '@/contexts/UIContext';
 import { useModal } from '@/contexts/ModalContext';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import ExtensionPairingSection from './ExtensionPairingSection';
 
 export default function WhatsAppAuthTabContent() {
   const { sessionStatus, sessionData, globalPauseState, startAuthentication, checkAuthentication, refreshGlobalPauseState, refreshSessionStatus } = useWhatsAppSession();
@@ -323,6 +324,9 @@ export default function WhatsAppAuthTabContent() {
           <li>انتظر حتى يتم التأكيد والاتصال بنجاح</li>
         </ol>
       </div>
+
+      {/* Extension Pairing Section */}
+      <ExtensionPairingSection />
     </div>
   );
 }

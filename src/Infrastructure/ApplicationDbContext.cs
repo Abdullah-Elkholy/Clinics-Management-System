@@ -21,6 +21,12 @@ namespace Clinics.Infrastructure
         public DbSet<ModeratorSettings> ModeratorSettings => Set<ModeratorSettings>();
         public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+        // Extension Runner entities
+        public DbSet<ExtensionDevice> ExtensionDevices => Set<ExtensionDevice>();
+        public DbSet<ExtensionPairingCode> ExtensionPairingCodes => Set<ExtensionPairingCode>();
+        public DbSet<ExtensionSessionLease> ExtensionSessionLeases => Set<ExtensionSessionLease>();
+        public DbSet<ExtensionCommand> ExtensionCommands => Set<ExtensionCommand>();
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -202,6 +208,110 @@ namespace Clinics.Infrastructure
                 .HasForeignKey(a => a.ActorUserId)
                 .OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<AuditLog>().Property(a => a.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+
+            #region Extension Runner Entity Configuration
+
+            // ExtensionDevice configuration
+            modelBuilder.Entity<ExtensionDevice>()
+                .HasOne(d => d.Moderator)
+                .WithMany()
+                .HasForeignKey(d => d.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            
+            modelBuilder.Entity<ExtensionDevice>()
+                .HasIndex(d => new { d.ModeratorUserId, d.DeviceId })
+                .IsUnique();
+            
+            modelBuilder.Entity<ExtensionDevice>()
+                .HasIndex(d => d.ModeratorUserId);
+            
+            modelBuilder.Entity<ExtensionDevice>()
+                .Property(d => d.CreatedAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // ExtensionPairingCode configuration
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasOne(p => p.Moderator)
+                .WithMany()
+                .HasForeignKey(p => p.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasOne(p => p.UsedByDevice)
+                .WithMany()
+                .HasForeignKey(p => p.UsedByDeviceId)
+                .OnDelete(DeleteBehavior.SetNull);
+            
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasIndex(p => p.Code);
+            
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasIndex(p => p.ModeratorUserId);
+            
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .Property(p => p.CreatedAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // ExtensionSessionLease configuration
+            // CRITICAL: Only one active lease per moderator (filtered unique index)
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasIndex(l => l.ModeratorUserId)
+                .IsUnique()
+                .HasFilter("[RevokedAtUtc] IS NULL");
+            
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasOne(l => l.Moderator)
+                .WithMany()
+                .HasForeignKey(l => l.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasOne(l => l.Device)
+                .WithMany()
+                .HasForeignKey(l => l.DeviceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasIndex(l => new { l.ModeratorUserId, l.RevokedAtUtc });
+            
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .Property(l => l.AcquiredAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+            
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .Property(l => l.LastHeartbeatAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // ExtensionCommand configuration
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasOne(c => c.Moderator)
+                .WithMany()
+                .HasForeignKey(c => c.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasOne(c => c.Message)
+                .WithMany()
+                .HasForeignKey(c => c.MessageId)
+                .OnDelete(DeleteBehavior.SetNull);
+            
+            // Index for pending commands per moderator (for command dispatch)
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasIndex(c => new { c.ModeratorUserId, c.Status, c.Priority, c.CreatedAtUtc });
+            
+            // Index for command status tracking
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasIndex(c => new { c.Status, c.ExpiresAtUtc });
+            
+            // Index for message-related commands
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasIndex(c => c.MessageId);
+            
+            modelBuilder.Entity<ExtensionCommand>()
+                .Property(c => c.CreatedAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            #endregion
         }
 
         /// <summary>

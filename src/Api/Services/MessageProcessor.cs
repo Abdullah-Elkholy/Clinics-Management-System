@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Clinics.Api.Controllers;
 using Microsoft.AspNetCore.SignalR;
 using Clinics.Api.Hubs;
+using Clinics.Api.Services.Extension;
 
 namespace Clinics.Api.Services
 {
@@ -18,7 +19,8 @@ namespace Clinics.Api.Services
     public class MessageProcessor : IMessageProcessor
     {
         private readonly ApplicationDbContext _db;
-        private readonly IMessageSender _sender;
+        private readonly IWhatsAppProviderFactory _providerFactory;
+        private readonly IMessageSender _legacySender; // Fallback for when no moderator
         private readonly Clinics.Application.Interfaces.IQuotaService _quotaService;
         private readonly CircuitBreakerService _circuitBreaker;
         private readonly ILogger<MessageProcessor> _logger;
@@ -26,14 +28,16 @@ namespace Clinics.Api.Services
 
         public MessageProcessor(
             ApplicationDbContext db, 
-            IMessageSender sender, 
+            IWhatsAppProviderFactory providerFactory,
+            IMessageSender legacySender, 
             Clinics.Application.Interfaces.IQuotaService quotaService,
             CircuitBreakerService circuitBreaker,
             ILogger<MessageProcessor> logger,
             IHubContext<DataUpdateHub> hubContext)
         {
             _db = db;
-            _sender = sender;
+            _providerFactory = providerFactory;
+            _legacySender = legacySender;
             _quotaService = quotaService;
             _circuitBreaker = circuitBreaker;
             _logger = logger;
@@ -97,7 +101,7 @@ namespace Clinics.Api.Services
                     m.LastAttemptAt = DateTime.UtcNow;
                     await _db.SaveChangesAsync();
 
-                    // Execute send through circuit breaker
+                    // Execute send through circuit breaker using the appropriate provider
                     (bool success, string? providerId, string? providerResponse) result;
                     try
                     {
@@ -105,13 +109,21 @@ namespace Clinics.Api.Services
                         {
                             result = await _circuitBreaker.ExecuteAsync(m.ModeratorId.Value, async () => 
                             {
-                                return await _sender.SendAsync(m);
+                                // Get the appropriate provider (Extension or Playwright fallback)
+                                var (provider, providerName) = await _providerFactory.GetProviderAsync(m.ModeratorId.Value);
+                                _logger.LogDebug("Using {ProviderName} provider for message {MessageId}", providerName, m.Id);
+                                
+                                // Send via the selected provider
+                                var sendResult = await provider.SendMessageAsync(m);
+                                
+                                // Convert WhatsAppSendResult to legacy tuple format for compatibility
+                                return (sendResult.Success, providerName, sendResult.ProviderResponse ?? sendResult.ErrorMessage);
                             });
                         }
                         else
                         {
-                            // No moderator ID - send without circuit breaker (fallback)
-                            result = await _sender.SendAsync(m);
+                            // No moderator ID - use legacy sender as fallback
+                            result = await _legacySender.SendAsync(m);
                         }
                     }
                     catch (CircuitBreakerOpenException cbEx)
