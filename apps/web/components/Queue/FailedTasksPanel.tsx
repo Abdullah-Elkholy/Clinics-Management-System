@@ -157,7 +157,7 @@ export default function FailedTasksPanel() {
                 position: 0,
                 status: p.status,
                 isValidWhatsAppNumber: false,
-                messagePreview: p.failedReason || 'فشل الإرسال',
+                messagePreview: p.messageContent || '', // Use resolved message content from backend
                 failedReason: p.failedReason || 'فشل الإرسال', // Ensure ErrorMessage is displayed
                 attempts: p.attempts || 0,
               } as Patient)),
@@ -445,7 +445,7 @@ export default function FailedTasksPanel() {
             position: 0,
             status: p.status,
             isValidWhatsAppNumber: false,
-            messagePreview: p.failedReason || 'فشل الإرسال',
+            messagePreview: p.messageContent || '', // Use resolved message content from backend
             failedReason: p.failedReason || 'فشل الإرسال',
             attempts: p.attempts || 0,
           } as Patient)),
@@ -826,7 +826,7 @@ export default function FailedTasksPanel() {
     phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
     message: (
       <div
-        className={`text-sm text-gray-700 ${
+        className={`text-sm text-gray-700 whitespace-pre-wrap ${
           isMessagesExpanded ? '' : 'line-clamp-2'
         } max-w-xs`}
         title={patient.messagePreview}

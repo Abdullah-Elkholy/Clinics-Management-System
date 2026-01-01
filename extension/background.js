@@ -32,18 +32,25 @@ let state = {
   leaseToken: null,
   leaseId: null, // Store lease ID for heartbeat
   moderatorId: null,
+  moderatorUsername: null,
+  moderatorName: null,
   isConnected: false,
   whatsAppStatus: 'unknown', // unknown, qr_pending, connected, disconnected
   hubConnection: null,
   heartbeatTimer: null,
   pollTimer: null,
   reconnectAttempts: 0,
-  currentUrl: null
+  currentUrl: null,
+  // Command queue for sequential processing
+  commandQueue: [],
+  isProcessingCommand: false,
+  // Track processed command IDs to prevent duplicates
+  processedCommandIds: new Set()
 };
 
 // Load configuration from storage
 async function loadConfig() {
-  const stored = await chrome.storage.local.get(['apiBaseUrl', 'deviceToken', 'moderatorId', 'leaseToken', 'isConnected', 'leaseId']);
+  const stored = await chrome.storage.local.get(['apiBaseUrl', 'deviceToken', 'moderatorId', 'moderatorUsername', 'moderatorName', 'leaseToken', 'isConnected', 'leaseId']);
   if (stored.apiBaseUrl) {
     CONFIG.apiBaseUrl = stored.apiBaseUrl;
   }
@@ -52,6 +59,12 @@ async function loadConfig() {
   }
   if (stored.moderatorId) {
     state.moderatorId = stored.moderatorId;
+  }
+  if (stored.moderatorUsername) {
+    state.moderatorUsername = stored.moderatorUsername;
+  }
+  if (stored.moderatorName) {
+    state.moderatorName = stored.moderatorName;
   }
   // Restore lease state (critical for service worker restart reliability)
   if (stored.leaseToken) {
@@ -73,10 +86,17 @@ async function loadConfig() {
 }
 
 // Save device token
-async function saveDeviceToken(token, moderatorId) {
+async function saveDeviceToken(token, moderatorId, moderatorUsername, moderatorName) {
   state.deviceToken = token;
   state.moderatorId = moderatorId;
-  await chrome.storage.local.set({ deviceToken: token, moderatorId: moderatorId });
+  state.moderatorUsername = moderatorUsername || null;
+  state.moderatorName = moderatorName || null;
+  await chrome.storage.local.set({ 
+    deviceToken: token, 
+    moderatorId: moderatorId,
+    moderatorUsername: moderatorUsername || null,
+    moderatorName: moderatorName || null
+  });
   console.log('[Extension] Device token saved');
 }
 
@@ -85,7 +105,9 @@ async function clearDeviceToken() {
   state.deviceToken = null;
   state.leaseToken = null;
   state.moderatorId = null;
-  await chrome.storage.local.remove(['deviceToken', 'moderatorId']);
+  state.moderatorUsername = null;
+  state.moderatorName = null;
+  await chrome.storage.local.remove(['deviceToken', 'moderatorId', 'moderatorUsername', 'moderatorName']);
   console.log('[Extension] Device token cleared');
 }
 
@@ -133,6 +155,30 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     } catch {
       // Ignore parse errors
     }
+    
+    // Check for invalid/revoked device token - auto-unpair
+    const isInvalidToken = response.status === 401 || response.status === 403 ||
+      errorMessage.toLowerCase().includes('invalid device token') ||
+      errorMessage.toLowerCase().includes('device not found') ||
+      errorMessage.toLowerCase().includes('device revoked') ||
+      errorMessage.toLowerCase().includes('token expired') ||
+      errorMessage.includes('الجهاز غير موجود') ||
+      errorMessage.includes('رمز غير صالح');
+    
+    if (isInvalidToken && state.deviceToken) {
+      console.warn('[Extension] Device token is invalid or revoked. Auto-clearing for re-pairing.');
+      await clearDeviceToken();
+      // Also clear any active lease
+      state.leaseToken = null;
+      state.leaseId = null;
+      state.isConnected = false;
+      await chrome.storage.local.remove(['leaseToken', 'leaseId', 'isConnected']);
+      stopHeartbeat();
+      disconnectSignalR();
+      broadcastState();
+      throw new Error('DEVICE_REVOKED');
+    }
+    
     throw new Error(errorMessage);
   }
   
@@ -152,16 +198,16 @@ async function completePairing(code) {
       userAgent: navigator.userAgent
     });
     
-    // Backend returns: { deviceId, moderatorUserId, deviceToken, tokenExpiresAt }
+    // Backend returns: { deviceId, moderatorUserId, moderatorUsername, moderatorName, deviceToken, tokenExpiresAt }
     // Check if we got a valid token back
     console.log('[Extension] Pairing API response:', JSON.stringify(result));
     if (result && result.deviceToken) {
-      await saveDeviceToken(result.deviceToken, result.moderatorUserId);
-      console.log('[Extension] Pairing successful for moderator:', result.moderatorUserId);
+      await saveDeviceToken(result.deviceToken, result.moderatorUserId, result.moderatorUsername, result.moderatorName);
+      console.log('[Extension] Pairing successful for moderator:', result.moderatorUserId, result.moderatorUsername);
       console.log('[Extension] Device token saved, state.deviceToken is now:', state.deviceToken ? 'set' : 'null');
       // Broadcast the updated state to the popup
       broadcastState();
-      return { success: true, moderatorId: result.moderatorUserId };
+      return { success: true, moderatorId: result.moderatorUserId, moderatorUsername: result.moderatorUsername, moderatorName: result.moderatorName };
     } else if (result && result.error) {
       console.log('[Extension] Pairing returned error:', result.error);
       return { success: false, error: result.error };
@@ -234,6 +280,12 @@ async function acquireLease(forceTakeover = false) {
     }
   } catch (error) {
     console.error('[Extension] Lease acquire error:', error);
+    
+    // Check if device was revoked - return special flag for UI
+    if (error.message === 'DEVICE_REVOKED') {
+      return { success: false, error: 'تم إلغاء إقران الجهاز. يرجى إعادة الإقران.', deviceRevoked: true };
+    }
+    
     // Check if error message contains info about existing session
     const errorMsg = error.message || '';
     if (errorMsg.includes('session') || errorMsg.includes('جلسة')) {
@@ -248,6 +300,18 @@ async function releaseLease() {
   try {
     stopHeartbeat();
     disconnectSignalR();
+    
+    // Clear command queue immediately to stop any pending commands
+    const queueLength = state.commandQueue.length;
+    state.commandQueue = [];
+    state.isProcessingCommand = false;
+    
+    // Clear processed command IDs for fresh start on next session
+    state.processedCommandIds.clear();
+    
+    if (queueLength > 0) {
+      console.log('[Extension] Cleared command queue on lease release, discarded:', queueLength, 'commands');
+    }
     
     if (state.leaseToken && state.leaseId) {
       await apiCall('/api/extension/lease/release', 'POST', {
@@ -303,6 +367,13 @@ async function sendHeartbeat() {
     console.log('[Extension] Heartbeat sent successfully');
   } catch (error) {
     console.error('[Extension] Heartbeat failed:', error);
+    
+    // If device was revoked, the apiCall already handled cleanup
+    if (error.message === 'DEVICE_REVOKED') {
+      console.log('[Extension] Device revoked during heartbeat, state already cleared');
+      return;
+    }
+    
     // If heartbeat fails with lease error, mark as disconnected
     if (error.message?.includes('Lease') || error.message?.includes('lease') || error.message?.includes('expired')) {
       handleDisconnect();
@@ -339,10 +410,10 @@ async function connectSignalR() {
       .configureLogging(signalR.LogLevel.Information)
       .build();
 
-    // Handle incoming commands
+    // Handle incoming commands - queue them for sequential processing
     state.hubConnection.on('ExecuteCommand', async (command) => {
       console.log('[Extension] Received command via SignalR:', command.commandType);
-      await processCommand(command);
+      queueCommand(command);
     });
 
     // Handle session invalidation
@@ -395,28 +466,31 @@ async function registerWithHub() {
   }
 
   try {
-    const deviceId = await getOrCreateDeviceId();
-    const leaseInfo = await apiCall('/api/extension/lease/status', 'GET');
+    // Use already acquired lease state instead of calling API (which requires web auth)
+    if (!state.leaseId || !state.leaseToken || !state.moderatorId) {
+      console.log('[Extension] Cannot register with hub - no active lease');
+      return;
+    }
     
-    if (leaseInfo && leaseInfo.leaseId) {
-      const result = await state.hubConnection.invoke('Register', 
-        leaseInfo.leaseId, 
-        state.leaseToken,
-        state.moderatorId,
-        deviceId
-      );
-      
-      if (result.success) {
-        console.log('[Extension] Registered with hub, pending commands:', result.pendingCommands?.length || 0);
-        // Process any pending commands
-        if (result.pendingCommands) {
-          for (const cmd of result.pendingCommands) {
-            await processCommand(cmd);
-          }
+    const deviceId = await getOrCreateDeviceId();
+    
+    const result = await state.hubConnection.invoke('Register', 
+      state.leaseId, 
+      state.leaseToken,
+      state.moderatorId,
+      deviceId
+    );
+    
+    if (result.success) {
+      console.log('[Extension] Registered with hub, pending commands:', result.pendingCommands?.length || 0);
+      // Queue any pending commands for sequential processing
+      if (result.pendingCommands) {
+        for (const cmd of result.pendingCommands) {
+          queueCommand(cmd);
         }
-      } else {
-        console.error('[Extension] Hub registration failed:', result.error);
       }
+    } else {
+      console.error('[Extension] Hub registration failed:', result.error);
     }
   } catch (error) {
     console.error('[Extension] Hub registration error:', error);
@@ -457,46 +531,336 @@ function stopPolling() {
   }
 }
 
-// Process a command from the server
-async function processCommand(command) {
-  console.log('[Extension] Processing command:', command.commandType, command.id);
+// Queue a command for sequential processing
+function queueCommand(command) {
+  const cmdId = command.commandId || command.id;
+  
+  // Don't queue if no active lease
+  if (!state.leaseId || !state.leaseToken) {
+    console.log('[Extension] Ignoring command - no active lease:', cmdId);
+    return;
+  }
+  
+  // Check if command was already processed (prevent duplicates)
+  if (state.processedCommandIds.has(cmdId)) {
+    console.log('[Extension] Ignoring duplicate command (already processed):', cmdId);
+    return;
+  }
+  
+  // Check if command is already in queue
+  if (state.commandQueue.some(c => (c.commandId || c.id) === cmdId)) {
+    console.log('[Extension] Ignoring duplicate command (already in queue):', cmdId);
+    return;
+  }
+  
+  state.commandQueue.push(command);
+  console.log('[Extension] Command queued, queue length:', state.commandQueue.length);
+  processNextCommand();
+}
+
+// Process commands sequentially from queue
+async function processNextCommand() {
+  // If already processing or queue empty, return
+  if (state.isProcessingCommand || state.commandQueue.length === 0) {
+    return;
+  }
+  
+  // Check if lease is still active - if not, clear queue
+  if (!state.leaseId || !state.leaseToken) {
+    console.log('[Extension] Clearing queue - no active lease. Discarding:', state.commandQueue.length, 'commands');
+    state.commandQueue = [];
+    return;
+  }
+  
+  // Check if WhatsApp is ready
+  if (state.whatsAppStatus !== 'connected') {
+    console.log('[Extension] Waiting for WhatsApp to be connected. Current status:', state.whatsAppStatus);
+    // Don't process yet, will retry when status changes
+    return;
+  }
+  
+  state.isProcessingCommand = true;
+  const command = state.commandQueue.shift();
   
   try {
-    // Acknowledge receipt
-    await apiCall(`/api/extension/commands/${command.id}/ack`, 'POST');
-    
-    // Send to content script for execution
+    await processCommand(command);
+  } finally {
+    state.isProcessingCommand = false;
+    // Process next command after a delay to avoid overwhelming WhatsApp
+    if (state.commandQueue.length > 0) {
+      setTimeout(() => processNextCommand(), 2000); // 2 second delay between commands
+    }
+  }
+}
+
+// Process a command from the server
+async function processCommand(command) {
+  const cmdId = command.commandId || command.id; // Support both formats
+  console.log('[Extension] Processing command:', command.commandType, cmdId);
+  
+  // Double-check for duplicates (in case of race condition)
+  if (state.processedCommandIds.has(cmdId)) {
+    console.log('[Extension] Skipping duplicate command in processCommand:', cmdId);
+    return;
+  }
+  
+  // Mark as processed immediately to prevent re-processing
+  state.processedCommandIds.add(cmdId);
+  
+  // Clean up old processed IDs to prevent memory leak (keep last 100)
+  if (state.processedCommandIds.size > 100) {
+    const idsArray = Array.from(state.processedCommandIds);
+    state.processedCommandIds = new Set(idsArray.slice(-50));
+  }
+  
+  // Validate state before processing
+  if (!state.leaseId || !state.leaseToken) {
+    console.error('[Extension] Cannot process command - no active lease. leaseId:', state.leaseId, 'leaseToken:', !!state.leaseToken);
+    return;
+  }
+  
+  // Auth payload required for all command API calls
+  const authPayload = {
+    leaseId: state.leaseId,
+    leaseToken: state.leaseToken
+  };
+  
+  console.log('[Extension] Command auth - leaseId:', state.leaseId);
+  
+  try {
+    // Check if WhatsApp tab exists
     const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
     if (tabs.length === 0) {
-      throw new Error('WhatsApp tab not found');
+      throw new Error('WhatsApp tab not found - please open web.whatsapp.com');
     }
     
-    const result = await chrome.tabs.sendMessage(tabs[0].id, {
-      type: 'EXECUTE_COMMAND',
-      command: command
-    });
+    const tab = tabs[0];
+    
+    // Acknowledge receipt first
+    await apiCall(`/api/extension/commands/${cmdId}/ack`, 'POST', authPayload);
+    console.log('[Extension] Command acknowledged:', cmdId);
+    
+    let result;
+    
+    // Special handling for SendMessage - use two-phase approach
+    if (command.commandType === 'SendMessage') {
+      result = await handleSendMessage(tab, command, authPayload);
+    } else {
+      // For other commands, use simple content script execution
+      result = await executeSimpleCommand(tab, command);
+    }
+    
+    console.log('[Extension] Command result:', result);
     
     // Report result
-    if (result.success) {
-      await apiCall(`/api/extension/commands/${command.id}/complete`, 'POST', {
-        success: true,
-        result: result.data
+    if (result && result.success) {
+      await apiCall(`/api/extension/commands/${cmdId}/complete`, 'POST', {
+        ...authPayload,
+        resultStatus: 'success',
+        resultData: result.data
       });
+      console.log('[Extension] Command completed successfully:', cmdId);
     } else {
-      await apiCall(`/api/extension/commands/${command.id}/complete`, 'POST', {
-        success: false,
-        error: result.error,
-        category: result.category || 'unknown'
+      await apiCall(`/api/extension/commands/${cmdId}/complete`, 'POST', {
+        ...authPayload,
+        resultStatus: 'failed',
+        resultData: { error: result?.error || 'Unknown error', category: result?.category || 'unknown' }
       });
+      console.log('[Extension] Command failed:', cmdId, result?.error);
     }
   } catch (error) {
     console.error('[Extension] Command execution error:', error);
-    await apiCall(`/api/extension/commands/${command.id}/complete`, 'POST', {
-      success: false,
-      error: error.message,
-      category: 'extension_error'
-    });
+    try {
+      await apiCall(`/api/extension/commands/${cmdId}/complete`, 'POST', {
+        ...authPayload,
+        resultStatus: 'failed',
+        resultData: { error: error.message, category: 'extension_error' }
+      });
+    } catch (completeError) {
+      console.error('[Extension] Failed to report command completion:', completeError);
+    }
   }
+}
+
+// Execute a simple command through content script (non-navigation)
+async function executeSimpleCommand(tab, command) {
+  // Ensure content script is injected and ready
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'PING' });
+  } catch (pingError) {
+    console.log('[Extension] Content script not ready, injecting...');
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content.js']
+    });
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  
+  // Send command with timeout
+  return await Promise.race([
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'EXECUTE_COMMAND',
+      command: command
+    }),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Content script timeout - 60 seconds')), 60000)
+    )
+  ]);
+}
+
+// Handle SendMessage with two-phase approach
+async function handleSendMessage(tab, command, authPayload) {
+  console.log('[Extension] handleSendMessage - starting two-phase approach');
+  
+  // Parse payload
+  let payload = command.payload;
+  if (typeof payload === 'string') {
+    payload = JSON.parse(payload);
+  }
+  
+  const phoneNumber = payload.phoneNumber || payload.patientPhone;
+  const countryCode = payload.countryCode || '';
+  const messageText = payload.text || payload.messageText || payload.content;
+  
+  if (!phoneNumber) {
+    throw new Error('Phone number not provided in payload');
+  }
+  if (!messageText) {
+    throw new Error('Message text not provided in payload');
+  }
+  
+  // Debug logging for newlines
+  console.log('[Extension] SendMessage to:', phoneNumber, 'CountryCode:', countryCode);
+  console.log('[Extension] Message text length:', messageText.length);
+  console.log('[Extension] Message has newlines:', messageText.includes('\n'));
+  console.log('[Extension] Newline count:', (messageText.match(/\n/g) || []).length);
+  console.log('[Extension] First 100 chars:', messageText.substring(0, 100));
+  console.log('[Extension] Message text char codes (first 50):', [...messageText.substring(0, 50)].map(c => c.charCodeAt(0)));
+  
+  // Clean phone number and ensure it includes country code
+  let cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+  
+  // If phone doesn't start with country code digits and we have a country code, prepend it
+  if (countryCode && !cleanNumber.startsWith(countryCode.replace('+', ''))) {
+    // Remove leading zeros from local number and prepend country code (without +)
+    cleanNumber = countryCode.replace('+', '') + cleanNumber.replace(/^0+/, '');
+  }
+  
+  const chatUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
+  
+  console.log('[Extension] Phase 1 - Navigating to chat URL:', chatUrl);
+  
+  // Navigate to the chat URL directly (this handles navigation without needing content script)
+  await chrome.tabs.update(tab.id, { url: chatUrl });
+  
+  // Wait for the tab to complete loading
+  await waitForTabComplete(tab.id, 30000);
+  console.log('[Extension] Tab loaded after navigation');
+  
+  // Wait additional time for WhatsApp to initialize
+  await new Promise(r => setTimeout(r, 2000));
+  
+  // Inject content script (fresh injection after navigation)
+  console.log('[Extension] Injecting content script after navigation...');
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ['content.js']
+  });
+  
+  // Wait for content script to initialize
+  await new Promise(r => setTimeout(r, 1000));
+  
+  // Verify content script is ready with retries
+  let contentReady = false;
+  let lastStatus = 'unknown';
+  for (let i = 0; i < 5; i++) {
+    try {
+      const pingResult = await chrome.tabs.sendMessage(tab.id, { type: 'PING' });
+      console.log('[Extension] Content script ping result:', pingResult);
+      if (pingResult && pingResult.success) {
+        lastStatus = pingResult.status || 'unknown';
+        // Wait for 'connected' status before proceeding (chat UI is ready)
+        if (lastStatus === 'connected') {
+          contentReady = true;
+          break;
+        }
+        console.log('[Extension] WhatsApp status is', lastStatus, '- waiting for connected...');
+      }
+    } catch (e) {
+      console.log('[Extension] Ping attempt', i + 1, 'failed:', e.message);
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  
+  // If still not connected after 5 attempts, try a few more times with longer waits
+  if (!contentReady) {
+    console.log('[Extension] WhatsApp not connected after initial attempts, waiting longer...');
+    for (let i = 0; i < 10; i++) {
+      try {
+        const pingResult = await chrome.tabs.sendMessage(tab.id, { type: 'PING' });
+        if (pingResult && pingResult.success && pingResult.status === 'connected') {
+          contentReady = true;
+          lastStatus = 'connected';
+          console.log('[Extension] WhatsApp now connected');
+          break;
+        }
+        lastStatus = pingResult?.status || 'unknown';
+        console.log('[Extension] Still waiting for connected, current status:', lastStatus);
+      } catch (e) {
+        console.log('[Extension] Extended ping attempt', i + 1, 'failed:', e.message);
+      }
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  
+  if (!contentReady) {
+    throw new Error(`Content script not ready after navigation. Last status: ${lastStatus}`);
+  }
+  
+  console.log('[Extension] Phase 2 - Sending message...');
+  
+  // Send the message
+  const result = await Promise.race([
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'SEND_MESSAGE_ONLY',
+      text: messageText
+    }),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Send message timeout - 60 seconds')), 60000)
+    )
+  ]);
+  
+  console.log('[Extension] SendMessage result:', result);
+  return result;
+}
+
+// Wait for tab to complete loading
+function waitForTabComplete(tabId, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('Tab load timeout'));
+    }, timeout);
+    
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    
+    chrome.tabs.onUpdated.addListener(listener);
+    
+    // Also check current state in case it's already complete
+    chrome.tabs.get(tabId).then(tab => {
+      if (tab.status === 'complete') {
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    });
+  });
 }
 
 // Handle disconnect
@@ -530,6 +894,8 @@ function broadcastState() {
       isPaired: !!state.deviceToken,
       isConnected: state.isConnected,
       moderatorId: state.moderatorId,
+      moderatorUsername: state.moderatorUsername,
+      moderatorName: state.moderatorName,
       whatsAppStatus: state.whatsAppStatus
     }
   };
@@ -557,6 +923,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             isPaired: !!state.deviceToken,
             isConnected: state.isConnected,
             moderatorId: state.moderatorId,
+            moderatorUsername: state.moderatorUsername,
+            moderatorName: state.moderatorName,
             whatsAppStatus: state.whatsAppStatus,
             apiBaseUrl: CONFIG.apiBaseUrl
           });
@@ -590,6 +958,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
           
         case 'WHATSAPP_STATUS':
+          const previousStatus = state.whatsAppStatus;
           state.whatsAppStatus = message.status;
           state.currentUrl = message.url;
           console.log('[Extension] WhatsApp status updated:', message.status);
@@ -597,6 +966,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Report to server immediately (also update heartbeat)
           if (state.isConnected && state.leaseId && state.leaseToken) {
             sendHeartbeat().catch(console.error);
+          }
+          // If status changed to connected, try processing queued commands
+          if (message.status === 'connected' && previousStatus !== 'connected') {
+            console.log('[Extension] WhatsApp now connected, processing queued commands');
+            processNextCommand();
           }
           sendResponse({ success: true });
           break;

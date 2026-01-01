@@ -162,6 +162,7 @@ namespace Clinics.Api.Controllers
                 // Check if there are any paused messages for this moderator (due to PendingQR/PendingNET/BrowserClosure)
                 var hasPausedMessages = await _db.Messages
                     .AnyAsync(m => m.ModeratorId == effectiveModeratorId 
+                        && !m.IsDeleted
                         && m.IsPaused 
                         && (m.PauseReason == "PendingQR" || m.PauseReason == "PendingNET" || m.PauseReason == "BrowserClosure")
                         && (m.Status == "queued" || m.Status == "sending"));
@@ -171,6 +172,7 @@ namespace Clinics.Api.Controllers
                     // Get the most common pause reason from paused messages
                     var pauseReasons = await _db.Messages
                         .Where(m => m.ModeratorId == effectiveModeratorId 
+                            && !m.IsDeleted
                             && m.IsPaused 
                             && (m.PauseReason == "PendingQR" || m.PauseReason == "PendingNET" || m.PauseReason == "BrowserClosure")
                             && (m.Status == "queued" || m.Status == "sending"))
@@ -682,11 +684,73 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
+        /// Retry a single message by its ID
+        /// </summary>
+        [HttpPost("{id}/retry")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        public async Task<IActionResult> RetryMessage(Guid id)
+        {
+            try
+            {
+                var message = await _db.Messages
+                    .Include(m => m.Queue)
+                    .FirstOrDefaultAsync(m => m.Id == id);
+                
+                if (message == null)
+                    return NotFound(new { success = false, error = "Message not found" });
+
+                // CRITICAL: Validate WhatsApp number before retrying
+                if (message.PatientId.HasValue)
+                {
+                    var patient = await _db.Patients.FindAsync(message.PatientId.Value);
+                    
+                    if (patient != null && (!patient.IsValidWhatsAppNumber.HasValue || patient.IsValidWhatsAppNumber.Value == false))
+                    {
+                        _logger.LogWarning("Retry rejected for message {MessageId} - Patient {PatientId} has unvalidated WhatsApp number", 
+                            id, patient.Id);
+                        
+                        return BadRequest(new 
+                        { 
+                            success = false,
+                            error = "WhatsAppValidationRequired",
+                            message = "رقم الواتساب للمريض غير محقق. يجب التحقق من رقم الواتساب أولاً."
+                        });
+                    }
+                }
+
+                // Requeue the message
+                message.Status = "queued";
+                message.IsPaused = false;
+                message.PausedAt = null;
+                message.PauseReason = null;
+                message.LastAttemptAt = DateTime.UtcNow;
+
+                await _db.SaveChangesAsync();
+                
+                // Broadcast MessageUpdated event via SignalR
+                var moderatorId = message.ModeratorId ?? 0;
+                if (moderatorId > 0)
+                {
+                    await _hubContext.Clients
+                        .Group($"moderator-{moderatorId}")
+                        .SendAsync("MessageUpdated", new { messageId = message.Id, isPaused = false, status = "queued" });
+                }
+                
+                return Ok(new { success = true, status = message.Status, attempts = message.Attempts });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrying message {MessageId}", id);
+                return StatusCode(500, new { success = false, error = "Error retrying message" });
+            }
+        }
+
+        /// <summary>
         /// Pause a single message
         /// </summary>
         [HttpPost("{id}/pause")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
-        public async Task<IActionResult> PauseMessage(long id)
+        public async Task<IActionResult> PauseMessage(Guid id)
         {
             try
             {
@@ -735,7 +799,7 @@ namespace Clinics.Api.Controllers
         /// </summary>
         [HttpPost("{id}/resume")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
-        public async Task<IActionResult> ResumeMessage(long id)
+        public async Task<IActionResult> ResumeMessage(Guid id)
         {
             try
             {
@@ -751,6 +815,14 @@ namespace Clinics.Api.Controllers
                 message.PausedAt = null;
                 message.PausedBy = null;
                 message.PauseReason = null;
+                
+                // CRITICAL FIX: Reset status to "queued" if it's stuck in "sending"
+                // This ensures the MessageProcessor will pick it up again
+                // When a message is paused during sending, it should be retryable on resume
+                if (message.Status == "sending")
+                {
+                    message.Status = "queued";
+                }
 
                 await _db.SaveChangesAsync();
                 
@@ -779,7 +851,7 @@ namespace Clinics.Api.Controllers
         /// </summary>
         [HttpDelete("{id}")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
-        public async Task<IActionResult> DeleteMessage(long id)
+        public async Task<IActionResult> DeleteMessage(Guid id)
         {
             try
             {
@@ -828,7 +900,9 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// Pause all messages for a session
+        /// Pause all messages for a session (uses hierarchical pause - session level only)
+        /// Per 3-tier hierarchy: WhatsAppSession > MessageSession > Message
+        /// This only sets MessageSession.IsPaused = true, no cascade to individual messages.
         /// </summary>
         [HttpPost("session/{sessionId}/pause")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
@@ -838,55 +912,54 @@ namespace Clinics.Api.Controllers
             {
                 var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
                 
-                // Pause all messages in this session
-                var messages = await _db.Messages
-                    .Where(m => m.SessionId == sessionId && (m.Status == "queued" || m.Status == "sending") && !m.IsPaused)
-                    .ToListAsync();
-
-                foreach (var msg in messages)
+                // Parse session ID
+                if (!Guid.TryParse(sessionId, out var sessionGuid))
                 {
-                    msg.IsPaused = true;
-                    msg.PausedAt = DateTime.UtcNow;
-                    msg.PausedBy = userId;
-                    msg.PauseReason = "SessionPaused";
-                    if (msg.Status == "sending")
-                    {
-                        msg.Status = "queued";
-                    }
+                    return BadRequest(new { success = false, error = "Invalid session ID" });
                 }
-
-                // Also pause the session itself
-                var session = await _db.MessageSessions
-                    .FirstOrDefaultAsync(s => s.Id.ToString() == sessionId || s.Id == Guid.Parse(sessionId));
                 
-                if (session != null)
+                // Pause the session itself (hierarchical pause - no cascade to messages)
+                var session = await _db.MessageSessions.FindAsync(sessionGuid);
+                
+                if (session == null)
                 {
-                    session.IsPaused = true;
-                    session.Status = "paused";
-                    session.PausedAt = DateTime.UtcNow;
-                    session.PausedBy = userId;
-                    session.PauseReason = "UserPaused";
-                    session.LastUpdated = DateTime.UtcNow;
+                    return NotFound(new { success = false, error = "Session not found" });
                 }
+                
+                // Set session-level pause (MessageProcessor will check this at query time)
+                session.IsPaused = true;
+                session.Status = "paused";
+                session.PausedAt = DateTime.UtcNow;
+                session.PausedBy = userId;
+                session.PauseReason = "UserPaused";
+                session.LastUpdated = DateTime.UtcNow;
+                
+                // Count affected messages (for UI feedback - no database changes to messages)
+                var affectedMessageCount = await _db.Messages
+                    .Where(m => m.SessionId == sessionId 
+                        && (m.Status == "queued" || m.Status == "sending") 
+                        && !m.IsPaused
+                        && !m.IsDeleted)
+                    .CountAsync();
+                
+                // Update OngoingMessages counter
+                session.OngoingMessages = 0; // All messages in this session are now paused via hierarchy
+                
+                _logger.LogInformation("Session {SessionId} paused via hierarchy. {AffectedCount} messages paused at query time.", 
+                    sessionId, affectedMessageCount);
 
                 await _db.SaveChangesAsync();
                 
-                // Broadcast MessageUpdated events via SignalR for each paused message
-                if (messages.Any())
+                // Broadcast SessionUpdated event via SignalR (single event for session pause)
+                var moderatorId = session.ModeratorId;
+                if (moderatorId > 0)
                 {
-                    var moderatorId = messages.First().ModeratorId ?? 0;
-                    if (moderatorId > 0)
-                    {
-                        foreach (var msg in messages)
-                        {
-                            await _hubContext.Clients
-                                .Group($"moderator-{moderatorId}")
-                                .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = true, status = msg.Status });
-                        }
-                    }
+                    await _hubContext.Clients
+                        .Group($"moderator-{moderatorId}")
+                        .SendAsync("SessionUpdated", new { sessionId = sessionGuid, isPaused = true, status = "paused" });
                 }
                 
-                return Ok(new { success = true, pausedCount = messages.Count });
+                return Ok(new { success = true, pausedCount = affectedMessageCount });
             }
             catch (Exception ex)
             {
@@ -896,7 +969,10 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// Resume all paused messages for a session
+        /// Resume all paused messages for a session (uses hierarchical resume - session level only)
+        /// Per 3-tier hierarchy: WhatsAppSession > MessageSession > Message
+        /// This only sets MessageSession.IsPaused = false.
+        /// Messages will automatically become processable unless individually paused.
         /// </summary>
         [HttpPost("session/{sessionId}/resume")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
@@ -904,51 +980,54 @@ namespace Clinics.Api.Controllers
         {
             try
             {
-                // Resume all paused messages in this session
-                var messages = await _db.Messages
-                    .Where(m => m.SessionId == sessionId && m.IsPaused)
-                    .ToListAsync();
-
-                foreach (var msg in messages)
+                // Parse session ID
+                if (!Guid.TryParse(sessionId, out var sessionGuid))
                 {
-                    msg.IsPaused = false;
-                    msg.PausedAt = null;
-                    msg.PausedBy = null;
-                    msg.PauseReason = null;
+                    return BadRequest(new { success = false, error = "Invalid session ID" });
                 }
-
-                // Also resume the session itself
-                var session = await _db.MessageSessions
-                    .FirstOrDefaultAsync(s => s.Id.ToString() == sessionId || s.Id == Guid.Parse(sessionId));
                 
-                if (session != null)
+                // Resume the session itself (hierarchical resume - no cascade to messages)
+                var session = await _db.MessageSessions.FindAsync(sessionGuid);
+                
+                if (session == null)
                 {
-                    session.IsPaused = false;
-                    session.Status = "active";
-                    session.PausedAt = null;
-                    session.PausedBy = null;
-                    session.PauseReason = null;
-                    session.LastUpdated = DateTime.UtcNow;
+                    return NotFound(new { success = false, error = "Session not found" });
                 }
+                
+                // Clear session-level pause
+                session.IsPaused = false;
+                session.Status = "active";
+                session.PausedAt = null;
+                session.PausedBy = null;
+                session.PauseReason = null;
+                session.LastUpdated = DateTime.UtcNow;
+                
+                // Count messages that will become processable (not individually paused)
+                var resumedMessageCount = await _db.Messages
+                    .Where(m => m.SessionId == sessionId 
+                        && (m.Status == "queued" || m.Status == "sending") 
+                        && !m.IsPaused  // Only count messages not individually paused
+                        && !m.IsDeleted)
+                    .CountAsync();
+                
+                // Update OngoingMessages counter
+                session.OngoingMessages = resumedMessageCount;
+                
+                _logger.LogInformation("Session {SessionId} resumed via hierarchy. {ResumedCount} messages now processable.", 
+                    sessionId, resumedMessageCount);
 
                 await _db.SaveChangesAsync();
                 
-                // Broadcast MessageUpdated events via SignalR for each resumed message
-                if (messages.Any())
+                // Broadcast SessionUpdated event via SignalR
+                var moderatorId = session.ModeratorId;
+                if (moderatorId > 0)
                 {
-                    var moderatorId = messages.First().ModeratorId ?? 0;
-                    if (moderatorId > 0)
-                    {
-                        foreach (var msg in messages)
-                        {
-                            await _hubContext.Clients
-                                .Group($"moderator-{moderatorId}")
-                                .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = false, status = msg.Status });
-                        }
-                    }
+                    await _hubContext.Clients
+                        .Group($"moderator-{moderatorId}")
+                        .SendAsync("SessionUpdated", new { sessionId = sessionGuid, isPaused = false, status = "active" });
                 }
                 
-                return Ok(new { success = true, resumedCount = messages.Count });
+                return Ok(new { success = true, resumedCount = resumedMessageCount });
             }
             catch (Exception ex)
             {
@@ -1068,6 +1147,13 @@ namespace Clinics.Api.Controllers
                     msg.PausedAt = null;
                     msg.PausedBy = null;
                     msg.PauseReason = null;
+                    
+                    // CRITICAL FIX: Reset status to "queued" if stuck in "sending"
+                    // This ensures MessageProcessor will pick up these messages again
+                    if (msg.Status == "sending")
+                    {
+                        msg.Status = "queued";
+                    }
                 }
 
                 // Also resume all paused sessions for this moderator

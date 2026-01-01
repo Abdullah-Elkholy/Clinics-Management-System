@@ -142,7 +142,8 @@ public class SessionsController : ControllerBase
                     IsPaused = m.IsPaused,
                     Attempts = m.Attempts,
                     PauseReason = m.PauseReason,
-                    ErrorMessage = m.ErrorMessage
+                    ErrorMessage = m.ErrorMessage,
+                    Content = m.Content // Include message content for display
                 })
                 .ToListAsync();
 
@@ -208,7 +209,8 @@ public class SessionsController : ControllerBase
                         IsPaused = message?.IsPaused ?? false,
                         Attempts = message?.Attempts ?? 0,
                         AttemptNumber = (message?.Attempts ?? 0) + 1,
-                        FailedReason = message?.ErrorMessage
+                        FailedReason = message?.ErrorMessage,
+                        MessageContent = message?.Content // Include resolved message content
                     };
                 }).ToList();
 
@@ -254,7 +256,9 @@ public class SessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Pause an ongoing session (uses MessagesController session pause logic)
+    /// Pause an ongoing session (uses hierarchical pause system - session level only)
+    /// Per the 3-tier hierarchy: WhatsAppSession > MessageSession > Message
+    /// This only sets MessageSession.IsPaused = true, NOT individual message pauses.
     /// </summary>
     [HttpPost("{id}/pause")]
     public async Task<IActionResult> PauseSession(Guid id)
@@ -270,68 +274,48 @@ public class SessionsController : ControllerBase
                 return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
             }
 
-            // Pause all messages in this session
-            var messages = await _context.Messages
-                .Where(m => m.SessionId == id.ToString() && (m.Status == "queued" || m.Status == "sending") && !m.IsPaused)
-                .ToListAsync();
-
-            foreach (var msg in messages)
-            {
-                msg.IsPaused = true;
-                msg.PausedAt = DateTime.UtcNow;
-                msg.PausedBy = userId;
-                msg.PauseReason = "SessionPaused";
-                if (msg.Status == "sending")
-                {
-                    msg.Status = "queued";
-                }
-            }
-
-            // Also pause the session itself
+            // Pause the session itself (hierarchical pause - no cascade to messages)
             var session = await _context.MessageSessions.FindAsync(id);
             
-            if (session != null)
+            if (session == null)
             {
-                session.IsPaused = true;
-                session.Status = "paused";
-                session.PausedAt = DateTime.UtcNow;
-                session.PausedBy = userId;
-                session.PauseReason = "UserPaused";
-                session.LastUpdated = DateTime.UtcNow;
-                
-                // GAP FIX 1.5: Recalculate OngoingMessages counter after pause
-                // Count messages that are still actively processing (queued/sending and not paused)
-                var ongoingCount = await _context.Messages
-                    .Where(m => m.SessionId == id.ToString() 
-                        && (m.Status == "queued" || m.Status == "sending") 
-                        && !m.IsPaused
-                        && !m.IsDeleted)
-                    .CountAsync();
-                
-                session.OngoingMessages = ongoingCount;
-                
-                _logger.LogInformation("Recalculated OngoingMessages for session {SessionId} after pause: {OngoingCount}", 
-                    id, ongoingCount);
+                return NotFound(new { success = false, error = "الجلسة غير موجودة" });
             }
+            
+            // Set session-level pause (MessageProcessor will check this at query time)
+            session.IsPaused = true;
+            session.Status = "paused";
+            session.PausedAt = DateTime.UtcNow;
+            session.PausedBy = userId;
+            session.PauseReason = "UserPaused";
+            session.LastUpdated = DateTime.UtcNow;
+            
+            // Count affected messages (for UI feedback only - no database changes to messages)
+            var affectedMessageCount = await _context.Messages
+                .Where(m => m.SessionId == id.ToString() 
+                    && (m.Status == "queued" || m.Status == "sending") 
+                    && !m.IsPaused
+                    && !m.IsDeleted)
+                .CountAsync();
+            
+            // Update OngoingMessages counter (these will be effectively paused via hierarchy)
+            session.OngoingMessages = 0; // All messages in this session are now paused
+            
+            _logger.LogInformation("Session {SessionId} paused via hierarchy. {AffectedCount} messages will be paused at query time.", 
+                id, affectedMessageCount);
 
             await _context.SaveChangesAsync();
             
-            // Broadcast MessageUpdated events via SignalR for each paused message
-            if (messages.Any())
+            // Broadcast SessionUpdated event via SignalR (single event for session pause)
+            var moderatorId = session.ModeratorId;
+            if (moderatorId > 0)
             {
-                var moderatorId = messages.First().ModeratorId ?? 0;
-                if (moderatorId > 0)
-                {
-                    foreach (var msg in messages)
-                    {
-                        await _hubContext.Clients
-                            .Group($"moderator-{moderatorId}")
-                            .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = true, status = msg.Status });
-                    }
-                }
+                await _hubContext.Clients
+                    .Group($"moderator-{moderatorId}")
+                    .SendAsync("SessionUpdated", new { sessionId = id, isPaused = true, status = "paused" });
             }
             
-            return Ok(new { success = true, pausedCount = messages.Count });
+            return Ok(new { success = true, pausedCount = affectedMessageCount });
         }
         catch (Exception ex)
         {
@@ -341,71 +325,58 @@ public class SessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Resume a paused session (uses MessagesController session resume logic)
+    /// Resume a paused session (uses hierarchical pause system - session level only)
+    /// Per the 3-tier hierarchy: WhatsAppSession > MessageSession > Message
+    /// This only sets MessageSession.IsPaused = false.
+    /// Messages will automatically become processable unless they have individual Message.IsPaused = true.
     /// </summary>
     [HttpPost("{id}/resume")]
     public async Task<IActionResult> ResumeSession(Guid id)
     {
         try
         {
-            // Resume all paused messages in this session
-            var messages = await _context.Messages
-                .Where(m => m.SessionId == id.ToString() && m.IsPaused)
-                .ToListAsync();
-
-            foreach (var msg in messages)
-            {
-                msg.IsPaused = false;
-                msg.PausedAt = null;
-                msg.PausedBy = null;
-                msg.PauseReason = null;
-            }
-
-            // Also resume the session itself
+            // Resume the session itself (hierarchical resume - no cascade to messages)
             var session = await _context.MessageSessions.FindAsync(id);
             
-            if (session != null)
+            if (session == null)
             {
-                session.IsPaused = false;
-                session.Status = "active";
-                session.PausedAt = null;
-                session.PausedBy = null;
-                session.PauseReason = null;
-                session.LastUpdated = DateTime.UtcNow;
-                
-                // GAP FIX 1.5: Recalculate OngoingMessages counter after resume
-                // Count messages that are now actively processing (queued/sending and not paused)
-                var ongoingCount = await _context.Messages
-                    .Where(m => m.SessionId == id.ToString() 
-                        && (m.Status == "queued" || m.Status == "sending") 
-                        && !m.IsPaused
-                        && !m.IsDeleted)
-                    .CountAsync();
-                
-                session.OngoingMessages = ongoingCount;
-                
-                _logger.LogInformation("Recalculated OngoingMessages for session {SessionId} after resume: {OngoingCount}", 
-                    id, ongoingCount);
+                return NotFound(new { success = false, error = "الجلسة غير موجودة" });
             }
+            
+            // Clear session-level pause
+            session.IsPaused = false;
+            session.Status = "active";
+            session.PausedAt = null;
+            session.PausedBy = null;
+            session.PauseReason = null;
+            session.LastUpdated = DateTime.UtcNow;
+            
+            // Count messages that will become processable (those not individually paused)
+            var resumedMessageCount = await _context.Messages
+                .Where(m => m.SessionId == id.ToString() 
+                    && (m.Status == "queued" || m.Status == "sending") 
+                    && !m.IsPaused  // Only count messages that aren't individually paused
+                    && !m.IsDeleted)
+                .CountAsync();
+            
+            // Update OngoingMessages counter
+            session.OngoingMessages = resumedMessageCount;
+            
+            _logger.LogInformation("Session {SessionId} resumed via hierarchy. {ResumedCount} messages now processable.", 
+                id, resumedMessageCount);
 
             await _context.SaveChangesAsync();
             
-            // Broadcast MessageUpdated events via SignalR for each resumed message
-            if (messages.Any())
+            // Broadcast SessionUpdated event via SignalR
+            var moderatorId = session.ModeratorId;
+            if (moderatorId > 0)
             {
-                var moderatorId = messages.First().ModeratorId ?? 0;
-                if (moderatorId > 0)
-                {
-                    foreach (var msg in messages)
-                    {
-                        await _hubContext.Clients
-                            .Group($"moderator-{moderatorId}")
-                            .SendAsync("MessageUpdated", new { messageId = msg.Id, isPaused = false, status = msg.Status });
-                    }
-                }
+                await _hubContext.Clients
+                    .Group($"moderator-{moderatorId}")
+                    .SendAsync("SessionUpdated", new { sessionId = id, isPaused = false, status = "active" });
             }
             
-            return Ok(new { success = true, resumedCount = messages.Count });
+            return Ok(new { success = true, resumedCount = resumedMessageCount });
         }
         catch (Exception ex)
         {
@@ -986,7 +957,8 @@ public class SessionsController : ControllerBase
                                 CountryCode = m.CountryCode ?? "+966",
                                 Status = "failed",
                                 Attempts = m.Attempts,
-                                FailedReason = m.ErrorMessage ?? "فشل الإرسال" // Ensure ErrorMessage is always set
+                                FailedReason = m.ErrorMessage ?? "فشل الإرسال", // Ensure ErrorMessage is always set
+                                MessageContent = m.Content // Include resolved message content
                             })
                             .ToList();
                     }
@@ -1021,7 +993,8 @@ public class SessionsController : ControllerBase
                                 CountryCode = p.CountryCode ?? "+966",
                                 Status = "failed",
                                 Attempts = message?.Attempts ?? 0,
-                                FailedReason = message?.ErrorMessage ?? "فشل الإرسال" // Ensure ErrorMessage is always set
+                                FailedReason = message?.ErrorMessage ?? "فشل الإرسال", // Ensure ErrorMessage is always set
+                                MessageContent = message?.Content // Include resolved message content
                             };
                         }).ToList();
                     }
@@ -1208,9 +1181,9 @@ public class SessionsController : ControllerBase
         {
             "sent" => "sent",
             "failed" => "failed",
-            "queued" => "pending",
-            "sending" => "pending", // "sending" is also shown as "pending" in UI
-            _ => "pending"
+            "queued" => "queued",
+            "sending" => "sending", // Keep "sending" status distinct for UI indicator
+            _ => "queued"
         };
     }
 }

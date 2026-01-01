@@ -1,6 +1,8 @@
 using Clinics.Domain;
 using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
+using Clinics.Api.Hubs;
 
 namespace Clinics.Api.Services.Extension
 {
@@ -12,13 +14,18 @@ namespace Clinics.Api.Services.Extension
     {
         private readonly ApplicationDbContext _db;
         private readonly ILogger<ExtensionLeaseService> _logger;
+        private readonly IHubContext<DataUpdateHub> _hubContext;
         private readonly TimeSpan _leaseTtl = TimeSpan.FromMinutes(3);
         private readonly TimeSpan _heartbeatExtension = TimeSpan.FromMinutes(2);
 
-        public ExtensionLeaseService(ApplicationDbContext db, ILogger<ExtensionLeaseService> logger)
+        public ExtensionLeaseService(
+            ApplicationDbContext db, 
+            ILogger<ExtensionLeaseService> logger,
+            IHubContext<DataUpdateHub> hubContext)
         {
             _db = db;
             _logger = logger;
+            _hubContext = hubContext;
         }
 
         public async Task<(ExtensionSessionLease? lease, string? leaseToken, string? error)> AcquireLeaseAsync(
@@ -114,6 +121,10 @@ namespace Clinics.Api.Services.Extension
             
             await _db.SaveChangesAsync();
 
+            // Broadcast lease acquired via SignalR
+            newLease.Device = device; // Set for broadcast
+            await BroadcastExtensionStatusAsync(moderatorUserId, newLease);
+
             _logger.LogInformation("Lease acquired for moderator {ModeratorId}, device {DeviceId}", 
                 moderatorUserId, deviceId);
 
@@ -180,6 +191,9 @@ namespace Clinics.Api.Services.Extension
 
             await _db.SaveChangesAsync();
 
+            // Broadcast status update via SignalR
+            await BroadcastExtensionStatusAsync(lease.ModeratorUserId, lease);
+
             _logger.LogDebug("Heartbeat processed for lease {LeaseId}, moderator {ModeratorId}, status {Status}", 
                 leaseId, lease.ModeratorUserId, whatsAppStatus ?? "null");
 
@@ -199,12 +213,17 @@ namespace Clinics.Api.Services.Extension
                 return false;
             }
 
+            var moderatorId = lease.ModeratorUserId;
+            
             lease.RevokedAtUtc = DateTime.UtcNow;
             lease.RevokedReason = reason;
             await _db.SaveChangesAsync();
 
+            // Broadcast disconnection via SignalR
+            await BroadcastExtensionDisconnectedAsync(moderatorId);
+
             _logger.LogInformation("Lease {LeaseId} released for moderator {ModeratorId}: {Reason}", 
-                leaseId, lease.ModeratorUserId, reason);
+                leaseId, moderatorId, reason);
 
             return true;
         }
@@ -241,6 +260,9 @@ namespace Clinics.Api.Services.Extension
             lease.RevokedAtUtc = DateTime.UtcNow;
             lease.RevokedReason = reason;
             await _db.SaveChangesAsync();
+
+            // Broadcast disconnection via SignalR
+            await BroadcastExtensionDisconnectedAsync(moderatorUserId);
 
             _logger.LogInformation("Force released lease {LeaseId} for moderator {ModeratorId}: {Reason}", 
                 lease.Id, moderatorUserId, reason);
@@ -342,6 +364,7 @@ namespace Clinics.Api.Services.Extension
                         // CRITICAL: Also unpause any Messages that were paused due to PendingQR/PendingNET/BrowserClosure
                         var pausedMessages = await _db.Messages
                             .Where(m => m.ModeratorId == moderatorUserId 
+                                && !m.IsDeleted
                                 && m.IsPaused 
                                 && (m.PauseReason == "PendingQR" || m.PauseReason == "PendingNET" || m.PauseReason == "BrowserClosure")
                                 && (m.Status == "queued" || m.Status == "sending"))
@@ -373,6 +396,62 @@ namespace Clinics.Api.Services.Extension
             {
                 // Non-critical - log but don't fail the heartbeat
                 _logger.LogWarning(ex, "Failed to sync WhatsApp session status for moderator {ModeratorId}", moderatorUserId);
+            }
+        }
+
+        /// <summary>
+        /// Broadcast extension status update via SignalR
+        /// </summary>
+        private async Task BroadcastExtensionStatusAsync(int moderatorUserId, ExtensionSessionLease lease)
+        {
+            try
+            {
+                await _hubContext.Clients.Group($"moderator-{moderatorUserId}")
+                    .SendAsync("ExtensionStatusUpdated", new
+                    {
+                        moderatorUserId,
+                        hasActiveLease = true,
+                        deviceId = lease.DeviceId,
+                        deviceName = lease.Device?.DeviceName,
+                        whatsAppStatus = lease.WhatsAppStatus,
+                        lastHeartbeat = lease.LastHeartbeatAtUtc,
+                        currentUrl = lease.CurrentUrl,
+                        expiresAt = lease.ExpiresAtUtc
+                    });
+                
+                _logger.LogDebug("Broadcast ExtensionStatusUpdated for moderator {ModeratorId}", moderatorUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to broadcast extension status for moderator {ModeratorId}", moderatorUserId);
+            }
+        }
+
+        /// <summary>
+        /// Broadcast extension disconnected status via SignalR
+        /// </summary>
+        private async Task BroadcastExtensionDisconnectedAsync(int moderatorUserId)
+        {
+            try
+            {
+                await _hubContext.Clients.Group($"moderator-{moderatorUserId}")
+                    .SendAsync("ExtensionStatusUpdated", new
+                    {
+                        moderatorUserId,
+                        hasActiveLease = false,
+                        deviceId = (Guid?)null,
+                        deviceName = (string?)null,
+                        whatsAppStatus = "disconnected",
+                        lastHeartbeat = DateTime.UtcNow,
+                        currentUrl = (string?)null,
+                        expiresAt = (DateTime?)null
+                    });
+                
+                _logger.LogDebug("Broadcast ExtensionDisconnected for moderator {ModeratorId}", moderatorUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to broadcast extension disconnected for moderator {ModeratorId}", moderatorUserId);
             }
         }
 

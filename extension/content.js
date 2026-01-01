@@ -3,61 +3,146 @@
 
 console.log('[WhatsApp Runner] Content script loaded');
 
-// DOM selectors for WhatsApp Web (these may change with WhatsApp updates)
+// DOM selectors for WhatsApp Web - EXACT MATCH from WhatsAppConfiguration.cs (Playwright)
 const SELECTORS = {
-  // QR code container
-  qrCode: '[data-testid="qrcode"]',
-  qrCanvas: 'canvas[aria-label="Scan me!"]',
+  // InputFieldSelectors - EXACT ORDER from Playwright
+  inputFieldSelectors: [
+    "footer div[contenteditable='true']",
+    "div[contenteditable='true'][aria-label*='Type a message']",
+    "div[contenteditable='true'][data-tab='10']"
+  ],
   
-  // Main chat interface (indicates logged in)
-  sidePanel: '#pane-side',
-  chatList: '[data-testid="chat-list"]',
+  // SendButtonSelectors - EXACT ORDER from Playwright
+  sendButtonSelectors: [
+    "span[data-icon='wds-ic-send-filled']",
+    "div[role='button'] span[data-icon='wds-ic-send-filled']",
+    "[data-icon='wds-ic-send-filled']",
+    "button[aria-label='Send']",
+    "button[data-testid='send']",
+    "span[data-icon='send']",
+    "button[role='button'] span[data-icon='send']",
+    "div[role='button'] span[data-icon='send']",
+    "div[role='button'][data-testid='send']",
+    "button[type='submit']",
+    "[aria-label*='send' i]",
+    "[title*='send' i]"
+  ],
   
-  // Search/new chat
-  searchBox: '[data-testid="chat-list-search"]',
-  newChatButton: '[data-testid="chat-list-search-container"] button',
+  // ProgressBarSelectors - EXACT ORDER from Playwright
+  progressBarSelectors: [
+    "div[role='progressbar']",
+    "progress",
+    "div[aria-label^='Loading your chats']",
+    "div[class*='x1n2onr6'] progress"
+  ],
   
-  // Conversation
-  conversationPanel: '#main',
-  messageInput: '[data-testid="conversation-compose-box-input"]',
-  sendButton: '[data-testid="send"]',
+  // ChatUIReadySelectors - EXACT ORDER from Playwright
+  chatUIReadySelectors: [
+    "div[aria-label='Chat list']",
+    "div[data-testid='chat-list']",
+    "div[role='listbox']",
+    "header",
+    "footer"
+  ],
   
-  // Message status indicators
-  messageSent: '[data-testid="msg-check"]',
-  messageDelivered: '[data-testid="msg-dblcheck"]',
-  messageRead: '[data-testid="msg-dblcheck-ack"]',
+  // StartingChatDialogSelectors - EXACT ORDER from Playwright
+  startingChatDialogSelectors: [
+    "div[data-animate-modal-popup='true'][aria-label='Starting chat']",
+    "div[aria-label='Starting chat']",
+    "div[data-animate-modal-body='true']"
+  ],
   
-  // Error states
-  phoneDisconnected: '[data-testid="alert-phone"]',
+  // QrCodeSelectors - EXACT ORDER from Playwright
+  qrCodeSelectors: [
+    "div[data-ref]",
+    "canvas",
+    "div[aria-label*='QR']",
+    "div[data-testid='qr-code']",
+    "div[aria-label*='scan me' i]",
+    "div[role='button'] canvas",
+    "canvas[aria-label*='scan me' i]",
+    "div[tabindex='-1'] canvas",
+    "div[role='button'][data-testid='refresh-large']",
+    "div[aria-label*='to use whatsapp on your computer' i]",
+    "div[aria-label*='use whatsapp on your computer' i]",
+    "div[aria-label*='scan qr code' i]",
+    "div[aria-label*='link with qr code' i]",
+    "div[aria-label*='log in' i]",
+    "div[aria-label*='session expired' i]"
+  ],
   
-  // Loading
-  startup: '[data-testid="startup"]',
-  progressBar: '[data-testid="progress-wheel"]'
+  // OutgoingMessageSelectors - EXACT from Playwright
+  outgoingMessageSelectors: [
+    "div.message-out"
+  ],
+  
+  // OutgoingMessageTextSelectors - EXACT from Playwright
+  outgoingMessageTextSelectors: [
+    "span.selectable-text"
+  ],
+  
+  // StatusIconSelectors - EXACT from Playwright
+  statusIconSelectors: [
+    "span[data-icon]"
+  ],
+  
+  // SupportedStatusIconTypes - EXACT from Playwright
+  supportedStatusIconTypes: [
+    "msg-check",
+    "msg-dblcheck",
+    "msg-time"
+  ],
+  
+  // ErrorDialogSelectors - EXACT ORDER from Playwright
+  errorDialogSelectors: [
+    "[aria-label*='Phone number shared via url is invalid']",
+    "div[role='dialog'] div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid.']",
+    "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid']",
+    "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid.']"
+  ],
+  
+  // Constants from Playwright
+  statusIconAttribute: 'data-icon',
+  sendEnterKey: 'Enter'
+};
+
+// Timeouts - EXACT from WhatsAppConfiguration.cs (Playwright)
+const TIMEOUTS = {
+  defaultTaskTimeout: 150000,        // DefaultTaskTimeoutMs
+  checksFrequencyDelay: 1000,        // defaultChecksFrequencyDelayMs
+  defaultSelectorTimeout: 20000,     // DefaultSelectorTimeoutMs
+  maxRetryErrorDialog: 20,           // DefaultMaxRetryErrorDialog
+  maxRetryAttempts: 3,               // DefaultMaxRetryAttempts
+  maxMonitoringWait: 900000,         // DefaultMaxMonitoringWaitMs (15 minutes)
+  authenticationWait: 300000         // DefaultAuthenticationWaitMs (5 minutes)
 };
 
 // State
 let currentStatus = 'unknown';
 let statusCheckInterval = null;
 
-// Detect current WhatsApp status
+// Helper to check if any selector matches
+function anyMatch(selectors) {
+  for (const selector of selectors) {
+    if (document.querySelector(selector)) return true;
+  }
+  return false;
+}
+
+// Detect current WhatsApp status using Playwright selectors
 function detectStatus() {
-  // Check for QR code (not logged in)
-  if (document.querySelector(SELECTORS.qrCode) || document.querySelector(SELECTORS.qrCanvas)) {
+  // Check for QR code (not logged in) - using QrCodeSelectors
+  if (anyMatch(SELECTORS.qrCodeSelectors)) {
     return 'qr_pending';
   }
   
-  // Check for loading/startup
-  if (document.querySelector(SELECTORS.startup) || document.querySelector(SELECTORS.progressBar)) {
+  // Check for loading/startup - using ProgressBarSelectors
+  if (anyMatch(SELECTORS.progressBarSelectors)) {
     return 'loading';
   }
   
-  // Check for phone disconnected alert
-  if (document.querySelector(SELECTORS.phoneDisconnected)) {
-    return 'phone_disconnected';
-  }
-  
-  // Check for main chat interface (logged in)
-  if (document.querySelector(SELECTORS.sidePanel) || document.querySelector(SELECTORS.chatList)) {
+  // Check for main chat interface (logged in) - using ChatUIReadySelectors
+  if (anyMatch(SELECTORS.chatUIReadySelectors)) {
     return 'connected';
   }
   
@@ -102,8 +187,8 @@ function startStatusMonitoring() {
   });
 }
 
-// Wait for element with timeout
-function waitForElement(selector, timeout = 10000) {
+// Wait for element with timeout (single selector)
+function waitForElement(selector, timeout = TIMEOUTS.defaultSelectorTimeout) {
   return new Promise((resolve, reject) => {
     const element = document.querySelector(selector);
     if (element) {
@@ -130,22 +215,90 @@ function waitForElement(selector, timeout = 10000) {
   });
 }
 
-// Simulate typing in an input
+// Wait for any element from array of selectors with timeout (fallback logic)
+function waitForAnyElement(selectors, timeout = TIMEOUTS.defaultSelectorTimeout) {
+  return new Promise((resolve, reject) => {
+    // Check immediately for any existing element
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        console.log('[WhatsApp Runner] Found element with selector:', selector);
+        return resolve({ element, selector });
+      }
+    }
+    
+    const observer = new MutationObserver(() => {
+      for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          observer.disconnect();
+          console.log('[WhatsApp Runner] Found element with selector:', selector);
+          resolve({ element, selector });
+          return;
+        }
+      }
+    });
+    
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    setTimeout(() => {
+      observer.disconnect();
+      reject(new Error(`None of the elements found: ${selectors.join(', ')}`));
+    }, timeout);
+  });
+}
+
+// Simulate typing in an input with proper newline handling for WhatsApp
 async function typeText(element, text) {
   element.focus();
   
   // Clear existing content
   element.innerHTML = '';
   
-  // Use execCommand for contenteditable divs
-  document.execCommand('insertText', false, text);
+  // Log message text for debugging (check newline characters)
+  console.log('[WhatsApp Runner] typeText received text length:', text.length);
+  console.log('[WhatsApp Runner] typeText text has newlines:', text.includes('\n'));
+  console.log('[WhatsApp Runner] typeText newline count:', (text.match(/\n/g) || []).length);
   
-  // Dispatch input event
+  // WhatsApp Web uses Shift+Enter for newlines in contenteditable divs
+  // We need to insert text line by line with proper line breaks
+  const lines = text.split('\n');
+  console.log('[WhatsApp Runner] typeText split into', lines.length, 'lines');
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Insert the line text
+    if (line.length > 0) {
+      document.execCommand('insertText', false, line);
+    }
+    
+    // If not the last line, insert a line break
+    if (i < lines.length - 1) {
+      // Method 1: Use insertLineBreak command (works in most browsers)
+      const insertResult = document.execCommand('insertLineBreak', false, null);
+      console.log('[WhatsApp Runner] insertLineBreak result:', insertResult);
+      
+      // Method 2: If insertLineBreak didn't work, try inserting HTML directly
+      if (!insertResult) {
+        console.log('[WhatsApp Runner] insertLineBreak failed, trying insertHTML');
+        document.execCommand('insertHTML', false, '<br>');
+      }
+      
+      // Small delay between lines to let WhatsApp process
+      await new Promise(r => setTimeout(r, 30));
+    }
+  }
+  
+  // Dispatch input event WITHOUT data to notify WhatsApp the content changed
+  // NOTE: Do NOT include 'data: text' - this would cause duplicate insertion!
   element.dispatchEvent(new InputEvent('input', {
     bubbles: true,
     cancelable: true,
-    inputType: 'insertText',
-    data: text
+    inputType: 'insertText'
   }));
   
   // Small delay for WhatsApp to process
@@ -163,65 +316,276 @@ async function navigateToChat(phoneNumber) {
   // Navigate to the chat
   window.location.href = chatUrl;
   
-  // Wait for conversation panel to load
-  await waitForElement(SELECTORS.conversationPanel, 15000);
+  // Wait for chat UI to be ready (using ChatUIReadySelectors from Playwright)
+  await waitForAnyElement(SELECTORS.chatUIReadySelectors, TIMEOUTS.defaultSelectorTimeout);
   
   // Additional wait for full load
-  await new Promise(r => setTimeout(r, 1000));
+  await new Promise(r => setTimeout(r, TIMEOUTS.checksFrequencyDelay));
   
   return true;
 }
 
 // Send a message to the current chat
 async function sendMessage(text) {
-  // Wait for message input
-  const input = await waitForElement(SELECTORS.messageInput, 10000);
+  // Wait for message input using InputFieldSelectors (from Playwright, 20s timeout)
+  const { element: input, selector: inputSelector } = await waitForAnyElement(
+    SELECTORS.inputFieldSelectors, 
+    TIMEOUTS.defaultSelectorTimeout
+  );
+  console.log('[WhatsApp Runner] Found input with selector:', inputSelector);
   
   // Type the message
   await typeText(input, text);
   
   // Wait a bit for send button to become active
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, TIMEOUTS.checksFrequencyDelay));
   
-  // Click send button
-  const sendBtn = await waitForElement(SELECTORS.sendButton, 5000);
+  // Click send button using SendButtonSelectors (from Playwright)
+  const { element: sendBtn, selector: sendSelector } = await waitForAnyElement(
+    SELECTORS.sendButtonSelectors, 
+    TIMEOUTS.defaultSelectorTimeout
+  );
+  console.log('[WhatsApp Runner] Found send button with selector:', sendSelector);
   sendBtn.click();
   
-  // Wait for message to appear in chat (sent status)
-  await new Promise(r => setTimeout(r, 500));
+  // Wait for message to appear in chat
+  await new Promise(r => setTimeout(r, TIMEOUTS.checksFrequencyDelay));
   
-  // Check for sent indicator
-  const lastMessage = document.querySelector('[data-testid="msg-container"]:last-child');
+  // Check for sent indicator using OutgoingMessageSelectors and StatusIconSelectors
+  const lastMessage = document.querySelector(SELECTORS.outgoingMessageSelectors[0] + ':last-child');
   if (lastMessage) {
-    const sent = lastMessage.querySelector(SELECTORS.messageSent) || 
-                 lastMessage.querySelector(SELECTORS.messageDelivered) ||
-                 lastMessage.querySelector(SELECTORS.messageRead);
-    if (sent) {
-      return { success: true, status: 'sent' };
+    const statusIcon = lastMessage.querySelector(SELECTORS.statusIconSelectors[0]);
+    if (statusIcon) {
+      const iconType = statusIcon.getAttribute(SELECTORS.statusIconAttribute);
+      if (SELECTORS.supportedStatusIconTypes.includes(iconType) && iconType !== 'msg-time') {
+        return { success: true, status: 'sent', iconType };
+      }
     }
   }
   
   return { success: true, status: 'pending_confirmation' };
 }
 
+// Send message only (assumes already in correct chat after navigation)
+async function sendMessageOnly(text) {
+  console.log('[WhatsApp Runner] sendMessageOnly called with:', text?.substring(0, 50) + '...');
+  console.log('[WhatsApp Runner] Full text length:', text?.length);
+  console.log('[WhatsApp Runner] Text contains newlines:', text?.includes('\n'));
+  console.log('[WhatsApp Runner] Newline character codes in text:', 
+    [...(text || '')].filter(c => c === '\n' || c === '\r').map(c => c.charCodeAt(0)));
+  
+  // Check for error dialog first (number might not have WhatsApp)
+  for (const selector of SELECTORS.errorDialogSelectors) {
+    const errorDialog = document.querySelector(selector);
+    if (errorDialog) {
+      console.log('[WhatsApp Runner] Error dialog detected:', selector);
+      return { success: false, error: 'Phone number does not have WhatsApp' };
+    }
+  }
+  
+  // Wait for "Starting chat" dialog to disappear if present
+  for (const selector of SELECTORS.startingChatDialogSelectors) {
+    const startingDialog = document.querySelector(selector);
+    if (startingDialog) {
+      console.log('[WhatsApp Runner] Waiting for "Starting chat" dialog to close...');
+      await new Promise(r => setTimeout(r, 2000));
+      break;
+    }
+  }
+  
+  // Wait for chat to be ready after navigation using InputFieldSelectors (from Playwright)
+  // Original had 20s timeout for selector waits
+  console.log('[WhatsApp Runner] Waiting for message input with InputFieldSelectors...');
+  const { element: input, selector: inputSelector } = await waitForAnyElement(
+    SELECTORS.inputFieldSelectors, 
+    TIMEOUTS.defaultSelectorTimeout
+  );
+  console.log('[WhatsApp Runner] Message input found with selector:', inputSelector);
+  
+  // Wait a moment for chat to stabilize (using checksFrequencyDelay)
+  await new Promise(r => setTimeout(r, TIMEOUTS.checksFrequencyDelay));
+  
+  // Type the message
+  console.log('[WhatsApp Runner] Typing message...');
+  await typeText(input, text);
+  
+  // Wait for send button to become active
+  await new Promise(r => setTimeout(r, TIMEOUTS.checksFrequencyDelay));
+  
+  // Click send button using SendButtonSelectors (from Playwright)
+  console.log('[WhatsApp Runner] Finding send button with SendButtonSelectors...');
+  const { element: sendBtn, selector: sendSelector } = await waitForAnyElement(
+    SELECTORS.sendButtonSelectors, 
+    TIMEOUTS.defaultSelectorTimeout
+  );
+  console.log('[WhatsApp Runner] Found send button with selector:', sendSelector);
+  sendBtn.click();
+  console.log('[WhatsApp Runner] Clicked send button');
+  
+  // Wait for message to appear in chat
+  await new Promise(r => setTimeout(r, TIMEOUTS.checksFrequencyDelay));
+  
+  // Check for sent indicator (poll like original did)
+  // Original polled for up to 20s with 1s interval (checksFrequencyDelay)
+  const maxWaitMs = TIMEOUTS.defaultSelectorTimeout;
+  const pollIntervalMs = TIMEOUTS.checksFrequencyDelay;
+  let elapsed = 0;
+  
+  while (elapsed < maxWaitMs) {
+    // Use OutgoingMessageSelectors from Playwright
+    const lastMessage = document.querySelector(SELECTORS.outgoingMessageSelectors[0] + ':last-child');
+    if (lastMessage) {
+      // Check for status icons using StatusIconSelectors from Playwright
+      const statusIcon = lastMessage.querySelector(SELECTORS.statusIconSelectors[0]);
+      if (statusIcon) {
+        const iconType = statusIcon.getAttribute(SELECTORS.statusIconAttribute);
+        console.log('[WhatsApp Runner] Message status icon:', iconType);
+        
+        // Check against SupportedStatusIconTypes from Playwright
+        if (iconType === 'msg-check' || iconType === 'msg-dblcheck') {
+          console.log('[WhatsApp Runner] Message sent successfully, status:', iconType);
+          return { success: true, status: 'sent', iconType };
+        }
+        if (iconType === 'msg-time') {
+          console.log('[WhatsApp Runner] Message pending (msg-time), waiting...');
+        }
+      }
+    }
+    
+    await new Promise(r => setTimeout(r, pollIntervalMs));
+    elapsed += pollIntervalMs;
+  }
+  
+  console.log('[WhatsApp Runner] Message sent but confirmation pending after polling');
+  return { success: true, status: 'pending_confirmation' };
+}
+
 // Execute a command from the server
 async function executeCommand(command) {
   console.log('[WhatsApp Runner] Executing command:', command.commandType);
+  console.log('[WhatsApp Runner] Command payload:', command.payload);
   
   try {
     switch (command.commandType) {
       case 'SendMessage': {
-        const payload = JSON.parse(command.payloadJson);
+        // Handle payload as either JSON string or object
+        let payload = command.payload;
+        if (typeof payload === 'string') {
+          payload = JSON.parse(payload);
+        }
+        console.log('[WhatsApp Runner] Parsed payload:', payload);
+        
+        // Get phone number - might be phoneNumber or patientPhone
+        const phoneNumber = payload.phoneNumber || payload.patientPhone;
+        // Get message text - might be text, messageText, or content
+        const messageText = payload.text || payload.messageText || payload.content;
+        
+        if (!phoneNumber) {
+          throw new Error('Phone number not provided in payload');
+        }
+        if (!messageText) {
+          throw new Error('Message text not provided in payload');
+        }
+        
+        console.log('[WhatsApp Runner] Sending to:', phoneNumber, 'Text:', messageText.substring(0, 50) + '...');
         
         // Navigate to chat
-        await navigateToChat(payload.phoneNumber);
+        await navigateToChat(phoneNumber);
         
         // Send message
-        const result = await sendMessage(payload.text);
+        const result = await sendMessage(messageText);
         
         return {
           success: true,
           data: result
+        };
+      }
+      
+      case 'CheckWhatsAppNumber': {
+        // Handle payload as either JSON string or object
+        let payload = command.payload;
+        if (typeof payload === 'string') {
+          payload = JSON.parse(payload);
+        }
+        console.log('[WhatsApp Runner] CheckWhatsAppNumber payload:', payload);
+        
+        // Get phone number
+        const phoneNumber = payload.phoneNumber || payload.phone;
+        
+        if (!phoneNumber) {
+          throw new Error('Phone number not provided in payload');
+        }
+        
+        console.log('[WhatsApp Runner] Checking WhatsApp for:', phoneNumber);
+        
+        // Navigate to the phone number's chat
+        const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+        const chatUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
+        
+        // Store current URL to detect navigation
+        const previousUrl = window.location.href;
+        
+        // Navigate to the chat
+        window.location.href = chatUrl;
+        
+        // Wait for either:
+        // 1. Chat UI to be ready (number has WhatsApp)
+        // 2. Error dialog to appear (number doesn't have WhatsApp)
+        // 3. Timeout
+        const maxWaitMs = TIMEOUTS.defaultSelectorTimeout;
+        const pollInterval = 500;
+        let elapsed = 0;
+        let hasWhatsApp = null;
+        
+        while (elapsed < maxWaitMs && hasWhatsApp === null) {
+          await new Promise(r => setTimeout(r, pollInterval));
+          elapsed += pollInterval;
+          
+          // Check for error dialog (number doesn't have WhatsApp)
+          for (const selector of SELECTORS.errorDialogSelectors) {
+            const errorDialog = document.querySelector(selector);
+            if (errorDialog) {
+              console.log('[WhatsApp Runner] Error dialog found - number does not have WhatsApp');
+              hasWhatsApp = false;
+              break;
+            }
+          }
+          
+          // If no error dialog, check if chat UI is ready (number has WhatsApp)
+          if (hasWhatsApp === null) {
+            // Check for input field (indicates successful chat open)
+            for (const selector of SELECTORS.inputFieldSelectors) {
+              const input = document.querySelector(selector);
+              if (input) {
+                console.log('[WhatsApp Runner] Input field found - number has WhatsApp');
+                hasWhatsApp = true;
+                break;
+              }
+            }
+          }
+          
+          // Also check for "Starting chat" dialog still showing
+          let stillStarting = false;
+          for (const selector of SELECTORS.startingChatDialogSelectors) {
+            if (document.querySelector(selector)) {
+              stillStarting = true;
+              break;
+            }
+          }
+          if (stillStarting) {
+            console.log('[WhatsApp Runner] Still showing "Starting chat"...');
+            continue;
+          }
+        }
+        
+        // Return result
+        return {
+          success: true,
+          data: {
+            phoneNumber: phoneNumber,
+            hasWhatsApp: hasWhatsApp,
+            checked: hasWhatsApp !== null
+          }
         };
       }
       
@@ -275,6 +639,12 @@ async function executeCommand(command) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[WhatsApp Runner] Message received:', message.type);
   
+  // Handle PING for health check
+  if (message.type === 'PING') {
+    sendResponse({ success: true, status: detectStatus() });
+    return false;
+  }
+  
   if (message.type === 'EXECUTE_COMMAND') {
     executeCommand(message.command)
       .then(sendResponse)
@@ -290,6 +660,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_WHATSAPP_STATUS') {
     sendResponse({ status: detectStatus() });
     return false;
+  }
+  
+  // Handle navigate to chat - this will cause page reload
+  if (message.type === 'NAVIGATE_TO_CHAT') {
+    const cleanNumber = message.phoneNumber.replace(/[^\d+]/g, '');
+    const chatUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
+    console.log('[WhatsApp Runner] Navigating to:', chatUrl);
+    window.location.href = chatUrl;
+    // Page will reload - don't try to respond
+    return false;
+  }
+  
+  // Handle send message after navigation
+  if (message.type === 'SEND_MESSAGE_ONLY') {
+    sendMessageOnly(message.text)
+      .then(result => sendResponse({ success: true, data: result }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
   }
 });
 

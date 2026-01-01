@@ -52,14 +52,22 @@ namespace Clinics.Api.Controllers
                 return BadRequest(new { error = "Unable to determine moderator ID" });
             }
 
-            var pairingCode = await _pairingService.StartPairingAsync(moderatorId.Value);
-
-            return Ok(new PairingStartResponse
+            try
             {
-                Code = pairingCode.Code,
-                ExpiresAt = pairingCode.ExpiresAtUtc,
-                ExpiresInSeconds = (int)(pairingCode.ExpiresAtUtc - DateTime.UtcNow).TotalSeconds
-            });
+                var pairingCode = await _pairingService.StartPairingAsync(moderatorId.Value);
+
+                return Ok(new PairingStartResponse
+                {
+                    Code = pairingCode.Code,
+                    ExpiresAt = pairingCode.ExpiresAtUtc,
+                    ExpiresInSeconds = (int)(pairingCode.ExpiresAtUtc - DateTime.UtcNow).TotalSeconds
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Moderator already has an active device
+                return BadRequest(new { error = ex.Message });
+            }
         }
 
         /// <summary>
@@ -87,10 +95,30 @@ namespace Clinics.Api.Controllers
                 return BadRequest(new { error });
             }
 
+            // Fetch moderator info for display in extension
+            var moderator = await _db.Users
+                .Where(u => u.Id == device.ModeratorUserId)
+                .Select(u => new { u.Username, u.FirstName, u.LastName })
+                .FirstOrDefaultAsync();
+
+            // Build display name: FirstName LastName, or FirstName only if no LastName
+            string? moderatorName = null;
+            if (moderator != null)
+            {
+                if (!string.IsNullOrWhiteSpace(moderator.FirstName))
+                {
+                    moderatorName = !string.IsNullOrWhiteSpace(moderator.LastName)
+                        ? $"{moderator.FirstName} {moderator.LastName}"
+                        : moderator.FirstName;
+                }
+            }
+
             return Ok(new PairingCompleteResponse
             {
                 DeviceId = device.Id,
                 ModeratorUserId = device.ModeratorUserId,
+                ModeratorUsername = moderator?.Username,
+                ModeratorName = moderatorName,
                 DeviceToken = token!,
                 TokenExpiresAt = device.TokenExpiresAtUtc
             });
@@ -508,6 +536,8 @@ namespace Clinics.Api.Controllers
     {
         public Guid DeviceId { get; set; }
         public int ModeratorUserId { get; set; }
+        public string? ModeratorUsername { get; set; }
+        public string? ModeratorName { get; set; }
         public string DeviceToken { get; set; } = "";
         public DateTime TokenExpiresAt { get; set; }
     }

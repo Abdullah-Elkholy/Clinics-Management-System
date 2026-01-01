@@ -770,6 +770,7 @@ export interface SessionPatientDto {
   isPaused: boolean;
   attempts?: number;
   failedReason?: string;
+  messageContent?: string; // Resolved message content (variables replaced)
 }
 
 export interface FailedSessionDto {

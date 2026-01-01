@@ -141,6 +141,7 @@ export default function OngoingTasksPanel() {
             isValidWhatsAppNumber: p.status === 'sent' ? true : null,
             isPaused: p.isPaused,
             messageId: p.messageId,
+            messagePreview: p.messageContent || '', // Include resolved message content from backend
           } as Patient & { isPaused?: boolean; messageId?: string })),
         }));
         
@@ -671,7 +672,7 @@ export default function OngoingTasksPanel() {
     phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
     message: (
       <div
-        className={`text-sm text-gray-700 ${
+        className={`text-sm text-gray-700 whitespace-pre-wrap ${
           isMessagesExpanded ? '' : 'line-clamp-2'
         } max-w-xs`}
         title={patient.messagePreview}
@@ -681,10 +682,24 @@ export default function OngoingTasksPanel() {
     ),
     status: (
       <div className="flex gap-2">
-        <Badge
-          color={patient.isPaused ? 'yellow' : 'green'}
-          label={patient.isPaused ? '⏸️ موقوف' : '🔄 جاري'}
-        />
+        {/* Enhanced status indicator with distinct states */}
+        {patient.isPaused ? (
+          <Badge color="yellow" label="⏸️ موقوف" />
+        ) : patient.status === 'sending' ? (
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 animate-pulse">
+            <svg className="animate-spin -mr-1 ml-2 h-3 w-3 text-blue-600" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            📤 جاري الإرسال
+          </span>
+        ) : patient.status === 'sent' ? (
+          <Badge color="green" label="✅ تم الإرسال" />
+        ) : patient.status === 'failed' ? (
+          <Badge color="red" label="❌ فشل" />
+        ) : (
+          <Badge color="gray" label="⏳ في الانتظار" />
+        )}
       </div>
     ),
     failedAttempts: (

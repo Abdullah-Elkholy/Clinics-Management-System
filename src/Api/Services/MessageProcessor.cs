@@ -47,14 +47,22 @@ namespace Clinics.Api.Services
         public async Task ProcessQueuedMessagesAsync(int maxBatch = 50)
         {
             // Priority order:
-            // 1. PendingQR pause rejection (highest priority) - already filtered out by !m.IsPaused
-            // 2. Manual pause - already filtered out by !m.IsPaused
-            // 3. Session StartTime (earliest first)
+            // 1. Global WhatsAppSession.IsPaused (highest priority) - skip entire moderator
+            // 2. PendingQR pause rejection - already filtered out by !m.IsPaused
+            // 3. Manual pause - already filtered out by !m.IsPaused
+            // 4. Session StartTime (earliest first)
             //    - Messages ordered by their MessageSession.StartTime (earliest first)
             //    - Within a session, messages ordered by Message.CreatedAt
             
+            // Get list of moderators that have globally paused WhatsApp sessions
+            var pausedModeratorIds = await _db.WhatsAppSessions
+                .Where(ws => ws.IsPaused && !ws.IsDeleted)
+                .Select(ws => ws.ModeratorUserId)
+                .ToListAsync();
+            
             // PERFORMANCE OPTIMIZATION: Use SQL-level ordering via join instead of in-memory ordering
             // This prevents loading 2x messages into memory just for ordering
+            // NOTE: Removed AsNoTracking() - we MUST track changes to update message status
             var msgs = await (
                 from m in _db.Messages
                 join s in _db.MessageSessions on m.SessionId equals s.Id.ToString()
@@ -62,13 +70,19 @@ namespace Clinics.Api.Services
                     && !m.IsPaused 
                     && !string.IsNullOrEmpty(m.SessionId)
                     && !s.IsDeleted
+                    && !s.IsPaused // Also check session-level pause
+                    && (m.ModeratorId == null || !pausedModeratorIds.Contains(m.ModeratorId.Value)) // Exclude globally paused moderators
                 orderby s.StartTime, m.CreatedAt
                 select m
             )
             .Include(m => m.Queue)
-            .AsNoTracking()
             .Take(maxBatch) // Only take exactly what we need
             .ToListAsync();
+
+            if (msgs.Count == 0 && pausedModeratorIds.Count > 0)
+            {
+                _logger.LogDebug("No messages to process. {PausedCount} moderator(s) are globally paused.", pausedModeratorIds.Count);
+            }
 
             var totalMessages = msgs.Count;
             var processedCount = 0;

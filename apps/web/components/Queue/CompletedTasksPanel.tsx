@@ -302,7 +302,7 @@ export default function CompletedTasksPanel() {
     phone: formatPhoneForDisplay(message.patientPhone, message.countryCode),
     message: (
       <div
-        className={`text-sm text-gray-700 ${
+        className={`text-sm text-gray-700 whitespace-pre-wrap ${
           isMessagesExpanded ? '' : 'line-clamp-2'
         } max-w-xs`}
         title={message.content}

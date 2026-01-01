@@ -832,6 +832,114 @@ namespace Clinics.Api.Controllers
                 return StatusCode(500, new { success = false, error = "فشل جلب حالة الإيقاف" });
             }
         }
+
+        /// <summary>
+        /// Get combined status for a moderator (session, extension, pause state in one call)
+        /// This reduces 4 API calls to 1 for the frontend polling
+        /// </summary>
+        [HttpGet("{moderatorId}/combined-status")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
+        public async Task<IActionResult> GetCombinedStatus(int moderatorId)
+        {
+            try
+            {
+                // Verify permissions
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+                }
+
+                var currentUser = await _db.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+                    
+                if (currentUser == null) 
+                    return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+                var isModerator = currentUser.Role == "moderator";
+                var isUser = currentUser.Role == "user";
+
+                // Verify access
+                if (!isAdmin)
+                {
+                    if (isModerator && currentUser.Id != moderatorId)
+                        return Forbid();
+
+                    if (isUser && (!currentUser.ModeratorId.HasValue || currentUser.ModeratorId.Value != moderatorId))
+                        return Forbid();
+                }
+
+                // Fetch data sequentially (DbContext is not thread-safe for parallel queries)
+                var session = await _db.WhatsAppSessions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted);
+
+                var extensionLease = await _db.ExtensionSessionLeases
+                    .AsNoTracking()
+                    .Include(e => e.Device)
+                    .Where(e => e.ModeratorUserId == moderatorId 
+                        && e.RevokedAtUtc == null 
+                        && e.ExpiresAtUtc > DateTime.UtcNow)
+                    .FirstOrDefaultAsync();
+
+                // Calculate extension online status (heartbeat within 60 seconds)
+                var isExtensionOnline = extensionLease != null 
+                    && (DateTime.UtcNow - extensionLease.LastHeartbeatAtUtc).TotalSeconds < 60;
+
+                return Ok(new
+                {
+                    success = true,
+                    timestamp = DateTime.UtcNow,
+                    
+                    // Session data
+                    session = session == null ? null : new
+                    {
+                        id = session.Id,
+                        moderatorUserId = session.ModeratorUserId,
+                        sessionName = session.SessionName,
+                        status = session.Status,
+                        lastSyncAt = session.LastSyncAt,
+                        createdAt = session.CreatedAt,
+                        providerSessionId = session.ProviderSessionId,
+                        lastActivityAt = session.LastActivityAt
+                    },
+                    
+                    // Pause state
+                    pauseState = new
+                    {
+                        isPaused = session?.IsPaused ?? false,
+                        pauseReason = session?.PauseReason,
+                        pausedAt = session?.PausedAt,
+                        pausedBy = session?.PausedBy,
+                        isResumable = session?.IsResumable ?? false
+                    },
+                    
+                    // Extension status
+                    extension = new
+                    {
+                        hasActiveLease = extensionLease != null,
+                        leaseId = extensionLease?.Id,
+                        deviceId = extensionLease?.DeviceId,
+                        deviceName = extensionLease?.Device?.DeviceName,
+                        whatsAppStatus = extensionLease?.WhatsAppStatus,
+                        currentUrl = extensionLease?.CurrentUrl,
+                        lastHeartbeat = extensionLease?.LastHeartbeatAtUtc,
+                        expiresAt = extensionLease?.ExpiresAtUtc,
+                        isOnline = isExtensionOnline
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching combined status for moderator {ModeratorId}", moderatorId);
+                return StatusCode(500, new { success = false, error = "فشل جلب الحالة المجمعة" });
+            }
+        }
     }
 
     public class PauseAllRequest

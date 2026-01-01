@@ -115,6 +115,31 @@ namespace Clinics.Api.Services.Extension
                 ? JsonSerializer.Serialize(resultData, _jsonOptions) 
                 : null;
 
+            // CRITICAL FIX: If this command was for a message send and it succeeded,
+            // update the message status to "sent" even if it was paused due to timeout/retry
+            if (command.MessageId.HasValue && resultStatus == ExtensionResultStatuses.Success)
+            {
+                var message = await _db.Messages.FindAsync(command.MessageId.Value);
+                if (message != null)
+                {
+                    // If message is paused due to backoff/timeout but extension reports success,
+                    // it means the message WAS actually sent successfully (just took longer than expected)
+                    if (message.Status != "sent" && 
+                        (message.IsPaused || message.Status == "queued" || message.Status == "sending"))
+                    {
+                        _logger.LogInformation("Message {MessageId} marked as sent (was {Status}, IsPaused={IsPaused}, PauseReason={PauseReason}) - extension confirmed successful send after command {CommandId} completion",
+                            message.Id, message.Status, message.IsPaused, message.PauseReason, commandId);
+                        
+                        message.Status = "sent";
+                        message.SentAt = DateTime.UtcNow;
+                        message.IsPaused = false;
+                        message.PauseReason = null;
+                        message.PausedAt = null;
+                        message.ErrorMessage = null;
+                    }
+                }
+            }
+
             await _db.SaveChangesAsync();
 
             _logger.LogInformation("Command {CommandId} completed with status {ResultStatus}", 
@@ -169,7 +194,11 @@ namespace Clinics.Api.Services.Extension
 
         public async Task<ExtensionCommand?> GetCommandAsync(Guid commandId)
         {
-            return await _db.ExtensionCommands.FindAsync(commandId);
+            // Use AsNoTracking to always get fresh data from the database
+            // This is critical for polling loops that check command completion status
+            return await _db.ExtensionCommands
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == commandId);
         }
     }
 }

@@ -25,6 +25,17 @@ namespace Clinics.Api.Services.Extension
 
         public async Task<ExtensionPairingCode> StartPairingAsync(int moderatorUserId)
         {
+            // Check if moderator already has an active (non-revoked) device
+            var existingActiveDevice = await _db.ExtensionDevices
+                .FirstOrDefaultAsync(d => d.ModeratorUserId == moderatorUserId && d.RevokedAtUtc == null);
+            
+            if (existingActiveDevice != null)
+            {
+                _logger.LogWarning("Moderator {ModeratorId} already has an active device: {DeviceId}", 
+                    moderatorUserId, existingActiveDevice.DeviceId);
+                throw new InvalidOperationException("يوجد جهاز مقترن بالفعل. يرجى إلغاء إقران الجهاز الحالي أولاً قبل إضافة جهاز جديد.");
+            }
+
             // Invalidate any existing unused pairing codes for this moderator
             var existingCodes = await _db.ExtensionPairingCodes
                 .Where(c => c.ModeratorUserId == moderatorUserId && c.UsedAtUtc == null)
@@ -81,7 +92,20 @@ namespace Clinics.Api.Services.Extension
                 return (null, null, "رمز الاقتران غير صالح أو منتهي الصلاحية");
             }
 
-            // Check if device already exists for this moderator
+            // Check if moderator already has an active (non-revoked) device that is different from this one
+            var existingActiveDevice = await _db.ExtensionDevices
+                .FirstOrDefaultAsync(d => d.ModeratorUserId == pairingCode.ModeratorUserId 
+                    && d.RevokedAtUtc == null 
+                    && d.DeviceId != deviceId);
+            
+            if (existingActiveDevice != null)
+            {
+                _logger.LogWarning("Moderator {ModeratorId} already has an active device: {ExistingDeviceId}, cannot pair new device: {NewDeviceId}", 
+                    pairingCode.ModeratorUserId, existingActiveDevice.DeviceId, deviceId);
+                return (null, null, "يوجد جهاز مقترن بالفعل. يرجى إلغاء إقران الجهاز الحالي أولاً قبل إضافة جهاز جديد.");
+            }
+
+            // Check if device already exists for this moderator (same device re-pairing)
             var existingDevice = await _db.ExtensionDevices
                 .FirstOrDefaultAsync(d => d.ModeratorUserId == pairingCode.ModeratorUserId && d.DeviceId == deviceId);
 

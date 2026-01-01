@@ -38,6 +38,11 @@ public class SessionPatientDto
     /// Current attempt number for this message (1-based)
     /// </summary>
     public int AttemptNumber { get; set; } = 1;
+    
+    /// <summary>
+    /// The resolved message content (variables already replaced)
+    /// </summary>
+    public string? MessageContent { get; set; }
 }
 
 public class FailedSessionDto

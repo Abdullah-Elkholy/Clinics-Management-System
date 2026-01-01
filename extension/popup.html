@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clinics WhatsApp Runner</title>
+  <title>إضافة واتساب العيادات</title>
   <style>
     * {
       box-sizing: border-box;
@@ -12,11 +12,12 @@
     }
     
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Segoe UI Arabic', 'Arabic UI', sans-serif;
       width: 320px;
       min-height: 200px;
       padding: 16px;
       background: #f5f5f5;
+      direction: rtl;
     }
     
     .header {
@@ -215,38 +216,38 @@
 </head>
 <body>
   <div class="header">
-    <img src="icons/icon48.png" alt="Logo">
-    <h1>Clinics WhatsApp Runner</h1>
+    <img src="icons/icon48.png" alt="الشعار">
+    <h1>إضافة واتساب العيادات</h1>
   </div>
   
   <div id="loading" class="loading">
-    Loading...
+    جاري التحميل...
   </div>
   
   <div id="content" class="hidden">
     <!-- Not Configured -->
     <div id="not-configured" class="hidden">
       <div class="message info">
-        Please configure the API server URL to get started.
+        يرجى إدخال عنوان خادم API للبدء.
       </div>
       <div class="section">
         <input type="text" id="api-url-input" placeholder="http://localhost:5000" value="http://localhost:5000">
-        <p style="font-size: 11px; color: #666; margin: 4px 0 8px 0;">⚠️ Use the API server URL (port 5000), NOT the frontend (port 3000)</p>
-        <button class="primary" id="save-url-btn">Save API URL</button>
+        <p style="font-size: 11px; color: #666; margin: 4px 0 8px 0;">⚠️ استخدم عنوان خادم API (المنفذ 5000)، وليس الواجهة الأمامية (المنفذ 3000)</p>
+        <button class="primary" id="save-url-btn">حفظ عنوان API</button>
       </div>
     </div>
     
     <!-- Not Paired -->
     <div id="not-paired" class="hidden">
       <div class="message info">
-        Enter the 8-digit pairing code from the Clinics Management dashboard.
+        أدخل رمز الإقران المكون من 8 أرقام من لوحة تحكم إدارة العيادات.
       </div>
       <div class="section">
         <p id="current-api-url" style="font-size: 11px; color: #666; margin-bottom: 8px; word-break: break-all;">API: <span id="api-url-display">-</span></p>
         <input type="text" id="pairing-code-input" placeholder="12345678" maxlength="9" pattern="[0-9-]{8,9}" style="text-align: center; font-size: 18px; letter-spacing: 2px;">
-        <button class="primary" id="pair-btn">Pair Extension</button>
+        <button class="primary" id="pair-btn">إقران الإضافة</button>
         <button class="secondary" id="back-to-config-btn" style="margin-top: 8px;">
-          <span style="margin-left: 4px;">←</span> Change API URL
+          <span style="margin-right: 4px;">→</span> تغيير عنوان API
         </button>
       </div>
     </div>
@@ -255,23 +256,23 @@
     <div id="paired-disconnected" class="hidden">
       <div class="status-section">
         <div class="status-row">
-          <span class="status-label">Device Status</span>
+          <span class="status-label">حالة الجهاز</span>
           <span class="status-indicator">
             <span class="status-dot yellow"></span>
-            <span class="status-value">Paired</span>
+            <span class="status-value">تم الإقران</span>
           </span>
         </div>
         <div class="status-row">
-          <span class="status-label">Session</span>
+          <span class="status-label">الجلسة</span>
           <span class="status-indicator">
             <span class="status-dot gray"></span>
-            <span class="status-value">Not Active</span>
+            <span class="status-value">غير نشطة</span>
           </span>
         </div>
       </div>
-      <button class="primary" id="connect-btn">Start Session</button>
+      <button class="primary" id="connect-btn">بدء الجلسة</button>
       <div style="margin-top: 8px;">
-        <button class="secondary" id="unpair-btn">Unpair Device</button>
+        <button class="secondary" id="unpair-btn">إلغاء الإقران</button>
       </div>
     </div>
     
@@ -279,27 +280,27 @@
     <div id="connected" class="hidden">
       <div class="status-section">
         <div class="status-row">
-          <span class="status-label">Session</span>
+          <span class="status-label">الجلسة</span>
           <span class="status-indicator">
             <span class="status-dot green"></span>
-            <span class="status-value">Active</span>
+            <span class="status-value">نشطة</span>
           </span>
         </div>
         <div class="status-row">
-          <span class="status-label">WhatsApp</span>
+          <span class="status-label">واتساب</span>
           <span class="status-indicator">
             <span class="status-dot" id="wa-status-dot"></span>
-            <span class="status-value" id="wa-status-text">Checking...</span>
+            <span class="status-value" id="wa-status-text">جاري التحقق...</span>
           </span>
         </div>
         <div class="status-row">
-          <span class="status-label">Moderator ID</span>
-          <span class="status-value" id="moderator-id">-</span>
+          <span class="status-label">المشرف</span>
+          <span class="status-value" id="moderator-display">-</span>
         </div>
       </div>
       <div class="button-group">
-        <button class="secondary" id="open-whatsapp-btn">Open WhatsApp</button>
-        <button class="danger" id="disconnect-btn">End Session</button>
+        <button class="secondary" id="open-whatsapp-btn">فتح واتساب</button>
+        <button class="danger" id="disconnect-btn">إنهاء الجلسة</button>
       </div>
     </div>
     
@@ -308,7 +309,7 @@
   </div>
   
   <div class="footer">
-    <a href="options.html" target="_blank">Settings</a>
+    <a href="options.html" target="_blank">الإعدادات</a>
   </div>
   
   <script src="popup.js"></script>

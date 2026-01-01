@@ -55,6 +55,18 @@ namespace Clinics.Api.Services.Extension
 
             var moderatorId = message.ModeratorId.Value;
 
+            // Check for global pause - WhatsAppSession.IsPaused
+            var whatsAppSession = await _db.WhatsAppSessions
+                .Where(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted)
+                .FirstOrDefaultAsync(cancellationToken);
+            
+            if (whatsAppSession?.IsPaused == true)
+            {
+                _logger.LogDebug("Global pause active for moderator {ModeratorId}, skipping message {MessageId}", 
+                    moderatorId, message.Id);
+                return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. جلسة الواتساب متوقفة.");
+            }
+
             // Check if extension has active lease
             var lease = await _leaseService.GetActiveLeaseAsync(moderatorId);
             if (lease == null)
@@ -74,16 +86,70 @@ namespace Clinics.Api.Services.Extension
                 return WhatsAppSendResult.PendingNET("فشل الاتصال بالإنترنت.");
             }
 
+            // CRITICAL: Check if message is already sent (prevents duplicate sends after successful extension delivery)
+            // This can happen when:
+            // 1. Extension sends message successfully
+            // 2. Backend command times out before receiving completion
+            // 3. MessageProcessor re-queues the message (status still "queued" due to race condition)
+            // 4. New command created → duplicate message sent
+            var freshMessage = await _db.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == message.Id, cancellationToken);
+            if (freshMessage?.Status == "sent")
+            {
+                _logger.LogWarning("Message {MessageId} already has status 'sent' - skipping duplicate send", message.Id);
+                return WhatsAppSendResult.SuccessResult("AlreadySent", "Message already sent successfully");
+            }
+
+            // Check if there's already a pending/in-progress command for this message (prevent duplicates)
+            var existingCommand = await _db.ExtensionCommands
+                .Where(c => c.MessageId == message.Id 
+                    && (c.Status == ExtensionCommandStatuses.Pending || c.Status == ExtensionCommandStatuses.Sent || c.Status == ExtensionCommandStatuses.Acked)
+                    && c.CreatedAtUtc > DateTime.UtcNow.AddMinutes(-5)) // Only consider recent commands
+                .FirstOrDefaultAsync(cancellationToken);
+            
+            if (existingCommand != null)
+            {
+                _logger.LogWarning("Duplicate command detected for message {MessageId}, existing command {CommandId} status {Status}. Waiting for existing command.", 
+                    message.Id, existingCommand.Id, existingCommand.Status);
+                
+                // Wait for the existing command to complete instead of creating a new one
+                return await WaitForCommandResult(existingCommand.Id, cancellationToken);
+            }
+
+            // Also check for recently COMPLETED commands to prevent rapid re-sends after timeout
+            // If a command completed successfully in the last 30 seconds, don't create another
+            var recentCompletedCommand = await _db.ExtensionCommands
+                .Where(c => c.MessageId == message.Id 
+                    && c.Status == ExtensionCommandStatuses.Completed
+                    && c.ResultStatus == ExtensionResultStatuses.Success
+                    && c.CompletedAtUtc > DateTime.UtcNow.AddSeconds(-30))
+                .FirstOrDefaultAsync(cancellationToken);
+            
+            if (recentCompletedCommand != null)
+            {
+                _logger.LogWarning("Message {MessageId} has a recently completed successful command {CommandId}. Skipping duplicate send.", 
+                    message.Id, recentCompletedCommand.Id);
+                return WhatsAppSendResult.SuccessResult("RecentlyCompleted", "Message was recently sent successfully");
+            }
+
             // Create command payload
+            // Build full phone number with country code (removing leading 0 from local number)
+            var fullPhoneNumber = $"{message.CountryCode?.TrimStart('+')}{message.PatientPhone?.TrimStart('0')}";
+            
             var payload = new SendMessageCommandPayload
             {
                 MessageId = message.Id,
-                PhoneNumber = message.PatientPhone ?? "",
+                PhoneNumber = fullPhoneNumber,
                 CountryCode = message.CountryCode,
                 MessageText = message.Content,
                 SessionId = message.SessionId,
                 PatientName = message.FullName
             };
+
+            // Debug logging for newlines in message content
+            var hasNewlines = message.Content?.Contains('\n') ?? false;
+            var newlineCount = message.Content?.Count(c => c == '\n') ?? 0;
+            _logger.LogDebug("Message {MessageId} content: HasNewlines={HasNewlines}, NewlineCount={NewlineCount}, ContentLength={ContentLength}", 
+                message.Id, hasNewlines, newlineCount, message.Content?.Length ?? 0);
 
             // Create command
             var command = await _commandService.CreateCommandAsync(
@@ -101,7 +167,7 @@ namespace Clinics.Api.Services.Extension
             {
                 await _extensionHub.Clients
                     .Group($"extension-{moderatorId}")
-                    .SendAsync("CommandReceived", new
+                    .SendAsync("ExecuteCommand", new
                     {
                         commandId = command.Id,
                         commandType = command.CommandType,
@@ -159,6 +225,41 @@ namespace Clinics.Api.Services.Extension
         }
 
         #region Helper Methods
+
+        /// <summary>
+        /// Wait for an existing command to complete and return its result.
+        /// Used when a duplicate command is detected for the same message.
+        /// </summary>
+        private async Task<WhatsAppSendResult> WaitForCommandResult(Guid commandId, CancellationToken cancellationToken)
+        {
+            var startTime = DateTime.UtcNow;
+            while (DateTime.UtcNow - startTime < _commandTimeout)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var command = await _commandService.GetCommandAsync(commandId);
+                if (command == null)
+                {
+                    return WhatsAppSendResult.FailedResult("الأمر غير موجود");
+                }
+
+                switch (command.Status)
+                {
+                    case ExtensionCommandStatuses.Completed:
+                        return MapCommandResultToSendResult(command);
+                    
+                    case ExtensionCommandStatuses.Failed:
+                    case ExtensionCommandStatuses.Expired:
+                        var errorMsg = ExtractErrorMessage(command.ResultJson);
+                        return WhatsAppSendResult.FailedResult(errorMsg ?? "فشل في إرسال الرسالة");
+                }
+
+                await Task.Delay(_pollInterval, cancellationToken);
+            }
+
+            // Command timed out
+            return WhatsAppSendResult.Waiting("انتهت مهلة انتظار استجابة الأمر الموجود");
+        }
 
         private WhatsAppSendResult MapCommandResultToSendResult(ExtensionCommand command)
         {

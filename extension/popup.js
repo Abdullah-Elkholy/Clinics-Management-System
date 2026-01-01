@@ -22,7 +22,7 @@ const elements = {
   
   waStatusDot: document.getElementById('wa-status-dot'),
   waStatusText: document.getElementById('wa-status-text'),
-  moderatorId: document.getElementById('moderator-id')
+  moderatorDisplay: document.getElementById('moderator-display')
 };
 
 // Current state
@@ -30,6 +30,8 @@ let currentState = {
   isPaired: false,
   isConnected: false,
   moderatorId: null,
+  moderatorUsername: null,
+  moderatorName: null,
   whatsAppStatus: 'unknown',
   apiBaseUrl: ''
 };
@@ -83,7 +85,9 @@ function updateUI(state) {
     // Connected
     elements.connected.classList.remove('hidden');
     updateWhatsAppStatus(currentState.whatsAppStatus);
-    elements.moderatorId.textContent = currentState.moderatorId || '-';
+    // Display moderator name/username - prefer name, fallback to username, then ID
+    const moderatorDisplay = currentState.moderatorName || currentState.moderatorUsername || currentState.moderatorId || '-';
+    elements.moderatorDisplay.textContent = moderatorDisplay;
   }
 }
 
@@ -152,7 +156,7 @@ elements.pairBtn.addEventListener('click', async () => {
   }
   
   elements.pairBtn.disabled = true;
-  elements.pairBtn.textContent = 'Pairing...';
+  elements.pairBtn.textContent = 'جاري الإقران...';
   try {
     const result = await sendMessage({ type: 'COMPLETE_PAIRING', code: code });
     if (result.success) {
@@ -172,21 +176,21 @@ elements.pairBtn.addEventListener('click', async () => {
           updateUI(state);
           return;
         }
-        errorMsg = 'Code already used. Please generate a new code from the dashboard.';
+        errorMsg = 'تم استخدام الرمز بالفعل. يرجى إنشاء رمز جديد من لوحة التحكم.';
       } else if (errorMsg.includes('غير صالح') || errorMsg.includes('منتهي')) {
-        errorMsg = 'Invalid or expired code. Please generate a new code from the dashboard.';
+        errorMsg = 'رمز غير صالح أو منتهي الصلاحية. يرجى إنشاء رمز جديد من لوحة التحكم.';
       }
       showError(errorMsg);
     }
   } catch (error) {
-    let errorMsg = error.message || 'Pairing failed';
+    let errorMsg = error.message || 'فشل الإقران';
     if (errorMsg.includes('غير صالح') || errorMsg.includes('منتهي')) {
-      errorMsg = 'Invalid or expired code. Please generate a new code from the dashboard.';
+      errorMsg = 'رمز غير صالح أو منتهي الصلاحية. يرجى إنشاء رمز جديد من لوحة التحكم.';
     }
     showError(errorMsg);
   } finally {
     elements.pairBtn.disabled = false;
-    elements.pairBtn.textContent = 'Pair Extension';
+    elements.pairBtn.textContent = 'إقران الإضافة';
   }
 });
 
@@ -207,6 +211,15 @@ elements.connectBtn.addEventListener('click', async () => {
     if (result.success) {
       currentState.isConnected = true;
       updateUI(currentState);
+    } else if (result.deviceRevoked) {
+      // Device was revoked/deleted - update UI to show pairing screen
+      currentState.isPaired = false;
+      currentState.isConnected = false;
+      currentState.moderatorId = null;
+      currentState.moderatorUsername = null;
+      currentState.moderatorName = null;
+      updateUI(currentState);
+      showError('تم إلغاء إقران الجهاز من لوحة التحكم. يرجى إعادة الإقران.');
     } else if (result.existingDevice) {
       // Another device has the session
       if (confirm(`Another device (${result.existingDevice}) has an active session. Take over?`)) {

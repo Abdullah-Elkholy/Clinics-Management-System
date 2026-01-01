@@ -94,7 +94,8 @@ namespace Clinics.Api.Hubs
                     {
                         commandId = c.Id,
                         commandType = c.CommandType,
-                        payload = c.PayloadJson
+                        // Parse the JSON string to return as object (avoids double-encoding)
+                        payload = System.Text.Json.JsonSerializer.Deserialize<object>(c.PayloadJson)
                     }).ToList()
                 };
             }
@@ -213,7 +214,8 @@ namespace Clinics.Api.Hubs
                     {
                         commandId = c.Id,
                         commandType = c.CommandType,
-                        payload = c.PayloadJson
+                        // Parse the JSON string to return as object (avoids double-encoding)
+                        payload = System.Text.Json.JsonSerializer.Deserialize<object>(c.PayloadJson)
                     }).ToList()
                 };
             }

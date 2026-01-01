@@ -611,6 +611,63 @@ export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPa
   }
 }
 
+/**
+ * Combined status response from the server
+ * Reduces 4 API calls (session, extension, pause-state, health) into 1
+ */
+export interface CombinedStatusResponse {
+  success: boolean;
+  timestamp: string;
+  session: {
+    id: number;
+    moderatorUserId: number;
+    sessionName?: string;
+    status?: string;
+    lastSyncAt?: string;
+    createdAt: string;
+    providerSessionId?: string;
+    lastActivityAt?: string;
+  } | null;
+  pauseState: {
+    isPaused: boolean;
+    pauseReason: string | null;
+    pausedAt: string | null;
+    pausedBy: number | null;
+    isResumable: boolean;
+  };
+  extension: {
+    hasActiveLease: boolean;
+    leaseId?: string;
+    deviceId?: number;
+    deviceName?: string;
+    whatsAppStatus?: string;
+    currentUrl?: string;
+    lastHeartbeat?: string;
+    expiresAt?: string;
+    isOnline: boolean;
+  };
+}
+
+/**
+ * Get combined status for a moderator (session + extension + pause state in one call)
+ * This reduces 4 API calls to 1 for better performance
+ * @param moderatorId - Moderator ID
+ * @returns Combined status data
+ */
+export async function getCombinedStatus(moderatorId: number): Promise<CombinedStatusResponse> {
+  try {
+    const result = await fetchMainAPI<CombinedStatusResponse>(
+      `/Moderators/${moderatorId}/combined-status`,
+      { method: 'GET' }
+    );
+    
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] getCombinedStatus error:', error);
+    throw error;
+  }
+}
+
 // Export the client object for consistency with other API clients
 export const whatsappApiClient = {
   checkWhatsAppNumber,
@@ -625,4 +682,5 @@ export const whatsappApiClient = {
   pauseAllModeratorTasks,
   resumeAllModeratorTasks,
   getGlobalPauseState,
+  getCombinedStatus,
 };

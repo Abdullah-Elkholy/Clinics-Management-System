@@ -2,80 +2,118 @@
 
 import { useAuth } from '../../contexts/AuthContext';
 import { useModal } from '../../contexts/ModalContext';
-import { useWhatsAppSession } from '../../contexts/WhatsAppSessionContext';
+import { useWhatsAppSession, DetailedSessionStatus, ExtensionStatus } from '../../contexts/WhatsAppSessionContext';
 import { getRoleDisplayName } from '../../lib/auth';
 import { User } from '../../types';
 
-// Helper function to get status display based on WhatsAppSession.Status and globalPauseState
-// PRIORITY: WhatsAppSession.Status takes precedence - if connected, show connected
-const getWhatsAppStatusDisplay = (
+// Helper function to get detailed status display based on DetailedSessionStatus
+const getDetailedStatusDisplay = (
+  detailedStatus: DetailedSessionStatus,
+  extensionStatus: ExtensionStatus | null,
   sessionStatus: 'connected' | 'disconnected' | 'pending' | null,
   globalPauseState: { isPaused: boolean; pauseReason?: string } | null
 ) => {
-  // PRIORITY 1: If WhatsAppSession.Status is 'connected', always show connected
-  // (even if paused - pause is for task control, not connection status)
-  if (sessionStatus === 'connected') {
-    // Show connected with pause indicator if paused
-    if (globalPauseState?.isPaused) {
+  // Use detailed status if available
+  switch (detailedStatus) {
+    case 'connected_sending':
       return {
         bgColor: 'bg-green-100',
-        dotColor: 'bg-green-500', // No animation when paused
+        dotColor: 'bg-green-500 animate-pulse',
         textColor: 'text-green-700',
-        label: 'واتساب متصل (متوقف مؤقتاً)'
+        label: 'جاري إرسال الرسائل',
+        icon: 'paper-plane',
+        sublabel: 'يتم إرسال الرسائل حالياً...',
       };
-    }
-    return {
-      bgColor: 'bg-green-100',
-      dotColor: 'bg-green-500 animate-pulse',
-      textColor: 'text-green-700',
-      label: 'واتساب متصل'
-    };
-  }
-
-  // PRIORITY 2: Check global pause state for specific error reasons (only when NOT connected)
-  if (globalPauseState?.isPaused && globalPauseState.pauseReason) {
-    if (globalPauseState.pauseReason.includes('PendingQR')) {
+    case 'connected_idle':
+      return {
+        bgColor: 'bg-green-100',
+        dotColor: 'bg-green-500',
+        textColor: 'text-green-700',
+        label: 'واتساب متصل وجاهز',
+        icon: 'check-circle',
+        sublabel: 'جاهز لإرسال الرسائل',
+      };
+    case 'connected_paused':
       return {
         bgColor: 'bg-yellow-100',
-        dotColor: 'bg-yellow-500 animate-pulse',
+        dotColor: 'bg-yellow-500',
         textColor: 'text-yellow-700',
-        label: 'في انتظار المصادقة (PendingQR)'
+        label: 'الإرسال متوقف مؤقتاً',
+        icon: 'pause-circle',
+        sublabel: 'اضغط استئناف لمتابعة الإرسال',
       };
-    }
-    if (globalPauseState.pauseReason.includes('PendingNET')) {
+    case 'extension_connected':
+      return {
+        bgColor: 'bg-blue-100',
+        dotColor: 'bg-blue-500 animate-pulse',
+        textColor: 'text-blue-700',
+        label: 'الإضافة متصلة',
+        icon: 'puzzle-piece',
+        sublabel: 'اضغط "فتح واتساب" في نافذة الإضافة',
+      };
+    case 'extension_disconnected':
       return {
         bgColor: 'bg-orange-100',
         dotColor: 'bg-orange-500',
         textColor: 'text-orange-700',
-        label: 'فشل الاتصال بالإنترنت (PendingNET)'
+        label: 'الإضافة غير متصلة',
+        icon: 'exclamation-triangle',
+        sublabel: 'افتح المتصفح ثم اضغط على أيقونة الإضافة',
       };
-    }
-    if (globalPauseState.pauseReason.includes('BrowserClosure')) {
+    case 'no_extension':
       return {
-        bgColor: 'bg-red-100',
-        dotColor: 'bg-red-500',
-        textColor: 'text-red-700',
-        label: 'تم إغلاق المتصفح'
+        bgColor: 'bg-gray-100',
+        dotColor: 'bg-gray-400',
+        textColor: 'text-gray-600',
+        label: 'الإضافة غير نشطة',
+        icon: 'plug',
+        sublabel: 'افتح الإضافة واضغط "بدء الجلسة"',
       };
-    }
-  }
-
-  // PRIORITY 3: Fallback to WhatsAppSession.Status
-  switch (sessionStatus) {
-    case 'pending':
+    case 'pending_qr':
       return {
         bgColor: 'bg-yellow-100',
         dotColor: 'bg-yellow-500 animate-pulse',
         textColor: 'text-yellow-700',
-        label: 'في انتظار المصادقة'
+        label: 'في انتظار مسح QR',
+        icon: 'qrcode',
+        sublabel: 'افتح واتساب على هاتفك وامسح الكود',
       };
-    case 'disconnected':
-    default:
+    case 'pending_net':
+      return {
+        bgColor: 'bg-orange-100',
+        dotColor: 'bg-orange-500',
+        textColor: 'text-orange-700',
+        label: 'مشكلة في الاتصال',
+        icon: 'wifi',
+        sublabel: 'تحقق من الإنترنت واتصال الهاتف',
+      };
+    case 'browser_closed':
       return {
         bgColor: 'bg-red-100',
         dotColor: 'bg-red-500',
         textColor: 'text-red-700',
-        label: 'واتساب غير متصل'
+        label: 'المتصفح مغلق',
+        icon: 'times-circle',
+        sublabel: 'أعد فتح المتصفح وشغّل الإضافة',
+      };
+    case 'loading':
+      return {
+        bgColor: 'bg-gray-100',
+        dotColor: 'bg-gray-400 animate-pulse',
+        textColor: 'text-gray-600',
+        label: 'جاري التحميل...',
+        icon: 'spinner',
+        sublabel: undefined,
+      };
+    case 'disconnected':
+    default:
+      return {
+        bgColor: 'bg-gray-100',
+        dotColor: 'bg-gray-400',
+        textColor: 'text-gray-600',
+        label: 'غير متصل',
+        icon: 'plug',
+        sublabel: 'افتح الإضافة واضغط "بدء الجلسة"',
       };
   }
 };
@@ -83,12 +121,12 @@ const getWhatsAppStatusDisplay = (
 export default function Header() {
   const { user, logout } = useAuth();
   const { openModal } = useModal();
-  const { sessionStatus, globalPauseState } = useWhatsAppSession();
+  const { sessionStatus, detailedStatus, extensionStatus, globalPauseState } = useWhatsAppSession();
 
   if (!user) return null;
 
-  // Get status display based on WhatsAppSession.Status
-  const statusDisplay = getWhatsAppStatusDisplay(sessionStatus, globalPauseState);
+  // Get status display based on detailed status
+  const statusDisplay = getDetailedStatusDisplay(detailedStatus, extensionStatus, sessionStatus, globalPauseState);
 
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
@@ -126,11 +164,28 @@ export default function Header() {
         <div className="flex items-center space-x-4 space-x-reverse">
           {/* WhatsApp Status - Hidden for admin, shown for moderator and user */}
           {user.role !== 'primary_admin' && user.role !== 'secondary_admin' && (
-            <div className={`hidden sm:flex items-center space-x-2 space-x-reverse px-3 py-1 rounded-full ${statusDisplay.bgColor}`}>
+            <div 
+              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer hover:opacity-90 transition-opacity ${statusDisplay.bgColor}`}
+              onClick={() => openModal('whatsappAuth')}
+              title={statusDisplay.sublabel || statusDisplay.label}
+            >
+              {/* Status icon */}
+              <i className={`fas fa-${statusDisplay.icon} ${statusDisplay.textColor} text-sm ${statusDisplay.icon === 'spinner' ? 'animate-spin' : ''}`}></i>
+              
+              {/* Status dot */}
               <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
-              <span className={`text-sm ${statusDisplay.textColor}`}>
-                {statusDisplay.label}
-              </span>
+              
+              {/* Status text */}
+              <div className="flex flex-col">
+                <span className={`text-sm font-medium ${statusDisplay.textColor}`}>
+                  {statusDisplay.label}
+                </span>
+                {statusDisplay.sublabel && (
+                  <span className={`text-xs ${statusDisplay.textColor} opacity-75`}>
+                    {statusDisplay.sublabel}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 

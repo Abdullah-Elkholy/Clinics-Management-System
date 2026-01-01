@@ -1360,6 +1360,7 @@ namespace Clinics.Domain
     public static class ExtensionCommandTypes
     {
         public const string SendMessage = "SendMessage";
+        public const string CheckWhatsAppNumber = "CheckWhatsAppNumber";
         public const string Refresh = "Refresh";
         public const string HealthCheck = "HealthCheck";
         public const string Pause = "Pause";

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { whatsappApiClient, GlobalPauseState } from '@/services/api/whatsappApiClient';
+import { whatsappApiClient, GlobalPauseState, CombinedStatusResponse } from '@/services/api/whatsappApiClient';
+import { extensionApiClient, ExtensionLeaseStatus } from '@/services/api/extensionApiClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSignalR } from '@/contexts/SignalRContext';
 
@@ -20,6 +21,31 @@ const getApiBaseUrl = (): string => {
 };
 
 export type WhatsAppSessionStatus = 'connected' | 'disconnected' | 'pending' | null;
+
+// Extended detailed status for more descriptive UI
+export type DetailedSessionStatus = 
+  | 'connected_idle'           // Connected but not sending
+  | 'connected_sending'        // Connected and actively sending messages
+  | 'connected_paused'         // Connected but paused manually
+  | 'extension_connected'      // Extension browser connected but WhatsApp status unknown
+  | 'extension_disconnected'   // Extension browser went offline (had lease but no recent heartbeat)
+  | 'no_extension'             // No extension paired/connected at all
+  | 'pending_qr'               // Extension connected, WhatsApp needs QR scan
+  | 'pending_net'              // Network issue
+  | 'browser_closed'           // Browser was closed
+  | 'disconnected'             // General disconnected state (legacy browser-based)
+  | 'loading'                  // Loading state
+  | null;
+
+// Extension status from lease
+export interface ExtensionStatus {
+  hasActiveLease: boolean;
+  deviceName?: string;
+  whatsAppStatus?: string;  // 'connected', 'pending_qr', 'pending_net', etc.
+  lastHeartbeat?: string;
+  currentUrl?: string;
+  isOnline: boolean;        // Calculated from lastHeartbeat
+}
 
 export interface WhatsAppSessionData {
   id: number;
@@ -53,14 +79,19 @@ export interface WhatsAppSessionHealth {
 
 interface WhatsAppSessionContextValue {
   sessionStatus: WhatsAppSessionStatus;
+  detailedStatus: DetailedSessionStatus;
+  extensionStatus: ExtensionStatus | null;
   sessionData: WhatsAppSessionData | null;
   sessionHealth: WhatsAppSessionHealth | null;
   globalPauseState: GlobalPauseState | null;
   isLoading: boolean;
   error: string | null;
+  isSending: boolean;  // True when messages are being sent
   refreshSessionStatus: () => Promise<void>;
   refreshSessionHealth: () => Promise<void>;
   refreshGlobalPauseState: () => Promise<void>;
+  refreshExtensionStatus: () => Promise<void>;
+  refreshCombinedStatus: () => Promise<void>;
   checkAuthentication: () => Promise<{ isSuccess?: boolean; state?: string; resultMessage?: string }>;
   startAuthentication: () => Promise<{ isSuccess?: boolean; state?: string; resultMessage?: string }>;
 }
@@ -76,14 +107,131 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
   const { user } = useAuth();
   const { on, off } = useSignalR();
   const [sessionStatus, setSessionStatus] = useState<WhatsAppSessionStatus>(null);
+  const [detailedStatus, setDetailedStatus] = useState<DetailedSessionStatus>(null);
+  const [extensionStatus, setExtensionStatus] = useState<ExtensionStatus | null>(null);
   const [sessionData, setSessionData] = useState<WhatsAppSessionData | null>(null);
   const [sessionHealth, setSessionHealth] = useState<WhatsAppSessionHealth | null>(null);
   const [globalPauseState, setGlobalPauseState] = useState<GlobalPauseState | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState<boolean>(false);
   
   // Track previous moderatorId to detect changes and force refresh
   const previousModeratorIdRef = useRef<number | undefined>(moderatorId);
+
+  // Helper function to calculate detailed status
+  const calculateDetailedStatus = useCallback((
+    session: WhatsAppSessionStatus,
+    extension: ExtensionStatus | null,
+    pause: GlobalPauseState | null,
+    sending: boolean
+  ): DetailedSessionStatus => {
+    // PRIORITY 1: Check extension status first (extension-based architecture)
+    if (extension?.hasActiveLease) {
+      // Extension has an active lease
+      if (!extension.isOnline) {
+        // Lease exists but no recent heartbeat - extension went offline
+        return 'extension_disconnected';
+      }
+      
+      // Extension is online, check WhatsApp status from extension
+      const waStatus = extension.whatsAppStatus?.toLowerCase();
+      
+      // PRIORITY: If actively sending messages, show that regardless of exact WhatsApp status
+      // This handles cases where status is 'loading' or briefly unknown during message sends
+      if (sending && waStatus !== 'qr_pending' && waStatus !== 'pending_qr' && waStatus !== 'pending_net') {
+        return 'connected_sending';
+      }
+      
+      if (waStatus === 'connected') {
+        // WhatsApp is connected via extension
+        if (pause?.isPaused) return 'connected_paused';
+        if (sending) return 'connected_sending';
+        return 'connected_idle';
+      }
+      
+      if (waStatus === 'qr_pending' || waStatus === 'pending_qr') {
+        // Extension reports WhatsApp needs QR scan
+        return 'pending_qr';
+      }
+      
+      if (waStatus === 'pending_net' || waStatus === 'disconnected' || waStatus === 'phone_disconnected') {
+        return 'pending_net';
+      }
+      
+      // Handle 'loading' status more descriptively
+      if (waStatus === 'loading') {
+        return 'loading';
+      }
+      
+      // Extension connected but WhatsApp status is unknown
+      return 'extension_connected';
+    }
+    
+    // PRIORITY 2: No active extension lease - this is the key distinction!
+    // Don't show "pending_qr" here - that's misleading. Show "no_extension" instead.
+    // The user needs to connect the extension first, not scan a QR code.
+    
+    // Check if there's a specific pause reason from old browser-based system
+    if (pause?.isPaused) {
+      if (pause.pauseReason?.includes('PendingQR')) {
+        // This is from the old browser-based system, but if no extension is connected,
+        // the real issue is the extension, not QR
+        return 'no_extension';
+      }
+      if (pause.pauseReason?.includes('PendingNET')) return 'pending_net';
+      if (pause.pauseReason?.includes('BrowserClosure')) return 'browser_closed';
+    }
+
+    // PRIORITY 3: Fallback to session status (legacy browser-based mode)
+    // Only show connected states if we're actually in legacy mode and connected
+    if (session === 'connected' && !extension) {
+      // Legacy browser mode - still connected
+      if (pause?.isPaused) return 'connected_paused';
+      if (sending) return 'connected_sending';
+      return 'connected_idle';
+    }
+    
+    // Default: No extension connected
+    return 'no_extension';
+  }, []);
+
+  // Refresh extension lease status
+  const refreshExtensionStatus = useCallback(async () => {
+    if (!moderatorId) {
+      setExtensionStatus(null);
+      return;
+    }
+
+    try {
+      const result = await extensionApiClient.getLeaseStatus();
+      if (result.success) {
+        // Calculate if extension is online (heartbeat within last 60 seconds)
+        const isOnline = result.lastHeartbeat 
+          ? (Date.now() - new Date(result.lastHeartbeat).getTime()) < 60000
+          : false;
+        
+        const extStatus: ExtensionStatus = {
+          hasActiveLease: result.hasActiveLease || false,
+          deviceName: result.deviceName,
+          whatsAppStatus: result.whatsAppStatus,
+          lastHeartbeat: result.lastHeartbeat,
+          isOnline,
+        };
+        setExtensionStatus(extStatus);
+        
+        // Update detailed status
+        setDetailedStatus(calculateDetailedStatus(
+          sessionStatus,
+          extStatus,
+          globalPauseState,
+          isSending
+        ));
+      }
+    } catch (err) {
+      console.error('[WhatsAppSessionContext] Error fetching extension status:', err);
+    }
+  }, [moderatorId, sessionStatus, globalPauseState, isSending, calculateDetailedStatus]);
 
   const refreshSessionStatus = useCallback(async () => {
     if (!moderatorId) {
@@ -195,6 +343,95 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       // Don't set error state - just log it
     }
   }, [moderatorId, refreshSessionStatus]);
+
+  /**
+   * NEW: Combined status refresh - fetches all status data in a single API call
+   * This reduces 4 API calls to 1, significantly improving performance
+   */
+  const refreshCombinedStatus = useCallback(async () => {
+    if (!moderatorId) {
+      setSessionStatus('disconnected');
+      setSessionData(null);
+      setExtensionStatus(null);
+      setGlobalPauseState(null);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const result = await whatsappApiClient.getCombinedStatus(moderatorId);
+      
+      if (result.success) {
+        // Update session data
+        if (result.session) {
+          setSessionData({
+            id: result.session.id,
+            moderatorUserId: result.session.moderatorUserId,
+            sessionName: result.session.sessionName,
+            status: result.session.status as WhatsAppSessionStatus,
+            lastSyncAt: result.session.lastSyncAt,
+            createdAt: result.session.createdAt,
+            providerSessionId: result.session.providerSessionId,
+            lastActivityAt: result.session.lastActivityAt,
+          });
+          
+          // Set session status
+          const status = result.session.status?.toLowerCase();
+          if (status === 'connected' || status === 'pending' || status === 'disconnected') {
+            setSessionStatus(status as WhatsAppSessionStatus);
+          } else {
+            setSessionStatus('disconnected');
+          }
+        } else {
+          setSessionData(null);
+          setSessionStatus('disconnected');
+        }
+
+        // Update pause state
+        setGlobalPauseState({
+          isPaused: result.pauseState.isPaused,
+          pauseReason: result.pauseState.pauseReason,
+          pausedAt: result.pauseState.pausedAt,
+          pausedBy: result.pauseState.pausedBy,
+          isResumable: result.pauseState.isResumable,
+        });
+
+        // Update extension status
+        const extStatus: ExtensionStatus = {
+          hasActiveLease: result.extension.hasActiveLease,
+          deviceName: result.extension.deviceName,
+          whatsAppStatus: result.extension.whatsAppStatus,
+          lastHeartbeat: result.extension.lastHeartbeat,
+          isOnline: result.extension.isOnline,
+        };
+        setExtensionStatus(extStatus);
+
+        // Calculate detailed status inline (avoid circular dependency)
+        const currentSessionStatus = result.session?.status?.toLowerCase() as WhatsAppSessionStatus || 'disconnected';
+        setDetailedStatus(calculateDetailedStatus(
+          currentSessionStatus,
+          extStatus,
+          result.pauseState,
+          isSending
+        ));
+      } else {
+        // API returned success: false - set error state
+        console.warn('[WhatsAppSessionContext] Combined status API returned success: false');
+        setError('فشل في جلب الحالة');
+      }
+    } catch (err: any) {
+      // Log error but don't spam with fallback - just set error state
+      console.error('[WhatsAppSessionContext] Error fetching combined status:', err);
+      setError(err.message || 'فشل في جلب الحالة');
+      // Don't fallback to individual fetches to avoid cascade of API calls
+    } finally {
+      setIsLoading(false);
+    }
+    // Note: We only depend on moderatorId and isSending to minimize re-creation
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moderatorId, isSending]);
 
   const checkAuthentication = useCallback(async () => {
     try {
@@ -311,9 +548,8 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
           isResumable: payload.isResumable || false,
         });
 
-        // Optionally refresh from database for full sync
-        refreshSessionStatus();
-        refreshGlobalPauseState();
+        // Use combined status refresh for full sync
+        refreshCombinedStatus();
       }
     };
 
@@ -322,7 +558,8 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     return () => {
       off('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
     };
-  }, [moderatorId, on, off, refreshSessionStatus, refreshGlobalPauseState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moderatorId, on, off]); // Only re-subscribe when moderatorId changes
 
   // Listen for pendingQR events from API calls
   useEffect(() => {
@@ -336,7 +573,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       if (!eventModeratorId || eventModeratorId === moderatorId) {
         console.log('[WhatsAppSessionContext] pendingQR event detected, refreshing status');
         setSessionStatus('pending');
-        refreshSessionStatus();
+        refreshCombinedStatus();
       }
     };
 
@@ -347,7 +584,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       if (!eventModeratorId || eventModeratorId === moderatorId) {
         console.log('[WhatsAppSessionContext] networkFailure event detected, refreshing status');
         setSessionStatus('disconnected');
-        refreshGlobalPauseState();
+        refreshCombinedStatus();
       }
     };
 
@@ -358,7 +595,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       if (!eventModeratorId || eventModeratorId === moderatorId) {
         console.log('[WhatsAppSessionContext] browserClosed event detected, refreshing status');
         setSessionStatus('disconnected');
-        refreshGlobalPauseState();
+        refreshCombinedStatus();
       }
     };
 
@@ -371,32 +608,35 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       window.removeEventListener('whatsapp:networkFailure', handleNetworkFailure);
       window.removeEventListener('whatsapp:browserClosed', handleBrowserClosed);
     };
-  }, [moderatorId, refreshSessionStatus, refreshGlobalPauseState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moderatorId]); // Only re-subscribe when moderatorId changes
 
   // Initial fetch - only if moderatorId is available
   // Also refresh when moderatorId changes (e.g., user logs in/out or switches accounts)
+  // Note: We intentionally exclude the refresh functions from deps to prevent infinite loops
   useEffect(() => {
     // Check if moderatorId changed
     const moderatorIdChanged = previousModeratorIdRef.current !== moderatorId;
     previousModeratorIdRef.current = moderatorId;
     
     if (moderatorId) {
-      // Refresh session status and global pause state when moderatorId is available or changed
-      // This ensures status updates when user logs in or switches accounts
-      refreshSessionStatus();
-      refreshSessionHealth();
-      refreshGlobalPauseState();
+      // Use combined status for initial load (reduces 4 API calls to 1)
+      refreshCombinedStatus();
+      refreshSessionHealth(); // Health is separate since it's less frequently needed
     } else {
       // No moderatorId - set disconnected state
       setSessionStatus('disconnected');
       setSessionData(null);
       setSessionHealth(null);
       setGlobalPauseState(null);
+      setExtensionStatus(null);
     }
-  }, [moderatorId, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moderatorId]); // Only re-run when moderatorId changes
 
-  // Poll every 15 seconds (reduced frequency to save resources)
-  // Only poll when tab is visible and moderatorId is available
+  // Polling: Use combined status endpoint with longer interval (60s)
+  // SignalR handles real-time updates, polling is just a fallback for missed events
+  // Note: We use a ref-based approach to avoid infinite loops from callback dependencies
   useEffect(() => {
     if (!moderatorId) {
       // No moderatorId - set disconnected state and stop polling
@@ -406,22 +646,20 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       return;
     }
     
-    // Don't poll if tab is hidden
+    // Don't poll if tab is hidden initially
     if (document.hidden) return;
 
-    // Initial poll when moderatorId changes
-    refreshSessionStatus();
-    refreshSessionHealth();
-    refreshGlobalPauseState();
-
+    // Initial poll already done in previous useEffect
+    // Set up fallback polling with 60 second interval (SignalR handles real-time updates)
     const interval = setInterval(() => {
       // Only poll if tab is visible and moderatorId is still valid
       if (!document.hidden && moderatorId) {
-        refreshSessionStatus();
+        // Use combined status - 1 API call instead of 4
+        refreshCombinedStatus();
+        // Health is polled less frequently - only when visible
         refreshSessionHealth();
-        refreshGlobalPauseState();
       }
-    }, 15000); // Increased from 10 seconds to 15 seconds
+    }, 60000); // 60 seconds - rely on SignalR for real-time updates
 
     // Pause polling when tab becomes hidden
     const handleVisibilityChange = () => {
@@ -436,18 +674,60 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [moderatorId, refreshSessionStatus, refreshSessionHealth, refreshGlobalPauseState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moderatorId]); // Only moderatorId should trigger re-setup
+
+  // Listen for MessageSending SignalR events to track sending state
+  useEffect(() => {
+    if (!moderatorId) return;
+
+    const handleMessageSending = (payload: any) => {
+      if (payload.moderatorId === moderatorId || payload.moderatorUserId === moderatorId) {
+        setIsSending(true);
+        setDetailedStatus(prev => prev === 'connected_idle' ? 'connected_sending' : prev);
+      }
+    };
+
+    const handleMessageSent = (payload: any) => {
+      // Update sending state based on session activity
+      // Don't set to false immediately - let the periodic refresh handle it
+    };
+
+    const handleExtensionStatusUpdate = (payload: any) => {
+      if (payload.moderatorUserId === moderatorId) {
+        console.log('[WhatsAppSessionContext] ExtensionStatusUpdate received:', payload);
+        // Use combined status for full sync
+        refreshCombinedStatus();
+      }
+    };
+
+    on('MessageSending', handleMessageSending);
+    on('MessageSent', handleMessageSent);
+    on('ExtensionStatusUpdated', handleExtensionStatusUpdate);
+
+    return () => {
+      off('MessageSending', handleMessageSending);
+      off('MessageSent', handleMessageSent);
+      off('ExtensionStatusUpdated', handleExtensionStatusUpdate);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moderatorId, on, off]); // Only re-subscribe when moderatorId changes
 
   const value: WhatsAppSessionContextValue = {
     sessionStatus,
+    detailedStatus,
+    extensionStatus,
     sessionData,
     sessionHealth,
     globalPauseState,
     isLoading,
     error,
+    isSending,
     refreshSessionStatus,
     refreshSessionHealth,
     refreshGlobalPauseState,
+    refreshExtensionStatus,
+    refreshCombinedStatus,
     checkAuthentication,
     startAuthentication,
   };

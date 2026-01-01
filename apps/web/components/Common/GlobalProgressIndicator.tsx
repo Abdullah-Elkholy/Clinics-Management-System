@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useGlobalProgress } from '@/contexts/GlobalProgressContext';
+import { useWhatsAppSession, DetailedSessionStatus } from '@/contexts/WhatsAppSessionContext';
 
 /**
  * GlobalProgressIndicator
@@ -15,11 +16,34 @@ import { useGlobalProgress } from '@/contexts/GlobalProgressContext';
  * - Per-session progress breakdown when expanded
  * - Visual indicators for paused sessions
  * - Fixed position (bottom-right corner)
+ * - Minimizable to a small floating button
  */
 export const GlobalProgressIndicator: React.FC = () => {
   const { operations, hasOngoingOperations, isLoading } = useGlobalProgress();
+  const { detailedStatus, extensionStatus, sessionStatus } = useWhatsAppSession();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+
+  // Helper to get status display info
+  const getConnectionStatusDisplay = () => {
+    const statusMap: Record<DetailedSessionStatus, { color: string; icon: string; label: string; bgColor: string }> = {
+      'connected_idle': { color: 'text-green-600', icon: 'fa-check-circle', label: 'متصل وجاهز للإرسال', bgColor: 'bg-green-500' },
+      'connected_sending': { color: 'text-green-600', icon: 'fa-paper-plane', label: 'جاري الإرسال...', bgColor: 'bg-green-500' },
+      'connected_paused': { color: 'text-amber-600', icon: 'fa-pause-circle', label: 'متوقف - اضغط استئناف', bgColor: 'bg-amber-500' },
+      'extension_connected': { color: 'text-blue-600', icon: 'fa-plug', label: 'اضغط "فتح واتساب" في الإضافة', bgColor: 'bg-blue-500' },
+      'extension_disconnected': { color: 'text-orange-600', icon: 'fa-exclamation-triangle', label: 'افتح المتصفح وشغّل الإضافة', bgColor: 'bg-orange-500' },
+      'no_extension': { color: 'text-gray-500', icon: 'fa-plug', label: 'افتح الإضافة واضغط "بدء الجلسة"', bgColor: 'bg-gray-400' },
+      'pending_qr': { color: 'text-yellow-600', icon: 'fa-qrcode', label: 'امسح QR من هاتفك', bgColor: 'bg-yellow-500' },
+      'pending_net': { color: 'text-orange-600', icon: 'fa-wifi', label: 'تحقق من الإنترنت', bgColor: 'bg-orange-500' },
+      'browser_closed': { color: 'text-red-600', icon: 'fa-window-close', label: 'أعد فتح المتصفح', bgColor: 'bg-red-500' },
+      'disconnected': { color: 'text-gray-500', icon: 'fa-plug', label: 'افتح الإضافة واضغط "بدء الجلسة"', bgColor: 'bg-gray-400' },
+      'loading': { color: 'text-gray-500', icon: 'fa-spinner fa-spin', label: 'جاري التحميل...', bgColor: 'bg-gray-400' },
+    };
+    return statusMap[detailedStatus] || statusMap['no_extension'];
+  };
+
+  const connectionStatus = getConnectionStatusDisplay();
 
   // Toggle session message list expansion
   const toggleSessionExpansion = (sessionId: string) => {
@@ -95,6 +119,74 @@ export const GlobalProgressIndicator: React.FC = () => {
   // Check if any operations are paused
   const hasPausedOperations = operations.some(op => op.isPaused);
 
+  // Count messages with 'sending' status
+  const sendingCount = operations.reduce((sum, op) => 
+    sum + (op.messages?.filter((m: any) => m.status === 'sending').length || 0), 0);
+
+  // Minimized view - small floating button with connection status
+  if (isMinimized) {
+    return (
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
+        {/* Connection status mini badge */}
+        <div 
+          className={`px-2 py-1 rounded-full text-xs font-medium text-white flex items-center gap-1 shadow-md ${connectionStatus.bgColor}`}
+          title={connectionStatus.label}
+        >
+          <i className={`fas ${connectionStatus.icon} text-[10px]`}></i>
+          <span className="hidden sm:inline">{connectionStatus.label}</span>
+        </div>
+        
+        {/* Main floating button */}
+        <button
+          onClick={() => setIsMinimized(false)}
+          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 ${
+            hasPausedOperations 
+              ? 'bg-yellow-500 hover:bg-yellow-600' 
+              : 'bg-blue-500 hover:bg-blue-600'
+          }`}
+          title={`${totalOperations} عمليات إرسال - ${sentMessages}/${totalMessages} (${progressPercent}%)`}
+          style={{ boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)' }}
+        >
+          <div className="relative">
+            {/* Send icon or pause icon */}
+            <svg 
+              className={`w-6 h-6 text-white ${!hasPausedOperations ? 'animate-pulse' : ''}`}
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              {hasPausedOperations ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              )}
+            </svg>
+            
+            {/* Progress circle around button */}
+            <svg className="absolute -inset-1 w-8 h-8 -rotate-90" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" r="16" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" />
+              <circle 
+                cx="18" cy="18" r="16" 
+                fill="none" 
+                stroke="white" 
+                strokeWidth="2"
+                strokeDasharray={`${progressPercent} 100`}
+                strokeLinecap="round"
+              />
+            </svg>
+            
+            {/* Badge for sending count */}
+            {sendingCount > 0 && (
+              <span className="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+                {sendingCount}
+              </span>
+            )}
+          </div>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div 
       className="fixed bottom-4 right-4 z-50 bg-white shadow-2xl rounded-lg border-2 border-gray-200 min-w-[320px] max-w-[420px] transition-all duration-300"
@@ -103,13 +195,62 @@ export const GlobalProgressIndicator: React.FC = () => {
         maxHeight: isExpanded ? '500px' : 'auto'
       }}
     >
+      {/* Connection Status Bar */}
+      <div className={`px-4 py-2 rounded-t-lg flex items-center justify-between ${
+        detailedStatus === 'connected_idle' || detailedStatus === 'connected_sending' 
+          ? 'bg-green-50 border-b border-green-200'
+          : detailedStatus === 'extension_connected'
+            ? 'bg-blue-50 border-b border-blue-200'
+            : detailedStatus === 'connected_paused'
+              ? 'bg-amber-50 border-b border-amber-200'
+              : detailedStatus === 'pending_qr' || detailedStatus === 'pending_net'
+                ? 'bg-yellow-50 border-b border-yellow-200'
+                : 'bg-red-50 border-b border-red-200'
+      }`}>
+        <div className="flex items-center gap-2">
+          <i className={`fas ${connectionStatus.icon} ${connectionStatus.color}`}></i>
+          <span className={`text-xs font-medium ${connectionStatus.color}`}>
+            {connectionStatus.label}
+          </span>
+        </div>
+        {/* Show guidance for extension_connected state, otherwise show short device name */}
+        {detailedStatus === 'extension_connected' ? (
+          <span className="text-xs text-blue-600">
+            اضغط &quot;فتح واتساب&quot;
+          </span>
+        ) : extensionStatus?.deviceName && (
+          <span className="text-xs text-gray-500">
+            {/* Show short device name (extract browser name only) */}
+            {extensionStatus.deviceName.includes('Chrome') ? 'Chrome' :
+             extensionStatus.deviceName.includes('Firefox') ? 'Firefox' :
+             extensionStatus.deviceName.includes('Edge') ? 'Edge' :
+             extensionStatus.deviceName.includes('Safari') ? 'Safari' :
+             extensionStatus.deviceName.split(' ')[0]}
+          </span>
+        )}
+      </div>
+
       {/* Header - Collapsed View */}
       <div 
-        className="p-4 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg"
+        className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {/* Minimize button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMinimized(true);
+              }}
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded"
+              title="تصغير"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </button>
+            
             {/* Animated sending icon */}
             <div className={`${hasPausedOperations ? '' : 'animate-pulse'}`}>
               <svg 
@@ -312,7 +453,7 @@ export const GlobalProgressIndicator: React.FC = () => {
                                       : msg.status === 'failed'
                                         ? 'bg-red-50 border-red-200'
                                         : msg.status === 'sending'
-                                          ? 'bg-blue-50 border-blue-200'
+                                          ? 'bg-blue-50 border-blue-200 animate-pulse'
                                           : 'bg-gray-50 border-gray-200'
                                 }`}
                               >
@@ -320,20 +461,28 @@ export const GlobalProgressIndicator: React.FC = () => {
                                   <div className="font-medium text-gray-900 truncate flex-1">
                                     {msg.patientName}
                                   </div>
-                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                     msg.status === 'sent'
                                       ? 'bg-green-100 text-green-800'
                                       : msg.status === 'failed'
                                         ? 'bg-red-100 text-red-800'
                                         : msg.status === 'sending'
-                                          ? 'bg-blue-100 text-blue-800'
+                                          ? 'bg-blue-100 text-blue-800 animate-pulse'
                                           : 'bg-gray-100 text-gray-800'
                                   }`}>
-                                    {msg.status === 'sent' && 'تم الإرسال'}
-                                    {msg.status === 'failed' && 'فشل'}
-                                    {msg.status === 'sending' && 'جاري الإرسال'}
-                                    {msg.status === 'queued' && 'في الانتظار'}
-                                    {msg.status === 'pending' && 'معلق'}
+                                    {msg.status === 'sent' && '✅ تم الإرسال'}
+                                    {msg.status === 'failed' && '❌ فشل'}
+                                    {msg.status === 'sending' && (
+                                      <>
+                                        <svg className="animate-spin h-2.5 w-2.5 text-blue-600" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        📤 جاري الإرسال
+                                      </>
+                                    )}
+                                    {msg.status === 'queued' && '⏳ في الانتظار'}
+                                    {msg.status === 'pending' && '⏳ معلق'}
                                   </span>
                                 </div>
                                 

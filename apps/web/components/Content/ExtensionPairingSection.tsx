@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useUI } from '@/contexts/UIContext';
+import { useWhatsAppSession, ExtensionStatus, WhatsAppSessionData } from '@/contexts/WhatsAppSessionContext';
 import extensionApiClient from '@/services/api/extensionApiClient';
+import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
 interface ExtensionDevice {
   id: string;
@@ -24,8 +26,32 @@ interface LeaseStatus {
  * Extension Pairing Section for WhatsApp Auth Tab
  * Allows moderators to pair browser extensions and manage connected devices
  */
-export default function ExtensionPairingSection() {
+
+interface StatusDisplay {
+  bgColor: string;
+  textColor: string;
+  icon: string;
+  label: string;
+  sublabel?: string;
+}
+
+interface ExtensionPairingSectionProps {
+  statusDisplay: StatusDisplay;
+  isBackendDisconnected: boolean;
+  extensionStatus: ExtensionStatus | null;
+  sessionData: WhatsAppSessionData | null;
+  getWhatsAppStatusText: (status?: string) => string;
+}
+
+export default function ExtensionPairingSection({
+  statusDisplay,
+  isBackendDisconnected,
+  extensionStatus: parentExtensionStatus,
+  sessionData,
+  getWhatsAppStatusText,
+}: ExtensionPairingSectionProps) {
   const { addToast } = useUI();
+  const { refreshCombinedStatus } = useWhatsAppSession();
   
   // State
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -36,6 +62,8 @@ export default function ExtensionPairingSection() {
   const [isLoadingDevices, setIsLoadingDevices] = useState(true);
   const [isLoadingLease, setIsLoadingLease] = useState(true);
   const [countdown, setCountdown] = useState<number>(0);
+  const [pairingSuccess, setPairingSuccess] = useState(false);
+  const [initialDeviceCount, setInitialDeviceCount] = useState<number | null>(null);
 
   // Load devices and lease status
   const loadData = useCallback(async () => {
@@ -60,8 +88,8 @@ export default function ExtensionPairingSection() {
           lastHeartbeat: leaseResult.lastHeartbeat,
         });
       }
-    } catch (error) {
-      console.error('Error loading extension data:', error);
+    } catch {
+      // Error loading extension data - silently handle
     } finally {
       setIsLoadingDevices(false);
       setIsLoadingLease(false);
@@ -88,16 +116,62 @@ export default function ExtensionPairingSection() {
     return () => clearInterval(interval);
   }, [loadData]);
 
-  // Countdown timer for pairing code
+  // Countdown timer for pairing code - polls for device pairing and stops on success
   useEffect(() => {
-    if (!codeExpiresAt) {
+    if (!codeExpiresAt || pairingSuccess) {
       setCountdown(0);
       return;
     }
     
-    const updateCountdown = () => {
+    const updateCountdown = async () => {
       const remaining = Math.max(0, Math.floor((codeExpiresAt.getTime() - Date.now()) / 1000));
       setCountdown(remaining);
+      
+      // Poll for device connection every 3 seconds
+      if (remaining > 0 && remaining % 3 === 0) {
+        try {
+          // Check for new devices (code was used even if lease not acquired yet)
+          const devicesResult = await extensionApiClient.getDevices();
+          if (devicesResult.success && devicesResult.devices) {
+            const currentDeviceCount = devicesResult.devices.length;
+            // If device count increased, the code was used
+            if (initialDeviceCount !== null && currentDeviceCount > initialDeviceCount) {
+              // Code was used! Clear the pairing code display
+              setPairingSuccess(true);
+              setPairingCode(null);
+              setCodeExpiresAt(null);
+              setDevices(devicesResult.devices);
+              addToast('تم إقران الإضافة بنجاح!', 'success');
+              loadData();
+              // Refresh all status including WhatsApp connection to update Header and other components
+              refreshCombinedStatus();
+              return;
+            }
+          }
+          
+          // Also check for active lease (extension already connected)
+          const leaseResult = await extensionApiClient.getLeaseStatus();
+          if (leaseResult.success && leaseResult.hasActiveLease) {
+            // Device connected! Stop the timer
+            setPairingSuccess(true);
+            setPairingCode(null);
+            setCodeExpiresAt(null);
+            setLeaseStatus({
+              hasActiveLease: true,
+              deviceName: leaseResult.deviceName,
+              whatsAppStatus: leaseResult.whatsAppStatus,
+              lastHeartbeat: leaseResult.lastHeartbeat,
+            });
+            addToast('تم إقران الإضافة بنجاح!', 'success');
+            loadData();
+            // Refresh all status including WhatsApp connection to update Header and other components
+            refreshCombinedStatus();
+            return;
+          }
+        } catch {
+          // Error polling - silently handle
+        }
+      }
       
       if (remaining === 0) {
         setPairingCode(null);
@@ -109,12 +183,19 @@ export default function ExtensionPairingSection() {
     const interval = setInterval(updateCountdown, 1000);
     
     return () => clearInterval(interval);
-  }, [codeExpiresAt]);
+  }, [codeExpiresAt, pairingSuccess, addToast, loadData, initialDeviceCount]);
 
   // Generate pairing code
   const handleGenerateCode = async () => {
     setIsGenerating(true);
+    setPairingSuccess(false);
     try {
+      // Store current device count before generating code
+      const devicesResult = await extensionApiClient.getDevices();
+      if (devicesResult.success && devicesResult.devices) {
+        setInitialDeviceCount(devicesResult.devices.length);
+      }
+      
       const result = await extensionApiClient.startPairing();
       
       if (result.success && result.code) {
@@ -129,10 +210,16 @@ export default function ExtensionPairingSection() {
         }
         addToast('تم إنشاء رمز الإقران', 'success');
       } else {
-        addToast(result.error || 'فشل إنشاء رمز الإقران', 'error');
+        // Handle specific error for existing device
+        const errorMsg = result.error || 'فشل إنشاء رمز الإقران';
+        addToast(errorMsg, 'error');
+        // Refresh devices list in case the UI was out of sync
+        loadData();
       }
     } catch (error: any) {
       addToast(error.message || 'حدث خطأ', 'error');
+      // Refresh devices list in case of error
+      loadData();
     } finally {
       setIsGenerating(false);
     }
@@ -150,6 +237,8 @@ export default function ExtensionPairingSection() {
       if (result.success) {
         addToast('تم إلغاء إقران الجهاز', 'success');
         loadData();
+        // Refresh all status to update Header and other components
+        refreshCombinedStatus();
       } else {
         addToast(result.error || 'فشل إلغاء الإقران', 'error');
       }
@@ -170,6 +259,8 @@ export default function ExtensionPairingSection() {
       if (result.success) {
         addToast('تم فصل الإضافة', 'success');
         loadData();
+        // Refresh all status to update Header and other components
+        refreshCombinedStatus();
       } else {
         addToast(result.error || 'فشل فصل الإضافة', 'error');
       }
@@ -189,8 +280,11 @@ export default function ExtensionPairingSection() {
         return { color: 'text-blue-600', bg: 'bg-blue-100', label: 'جاري التحميل' };
       case 'phone_disconnected':
         return { color: 'text-orange-600', bg: 'bg-orange-100', label: 'الهاتف غير متصل' };
+      case 'unknown':
+      case 'غير معروف':
+        return { color: 'text-gray-600', bg: 'bg-gray-100', label: 'جاري التحقق...' };
       default:
-        return { color: 'text-gray-600', bg: 'bg-gray-100', label: 'غير معروف' };
+        return { color: 'text-gray-600', bg: 'bg-gray-100', label: status || 'جاري التحقق...' };
     }
   };
 
@@ -205,6 +299,104 @@ export default function ExtensionPairingSection() {
         <p className="text-sm text-blue-700 mt-2">
           قم بتثبيت إضافة المتصفح على جهازك للتحكم في واتساب ويب مباشرة من متصفحك
         </p>
+      </div>
+
+      {/* Session Info Card - Status Overview */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+            <i className="fas fa-info-circle text-blue-500"></i>
+            معلومات الجلسة
+          </h4>
+          <div className="flex flex-col items-end gap-1">
+            <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${statusDisplay.bgColor} ${statusDisplay.textColor}`}>
+              <i className={`fas ${statusDisplay.icon} ml-2`}></i>
+              {statusDisplay.label}
+            </span>
+            {statusDisplay.sublabel && (
+              <span className={`text-xs ${statusDisplay.textColor} opacity-80`}>
+                {statusDisplay.sublabel}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Backend Disconnection Warning */}
+        {isBackendDisconnected && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-700 flex items-center gap-2">
+              <i className="fas fa-exclamation-circle"></i>
+              <span>تعذر الاتصال بالخادم. البيانات المعروضة قد تكون قديمة.</span>
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          {/* Extension Status */}
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600 font-medium mb-1 flex items-center gap-1">
+              <i className="fas fa-puzzle-piece text-gray-400"></i>
+              حالة الإضافة
+            </p>
+            <p className={`text-sm font-medium ${
+              isBackendDisconnected ? 'text-red-600' :
+              parentExtensionStatus?.hasActiveLease && parentExtensionStatus?.isOnline ? 'text-green-600' : 
+              parentExtensionStatus?.hasActiveLease ? 'text-orange-600' : 'text-gray-500'
+            }`}>
+              {isBackendDisconnected ? 'تعذر التحقق' :
+               parentExtensionStatus?.hasActiveLease && parentExtensionStatus?.isOnline ? 'متصلة ونشطة' : 
+               parentExtensionStatus?.hasActiveLease ? 'مقترنة (غير نشطة)' : 'غير مقترنة'}
+            </p>
+          </div>
+
+          {/* WhatsApp Status */}
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600 font-medium mb-1 flex items-center gap-1">
+              <i className="fab fa-whatsapp text-gray-400"></i>
+              حالة واتساب
+            </p>
+            <p className={`text-sm font-medium ${
+              isBackendDisconnected ? 'text-red-600' :
+              parentExtensionStatus?.whatsAppStatus === 'connected' ? 'text-green-600' : 
+              parentExtensionStatus?.whatsAppStatus === 'qr_pending' || parentExtensionStatus?.whatsAppStatus === 'pending_qr' ? 'text-yellow-600' : 
+              'text-gray-500'
+            }`}>
+              {isBackendDisconnected ? 'تعذر التحقق' : getWhatsAppStatusText(parentExtensionStatus?.whatsAppStatus)}
+            </p>
+          </div>
+
+          {/* Last Sync */}
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600 font-medium mb-1 flex items-center gap-1">
+              <i className="fas fa-sync-alt text-gray-400"></i>
+              آخر مزامنة
+            </p>
+            <p className={`text-sm ${isBackendDisconnected ? 'text-red-600' : 'text-gray-900'}`}>
+              {isBackendDisconnected ? 'تعذر التحقق' :
+               sessionData?.lastSyncAt 
+                ? formatLocalDateTime(sessionData.lastSyncAt)
+                : parentExtensionStatus?.lastHeartbeat
+                  ? formatLocalDateTime(parentExtensionStatus.lastHeartbeat)
+                  : 'لم يتم المزامنة بعد'}
+            </p>
+          </div>
+
+          {/* Last Activity */}
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <p className="text-xs text-gray-600 font-medium mb-1 flex items-center gap-1">
+              <i className="fas fa-clock text-gray-400"></i>
+              آخر نشاط
+            </p>
+            <p className={`text-sm ${isBackendDisconnected ? 'text-red-600' : 'text-gray-900'}`}>
+              {isBackendDisconnected ? 'تعذر التحقق' :
+               parentExtensionStatus?.lastHeartbeat 
+                ? formatLocalDateTime(parentExtensionStatus.lastHeartbeat)
+                : sessionData?.lastActivityAt
+                  ? formatLocalDateTime(sessionData.lastActivityAt)
+                  : 'لا يوجد نشاط'}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Current Extension Session Status */}
@@ -234,6 +426,16 @@ export default function ExtensionPairingSection() {
 
         {leaseStatus?.hasActiveLease && (
           <div className="space-y-3 mb-4">
+            {/* Important disclaimer */}
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5"></i>
+                <div className="text-sm text-amber-800">
+                  <span className="font-medium">هام:</span> بعد إقران الإضافة، يجب الضغط على زر <span className="font-bold">&quot;فتح واتساب&quot;</span> في الإضافة لبدء جلسة واتساب ويب.
+                </div>
+              </div>
+            </div>
+            
             <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
               <span className="text-sm text-gray-600">الجهاز:</span>
               <span className="text-sm font-medium text-gray-900">
@@ -254,7 +456,7 @@ export default function ExtensionPairingSection() {
               <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                 <span className="text-sm text-gray-600">آخر نشاط:</span>
                 <span className="text-sm text-gray-900">
-                  {new Date(leaseStatus.lastHeartbeat).toLocaleTimeString('ar-SA')}
+                  {new Date(leaseStatus.lastHeartbeat).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(leaseStatus.lastHeartbeat).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             )}
@@ -312,26 +514,45 @@ export default function ExtensionPairingSection() {
           </div>
         ) : (
           <div className="text-center">
-            <p className="text-sm text-gray-600 mb-4">
-              قم بإنشاء رمز إقران لربط إضافة المتصفح بحسابك
-            </p>
-            <button
-              onClick={handleGenerateCode}
-              disabled={isGenerating}
-              className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              {isGenerating ? (
-                <>
-                  <i className="fas fa-spinner fa-spin ml-2"></i>
-                  جاري الإنشاء...
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-plus ml-2"></i>
-                  إنشاء رمز إقران
-                </>
-              )}
-            </button>
+            {/* Check if there's already a paired device */}
+            {devices.length > 0 ? (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5"></i>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-amber-800 mb-1">
+                      يوجد جهاز مقترن بالفعل
+                    </p>
+                    <p className="text-sm text-amber-700">
+                      لإضافة جهاز جديد، يرجى إلغاء إقران الجهاز الحالي من قسم &quot;الأجهزة المقترنة&quot; أدناه أولاً.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-gray-600 mb-4">
+                  قم بإنشاء رمز إقران لربط إضافة المتصفح بحسابك
+                </p>
+                <button
+                  onClick={handleGenerateCode}
+                  disabled={isGenerating}
+                  className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {isGenerating ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin ml-2"></i>
+                      جاري الإنشاء...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-plus ml-2"></i>
+                      إنشاء رمز إقران
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -375,9 +596,9 @@ export default function ExtensionPairingSection() {
                       {device.deviceName || 'جهاز غير معروف'}
                     </p>
                     <p className="text-xs text-gray-500">
-                      الإصدار: {device.extensionVersion || 'غير معروف'}
+                      إصدار الإضافة: {device.extensionVersion || 'غير معروف'}
                       {device.lastSeenAt && (
-                        <> • آخر ظهور: {new Date(device.lastSeenAt).toLocaleDateString('ar-SA')}</>
+                        <> • آخر ظهور: {new Date(device.lastSeenAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</>
                       )}
                     </p>
                   </div>
@@ -395,19 +616,43 @@ export default function ExtensionPairingSection() {
         )}
       </div>
 
-      {/* Help Section */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h5 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
-          <i className="fas fa-info-circle text-blue-500"></i>
-          كيفية استخدام الإضافة
-        </h5>
-        <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">
-          <li>قم بتثبيت إضافة &quot;Clinics WhatsApp Runner&quot; من متجر Chrome</li>
-          <li>انقر على أيقونة الإضافة وأدخل عنوان الخادم</li>
-          <li>أنشئ رمز إقران من هذه الصفحة</li>
-          <li>أدخل الرمز في الإضافة لربطها بحسابك</li>
-          <li>افتح واتساب ويب في تبويبة جديدة</li>
-          <li>ستقوم الإضافة بالتحكم في واتساب تلقائياً</li>
+      {/* Help Section - Extension Installation */}
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+        <h4 className="font-semibold text-amber-900 mb-3 flex items-center gap-2">
+          <i className="fas fa-download"></i>
+          تثبيت الإضافة يدوياً
+        </h4>
+        <ol className="text-sm text-amber-800 space-y-2 mr-4 list-decimal">
+          <li>احصل على مجلد الإضافة <code className="bg-amber-100 px-1 rounded">extension</code> من مسؤول النظام</li>
+          <li>افتح المتصفح واذهب إلى صفحة الإضافات:
+            <ul className="mr-4 mt-1 space-y-1 list-disc text-amber-700">
+              <li><strong>Chrome:</strong> <code className="bg-amber-100 px-1 rounded text-xs">chrome://extensions</code></li>
+              <li><strong>Edge:</strong> <code className="bg-amber-100 px-1 rounded text-xs">edge://extensions</code></li>
+              <li><strong>Opera:</strong> <code className="bg-amber-100 px-1 rounded text-xs">opera://extensions</code></li>
+            </ul>
+          </li>
+          <li>فعّل <strong>&quot;وضع المطور&quot;</strong> (Developer mode) من أعلى الصفحة</li>
+          <li>اضغط على <strong>&quot;تحميل إضافة غير مضغوطة&quot;</strong> (Load unpacked)</li>
+          <li>اختر مجلد <code className="bg-amber-100 px-1 rounded">extension</code> ثم اضغط &quot;اختيار المجلد&quot;</li>
+          <li>ستظهر الإضافة في شريط الأدوات - اضغط على أيقونتها للبدء</li>
+        </ol>
+      </div>
+
+      {/* Help Section - Usage Steps */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <h4 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
+          <i className="fas fa-info-circle"></i>
+          خطوات الاستخدام بعد التثبيت
+        </h4>
+        <ol className="text-sm text-blue-800 space-y-2 mr-4 list-decimal">
+          <li>انقر على أيقونة الإضافة في شريط الأدوات</li>
+          <li>أدخل عنوان الخادم (API URL) واحفظه</li>
+          <li>أنشئ رمز إقران من قسم &quot;إقران إضافة جديدة&quot; أعلاه</li>
+          <li>أدخل الرمز المكون من 8 أرقام في نافذة الإضافة</li>
+          <li>بعد الإقران، اضغط <strong>&quot;بدء الجلسة&quot;</strong> في الإضافة</li>
+          <li>اضغط <strong>&quot;فتح واتساب&quot;</strong> لفتح واتساب ويب</li>
+          <li>امسح رمز QR من هاتفك إذا طُلب منك</li>
+          <li>الآن الإضافة جاهزة لإرسال الرسائل تلقائياً!</li>
         </ol>
       </div>
     </div>
