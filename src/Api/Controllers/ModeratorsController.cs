@@ -728,6 +728,20 @@ namespace Clinics.Api.Controllers
                     _logger.LogInformation("Allowing PendingQR resume for moderator {ModeratorId} because Status is 'connected'", moderatorId);
                 }
 
+                // CRITICAL: Only allow resume if session status is "connected"
+                // This prevents resuming when session is disconnected/pending
+                if (whatsappSession.Status != "connected")
+                {
+                    _logger.LogWarning("Cannot resume moderator {ModeratorId} tasks: Session status is '{Status}', must be 'connected'", 
+                        moderatorId, whatsappSession.Status);
+                    return BadRequest(new
+                    {
+                        success = false,
+                        error = "SessionNotConnected",
+                        message = $"لا يمكن استئناف المهام: جلسة الواتساب غير متصلة (الحالة: {whatsappSession.Status}). يرجى التأكد من الاتصال أولاً."
+                    });
+                }
+
                 // Resume global pause ONLY (no cascade resume needed)
                 // Messages will be automatically processable when global pause is removed
                 whatsappSession.IsPaused = false;

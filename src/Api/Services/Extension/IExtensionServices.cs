@@ -70,6 +70,30 @@ namespace Clinics.Api.Services.Extension
             PauseReason = "PendingNET"
         };
 
+        /// <summary>
+        /// P2.9: Extension command timed out but may still complete.
+        /// Message stays in 'sending' state - no retry triggered.
+        /// </summary>
+        public static WhatsAppSendResult ExtensionTimeout(string errorMessage, Guid? commandId = null) => new()
+        {
+            Success = false,
+            ProviderId = "Extension",
+            ResultStatus = ExtensionResultStatuses.ExtensionTimeout,
+            ErrorMessage = errorMessage,
+            ProviderResponse = commandId.HasValue ? $"CommandId={commandId}" : null
+        };
+
+        /// <summary>
+        /// P2.9: No active extension lease for the moderator.
+        /// </summary>
+        public static WhatsAppSendResult NoActiveLease(string errorMessage) => new()
+        {
+            Success = false,
+            ProviderId = "Extension",
+            ResultStatus = ExtensionResultStatuses.NoActiveLease,
+            ErrorMessage = errorMessage
+        };
+
         public static WhatsAppSendResult Waiting(string errorMessage) => new()
         {
             Success = false,

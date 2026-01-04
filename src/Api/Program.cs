@@ -235,6 +235,7 @@ builder.Services.AddHttpClient<WhatsAppServiceSender>(client =>
 });
 builder.Services.AddScoped<IMessageSender, WhatsAppServiceSender>();
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
+builder.Services.AddScoped<ProcessQueuedMessagesJob>(); // Wrapper job with [DisableConcurrentExecution]
 
 // Extension Runner services for browser extension-based WhatsApp automation
 builder.Services.Configure<Clinics.Api.Services.Extension.WhatsAppProviderOptions>(
@@ -308,9 +309,11 @@ catch (Exception ex)
 
 
 // schedule hangfire recurring job every 15 seconds (demo)
+// P0.1: Using ProcessQueuedMessagesJob wrapper with [DisableConcurrentExecution] attribute
+// This ensures only one processor runs at a time, preventing duplicate message sends
 try
 {
-    RecurringJob.AddOrUpdate<IMessageProcessor>("process-queued-messages", proc => proc.ProcessQueuedMessagesAsync(50), "*/15 * * * * *");
+    RecurringJob.AddOrUpdate<ProcessQueuedMessagesJob>("process-queued-messages", job => job.ExecuteAsync(), "*/15 * * * * *");
 }
 catch { }
 

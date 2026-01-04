@@ -71,8 +71,9 @@ namespace Clinics.Api.Services.Extension
             var lease = await _leaseService.GetActiveLeaseAsync(moderatorId);
             if (lease == null)
             {
+                // P2.9: Use specific NoActiveLease result type for clear UI feedback
                 _logger.LogWarning("No active extension lease for moderator {ModeratorId}", moderatorId);
-                return WhatsAppSendResult.FailedResult("لا يوجد امتداد نشط متصل. يرجى تشغيل امتداد المتصفح.");
+                return WhatsAppSendResult.NoActiveLease("لا يوجد امتداد نشط متصل. يرجى تشغيل امتداد المتصفح.");
             }
 
             // Check WhatsApp status from lease
@@ -208,9 +209,18 @@ namespace Clinics.Api.Services.Extension
                 await Task.Delay(_pollInterval, cancellationToken);
             }
 
-            // Command timed out
-            await _commandService.FailAsync(command.Id, "Command timed out waiting for extension response");
-            return WhatsAppSendResult.Waiting("انتهت مهلة انتظار استجابة الامتداد");
+            // P0.4: Command timed out - DO NOT mark as failed
+            // The extension may still complete the command later
+            // Leave the command and message in their current state
+            // A separate cleanup job (or next processor run) will handle resolution
+            _logger.LogWarning(
+                "Command {CommandId} timed out after {Timeout}s for message {MessageId}. " +
+                "Command remains in status {Status}. Message should stay in 'sending' with InFlightCommandId set.",
+                command.Id, _commandTimeout.TotalSeconds, payload.MessageId, command.Status);
+            
+            // P2.9: Return ExtensionTimeout result - distinct from failed for UI feedback
+            // Message stays in 'sending' status, unique index prevents duplicate commands
+            return WhatsAppSendResult.ExtensionTimeout("انتهت مهلة انتظار استجابة الامتداد - في انتظار الاكتمال", command.Id);
         }
 
         public async Task<string> GetSessionStatusAsync(int moderatorUserId)

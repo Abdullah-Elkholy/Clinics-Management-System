@@ -318,6 +318,13 @@ export default function OngoingTasksPanel() {
       debouncedRefresh();
     };
 
+    // Handler for WhatsApp session updates (affects pause state and resume button)
+    const handleWhatsAppSessionUpdate = (payload: any) => {
+      logger.debug('OngoingTasksPanel: Received WhatsAppSessionUpdated event', payload);
+      // Immediately refresh pause state - don't debounce as this affects button state
+      loadGlobalPauseState();
+    };
+
     // Subscribe to events using context helpers
     on('SessionUpdated', handleSessionUpdate);
     on('SessionDeleted', handleSessionUpdate);
@@ -325,6 +332,7 @@ export default function OngoingTasksPanel() {
     on('MessageDeleted', handleMessageUpdate);
     on('PatientUpdated', handlePatientUpdate);
     on('PatientDeleted', handlePatientUpdate);
+    on('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate); // NEW: Listen for session status changes
 
     // Cleanup subscriptions
     return () => {
@@ -334,6 +342,7 @@ export default function OngoingTasksPanel() {
       off('MessageDeleted', handleMessageUpdate);
       off('PatientUpdated', handlePatientUpdate);
       off('PatientDeleted', handlePatientUpdate);
+      off('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
     };
   }, [connection, isConnected, on, off, debouncedRefresh, loadGlobalPauseState]);
 

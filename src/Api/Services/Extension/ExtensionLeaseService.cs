@@ -188,8 +188,11 @@ namespace Clinics.Api.Services.Extension
                     whatsAppStatus, lease.ModeratorUserId);
                 await SyncWhatsAppSessionStatusAsync(lease.ModeratorUserId, whatsAppStatus);
             }
-
-            await _db.SaveChangesAsync();
+            else
+            {
+                // Still save lease heartbeat changes even if no status sync
+                await _db.SaveChangesAsync();
+            }
 
             // Broadcast status update via SignalR
             await BroadcastExtensionStatusAsync(lease.ModeratorUserId, lease);
@@ -218,6 +221,9 @@ namespace Clinics.Api.Services.Extension
             lease.RevokedAtUtc = DateTime.UtcNow;
             lease.RevokedReason = reason;
             await _db.SaveChangesAsync();
+
+            // Sync WhatsApp session status to disconnected when extension disconnects
+            await SyncWhatsAppSessionStatusAsync(moderatorId, "disconnected");
 
             // Broadcast disconnection via SignalR
             await BroadcastExtensionDisconnectedAsync(moderatorId);
@@ -261,6 +267,9 @@ namespace Clinics.Api.Services.Extension
             lease.RevokedReason = reason;
             await _db.SaveChangesAsync();
 
+            // Sync WhatsApp session status to disconnected when extension disconnects
+            await SyncWhatsAppSessionStatusAsync(moderatorUserId, "disconnected");
+
             // Broadcast disconnection via SignalR
             await BroadcastExtensionDisconnectedAsync(moderatorUserId);
 
@@ -287,6 +296,13 @@ namespace Clinics.Api.Services.Extension
             {
                 await _db.SaveChangesAsync();
                 _logger.LogInformation("Expired {Count} stale leases", staleLeases.Count);
+                
+                // Sync WhatsApp session status to disconnected for each expired lease
+                foreach (var lease in staleLeases)
+                {
+                    await SyncWhatsAppSessionStatusAsync(lease.ModeratorUserId, "disconnected");
+                    await BroadcastExtensionDisconnectedAsync(lease.ModeratorUserId);
+                }
             }
 
             return staleLeases.Count;
@@ -381,16 +397,46 @@ namespace Clinics.Api.Services.Extension
                                 pausedMessages.Count, moderatorUserId);
                         }
                     }
-                    else if (!session.IsPaused)
+                    else
                     {
-                        // Pause if not connected and not already paused
-                        session.IsPaused = true;
-                        session.PauseReason = $"Extension status: {extensionStatus}";
+                        // CRITICAL: Auto-pause when session status changes from "connected" to anything else
+                        // This prevents sending when session is not ready (pending, disconnected, qr_pending)
+                        if (!session.IsPaused)
+                        {
+                            session.IsPaused = true;
+                            session.PauseReason = $"Extension status: {extensionStatus}";
+                            session.PausedAt = DateTime.UtcNow;
+                            _logger.LogWarning("Auto-paused WhatsApp session for moderator {ModeratorId} - status changed to {Status}", 
+                                moderatorUserId, extensionStatus);
+                        }
+                        else
+                        {
+                            // Already paused - update reason to reflect current status
+                            session.PauseReason = $"Extension status: {extensionStatus}";
+                        }
                     }
                     
                     _logger.LogDebug("Updated WhatsAppSession for moderator {ModeratorId} with status {Status}", 
                         moderatorUserId, dbStatus);
                 }
+                
+                // CRITICAL: Save changes to persist pause state
+                await _db.SaveChangesAsync();
+                
+                // CRITICAL: Broadcast WhatsAppSessionUpdated event for real-time frontend updates
+                // This triggers immediate refresh of pause state and resume button enablement
+                await _hubContext.Clients.Group($"moderator-{moderatorUserId}")
+                    .SendAsync("WhatsAppSessionUpdated", new
+                    {
+                        moderatorUserId,
+                        status = dbStatus,
+                        isPaused = session.IsPaused,
+                        pauseReason = session.PauseReason,
+                        isResumable = session.IsPaused && dbStatus == "connected" // Only resumable when paused AND connected
+                    });
+                
+                _logger.LogInformation("Broadcasted WhatsAppSessionUpdated for moderator {ModeratorId}, status={Status}, isPaused={IsPaused}",
+                    moderatorUserId, dbStatus, session.IsPaused);
             }
             catch (Exception ex)
             {

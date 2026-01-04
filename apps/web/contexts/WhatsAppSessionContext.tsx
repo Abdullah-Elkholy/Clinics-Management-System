@@ -408,6 +408,9 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         };
         setExtensionStatus(extStatus);
 
+        // Update global pause state from combined status
+        setGlobalPauseState(result.pauseState);
+
         // Calculate detailed status inline (avoid circular dependency)
         const currentSessionStatus = result.session?.status?.toLowerCase() as WhatsAppSessionStatus || 'disconnected';
         setDetailedStatus(calculateDetailedStatus(
@@ -650,7 +653,8 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     if (document.hidden) return;
 
     // Initial poll already done in previous useEffect
-    // Set up fallback polling with 60 second interval (SignalR handles real-time updates)
+    // Set up fallback polling with 5 second interval for faster status updates
+    // This ensures resume button updates automatically when session reconnects
     const interval = setInterval(() => {
       // Only poll if tab is visible and moderatorId is still valid
       if (!document.hidden && moderatorId) {
@@ -659,7 +663,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         // Health is polled less frequently - only when visible
         refreshSessionHealth();
       }
-    }, 60000); // 60 seconds - rely on SignalR for real-time updates
+    }, 5000); // 5 seconds - faster updates for pause state and resume button
 
     // Pause polling when tab becomes hidden
     const handleVisibilityChange = () => {
@@ -701,14 +705,25 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       }
     };
 
+    const handleWhatsAppSessionUpdate = (payload: any) => {
+      // Check if this update is for our moderator
+      if (payload.moderatorUserId === moderatorId || payload.moderatorId === moderatorId) {
+        console.log('[WhatsAppSessionContext] WhatsAppSessionUpdated received:', payload);
+        // Immediately refresh combined status to get updated pause state
+        refreshCombinedStatus();
+      }
+    };
+
     on('MessageSending', handleMessageSending);
     on('MessageSent', handleMessageSent);
     on('ExtensionStatusUpdated', handleExtensionStatusUpdate);
+    on('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
 
     return () => {
       off('MessageSending', handleMessageSending);
       off('MessageSent', handleMessageSent);
       off('ExtensionStatusUpdated', handleExtensionStatusUpdate);
+      off('WhatsAppSessionUpdated', handleWhatsAppSessionUpdate);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moderatorId, on, off]); // Only re-subscribe when moderatorId changes

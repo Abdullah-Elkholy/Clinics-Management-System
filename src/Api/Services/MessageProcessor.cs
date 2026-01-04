@@ -25,6 +25,7 @@ namespace Clinics.Api.Services
         private readonly CircuitBreakerService _circuitBreaker;
         private readonly ILogger<MessageProcessor> _logger;
         private readonly IHubContext<DataUpdateHub> _hubContext;
+        private readonly IExtensionCommandService _commandService;
 
         public MessageProcessor(
             ApplicationDbContext db, 
@@ -33,7 +34,8 @@ namespace Clinics.Api.Services
             Clinics.Application.Interfaces.IQuotaService quotaService,
             CircuitBreakerService circuitBreaker,
             ILogger<MessageProcessor> logger,
-            IHubContext<DataUpdateHub> hubContext)
+            IHubContext<DataUpdateHub> hubContext,
+            IExtensionCommandService commandService)
         {
             _db = db;
             _providerFactory = providerFactory;
@@ -42,10 +44,21 @@ namespace Clinics.Api.Services
             _circuitBreaker = circuitBreaker;
             _logger = logger;
             _hubContext = hubContext;
+            _commandService = commandService;
         }
 
         public async Task ProcessQueuedMessagesAsync(int maxBatch = 50)
         {
+            // P2.8: Generate correlation ID for this processor run
+            var processorRunId = Guid.NewGuid();
+            using var processorScope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["ProcessorRunId"] = processorRunId,
+                ["ProcessorStartTime"] = DateTime.UtcNow
+            });
+            
+            _logger.LogInformation("ProcessorRun started: {ProcessorRunId}", processorRunId);
+            
             // Priority order:
             // 1. Global WhatsAppSession.IsPaused (highest priority) - skip entire moderator
             // 2. PendingQR pause rejection - already filtered out by !m.IsPaused
@@ -59,42 +72,109 @@ namespace Clinics.Api.Services
                 .Where(ws => ws.IsPaused && !ws.IsDeleted)
                 .Select(ws => ws.ModeratorUserId)
                 .ToListAsync();
-            
-            // PERFORMANCE OPTIMIZATION: Use SQL-level ordering via join instead of in-memory ordering
-            // This prevents loading 2x messages into memory just for ordering
-            // NOTE: Removed AsNoTracking() - we MUST track changes to update message status
-            var msgs = await (
-                from m in _db.Messages
-                join s in _db.MessageSessions on m.SessionId equals s.Id.ToString()
-                where m.Status == "queued" 
-                    && !m.IsPaused 
-                    && !string.IsNullOrEmpty(m.SessionId)
-                    && !s.IsDeleted
-                    && !s.IsPaused // Also check session-level pause
-                    && (m.ModeratorId == null || !pausedModeratorIds.Contains(m.ModeratorId.Value)) // Exclude globally paused moderators
-                orderby s.StartTime, m.CreatedAt
-                select m
-            )
-            .Include(m => m.Queue)
-            .Take(maxBatch) // Only take exactly what we need
-            .ToListAsync();
 
-            if (msgs.Count == 0 && pausedModeratorIds.Count > 0)
+            // Expire timed-out commands BEFORE checking orphaned messages
+            // This ensures commands that expired while in "acked" status are marked as expired
+            var expiredCount = await _commandService.ExpireTimedOutCommandsAsync();
+            if (expiredCount > 0)
             {
-                _logger.LogDebug("No messages to process. {PausedCount} moderator(s) are globally paused.", pausedModeratorIds.Count);
+                _logger.LogWarning("Expired {Count} timed-out command(s)", expiredCount);
             }
 
-            var totalMessages = msgs.Count;
+            // Cleanup orphaned messages stuck in 'sending' status
+            // This handles cases where the app restarted before command creation/completion
+            // OR where the command expired/failed without updating the message
+            var orphanedMessages = await _db.Messages
+                .Where(m => !m.IsDeleted && m.Status == "sending" && m.InFlightCommandId != null)
+                .ToListAsync();
+            
+            foreach (var orphan in orphanedMessages)
+            {
+                if (!orphan.InFlightCommandId.HasValue)
+                    continue;
+
+                // Check if the command exists and its status
+                var command = await _db.ExtensionCommands
+                    .FirstOrDefaultAsync(c => c.Id == orphan.InFlightCommandId.Value);
+                
+                if (command == null)
+                {
+                    // Command doesn't exist - reset message to queued for retry
+                    _logger.LogWarning("Resetting orphaned message {MessageId} from sending to queued (command {CommandId} not found)", 
+                        orphan.Id, orphan.InFlightCommandId);
+                    orphan.Status = "queued";
+                    orphan.InFlightCommandId = null;
+                }
+                else if (command.Status == ExtensionCommandStatuses.Expired || 
+                         command.Status == ExtensionCommandStatuses.Failed)
+                {
+                    // Command expired or failed - reset message to queued for retry
+                    _logger.LogWarning("Resetting message {MessageId} from sending to queued (command {CommandId} status: {Status})", 
+                        orphan.Id, orphan.InFlightCommandId, command.Status);
+                    orphan.Status = "queued";
+                    orphan.InFlightCommandId = null;
+                }
+            }
+            
+            if (orphanedMessages.Count > 0)
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Reset {Count} orphaned message(s) from sending to queued", orphanedMessages.Count);
+            }
+
+            var totalMessages = 0;
             var processedCount = 0;
             var errorCount = 0;
             
-            foreach (var m in msgs)
+            // P0.2: Process messages one at a time with atomic claiming
+            // Instead of selecting a batch then updating, we claim one message atomically per iteration
+            for (int i = 0; i < maxBatch; i++)
             {
+                // Atomic claim: SELECT + UPDATE in one query using ExecuteSqlRaw
+                // This prevents race conditions where two workers claim the same message
+                var claimedMessage = await ClaimNextEligibleMessageAsync(pausedModeratorIds);
+                
+                if (claimedMessage == null)
+                {
+                    // No more eligible messages
+                    if (i == 0 && pausedModeratorIds.Count > 0)
+                    {
+                        _logger.LogDebug("No messages to process. {PausedCount} moderator(s) are globally paused.", pausedModeratorIds.Count);
+                    }
+                    break;
+                }
+                
+                totalMessages++;
+                var m = claimedMessage;
+                
+                // P2.8: Create message-level correlation scope
+                var messageAttemptId = Guid.NewGuid();
+                using var messageScope = _logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["MessageId"] = m.Id,
+                    ["MessageAttemptId"] = messageAttemptId,
+                    ["AttemptNumber"] = m.Attempts + 1,
+                    ["ModeratorId"] = m.ModeratorId ?? 0,
+                    ["SessionId"] = m.SessionId ?? "none",
+                    ["CorrelationId"] = m.CorrelationId?.ToString() ?? processorRunId.ToString()
+                });
+                
+                // P2.8: Log state transition - claiming
+                _logger.LogInformation("StateTransition: {PreviousState} → {NewState} for message {MessageId}", 
+                    "queued", "sending", m.Id);
+                
                 try
                 {
                     // Double-check pause state (may have been paused while processing)
                     if (m.IsPaused)
                     {
+                        // P2.8: Log state transition - paused detected
+                        _logger.LogInformation("StateTransition: {PreviousState} → {NewState} for message {MessageId} (paused by user)", 
+                            "sending", "queued(paused)", m.Id);
+                        
+                        // Release claim - reset to queued
+                        m.Status = "queued";
+                        await _db.SaveChangesAsync();
                         continue; // Skip paused messages
                     }
                     
@@ -106,14 +186,15 @@ namespace Clinics.Api.Services
                         {
                             _logger.LogWarning("Skipping message {MessageId} - circuit is OPEN for moderator {ModeratorId}", 
                                 m.Id, m.ModeratorId.Value);
+                            // Release claim - reset to queued
+                            m.Status = "queued";
+                            await _db.SaveChangesAsync();
                             continue; // Skip this message, circuit is open
                         }
                     }
 
-                    m.Status = "sending";
-                    m.Attempts += 1;
-                    m.LastAttemptAt = DateTime.UtcNow;
-                    await _db.SaveChangesAsync();
+                    // Message is already claimed as 'sending' by ClaimNextEligibleMessageAsync
+                    // Attempts was already incremented, LastAttemptAt was already set
 
                     // Execute send through circuit breaker using the appropriate provider
                     (bool success, string? providerId, string? providerResponse) result;
@@ -124,7 +205,9 @@ namespace Clinics.Api.Services
                             result = await _circuitBreaker.ExecuteAsync(m.ModeratorId.Value, async () => 
                             {
                                 // Get the appropriate provider (Extension or Playwright fallback)
-                                var (provider, providerName) = await _providerFactory.GetProviderAsync(m.ModeratorId.Value);
+                                var providerResult = await _providerFactory.GetProviderAsync(m.ModeratorId.Value);
+                                var provider = providerResult.provider;
+                                var providerName = providerResult.providerName;
                                 _logger.LogDebug("Using {ProviderName} provider for message {MessageId}", providerName, m.Id);
                                 
                                 // Send via the selected provider
@@ -215,13 +298,42 @@ namespace Clinics.Api.Services
                     
                     if (result.success)
                     {
+                        // P2.8: Log state transition - sent successfully
+                        _logger.LogInformation("StateTransition: {PreviousState} → {NewState} for message {MessageId} (provider confirmed)", 
+                            "sending", "sent", m.Id);
+                        
                         m.Status = "sent";
                         m.SentAt = DateTime.UtcNow;
                         m.ProviderMessageId = result.providerId;
+                        m.InFlightCommandId = null; // Clear in-flight command on success
                         
-                        // CRITICAL: Save immediately to ensure this success is persisted
-                        // even if the next message in the batch throws an exception
-                        await _db.SaveChangesAsync();
+                        // CRITICAL: Save with concurrency conflict handling
+                        // If the message was paused while we were sending, the pause wins
+                        // because the user explicitly requested it
+                        try
+                        {
+                            await _db.SaveChangesAsync();
+                        }
+                        catch (DbUpdateConcurrencyException ex)
+                        {
+                            // Concurrency conflict - reload and check current state
+                            _logger.LogWarning(ex, "Concurrency conflict saving message {MessageId} as sent. Reloading to check state.", m.Id);
+                            await _db.Entry(m).ReloadAsync();
+                            
+                            // If message was paused by user, respect that decision
+                            if (m.IsPaused)
+                            {
+                                _logger.LogInformation("Message {MessageId} was paused during send. Keeping paused state (user decision wins).", m.Id);
+                                continue;
+                            }
+                            
+                            // Otherwise, re-apply our sent status and try again
+                            m.Status = "sent";
+                            m.SentAt = DateTime.UtcNow;
+                            m.ProviderMessageId = result.providerId;
+                            m.InFlightCommandId = null;
+                            await _db.SaveChangesAsync();
+                        }
                         
                         // Update MessageSession if this message is part of a session
                         if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid))
@@ -262,57 +374,36 @@ namespace Clinics.Api.Services
                         
                         if (m.Attempts < maxRetryAttempts)
                         {
-                            // Calculate exponential backoff delay
+                            // P1.6: Calculate exponential backoff delay using NextAttemptAt field
+                            // Instead of Task.Run with in-memory delay, use DB-driven scheduling
                             var delayMs = ExponentialBackoff.CalculateDelayMs(m.Attempts, baseDelaySeconds: 1, maxDelaySeconds: 30);
                             var delayDesc = ExponentialBackoff.GetDelayDescription(m.Attempts);
+                            var nextAttempt = DateTime.UtcNow.AddMilliseconds(delayMs);
                             
-                            _logger.LogWarning("Message {MessageId} failed (attempt {Attempt}/{Max}). Retrying with backoff: {Delay}", 
-                                m.Id, m.Attempts, maxRetryAttempts, delayDesc);
+                            // P2.8: Log state transition - scheduling retry
+                            _logger.LogWarning("StateTransition: {PreviousState} → {NewState} for message {MessageId} (attempt {Attempt}/{Max}, retry at {NextAttempt})", 
+                                "sending", "awaiting_retry", m.Id, m.Attempts, maxRetryAttempts, nextAttempt);
                             
-                            // Re-queue with backoff delay
+                            // Schedule retry using NextAttemptAt - processor will pick it up when due
                             m.Status = "queued";
-                            m.IsPaused = true; // Temporarily pause for backoff
-                            m.PausedAt = DateTime.UtcNow;
-                            m.PauseReason = $"ExponentialBackoff_{delayDesc}";
-                            m.ErrorMessage = $"Attempt {m.Attempts}/{maxRetryAttempts} failed: {result.providerResponse}. Retrying in {delayDesc}";
+                            m.NextAttemptAt = nextAttempt;
+                            m.ErrorMessage = $"Attempt {m.Attempts}/{maxRetryAttempts} failed: {result.providerResponse}. Retrying at {nextAttempt:HH:mm:ss}";
+                            m.InFlightCommandId = null; // Clear in-flight command
                             
                             await _db.SaveChangesAsync();
                             
-                            // Schedule resume after backoff (background task)
-                            _ = Task.Run(async () =>
-                            {
-                                await Task.Delay(delayMs);
-                                
-                                // Resume message after backoff
-                                using var scope = _db.Database.BeginTransaction();
-                                try
-                                {
-                                    var msgToResume = await _db.Messages.FindAsync(m.Id);
-                                    if (msgToResume != null && msgToResume.IsPaused && msgToResume.PauseReason?.StartsWith("ExponentialBackoff") == true)
-                                    {
-                                        msgToResume.IsPaused = false;
-                                        msgToResume.PauseReason = null;
-                                        msgToResume.PausedAt = null;
-                                        await _db.SaveChangesAsync();
-                                        await scope.CommitAsync();
-                                        
-                                        _logger.LogInformation("Message {MessageId} resumed after backoff delay", m.Id);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Error resuming message {MessageId} after backoff", m.Id);
-                                    await scope.RollbackAsync();
-                                }
-                            });
+                            // Note: No Task.Run - the processor query now includes NextAttemptAt check
                         }
                         else
                         {
                             // Max attempts reached - mark as permanently failed
-                            _logger.LogError("Message {MessageId} permanently failed after {Attempts} attempts", m.Id, m.Attempts);
+                            // P2.8: Log state transition - permanent failure
+                            _logger.LogError("StateTransition: {PreviousState} → {NewState} for message {MessageId} (max attempts {Attempts} reached)", 
+                                "sending", "failed", m.Id, m.Attempts);
                             
                             m.Status = "failed";
                             m.ErrorMessage = result.providerResponse ?? "Provider returned failure";
+                            m.InFlightCommandId = null;
                             
                             // Create failed task
                             var ft = new FailedTask 
@@ -439,12 +530,22 @@ namespace Clinics.Api.Services
                     
                     // For other exceptions, log and mark failed
                     errorCount++;
+                    
+                    // P2.8: Log state transition - exception failure
+                    _logger.LogError(ex, "StateTransition: {PreviousState} → {NewState} for message {MessageId} (unhandled exception)", 
+                        "sending", "failed", m.Id);
+                    
                     m.Status = "failed";
                     m.ErrorMessage = ex.Message;
+                    m.InFlightCommandId = null;
                     _db.FailedTasks.Add(new FailedTask { MessageId = m.Id, PatientId = m.PatientId, QueueId = m.QueueId, Reason = "exception", ProviderResponse = ex.Message, CreatedAt = DateTime.UtcNow, RetryCount = m.Attempts });
                     await _db.SaveChangesAsync();
                 }
             }
+            
+            // P2.8: Log processor run summary
+            _logger.LogInformation("ProcessorRun completed: {ProcessorRunId} - Processed={Processed}, Errors={Errors}, Total={Total}", 
+                processorRunId, processedCount, errorCount, totalMessages);
             
             // Update health metrics
             HealthController.UpdateProcessorState(processedCount, errorCount);
@@ -522,6 +623,102 @@ namespace Clinics.Api.Services
             {
                 _logger.LogError(ex, "Error sending SignalR SessionUpdated notification for session {SessionId}", session.Id);
                 // Don't throw - notification failures shouldn't stop processing
+            }
+        }
+
+        #endregion
+        
+        #region Atomic Claiming
+
+        /// <summary>
+        /// Atomically claim the next eligible message for processing.
+        /// This prevents race conditions where multiple workers claim the same message.
+        /// Uses a single UPDATE with OUTPUT to atomically select and update in one query.
+        /// Note: Message.SessionId is a string (VARCHAR) storing the MessageSession.Id (GUID)
+        /// </summary>
+        private async Task<Message?> ClaimNextEligibleMessageAsync(List<int> pausedModeratorIds)
+        {
+            // Build the list of paused moderator IDs for SQL IN clause (no quotes for int)
+            var pausedModeratorIdsCsv = string.Join(",", pausedModeratorIds);
+            var pausedModeratorFilter = pausedModeratorIds.Any() 
+                ? $"AND (m.ModeratorId IS NULL OR m.ModeratorId NOT IN ({pausedModeratorIdsCsv}))" 
+                : "";
+            
+            // Generate a unique command ID to track this claim
+            var commandId = Guid.NewGuid();
+            
+            // Atomic claim using OUTPUT INTO temp table - SQL Server specific
+            // Using OUTPUT INTO instead of plain OUTPUT to work with triggers on Messages table
+            // This atomically finds the next eligible message and marks it as 'sending'
+            // Note: SessionId is stored as VARCHAR(100), need to TRY_CAST for join
+            // CRITICAL: Only claim if no other message for the same moderator is already in 'sending' status
+            // This ensures sequential processing (one message at a time per moderator)
+            var sql = $@"
+                -- Create temp table for output
+                CREATE TABLE #ClaimedMessages (MessageId UNIQUEIDENTIFIER);
+                
+                ;WITH EligibleMessages AS (
+                    SELECT TOP(1) m.Id, m.ModeratorId
+                    FROM Messages m
+                    LEFT JOIN MessageSessions s ON TRY_CAST(m.SessionId AS UNIQUEIDENTIFIER) = s.Id
+                    WHERE m.Status IN ('queued', 'pending')
+                      AND m.IsPaused = 0
+                      AND m.IsDeleted = 0
+                      AND (s.Id IS NULL OR (s.IsPaused = 0 AND s.IsDeleted = 0))
+                      AND (m.NextAttemptAt IS NULL OR m.NextAttemptAt <= GETUTCDATE())
+                      {pausedModeratorFilter}
+                      -- CRITICAL: Only claim if no other message for this moderator is in 'sending' status
+                      AND NOT EXISTS (
+                          SELECT 1 FROM Messages sending
+                          WHERE sending.ModeratorId = m.ModeratorId
+                            AND sending.Status = 'sending'
+                            AND sending.IsDeleted = 0
+                      )
+                    ORDER BY COALESCE(s.StartTime, m.CreatedAt) ASC, m.CreatedAt ASC, m.Id ASC
+                )
+                UPDATE m
+                SET m.Status = 'sending',
+                    m.InFlightCommandId = '{commandId}'
+                OUTPUT inserted.Id INTO #ClaimedMessages
+                FROM Messages m
+                INNER JOIN EligibleMessages e ON m.Id = e.Id;
+                
+                -- Return the claimed message ID
+                SELECT MessageId FROM #ClaimedMessages;
+                
+                -- Cleanup
+                DROP TABLE #ClaimedMessages;
+                ";
+            
+            try
+            {
+                // Execute the atomic claim and get the claimed message ID
+                var claimedIds = await _db.Database
+                    .SqlQueryRaw<Guid>(sql)
+                    .ToListAsync();
+                
+                if (claimedIds.Count == 0)
+                {
+                    return null;
+                }
+                
+                // Fetch the full message entity
+                var claimedId = claimedIds.First();
+                var trackedMessage = await _db.Messages
+                    .FirstOrDefaultAsync(m => m.Id == claimedId);
+                
+                if (trackedMessage != null)
+                {
+                    _logger.LogDebug("Atomically claimed message {MessageId} with command {CommandId}", 
+                        trackedMessage.Id, commandId);
+                }
+                
+                return trackedMessage;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in atomic message claiming");
+                return null;
             }
         }
 

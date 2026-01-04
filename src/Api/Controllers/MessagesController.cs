@@ -102,47 +102,95 @@ namespace Clinics.Api.Controllers
                 
                 if (whatsappSessionCheck != null && whatsappSessionCheck.IsPaused)
                 {
-                    // Determine error type from pause reason
-                    string errorCode;
-                    string code;
-                    string errorMessage;
+                    // CRITICAL FIX: Check if there are any active messages/sessions - if not, auto-unpause
+                    // This prevents stale pause state from blocking new message sends when all tasks are already cleared
+                    var hasActiveMessages = await _db.Messages
+                        .AnyAsync(m => m.ModeratorId == effectiveModeratorId 
+                            && (m.Status == "queued" || m.Status == "sending")
+                            && !m.IsDeleted);
                     
-                    if (whatsappSessionCheck.PauseReason?.Contains("PendingQR") == true)
+                    var hasActiveSessions = await _db.MessageSessions
+                        .AnyAsync(s => s.ModeratorId == effectiveModeratorId
+                            && (s.Status == "active" || s.Status == "paused")
+                            && !s.IsDeleted);
+                    
+                    if (!hasActiveMessages && !hasActiveSessions)
                     {
-                        errorCode = "PendingQR";
-                        code = "AUTHENTICATION_REQUIRED";
-                        errorMessage = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.";
-                    }
-                    else if (whatsappSessionCheck.PauseReason?.Contains("PendingNET") == true)
-                    {
-                        errorCode = "PendingNET";
-                        code = "NETWORK_FAILURE";
-                        errorMessage = "فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية. يرجى التحقق من الاتصال والمحاولة مرة أخرى.";
-                    }
-                    else if (whatsappSessionCheck.PauseReason?.Contains("BrowserClosure") == true)
-                    {
-                        errorCode = "BrowserClosure";
-                        code = "BROWSER_CLOSED";
-                        errorMessage = "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية. يرجى إعادة فتح المتصفح والمحاولة مرة أخرى.";
+                        // CRITICAL: Before auto-unpausing, verify session status is "connected"
+                        // Only auto-unpause if session is ready to send messages
+                        if (whatsappSessionCheck.Status != "connected")
+                        {
+                            _logger.LogWarning("Cannot auto-unpause moderator {ModeratorId}: Session status is '{Status}', must be 'connected'", 
+                                effectiveModeratorId, whatsappSessionCheck.Status);
+                            return BadRequest(new
+                            {
+                                success = false,
+                                error = "SessionNotConnected",
+                                code = "SESSION_NOT_CONNECTED",
+                                message = $"لا يمكن إرسال الرسائل: جلسة الواتساب غير متصلة (الحالة: {whatsappSessionCheck.Status}). يرجى التأكد من الاتصال أولاً.",
+                                warning = true
+                            });
+                        }
+                        
+                        // No active tasks AND session is connected - auto-unpause to allow new messages
+                        _logger.LogInformation("Auto-unpausing WhatsApp session for moderator {ModeratorId} - no active tasks and status is connected", 
+                            effectiveModeratorId);
+                        
+                        whatsappSessionCheck.IsPaused = false;
+                        whatsappSessionCheck.PausedAt = null;
+                        whatsappSessionCheck.PausedBy = null;
+                        whatsappSessionCheck.PauseReason = null;
+                        whatsappSessionCheck.UpdatedAt = DateTime.UtcNow;
+                        whatsappSessionCheck.UpdatedBy = userId;
+                        
+                        await _db.SaveChangesAsync();
+                        
+                        // Continue with message sending (don't return error)
                     }
                     else
                     {
-                        // Generic pause (fallback)
-                        errorCode = "SessionPaused";
-                        code = "SESSION_PAUSED";
-                        errorMessage = "تم إيقاف جلسة الواتساب. يرجى استئناف الجلسة أولاً قبل إرسال الرسائل.";
+                        // Active tasks exist - check pause reason and block sending
+                        string errorCode;
+                        string code;
+                        string errorMessage;
+                        
+                        if (whatsappSessionCheck.PauseReason?.Contains("PendingQR") == true)
+                        {
+                            errorCode = "PendingQR";
+                            code = "AUTHENTICATION_REQUIRED";
+                            errorMessage = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.";
+                        }
+                        else if (whatsappSessionCheck.PauseReason?.Contains("PendingNET") == true)
+                        {
+                            errorCode = "PendingNET";
+                            code = "NETWORK_FAILURE";
+                            errorMessage = "فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية. يرجى التحقق من الاتصال والمحاولة مرة أخرى.";
+                        }
+                        else if (whatsappSessionCheck.PauseReason?.Contains("BrowserClosure") == true)
+                        {
+                            errorCode = "BrowserClosure";
+                            code = "BROWSER_CLOSED";
+                            errorMessage = "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية. يرجى إعادة فتح المتصفح والمحاولة مرة أخرى.";
+                        }
+                        else
+                        {
+                            // Generic pause (fallback) - provide clearer guidance
+                            errorCode = "SessionPaused";
+                            code = "SESSION_PAUSED";
+                            errorMessage = "تم إيقاف جلسة الواتساب. يوجد مهام جارية يجب إيقافها أو استئنافها أولاً. يمكنك حذف جميع المهام الجارية من لوحة المهام، أو استئناف الجلسة من إعدادات الواتساب.";
+                        }
+                        
+                        _logger.LogWarning("User {UserId} attempted to send messages but WhatsApp session is paused: {PauseReason}. Active messages: {ActiveMessages}, Active sessions: {ActiveSessions}", 
+                            userId, whatsappSessionCheck.PauseReason, hasActiveMessages, hasActiveSessions);
+                        return BadRequest(new 
+                        { 
+                            success = false, 
+                            error = errorCode,
+                            code = code,
+                            message = errorMessage,
+                            warning = true
+                        });
                     }
-                    
-                    _logger.LogWarning("User {UserId} attempted to send messages but WhatsApp session is paused: {PauseReason}", 
-                        userId, whatsappSessionCheck.PauseReason);
-                    return BadRequest(new 
-                    { 
-                        success = false, 
-                        error = errorCode,
-                        code = code,
-                        message = errorMessage,
-                        warning = true
-                    });
                 }
                 
                 // Also check if WhatsApp session status is "pending" (legacy check for PendingQR)

@@ -462,6 +462,27 @@ namespace Clinics.Domain
         [StringLength(100)]
         public string? PauseReason { get; set; }
 
+        /// <summary>
+        /// When this message becomes eligible for retry after a transient failure.
+        /// Used for durable retry scheduling instead of in-memory Task.Run delays.
+        /// Processor query includes: OR (NextAttemptAt IS NOT NULL AND NextAttemptAt <= NOW)
+        /// </summary>
+        public DateTime? NextAttemptAt { get; set; }
+
+        /// <summary>
+        /// ID of the extension command currently processing this message.
+        /// Prevents creating duplicate commands when the provider times out but command is still running.
+        /// Cleared when command completes (success or failure) or message returns to queued.
+        /// </summary>
+        public Guid? InFlightCommandId { get; set; }
+
+        /// <summary>
+        /// Concurrency token for optimistic concurrency control.
+        /// Prevents lost updates when pause and send-complete race.
+        /// </summary>
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
+
         // Soft-delete fields
         [Required]
         public bool IsDeleted { get; set; } = false;
@@ -676,17 +697,14 @@ namespace Clinics.Domain
 
         /// <summary>
         /// Computed property indicating whether the session can be resumed.
-        /// A paused session is resumable if:
+        /// CRITICAL: A paused session is ONLY resumable when:
         /// - It is paused AND
-        /// - Either the pause reason is NOT PendingQR (user can resume immediately)
-        /// - OR the pause reason IS PendingQR but session is now connected (authenticated successfully)
-        /// This simplifies frontend logic by providing a single boolean to check.
+        /// - Session Status is "connected" (authenticated and working)
+        /// This ensures users cannot resume when session is pending/disconnected,
+        /// preventing message sending failures and providing clear feedback.
         /// </summary>
         [System.ComponentModel.DataAnnotations.Schema.NotMapped]
-        public bool IsResumable => IsPaused && (
-            PauseReason != "PendingQR" ||
-            (PauseReason == "PendingQR" && Status == "connected")
-        );
+        public bool IsResumable => IsPaused && Status == "connected";
 
         // Soft-delete fields
         public bool IsDeleted { get; set; } = false;
@@ -783,6 +801,13 @@ namespace Clinics.Domain
         /// Correlation ID for tracking this session through logs and retry flows
         /// </summary>
         public Guid? CorrelationId { get; set; }
+
+        /// <summary>
+        /// Concurrency token for optimistic concurrency control.
+        /// Prevents lost updates when multiple operations modify session state.
+        /// </summary>
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
 
         // Soft-delete fields
         [Required]
@@ -1385,6 +1410,7 @@ namespace Clinics.Domain
     /// <summary>
     /// Enum for extension result statuses (from extension to server).
     /// Maps to existing OperationResult categories.
+    /// P2.9: Added ExtensionTimeout and NoActiveLease for explicit error handling.
     /// </summary>
     public static class ExtensionResultStatuses
     {
@@ -1393,6 +1419,18 @@ namespace Clinics.Domain
         public const string PendingNET = "pendingNET";
         public const string Waiting = "waiting";
         public const string Failed = "failed";
+        
+        /// <summary>
+        /// Extension command timed out but may still complete later.
+        /// Message should stay in 'sending' state.
+        /// </summary>
+        public const string ExtensionTimeout = "extensionTimeout";
+        
+        /// <summary>
+        /// No active extension lease for the moderator.
+        /// User needs to connect the browser extension.
+        /// </summary>
+        public const string NoActiveLease = "noActiveLease";
     }
 
     #endregion
