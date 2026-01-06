@@ -43,7 +43,8 @@ namespace Clinics.Domain
         public static UserRole FromRoleName(string? name)
         {
             if (string.IsNullOrWhiteSpace(name)) return UserRole.User;
-            return name switch
+            // DEF-011 FIX: Case-insensitive matching to prevent role bypass
+            return name.ToLowerInvariant() switch
             {
                 "primary_admin" => UserRole.PrimaryAdmin,
                 "secondary_admin" => UserRole.SecondaryAdmin,
