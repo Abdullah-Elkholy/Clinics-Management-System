@@ -245,6 +245,7 @@ builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionLeaseService
 builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionCommandService, Clinics.Api.Services.Extension.ExtensionCommandService>();
 builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProvider, Clinics.Api.Services.Extension.ExtensionRunnerProvider>();
 builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProviderFactory, Clinics.Api.Services.Extension.WhatsAppProviderFactory>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.ICheckWhatsAppService, Clinics.Api.Services.Extension.CheckWhatsAppService>();
 
 // Authorization policies
 builder.Services.AddAuthorization(options =>

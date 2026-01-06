@@ -19,6 +19,7 @@ namespace Clinics.Api.Controllers
         private readonly IExtensionPairingService _pairingService;
         private readonly IExtensionLeaseService _leaseService;
         private readonly IExtensionCommandService _commandService;
+        private readonly ICheckWhatsAppService _checkWhatsAppService;
         private readonly ApplicationDbContext _db;
         private readonly ILogger<ExtensionController> _logger;
 
@@ -26,12 +27,14 @@ namespace Clinics.Api.Controllers
             IExtensionPairingService pairingService,
             IExtensionLeaseService leaseService,
             IExtensionCommandService commandService,
+            ICheckWhatsAppService checkWhatsAppService,
             ApplicationDbContext db,
             ILogger<ExtensionController> logger)
         {
             _pairingService = pairingService;
             _leaseService = leaseService;
             _commandService = commandService;
+            _checkWhatsAppService = checkWhatsAppService;
             _db = db;
             _logger = logger;
         }
@@ -174,8 +177,8 @@ namespace Clinics.Api.Controllers
 
             var success = await _pairingService.RevokeDeviceAsync(deviceId, request.Reason ?? "UserRevoked");
 
-            return success 
-                ? Ok(new { success = true }) 
+            return success
+                ? Ok(new { success = true })
                 : BadRequest(new { error = "Failed to revoke device" });
         }
 
@@ -202,8 +205,8 @@ namespace Clinics.Api.Controllers
 
             var success = await _pairingService.DeleteDeviceAsync(deviceId);
 
-            return success 
-                ? NoContent() 
+            return success
+                ? NoContent()
                 : BadRequest(new { error = "Failed to delete device" });
         }
 
@@ -222,7 +225,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 _logger.LogDebug("Lease acquisition request for device {DeviceId}", request.DeviceId);
-                
+
                 // Validate device token
                 var device = await ValidateDeviceToken(request.DeviceId, request.DeviceToken);
                 if (device == null)
@@ -268,9 +271,9 @@ namespace Clinics.Api.Controllers
         [AllowAnonymous]
         public async Task<ActionResult> Heartbeat([FromBody] HeartbeatRequest request)
         {
-            _logger.LogDebug("Heartbeat received - LeaseId: {LeaseId}, WhatsAppStatus: {Status}", 
+            _logger.LogDebug("Heartbeat received - LeaseId: {LeaseId}, WhatsAppStatus: {Status}",
                 request.LeaseId, request.WhatsAppStatus);
-            
+
             var (success, error) = await _leaseService.HeartbeatAsync(
                 request.LeaseId,
                 request.LeaseToken,
@@ -287,8 +290,8 @@ namespace Clinics.Api.Controllers
                 _logger.LogWarning("Heartbeat failed for lease {LeaseId}: {Error}", request.LeaseId, error);
             }
 
-            return success 
-                ? Ok(new { success = true }) 
+            return success
+                ? Ok(new { success = true })
                 : BadRequest(new { error });
         }
 
@@ -304,8 +307,8 @@ namespace Clinics.Api.Controllers
                 request.LeaseToken,
                 request.Reason ?? "Released");
 
-            return success 
-                ? Ok(new { success = true }) 
+            return success
+                ? Ok(new { success = true })
                 : BadRequest(new { error = "Failed to release lease" });
         }
 
@@ -358,8 +361,8 @@ namespace Clinics.Api.Controllers
 
             var success = await _leaseService.ForceReleaseLeaseAsync(moderatorId.Value, "ForceReleasedFromUI");
 
-            return success 
-                ? Ok(new { success = true }) 
+            return success
+                ? Ok(new { success = true })
                 : BadRequest(new { error = "Failed to release lease" });
         }
 
@@ -414,8 +417,8 @@ namespace Clinics.Api.Controllers
             }
 
             var success = await _commandService.AcknowledgeAsync(commandId);
-            return success 
-                ? Ok(new { success = true }) 
+            return success
+                ? Ok(new { success = true })
                 : BadRequest(new { error = "Failed to acknowledge command" });
         }
 
@@ -433,8 +436,8 @@ namespace Clinics.Api.Controllers
             }
 
             var success = await _commandService.CompleteAsync(commandId, request.ResultStatus, request.ResultData);
-            return success 
-                ? Ok(new { success = true }) 
+            return success
+                ? Ok(new { success = true })
                 : BadRequest(new { error = "Failed to complete command" });
         }
 
@@ -456,9 +459,110 @@ namespace Clinics.Api.Controllers
                 request.Status,
                 request.Error);
 
-            return success 
-                ? Ok(new { success = true }) 
+            return success
+                ? Ok(new { success = true })
                 : BadRequest(new { error });
+        }
+
+        #endregion
+
+        #region Check WhatsApp Number Endpoints
+
+        /// <summary>
+        /// Check if a phone number has WhatsApp.
+        /// This operation will hard-pause any active sending (unresumable until checks complete).
+        /// </summary>
+        [HttpGet("whatsapp/check-number/{phoneNumber}")]
+        [Authorize(Policy = "ModeratorOrAbove")]
+        public async Task<ActionResult<CheckWhatsAppResponse>> CheckWhatsAppNumber(
+            string phoneNumber,
+            [FromQuery] string? countryCode = "+20",
+            [FromQuery] bool forceCheck = false,
+            CancellationToken cancellationToken = default)
+        {
+            var moderatorId = GetModeratorId();
+            var userId = GetUserId();
+
+            if (moderatorId == null || userId == null)
+            {
+                return BadRequest(new { error = "Unable to determine user ID" });
+            }
+
+            // Validate phone number format
+            if (string.IsNullOrWhiteSpace(phoneNumber))
+            {
+                return BadRequest(new { error = "Phone number is required" });
+            }
+
+            try
+            {
+                var result = await _checkWhatsAppService.CheckNumberAsync(
+                    phoneNumber,
+                    countryCode ?? "+20",
+                    moderatorId.Value,
+                    userId.Value,
+                    forceCheck,
+                    cancellationToken);
+
+                return Ok(new CheckWhatsAppResponse
+                {
+                    Success = result.Success,
+                    HasWhatsApp = result.HasWhatsApp,
+                    State = result.ResultStatus,
+                    Message = result.ErrorMessage
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(499, new { error = "Request cancelled" }); // Client Closed Request
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking WhatsApp number {Phone}", phoneNumber);
+                return StatusCode(500, new { error = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// Cancel any ongoing check session and allow sending to resume.
+        /// </summary>
+        [HttpPost("whatsapp/check-cancel")]
+        [Authorize(Policy = "ModeratorOrAbove")]
+        public async Task<ActionResult> CancelCheckSession()
+        {
+            var moderatorId = GetModeratorId();
+            if (moderatorId == null)
+            {
+                return BadRequest(new { error = "Unable to determine moderator ID" });
+            }
+
+            await _checkWhatsAppService.CancelCheckSessionAsync(moderatorId.Value);
+            return Ok(new { success = true, message = "Check session cancelled, sending can resume" });
+        }
+
+        /// <summary>
+        /// Get active check session status.
+        /// </summary>
+        [HttpGet("whatsapp/check-status")]
+        [Authorize(Policy = "ModeratorOrAbove")]
+        public async Task<ActionResult<CheckSessionStatusResponse>> GetCheckSessionStatus()
+        {
+            var moderatorId = GetModeratorId();
+            if (moderatorId == null)
+            {
+                return BadRequest(new { error = "Unable to determine moderator ID" });
+            }
+
+            var session = await _checkWhatsAppService.GetActiveCheckSessionAsync(moderatorId.Value);
+
+            return Ok(new CheckSessionStatusResponse
+            {
+                HasActiveCheckSession = session != null,
+                SessionId = session?.Id,
+                TotalChecks = session?.TotalMessages ?? 0,
+                CompletedChecks = session?.SentMessages ?? 0,
+                Status = session?.Status
+            });
         }
 
         #endregion
@@ -509,6 +613,16 @@ namespace Clinics.Api.Controllers
             await _db.SaveChangesAsync();
 
             return device;
+        }
+
+        private int? GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (int.TryParse(userIdClaim, out var userId))
+            {
+                return userId;
+            }
+            return null;
         }
 
         #endregion
@@ -635,6 +749,23 @@ namespace Clinics.Api.Controllers
         public string Status { get; set; } = "";
         public string? Url { get; set; }
         public string? Error { get; set; }
+    }
+
+    public class CheckWhatsAppResponse
+    {
+        public bool Success { get; set; }
+        public bool? HasWhatsApp { get; set; }
+        public string State { get; set; } = "";
+        public string? Message { get; set; }
+    }
+
+    public class CheckSessionStatusResponse
+    {
+        public bool HasActiveCheckSession { get; set; }
+        public Guid? SessionId { get; set; }
+        public int TotalChecks { get; set; }
+        public int CompletedChecks { get; set; }
+        public string? Status { get; set; }
     }
 
     #endregion

@@ -1095,6 +1095,7 @@ public class SessionsController : ControllerBase
                 .Where(s => !s.IsDeleted 
                     && s.Status == "completed" 
                     && s.OngoingMessages == 0  // All messages processed
+                    && s.SessionType != MessageSessionTypes.CheckWhatsApp  // Exclude check sessions
                     && (moderatorId == null || s.ModeratorId == moderatorId))
                 .OrderByDescending(s => s.EndTime ?? s.StartTime)  // Most recent first
                 .ToListAsync();

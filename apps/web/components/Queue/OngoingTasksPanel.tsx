@@ -66,13 +66,13 @@ export default function OngoingTasksPanel() {
   const { confirm } = useConfirmDialog();
   const router = useRouter();
   const { selectedQueueId } = useQueue();
-  
+
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
   const [pausedSessions, setPausedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-002']));
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
-  
+
   // Request deduplication: track in-flight requests
   const isLoadingRef = React.useRef(false);
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
@@ -85,7 +85,7 @@ export default function OngoingTasksPanel() {
   useEffect(() => {
     // Check for token
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    
+
     // If no token or not authenticated, redirect to login
     if (!token || !isAuthenticated || !user) {
       router.replace('/');
@@ -109,14 +109,14 @@ export default function OngoingTasksPanel() {
       logger.debug('OngoingTasksPanel: Skipping duplicate loadOngoingSessions call');
       return;
     }
-    
+
     try {
       isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
-      
+
       const response = await messageApiClient.getOngoingSessions();
-      
+
       if (response.success && response.data) {
         // Transform API response to Session format
         let transformedSessions: Session[] = response.data.map((session: OngoingSessionDto) => ({
@@ -144,16 +144,16 @@ export default function OngoingTasksPanel() {
             messagePreview: p.messageContent || '', // Include resolved message content from backend
           } as Patient & { isPaused?: boolean; messageId?: string })),
         }));
-        
+
         // Filter by selectedQueueId if one is selected
         if (selectedQueueId) {
           transformedSessions = transformedSessions.filter(
             session => String(session.queueId) === String(selectedQueueId)
           );
         }
-        
+
         setSessions(transformedSessions);
-        
+
         // Update pausedSessions state
         setPausedSessions(new Set(
           transformedSessions
@@ -233,7 +233,7 @@ export default function OngoingTasksPanel() {
    */
   const isResumeDisabled = useMemo(() => {
     if (!globalPauseState?.isPaused) return false;
-    
+
     // Use backend-computed isResumable (negated: isResumable=true means NOT disabled)
     return !globalPauseState.isResumable;
   }, [globalPauseState]);
@@ -263,7 +263,7 @@ export default function OngoingTasksPanel() {
       await loadOngoingSessions();
     } catch (err: any) {
       logger.error('Failed to resume moderator tasks:', err);
-      
+
       // Check if error is due to PendingQR (unresumable)
       if (err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
         addToast('لا يمكن استئناف المهام حتى تتم المصادقة على جلسة الواتساب.', 'warning');
@@ -354,7 +354,7 @@ export default function OngoingTasksPanel() {
     const handleDataUpdate = () => {
       // Use debounced refresh to prevent rapid-fire API calls
       debouncedRefresh();
-      
+
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('ongoingTasksDataUpdated'));
     };
@@ -448,7 +448,7 @@ export default function OngoingTasksPanel() {
       const deletePromises = Array.from(selected).map(patientId =>
         patientsApiClient.deletePatient(Number(patientId))
       );
-      
+
       await Promise.all(deletePromises);
       addToast(`تم حذف ${selected.size} مريض`, 'success');
 
@@ -461,7 +461,7 @@ export default function OngoingTasksPanel() {
 
       // Reload sessions to get updated state
       await loadOngoingSessions();
-      
+
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('patientDataUpdated'));
       window.dispatchEvent(new CustomEvent('messageDataUpdated'));
@@ -473,9 +473,14 @@ export default function OngoingTasksPanel() {
 
   /**
    * Get progress percentage - memoized
+   * Only counts messages with 'sent' status (not 'sending')
    */
   const getProgressPercentage = useCallback((session: Session) => {
-    return Math.round((session.sentCount / session.totalPatients) * 100);
+    // Count only actually sent messages (status === 'sent'), not 'sending'
+    const actuallySent = session.patients.filter(p => p.status === 'sent').length;
+    return session.totalPatients > 0
+      ? Math.round((actuallySent / session.totalPatients) * 100)
+      : 0;
   }, []);
 
   /**
@@ -498,7 +503,7 @@ export default function OngoingTasksPanel() {
 
       // Reload sessions to get updated state from backend
       await loadOngoingSessions();
-      
+
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('messageDataUpdated'));
     } catch (err) {
@@ -516,7 +521,7 @@ export default function OngoingTasksPanel() {
       // Find the message ID for this patient in this session
       const session = sessions.find(s => s.id === sessionId);
       const patient = session?.patients.find(p => p.id === patientId);
-      
+
       if (!patient || !patient.messageId) {
         addToast('لم يتم العثور على معرف الرسالة', 'error');
         return;
@@ -535,7 +540,7 @@ export default function OngoingTasksPanel() {
 
       // Reload sessions to get updated state
       await loadOngoingSessions();
-      
+
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('messageDataUpdated'));
     } catch (err) {
@@ -553,17 +558,17 @@ export default function OngoingTasksPanel() {
       try {
         await messageApiClient.deleteSession(sessionId);
         addToast('تم حذف الجلسة بنجاح', 'success');
-        
+
         // Reload sessions to get updated state
         await loadOngoingSessions();
-        
+
         // Clear selection for this session
         setSelectedPatients((prev) => {
           const newMap = new Map(prev);
           newMap.delete(sessionId);
           return newMap;
         });
-        
+
         // Dispatch event to notify other components
         window.dispatchEvent(new CustomEvent('messageDataUpdated'));
       } catch (err) {
@@ -602,7 +607,7 @@ export default function OngoingTasksPanel() {
     // Find patient to get messageId
     const session = sessions.find(s => s.id === sessionId);
     const patient = session?.patients.find(p => p.id === patientId);
-    
+
     if (!patient || !patient.messageId) {
       addToast('لم يتم العثور على معرف الرسالة', 'error');
       return;
@@ -613,10 +618,10 @@ export default function OngoingTasksPanel() {
       try {
         await messageApiClient.deleteMessage(patient.messageId);
         addToast('تم حذف الرسالة بنجاح', 'success');
-        
+
         // Reload sessions to get updated state
         await loadOngoingSessions();
-        
+
         // Dispatch event to notify other components
         window.dispatchEvent(new CustomEvent('messageDataUpdated'));
       } catch (err) {
@@ -681,9 +686,8 @@ export default function OngoingTasksPanel() {
     phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
     message: (
       <div
-        className={`text-sm text-gray-700 whitespace-pre-wrap ${
-          isMessagesExpanded ? '' : 'line-clamp-2'
-        } max-w-xs`}
+        className={`text-sm text-gray-700 whitespace-pre-wrap ${isMessagesExpanded ? '' : 'line-clamp-2'
+          } max-w-xs`}
         title={patient.messagePreview}
       >
         {patient.messagePreview || 'لا توجد رسالة'}
@@ -713,11 +717,10 @@ export default function OngoingTasksPanel() {
     ),
     failedAttempts: (
       <span
-        className={`px-3 py-1 rounded-full text-sm font-medium ${
-          (patient.failureMetrics?.attempts ?? 0) > 0
+        className={`px-3 py-1 rounded-full text-sm font-medium ${(patient.failureMetrics?.attempts ?? 0) > 0
             ? 'bg-red-100 text-red-700'
             : 'bg-green-100 text-green-700'
-        }`}
+          }`}
       >
         {patient.failureMetrics?.attempts ?? 0}
       </span>
@@ -729,21 +732,20 @@ export default function OngoingTasksPanel() {
             togglePatientPause(sessionId, patient.id)
           }
           disabled={globalPauseState?.isPaused === true || sessionIsPaused}
-          className={`px-2 py-1 rounded text-sm ${
-            globalPauseState?.isPaused === true || sessionIsPaused
+          className={`px-2 py-1 rounded text-sm ${globalPauseState?.isPaused === true || sessionIsPaused
               ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
               : patient.isPaused
-              ? 'bg-green-50 text-green-600 hover:bg-green-100'
-              : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
-          }`}
+                ? 'bg-green-50 text-green-600 hover:bg-green-100'
+                : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
+            }`}
           title={
             globalPauseState?.isPaused === true
               ? 'تم إيقاف جميع المهام على مستوى المشرف'
               : sessionIsPaused
-              ? 'تم إيقاف الجلسة'
-              : patient.isPaused
-              ? 'استئناف'
-              : 'إيقاف'
+                ? 'تم إيقاف الجلسة'
+                : patient.isPaused
+                  ? 'استئناف'
+                  : 'إيقاف'
           }
         >
           <i className={`fas fa-${patient.isPaused ? 'play' : 'pause'}`}></i>
@@ -848,11 +850,10 @@ export default function OngoingTasksPanel() {
                 <button
                   onClick={handleGlobalResume}
                   disabled={isResumeDisabled}
-                  className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${
-                    isResumeDisabled
+                  className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${isResumeDisabled
                       ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                       : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
-                  }`}
+                    }`}
                   title={isResumeDisabled ? 'لا يمكن الاستئناف - يتطلب المصادقة أولاً' : 'استئناف جميع مهام المشرف'}
                 >
                   <i className="fas fa-play"></i>
@@ -865,24 +866,22 @@ export default function OngoingTasksPanel() {
                   </span>
                 </button>
                 {globalPauseState.pauseReason && (
-                  <div className={`text-sm flex items-center gap-2 ${
-                    globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
+                  <div className={`text-sm flex items-center gap-2 ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
                       ? 'text-yellow-700 font-semibold'
                       : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
-                      ? 'text-green-600 font-semibold'
-                      : globalPauseState.pauseReason?.includes('BrowserClosure')
-                      ? 'text-red-600'
-                      : 'text-orange-600'
-                  }`}>
-                    <i className={`fas ${
-                      globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
+                        ? 'text-green-600 font-semibold'
+                        : globalPauseState.pauseReason?.includes('BrowserClosure')
+                          ? 'text-red-600'
+                          : 'text-orange-600'
+                    }`}>
+                    <i className={`fas ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
                         ? 'fa-exclamation-triangle'
                         : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
-                        ? 'fa-check-circle'
-                        : globalPauseState.pauseReason?.includes('BrowserClosure')
-                        ? 'fa-times-circle'
-                        : 'fa-wifi'
-                    }`}></i>
+                          ? 'fa-check-circle'
+                          : globalPauseState.pauseReason?.includes('BrowserClosure')
+                            ? 'fa-times-circle'
+                            : 'fa-wifi'
+                      }`}></i>
                     <span>{globalPauseState.pauseReason}</span>
                     {globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable && (
                       <span className="text-xs">(يجب المصادقة أولاً)</span>
@@ -921,11 +920,10 @@ export default function OngoingTasksPanel() {
             >
               {/* Session Header - Fully Clickable */}
               <div
-                className={`px-6 py-4 border-b cursor-pointer transition-colors ${
-                  session.isPaused
+                className={`px-6 py-4 border-b cursor-pointer transition-colors ${session.isPaused
                     ? 'bg-gradient-to-r from-yellow-100 to-orange-50'
                     : 'bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100'
-                }`}
+                  }`}
                 onClick={() => toggleSessionExpand(session.id)}
               >
                 <div className="flex items-center gap-4 justify-between">
@@ -937,7 +935,7 @@ export default function OngoingTasksPanel() {
                       </button>
                       <span className={`text-sm font-medium whitespace-nowrap ${session.isPaused ? 'text-yellow-600' : 'text-blue-600'}`}>القائمة</span>
                     </div>
-                    
+
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
                         <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
@@ -958,13 +956,12 @@ export default function OngoingTasksPanel() {
                       <div className="text-sm font-medium text-gray-700 mb-1">تقدم الإرسال</div>
                       <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
-                          className={`h-full ${
-                            session.isPaused
+                          className={`h-full ${session.isPaused
                               ? 'bg-yellow-500'
                               : progressPercent === 100
-                              ? 'bg-green-500'
-                              : 'bg-blue-500'
-                          }`}
+                                ? 'bg-green-500'
+                                : 'bg-blue-500'
+                            }`}
                           style={{ width: `${progressPercent}%` }}
                         ></div>
                       </div>
@@ -979,13 +976,12 @@ export default function OngoingTasksPanel() {
                           toggleSessionPause(session.id);
                         }}
                         disabled={globalPauseState?.isPaused === true}
-                        className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${
-                          globalPauseState?.isPaused === true
+                        className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${globalPauseState?.isPaused === true
                             ? 'bg-gray-400 text-white cursor-not-allowed opacity-50'
                             : session.isPaused
-                            ? 'bg-green-500 text-white hover:bg-green-600'
-                            : 'bg-yellow-500 text-white hover:bg-yellow-600'
-                        }`}
+                              ? 'bg-green-500 text-white hover:bg-green-600'
+                              : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                          }`}
                         title={globalPauseState?.isPaused === true ? 'تم إيقاف جميع المهام على مستوى المشرف' : (session.isPaused ? 'استئناف الجلسة' : 'إيقاف الجلسة')}
                       >
                         <i className={`fas fa-${session.isPaused ? 'play' : 'pause'}`}></i>
@@ -1007,19 +1003,41 @@ export default function OngoingTasksPanel() {
               {/* Session Content (Expandable) */}
               {isExpanded && (
                 <div className="p-6 bg-gray-50">
-                  {/* Session Stats */}
-                  <div className="grid grid-cols-3 gap-4 mb-6">
+                  {/* Session Stats - 4 columns with actionable info */}
+                  <div className="grid grid-cols-4 gap-4 mb-6">
                     <div className="bg-white rounded-lg p-4 border border-blue-200">
-                      <div className="text-sm text-gray-600">إجمالي المرضى</div>
-                      <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>
+                        قيد الإرسال
+                      </div>
+                      <div className="text-2xl font-bold text-blue-600">
+                        {session.patients.filter(p => p.status === 'sending').length}
+                      </div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-green-200">
-                      <div className="text-sm text-gray-600">الرسائل المرسلة</div>
-                      <div className="text-2xl font-bold text-green-600">{session.sentCount}</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-check-circle text-green-500 text-xs"></i>
+                        تم الإرسال
+                      </div>
+                      <div className="text-2xl font-bold text-green-600">
+                        {session.patients.filter(p => p.status === 'sent').length}
+                      </div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-red-200">
-                      <div className="text-sm text-gray-600">الفاشلة</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-times-circle text-red-500 text-xs"></i>
+                        فشل
+                      </div>
                       <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-4 border border-gray-200">
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-clock text-gray-500 text-xs"></i>
+                        المتبقية
+                      </div>
+                      <div className="text-2xl font-bold text-gray-600">
+                        {session.patients.filter(p => p.status === 'queued' || p.status === 'pending').length}
+                      </div>
                     </div>
                   </div>
 
@@ -1039,9 +1057,8 @@ export default function OngoingTasksPanel() {
                           {selectedCount > 0 && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <i
-                                className={`fas text-white text-xs ${
-                                  selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
-                                }`}
+                                className={`fas text-white text-xs ${selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
+                                  }`}
                               ></i>
                             </div>
                           )}
@@ -1112,9 +1129,8 @@ export default function OngoingTasksPanel() {
                               return (
                                 <tr
                                   key={patient.id}
-                                  className={`border-b hover:bg-gray-50 transition-colors ${
-                                    patient.isPaused ? 'bg-yellow-50' : ''
-                                  }`}
+                                  className={`border-b hover:bg-gray-50 transition-colors ${patient.isPaused ? 'bg-yellow-50' : ''
+                                    }`}
                                 >
                                   <td className="px-6 py-3 text-sm">{row.checkbox}</td>
                                   <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
@@ -1137,9 +1153,9 @@ export default function OngoingTasksPanel() {
           );
         })}
       </div>
-        <UsageGuideSection
-          items={ONGOING_TASKS_GUIDE_ITEMS}
-        />
+      <UsageGuideSection
+        items={ONGOING_TASKS_GUIDE_ITEMS}
+      />
     </PanelWrapper>
   );
 }

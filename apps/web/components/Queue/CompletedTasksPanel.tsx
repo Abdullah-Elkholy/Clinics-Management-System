@@ -71,14 +71,14 @@ export default function CompletedTasksPanel() {
   const { addToast } = useUI();
   const router = useRouter();
   const { selectedQueueId } = useQueue();
-  
+
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [isMessagesExpanded, setIsMessagesExpanded] = useState(false);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Ref for request deduplication
   const isLoadingRef = useRef(false);
 
@@ -86,7 +86,7 @@ export default function CompletedTasksPanel() {
   useEffect(() => {
     // Check for token
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    
+
     // If no token or not authenticated, redirect to login
     if (!token || !isAuthenticated || !user) {
       router.replace('/');
@@ -110,14 +110,14 @@ export default function CompletedTasksPanel() {
       logger.debug('CompletedTasksPanel: Skipping duplicate loadCompletedSessions call');
       return;
     }
-    
+
     try {
       isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
-      
+
       const response = await messageApiClient.getCompletedSessions();
-      
+
       if (response.success && response.data) {
         // Transform API response to Session format
         const transformedSessions: Session[] = response.data.map((session: any) => ({
@@ -144,7 +144,7 @@ export default function CompletedTasksPanel() {
             updatedBy: msg.updatedBy,
           } as SentMessage)),
         }));
-        
+
         // Filter by selectedQueueId if one is selected
         let filteredSessions = transformedSessions;
         if (selectedQueueId) {
@@ -152,7 +152,7 @@ export default function CompletedTasksPanel() {
             session => String(session.queueId) === String(selectedQueueId)
           );
         }
-        
+
         setSessions(filteredSessions);
       }
     } catch (err: any) {
@@ -226,7 +226,7 @@ export default function CompletedTasksPanel() {
     const handleDataUpdate = () => {
       // Use debounced refresh to prevent rapid-fire API calls
       debouncedRefresh();
-      
+
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('completedTasksDataUpdated'));
     };
@@ -302,9 +302,8 @@ export default function CompletedTasksPanel() {
     phone: formatPhoneForDisplay(message.patientPhone, message.countryCode),
     message: (
       <div
-        className={`text-sm text-gray-700 whitespace-pre-wrap ${
-          isMessagesExpanded ? '' : 'line-clamp-2'
-        } max-w-xs`}
+        className={`text-sm text-gray-700 whitespace-pre-wrap ${isMessagesExpanded ? '' : 'line-clamp-2'
+          } max-w-xs`}
         title={message.content}
       >
         {message.content || 'لا توجد رسالة'}
@@ -399,20 +398,32 @@ export default function CompletedTasksPanel() {
                 <div className="p-6 bg-gray-50">
                   {/* Session Stats */}
                   <div className="grid grid-cols-4 gap-4 mb-6">
-                    <div className="bg-white rounded-lg p-4 border border-green-200">
-                      <div className="text-sm text-gray-600">إجمالي المرضى</div>
-                      <div className="text-2xl font-bold text-green-600">{session.totalPatients}</div>
+                    <div className="bg-white rounded-lg p-4 border border-blue-200">
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-users text-blue-500 text-xs"></i>
+                        إجمالي المرضى
+                      </div>
+                      <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-green-200">
-                      <div className="text-sm text-gray-600">الرسائل المرسلة</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-check-circle text-green-500 text-xs"></i>
+                        تم الإرسال
+                      </div>
                       <div className="text-2xl font-bold text-green-600">{session.sentCount}</div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-red-200">
-                      <div className="text-sm text-gray-600">الرسائل الفاشلة</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-times-circle text-red-500 text-xs"></i>
+                        فشل
+                      </div>
                       <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-green-200">
-                      <div className="text-sm text-gray-600">معدل النجاح</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-percentage text-green-500 text-xs"></i>
+                        معدل النجاح
+                      </div>
                       <div className="text-2xl font-bold text-green-600">
                         {Math.round((session.sentCount / session.totalPatients) * 100)}%
                       </div>
@@ -426,7 +437,7 @@ export default function CompletedTasksPanel() {
                       <div className="flex-1">
                         <h5 className="font-semibold text-yellow-800 mb-1">تنبيه: يوجد رسائل فاشلة في هذه الجلسة</h5>
                         <p className="text-sm text-yellow-700">
-                          تحتوي هذه الجلسة على <strong>{session.failedCount}</strong> رسالة فاشلة. القائمة أدناه تعرض فقط الرسائل المرسلة بنجاح. 
+                          تحتوي هذه الجلسة على <strong>{session.failedCount}</strong> رسالة فاشلة. القائمة أدناه تعرض فقط الرسائل المرسلة بنجاح.
                           لعرض الرسائل الفاشلة وأسباب الفشل، يرجى زيارة لوحة المهام الفاشلة.
                         </p>
                       </div>
@@ -510,9 +521,9 @@ export default function CompletedTasksPanel() {
       </div>
 
       {/* Info Box */}
-        <UsageGuideSection 
-          items={COMPLETED_TASKS_GUIDE_ITEMS}
-        />
+      <UsageGuideSection
+        items={COMPLETED_TASKS_GUIDE_ITEMS}
+      />
     </PanelWrapper>
   );
 }

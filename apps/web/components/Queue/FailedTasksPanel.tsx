@@ -63,7 +63,7 @@ export default function FailedTasksPanel() {
   const { confirm } = useConfirmDialog();
   const router = useRouter();
   const { selectedQueueId } = useQueue();
-  
+
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
   const [selectedPatients, setSelectedPatients] = useState<Map<string, Set<string>>>(new Map());
@@ -73,11 +73,11 @@ export default function FailedTasksPanel() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
-  
+
   // Retry preview modal state
   const [showRetryPreview, setShowRetryPreview] = useState(false);
   const [retrySessionId, setRetrySessionId] = useState<string | null>(null);
-  
+
   // Request deduplication: track in-flight requests
   const isLoadingRef = React.useRef(false);
 
@@ -85,7 +85,7 @@ export default function FailedTasksPanel() {
   useEffect(() => {
     // Check for token
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    
+
     // If no token or not authenticated, redirect to login
     if (!token || !isAuthenticated || !user) {
       router.replace('/');
@@ -109,108 +109,108 @@ export default function FailedTasksPanel() {
       logger.debug('[FailedTasksPanel] Skipping duplicate loadFailedSessions call');
       return;
     }
-    
+
     logger.debug('[FailedTasksPanel] Starting loadFailedSessions', { page, pageSize, userId: user?.id });
     try {
       isLoadingRef.current = true;
       setIsLoading(true);
       setError(null);
       logger.debug('[FailedTasksPanel] Set loading to true, cleared error');
-      
+
       logger.debug('[FailedTasksPanel] Calling messageApiClient.getFailedSessions()...');
       const response = await messageApiClient.getFailedSessions();
-        logger.debug('[FailedTasksPanel] Received response:', { 
-          success: response.success, 
-          hasData: !!response.data, 
-          dataLength: response.data?.length || 0 
+      logger.debug('[FailedTasksPanel] Received response:', {
+        success: response.success,
+        hasData: !!response.data,
+        dataLength: response.data?.length || 0
+      });
+
+      if (response.success && response.data) {
+        logger.debug('[FailedTasksPanel] Transforming sessions data...', {
+          sessionsCount: response.data.length
         });
-        
-        if (response.success && response.data) {
-          logger.debug('[FailedTasksPanel] Transforming sessions data...', { 
-            sessionsCount: response.data.length 
+
+        // Transform API response to Session format
+        const transformedSessions: Session[] = response.data.map((session: any) => {
+          logger.debug('[FailedTasksPanel] Transforming session:', {
+            sessionId: session.sessionId,
+            queueName: session.queueName,
+            patientsCount: session.patients?.length || 0
           });
-          
-          // Transform API response to Session format
-          const transformedSessions: Session[] = response.data.map((session: any) => {
-            logger.debug('[FailedTasksPanel] Transforming session:', { 
-              sessionId: session.sessionId, 
-              queueName: session.queueName,
-              patientsCount: session.patients?.length || 0 
-            });
-            
-            return {
-              id: String(session.sessionId),
-              sessionId: String(session.sessionId),
-              queueId: session.queueId,
-              clinicName: session.queueName,
-              doctorName: session.queueName,
-              createdAt: session.startTime,
-              totalPatients: session.total,
-              failedCount: session.failed,
-              patients: session.patients.map((p: any) => ({
-                id: String(p.patientId),
-                messageId: p.messageId, // Message ID as string (Guid)
-                name: p.name,
-                phone: p.phone,
-                queueId: String(session.queueId),
-                countryCode: p.countryCode,
-                position: 0,
-                status: p.status,
-                isValidWhatsAppNumber: false,
-                messagePreview: p.messageContent || '', // Use resolved message content from backend
-                failedReason: p.failedReason || 'فشل الإرسال', // Ensure ErrorMessage is displayed
-                attempts: p.attempts || 0,
-              } as Patient)),
-            };
-          });
-          
-          // Filter by selectedQueueId if one is selected
-          let filteredSessions = transformedSessions;
-          if (selectedQueueId) {
-            filteredSessions = transformedSessions.filter(
-              session => String(session.queueId) === String(selectedQueueId)
-            );
-          }
-          
-          logger.debug('[FailedTasksPanel] Setting transformed sessions:', { 
-            count: filteredSessions.length 
-          });
-          setSessions(filteredSessions);
-          logger.debug('[FailedTasksPanel] Sessions set successfully');
-        } else {
-          logger.warn('[FailedTasksPanel] Response not successful or no data:', { 
-            success: response.success, 
-            hasData: !!response.data 
-          });
-          setSessions([]);
-        }
-      } catch (err: any) {
-        logger.error('[FailedTasksPanel] Error in loadFailedSessions:', {
-          error: err,
-          message: err?.message,
-          code: err?.code,
-          statusCode: err?.statusCode,
-          stack: err?.stack
+
+          return {
+            id: String(session.sessionId),
+            sessionId: String(session.sessionId),
+            queueId: session.queueId,
+            clinicName: session.queueName,
+            doctorName: session.queueName,
+            createdAt: session.startTime,
+            totalPatients: session.total,
+            failedCount: session.failed,
+            patients: session.patients.map((p: any) => ({
+              id: String(p.patientId),
+              messageId: p.messageId, // Message ID as string (Guid)
+              name: p.name,
+              phone: p.phone,
+              queueId: String(session.queueId),
+              countryCode: p.countryCode,
+              position: 0,
+              status: p.status,
+              isValidWhatsAppNumber: false,
+              messagePreview: p.messageContent || '', // Use resolved message content from backend
+              failedReason: p.failedReason || 'فشل الإرسال', // Ensure ErrorMessage is displayed
+              attempts: p.attempts || 0,
+            } as Patient)),
+          };
         });
-        
-        // Check if error is due to PendingQR (authentication required)
-        if (err?.code === 'AUTHENTICATION_REQUIRED' || err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
-          logger.warn('[FailedTasksPanel] WhatsApp session requires authentication (PendingQR):', err);
-          addToast('جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً.', 'warning');
-          setSessions([]);
-          setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
-        } else {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to load failed sessions';
-          setError(errorMessage);
-          logger.error('[FailedTasksPanel] Failed to load failed sessions:', err);
-          addToast('فشل تحميل الجلسات الفاشلة', 'error');
-          setSessions([]);
+
+        // Filter by selectedQueueId if one is selected
+        let filteredSessions = transformedSessions;
+        if (selectedQueueId) {
+          filteredSessions = transformedSessions.filter(
+            session => String(session.queueId) === String(selectedQueueId)
+          );
         }
-      } finally {
-        logger.debug('[FailedTasksPanel] Setting loading to false');
-        setIsLoading(false);
-        isLoadingRef.current = false;
+
+        logger.debug('[FailedTasksPanel] Setting transformed sessions:', {
+          count: filteredSessions.length
+        });
+        setSessions(filteredSessions);
+        logger.debug('[FailedTasksPanel] Sessions set successfully');
+      } else {
+        logger.warn('[FailedTasksPanel] Response not successful or no data:', {
+          success: response.success,
+          hasData: !!response.data
+        });
+        setSessions([]);
       }
+    } catch (err: any) {
+      logger.error('[FailedTasksPanel] Error in loadFailedSessions:', {
+        error: err,
+        message: err?.message,
+        code: err?.code,
+        statusCode: err?.statusCode,
+        stack: err?.stack
+      });
+
+      // Check if error is due to PendingQR (authentication required)
+      if (err?.code === 'AUTHENTICATION_REQUIRED' || err?.error === 'PendingQR' || err?.message?.includes('PendingQR')) {
+        logger.warn('[FailedTasksPanel] WhatsApp session requires authentication (PendingQR):', err);
+        addToast('جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً.', 'warning');
+        setSessions([]);
+        setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load failed sessions';
+        setError(errorMessage);
+        logger.error('[FailedTasksPanel] Failed to load failed sessions:', err);
+        addToast('فشل تحميل الجلسات الفاشلة', 'error');
+        setSessions([]);
+      }
+    } finally {
+      logger.debug('[FailedTasksPanel] Setting loading to false');
+      setIsLoading(false);
+      isLoadingRef.current = false;
+    }
   }, [page, pageSize, user, addToast, selectedQueueId]);
 
   /**
@@ -355,11 +355,11 @@ export default function FailedTasksPanel() {
       prev.map((s) =>
         s.id === sessionId
           ? {
-              ...s,
-              patients: s.patients.filter((p) => !selected.has(p.id)),
-              totalPatients: s.totalPatients - selected.size,
-              failedCount: s.failedCount - selected.size,
-            }
+            ...s,
+            patients: s.patients.filter((p) => !selected.has(p.id)),
+            totalPatients: s.totalPatients - selected.size,
+            failedCount: s.failedCount - selected.size,
+          }
           : s
       )
     );
@@ -396,7 +396,7 @@ export default function FailedTasksPanel() {
 
     try {
       setIsLoading(true);
-      
+
       // Retry each message individually
       const retryPromises = messageIds.map(async (messageId) => {
         try {
@@ -409,7 +409,7 @@ export default function FailedTasksPanel() {
       });
 
       const results = await Promise.allSettled(retryPromises);
-      const successCount = results.filter((r) => 
+      const successCount = results.filter((r) =>
         r.status === 'fulfilled' && r.value && r.value.success === true
       ).length;
       const failedCount = results.length - successCount;
@@ -450,7 +450,7 @@ export default function FailedTasksPanel() {
             attempts: p.attempts || 0,
           } as Patient)),
         }));
-        
+
         // Filter by selectedQueueId if one is selected
         let filteredSessions = transformedSessions;
         if (selectedQueueId) {
@@ -498,16 +498,16 @@ export default function FailedTasksPanel() {
       // retryFailedTask returns FailedTaskDto directly on success
       if (result && result.id) {
         addToast('تم إعادة محاولة المريض بنجاح', 'success');
-        
+
         // Reload sessions to get updated status
         await loadFailedSessions();
       }
     } catch (error: any) {
       logger.error('[FailedTasksPanel] Error retrying patient:', error);
-      
+
       // Handle specific error types with Arabic messages
-      if (error?.error === 'WhatsAppValidationRequired' || 
-          (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
+      if (error?.error === 'WhatsAppValidationRequired' ||
+        (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
         addToast(
           error?.message || 'يجب التحقق من رقم الواتساب أولاً باستخدام زر "التحقق من الرقم" قبل إعادة المحاولة',
           'warning'
@@ -543,7 +543,7 @@ export default function FailedTasksPanel() {
 
     try {
       setIsLoading(true);
-      
+
       // Use session-level retry endpoint (validates WhatsApp numbers automatically)
       const result = await messageApiClient.retrySession(sessionId);
 
@@ -552,7 +552,7 @@ export default function FailedTasksPanel() {
           // Some messages were skipped due to unvalidated WhatsApp numbers
           const skippedMessage = result.message || `تم إعادة إضافة ${result.requeued} رسالة. تم تخطي ${result.skipped} رسالة بسبب أرقام واتساب غير محققة.`;
           addToast(skippedMessage, 'warning');
-          
+
           // Show details about invalid patients if available
           if (result.invalidPatients && result.invalidPatients.length > 0) {
             const patientNames = result.invalidPatients.slice(0, 3).join('، ');
@@ -575,10 +575,10 @@ export default function FailedTasksPanel() {
       await loadFailedSessions();
     } catch (error: any) {
       logger.error('[FailedTasksPanel] Error retrying session patients:', error);
-      
+
       // Handle specific error types with Arabic messages
-      if (error?.error === 'WhatsAppValidationRequired' || 
-          (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
+      if (error?.error === 'WhatsAppValidationRequired' ||
+        (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
         addToast(
           error?.message || 'يجب التحقق من رقم الواتساب أولاً قبل إعادة المحاولة',
           'warning'
@@ -607,7 +607,7 @@ export default function FailedTasksPanel() {
       addToast('لا توجد جلسات فاشلة', 'warning');
       return;
     }
-    
+
     setRetrySessionId(firstSession.sessionId);
     setShowRetryPreview(true);
   }, [sessions, addToast]);
@@ -635,7 +635,7 @@ export default function FailedTasksPanel() {
 
     try {
       setIsLoading(true);
-      
+
       // Retry each message individually (message-level retry)
       const retryPromises = allMessageIds.map(async (messageId) => {
         try {
@@ -648,7 +648,7 @@ export default function FailedTasksPanel() {
       });
 
       const results = await Promise.allSettled(retryPromises);
-      const successCount = results.filter((r) => 
+      const successCount = results.filter((r) =>
         r.status === 'fulfilled' && r.value && r.value.success === true
       ).length;
       const failedCount = results.length - successCount;
@@ -658,8 +658,8 @@ export default function FailedTasksPanel() {
       results.forEach((r) => {
         if (r.status === 'fulfilled' && r.value && !r.value.success) {
           const err = r.value.error;
-          if (err?.error === 'WhatsAppValidationRequired' || 
-              (err?.statusCode === 400 && err?.message?.includes('واتساب'))) {
+          if (err?.error === 'WhatsAppValidationRequired' ||
+            (err?.statusCode === 400 && err?.message?.includes('واتساب'))) {
             validationErrors.push(err?.message || 'رقم واتساب غير محقق');
           }
         }
@@ -686,10 +686,10 @@ export default function FailedTasksPanel() {
       setSelectedPatients(new Map());
     } catch (error: any) {
       logger.error('[FailedTasksPanel] Error retrying all patients:', error);
-      
+
       // Handle specific error types with Arabic messages
-      if (error?.error === 'WhatsAppValidationRequired' || 
-          (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
+      if (error?.error === 'WhatsAppValidationRequired' ||
+        (error?.statusCode === 400 && error?.message?.includes('واتساب'))) {
         addToast(
           error?.message || 'يجب التحقق من رقم الواتساب أولاً قبل إعادة المحاولة',
           'warning'
@@ -764,10 +764,10 @@ export default function FailedTasksPanel() {
         prev.map((s) =>
           s.id === sessionId
             ? {
-                ...s,
-                patients: s.patients.filter((p) => p.id !== patientId),
-                failedCount: s.failedCount - 1,
-              }
+              ...s,
+              patients: s.patients.filter((p) => p.id !== patientId),
+              failedCount: s.failedCount - 1,
+            }
             : s
         )
       );
@@ -826,9 +826,8 @@ export default function FailedTasksPanel() {
     phone: formatPhoneForDisplay(patient.phone, patient.countryCode || '+20'),
     message: (
       <div
-        className={`text-sm text-gray-700 whitespace-pre-wrap ${
-          isMessagesExpanded ? '' : 'line-clamp-2'
-        } max-w-xs`}
+        className={`text-sm text-gray-700 whitespace-pre-wrap ${isMessagesExpanded ? '' : 'line-clamp-2'
+          } max-w-xs`}
         title={patient.messagePreview}
       >
         {patient.messagePreview || 'لا توجد رسالة'}
@@ -927,7 +926,7 @@ export default function FailedTasksPanel() {
                       </button>
                       <span className="text-sm font-medium text-red-600 whitespace-nowrap">القائمة</span>
                     </div>
-                    
+
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
                         <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
@@ -977,14 +976,31 @@ export default function FailedTasksPanel() {
               {isExpanded && (
                 <div className="p-6 bg-gray-50">
                   {/* Session Summary */}
-                  <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-white rounded-lg p-4 border border-blue-200">
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-users text-blue-500 text-xs"></i>
+                        إجمالي المرضى
+                      </div>
+                      <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
+                    </div>
                     <div className="bg-white rounded-lg p-4 border border-red-200">
-                      <div className="text-sm text-gray-600">إجمالي المرضى في الجلسة الأصلية</div>
-                      <div className="text-2xl font-bold text-red-600">{session.totalPatients}</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-times-circle text-red-500 text-xs"></i>
+                        الرسائل الفاشلة
+                      </div>
+                      <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
                     </div>
                     <div className="bg-white rounded-lg p-4 border border-orange-200">
-                      <div className="text-sm text-gray-600">الرسائل الفاشلة</div>
-                      <div className="text-2xl font-bold text-orange-600">{session.failedCount}</div>
+                      <div className="text-sm text-gray-600 flex items-center gap-1">
+                        <i className="fas fa-redo text-orange-500 text-xs"></i>
+                        متوسط المحاولات
+                      </div>
+                      <div className="text-2xl font-bold text-orange-600">
+                        {session.patients.length > 0
+                          ? Math.round(session.patients.reduce((sum, p) => sum + ((p as any).attempts || 0), 0) / session.patients.length)
+                          : 0}
+                      </div>
                     </div>
                   </div>
 
@@ -1004,9 +1020,8 @@ export default function FailedTasksPanel() {
                           {selectedCount > 0 && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <i
-                                className={`fas text-white text-xs ${
-                                  selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
-                                }`}
+                                className={`fas text-white text-xs ${selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
+                                  }`}
                               ></i>
                             </div>
                           )}
@@ -1106,10 +1121,10 @@ export default function FailedTasksPanel() {
           );
         })}
       </div>
-        <UsageGuideSection
-          items={FAILED_TASKS_GUIDE_ITEMS}
-        />
-      
+      <UsageGuideSection
+        items={FAILED_TASKS_GUIDE_ITEMS}
+      />
+
       {/* Retry Preview Modal */}
       {retrySessionId && (
         <RetryPreviewModal

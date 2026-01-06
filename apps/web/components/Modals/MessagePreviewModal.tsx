@@ -46,6 +46,7 @@ export default function MessagePreviewModal() {
   const [validationStatus, setValidationStatus] = useState<Record<string, {
     isValid: boolean | null; // null = checking/not checked, true = valid, false = invalid
     isChecking: boolean;
+    isQueued?: boolean; // true = waiting in queue to be checked
     error?: string;
     attempts: number;
   }>>({});
@@ -53,19 +54,22 @@ export default function MessagePreviewModal() {
   const [validationProgress, setValidationProgress] = useState({ current: 0, total: 0 });
   const [validationPaused, setValidationPaused] = useState(false);
   const [shouldResumeValidation, setShouldResumeValidation] = useState(false);
-  
+
+  // Track check session IDs for server-side cancellation
+  const activeCheckSessionsRef = useRef<Set<string>>(new Set());
+
   // Abort controller to actually cancel fetch requests
   const abortControllerRef = useRef<AbortController | null>(null);
-  
+
   // Abort flag to cancel validation when modal closes
   const abortValidationRef = useRef(false);
-  
+
   // Ref to track modal open state (for checking inside async functions)
   const isOpenRef = useRef(isOpen);
-  
+
   // Confirmation dialog state
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
-  
+
   // Update isOpenRef whenever isOpen changes
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -74,39 +78,52 @@ export default function MessagePreviewModal() {
   // Helper function to generate user-friendly error messages with actionable guidance
   const getValidationErrorMessage = (status: typeof validationStatus[string] | undefined): string => {
     if (!status || !status.error) return '';
-    
+
     const error = status.error;
-    
+
+    // Extension-specific errors (NEW)
+    if (error.includes('ConcurrentCheck') || error.includes('عملية تحقق أخرى')) {
+      return 'عملية تحقق أخرى قيد التنفيذ. يرجى الانتظار حتى تنتهي.';
+    }
+
+    if (error.includes('NotConnected') || error.includes('ليس متصلاً') || error.includes('extension')) {
+      return 'الإضافة غير متصلة. يرجى:\n• التأكد من تثبيت إضافة المتصفح\n• التحقق من اتصال الإضافة\n• إعادة تحميل الصفحة';
+    }
+
+    if (error.includes('PendingQR') || error.includes('QR')) {
+      return 'يلزم مسح رمز QR للواتساب. انتقل إلى:\nإدارة الواتساب ← مسح رمز QR';
+    }
+
     // Service unavailable
     if (error.includes('غير متاحة') || error.includes('ServiceUnavailable')) {
       return 'خدمة الواتساب غير متاحة حالياً. تحقق من:\n• اتصال الإنترنت\n• حالة خادم الواتساب\n• يمكنك المتابعة بدون التحقق';
     }
-    
+
     // Cancelled
     if (error.includes('إلغاء')) {
       return 'تم إلغاء عملية التحقق. اضغط على زر إعادة المحاولة للتحقق مرة أخرى.';
     }
-    
+
     // Connection errors
     if (error.includes('connection') || error.includes('اتصال') || error.includes('شبكة')) {
       return 'فشل الاتصال بخادم الواتساب. تحقق من:\n• اتصال الإنترنت\n• إعدادات الشبكة\n• جدار الحماية';
     }
-    
+
     // Authentication required
-    if (error.includes('authentication') || error.includes('مصادقة') || error.includes('QR')) {
+    if (error.includes('authentication') || error.includes('مصادقة')) {
       return 'يلزم المصادقة على جلسة الواتساب. انتقل إلى:\nالإعدادات ← إدارة الواتساب ← المصادقة';
     }
-    
+
     // Timeout errors
-    if (error.includes('timeout') || error.includes('انتهت المهلة')) {
+    if (error.includes('timeout') || error.includes('Timeout') || error.includes('انتهت المهلة')) {
       return 'انتهت مهلة الطلب. جرّب:\n• إعادة المحاولة\n• التحقق من سرعة الإنترنت';
     }
-    
+
     // Session lock timeout
     if (error.includes('lock') || error.includes('قفل')) {
       return 'جلسة الواتساب مشغولة حالياً. انتظر قليلاً ثم أعد المحاولة.';
     }
-    
+
     // Default error
     return error;
   };
@@ -124,8 +141,8 @@ export default function MessagePreviewModal() {
       return [];
     }
     // Filter out deleted templates
-    const filtered = messageTemplates.filter(t => 
-      String(t.queueId) === String(queueId) && 
+    const filtered = messageTemplates.filter(t =>
+      String(t.queueId) === String(queueId) &&
       !t.isDeleted // Exclude deleted templates
     );
     if (filtered.length === 0) {
@@ -146,11 +163,11 @@ export default function MessagePreviewModal() {
     // CRITICAL: Always populate template content from MessageTemplates to ensure correct template is shown
     // This ensures the "الرسالة" column shows the actual MessageTemplate content based on condition matching
     // Filter out deleted conditions
-    const filtered = messageConditions.filter(c => 
-      String(c.queueId) === String(queueId) && 
+    const filtered = messageConditions.filter(c =>
+      String(c.queueId) === String(queueId) &&
       !c.isDeleted // Exclude deleted conditions
     );
-    
+
     if (filtered.length === 0) {
       console.warn('[MessagePreview] No conditions found for queueId:', queueId, {
         totalConditions: messageConditions.length,
@@ -160,7 +177,7 @@ export default function MessagePreviewModal() {
         finalQueueId: queueId,
       });
     }
-    
+
     // Comprehensive logging for debugging
     if (filtered.length > 0) {
       console.log('[MessagePreview] Processing conditions:', {
@@ -178,8 +195,8 @@ export default function MessagePreviewModal() {
           templateIsEmptyString: c.template === '',
           templateIsUndefined: c.template === undefined,
         })),
-        availableTemplates: realTemplates.map(t => ({ 
-          id: t.id, 
+        availableTemplates: realTemplates.map(t => ({
+          id: t.id,
           idType: typeof t.id,
           title: t.title,
           contentLength: t.content?.length || 0,
@@ -187,7 +204,7 @@ export default function MessagePreviewModal() {
         })),
       });
     }
-    
+
     return filtered.map(condition => {
       // Priority 1: Look up template content from templateId (most reliable)
       if (condition.templateId) {
@@ -215,15 +232,15 @@ export default function MessagePreviewModal() {
           templateFound: !!template,
           templateHasContent: template ? !!template.content : false,
           templateContentLength: template ? template.content?.length || 0 : 0,
-          availableTemplateIds: realTemplates.map(t => ({ 
-            id: t.id, 
+          availableTemplateIds: realTemplates.map(t => ({
+            id: t.id,
             idType: typeof t.id,
             title: t.title,
           })),
           availableTemplateTitles: realTemplates.map(t => t.title),
         });
       }
-      
+
       // Priority 2: If condition already has template content, use it (fallback from QueueContext)
       if (condition.template && condition.template.trim().length > 0) {
         console.log('[MessagePreview] ✅ Using existing template content from condition:', {
@@ -235,7 +252,7 @@ export default function MessagePreviewModal() {
         });
         return condition;
       }
-      
+
       // Priority 3: If no template found, return condition with empty template (will show empty message)
       // This should not happen in normal operation, but handle gracefully
       console.error('[MessagePreview] ❌❌❌ Condition without template content - THIS IS A PROBLEM:', {
@@ -248,10 +265,10 @@ export default function MessagePreviewModal() {
         templateIsEmptyString: condition.template === '',
         templateIsUndefined: condition.template === undefined,
         templateIsNull: condition.template === null,
-        availableTemplates: realTemplates.map(t => ({ 
-          id: t.id, 
+        availableTemplates: realTemplates.map(t => ({
+          id: t.id,
           idType: typeof t.id,
-          title: t.title, 
+          title: t.title,
           contentLength: t.content?.length || 0,
           contentPreview: t.content ? t.content.substring(0, 50) : 'EMPTY',
         })),
@@ -270,7 +287,7 @@ export default function MessagePreviewModal() {
       }
       return undefined;
     }
-    
+
     // Find template by templateId from the condition
     if (defaultCondition.templateId) {
       const template = realTemplates.find(t => String(t.id) === String(defaultCondition.templateId));
@@ -285,7 +302,7 @@ export default function MessagePreviewModal() {
         });
       }
     }
-    
+
     // Fallback: If DEFAULT condition has template content but no templateId, create a synthetic template
     if (defaultCondition.template && defaultCondition.template.trim().length > 0) {
       return {
@@ -296,7 +313,7 @@ export default function MessagePreviewModal() {
         variables: [],
       };
     }
-    
+
     return undefined;
   }, [realConditions, realTemplates, queueId]);
 
@@ -307,7 +324,7 @@ export default function MessagePreviewModal() {
     }
     // Fallback to context patients filtered by selected IDs
     if (queueId && selectedPatientIds.length > 0) {
-      return contextPatients.filter(p => 
+      return contextPatients.filter(p =>
         String(p.queueId) === String(queueId) && selectedPatientIds.includes(String(p.id))
       );
     }
@@ -378,7 +395,7 @@ export default function MessagePreviewModal() {
       }
       return cond;
     });
-    
+
     return {
       queueId: queueId || 'default',
       queueName,
@@ -430,7 +447,7 @@ export default function MessagePreviewModal() {
         position: p.position,
       })),
     });
-    
+
     // CRITICAL: Explicitly log each condition's template content status
     if (messageConfig.conditions && messageConfig.conditions.length > 0) {
       console.log('[MessagePreview] 🔍 DETAILED CONDITION TEMPLATE CHECK:');
@@ -448,7 +465,7 @@ export default function MessagePreviewModal() {
     } else {
       console.warn('[MessagePreview] ⚠️ NO CONDITIONS IN MESSAGECONFIG!');
     }
-    
+
     // Calculate offset (CalculatedPosition) for each patient: position - CQP
     // This is what conditions are matched against
     const results = resolvePatientMessages(
@@ -457,7 +474,7 @@ export default function MessagePreviewModal() {
       currentQueuePosition,
       { estimatedTimePerSessionMinutes: estimatedTimePerSession }
     );
-    
+
     // Debug logging (only log when there are actual results to avoid spam)
     if (results.length > 0) {
       console.log('[MessagePreview] Resolutions with CalculatedPosition (offset):', {
@@ -493,7 +510,7 @@ export default function MessagePreviewModal() {
           templatePreview: r.resolvedTemplate ? `${r.resolvedTemplate.substring(0, 50)}...` : 'NO TEMPLATE',
         })),
       });
-      
+
       // Additional diagnostic: Check if any conditions have empty templates
       const conditionsWithEmptyTemplates = messageConfig.conditions?.filter(c => !c.template || c.template.trim().length === 0) || [];
       if (conditionsWithEmptyTemplates.length > 0) {
@@ -505,7 +522,7 @@ export default function MessagePreviewModal() {
         })));
       }
     }
-    
+
     return results;
   }, [messageConfig, patientArray, currentQueuePosition, estimatedTimePerSession]);
 
@@ -525,7 +542,7 @@ export default function MessagePreviewModal() {
     },
     {} as Record<string, MessageResolution[]>
   );
-  
+
   // Helper function to format phone number using the utility
   const formatPhoneNumber = (phone: string, countryCode: string = '+20') => {
     // Import formatPhoneForDisplay at the top, but for now use inline logic
@@ -562,9 +579,11 @@ export default function MessagePreviewModal() {
   };
 
   const handleConfirmSend = async () => {
-    // Check if validation is still in progress
-    if (isValidating) {
-      addToast('يرجى الانتظار حتى اكتمال عملية التحقق من أرقام الواتساب', 'error');
+    // Check if validation is still in progress or already sending
+    if (isValidating || isSending) {
+      if (isValidating) {
+        addToast('يرجى الانتظار حتى اكتمال عملية التحقق من أرقام الواتساب', 'error');
+      }
       return;
     }
 
@@ -617,8 +636,8 @@ export default function MessagePreviewModal() {
         return status.isValid !== true && status.isValid !== false;
       }
       // Fallback to patient data if no validation status exists
-      return item.patient?.isValidWhatsAppNumber !== true && 
-             item.patient?.isValidWhatsAppNumber !== false;
+      return item.patient?.isValidWhatsAppNumber !== true &&
+        item.patient?.isValidWhatsAppNumber !== false;
     });
 
     // Reject if ANY patient is invalid (false) or unvalidated (null)
@@ -658,7 +677,7 @@ export default function MessagePreviewModal() {
 
     // Check 2: Verify default template exists
     const templateToUse = defaultTemplateId ? Number(defaultTemplateId) : (defaultTemplate ? Number(defaultTemplate.id) : null);
-    
+
     if (!templateToUse || isNaN(templateToUse)) {
       addToast('القالب الافتراضي غير محدد، برجاء إنشاء قالب وجعله افتراضياً أولاً', 'error');
       return;
@@ -679,7 +698,7 @@ export default function MessagePreviewModal() {
 
       addToast(`تم إرسال ${patientIdsToSend.length} رسالة بنجاح`, 'success');
       closeModal('messagePreview');
-      
+
       // Trigger refetch events
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('patientDataUpdated'));
@@ -691,7 +710,7 @@ export default function MessagePreviewModal() {
       if (err?.error === 'PendingQR' || err?.code === 'AUTHENTICATION_REQUIRED' || err?.message?.includes('المصادقة')) {
         const message = err?.message || 'جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل إرسال الرسائل.';
         addToast(message, err?.warning ? 'warning' : 'error');
-        
+
         // Dispatch event to notify WhatsApp session context
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
@@ -703,7 +722,7 @@ export default function MessagePreviewModal() {
       else if (err?.error === 'PendingNET' || err?.code === 'NETWORK_FAILURE' || err?.message?.includes('الاتصال بالإنترنت')) {
         const message = err?.message || 'فشل الاتصال بالإنترنت. تم إيقاف جميع المهام الجارية. يرجى التحقق من الاتصال والمحاولة مرة أخرى.';
         addToast(message, err?.warning ? 'warning' : 'error');
-        
+
         // Dispatch event to notify about network failure
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('whatsapp:networkFailure', {
@@ -715,7 +734,7 @@ export default function MessagePreviewModal() {
       else if (err?.error === 'BrowserClosure' || err?.code === 'BROWSER_CLOSED' || err?.message?.includes('إغلاق المتصفح')) {
         const message = err?.message || 'تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية. يرجى إعادة فتح المتصفح والمحاولة مرة أخرى.';
         addToast(message, err?.warning ? 'warning' : 'error');
-        
+
         // Dispatch event to notify about browser closure
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('whatsapp:browserClosed', {
@@ -726,7 +745,7 @@ export default function MessagePreviewModal() {
       // Handle WhatsApp validation errors specifically
       else if (err?.error === 'WhatsAppValidationRequired' || err?.message?.includes('أرقام واتساب غير محققة')) {
         const invalidCount = err?.invalidPatients?.length || 0;
-        const details = invalidCount > 0 
+        const details = invalidCount > 0
           ? ` (${invalidCount} ${invalidCount === 1 ? 'مريض' : 'مرضى'})`
           : '';
         addToast(
@@ -740,8 +759,8 @@ export default function MessagePreviewModal() {
             newStatus[String(patient.patientId)] = {
               isValid: patient.isValidWhatsAppNumber === true ? true : false,
               isChecking: false,
-              error: patient.isValidWhatsAppNumber === null 
-                ? 'لم يتم التحقق من الرقم بعد' 
+              error: patient.isValidWhatsAppNumber === null
+                ? 'لم يتم التحقق من الرقم بعد'
                 : 'رقم الواتساب غير صالح',
               attempts: 0,
             };
@@ -770,10 +789,11 @@ export default function MessagePreviewModal() {
   const checkPhoneNumber = useCallback(async (
     patientId: string,
     phoneNumber: string,
-    attempt: number = 1
+    attempt = 0,
+    force = false
   ): Promise<boolean | null> => {
     const maxAttempts = 2;
-    
+
     // Check if modal is still open and validation was aborted
     if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
       setValidationStatus(prev => ({
@@ -787,20 +807,20 @@ export default function MessagePreviewModal() {
       }));
       return null;
     }
-    
+
     // CRITICAL: FIRST check database IsValidWhatsAppNumber attribute BEFORE calling API
     // Look up patient from sortedPatients to get latest database value
     const patient = sortedPatients.find(p => String(p.id) === patientId);
-    
-    if (patient) {
+
+    if (!force && patient) {
       // Check database value FIRST - if it exists, use it directly (NO API CALL)
       const dbValue = patient.isValidWhatsAppNumber;
-      
+
       // Debug logging (remove in production if needed)
       if (process.env.NODE_ENV === 'development') {
         console.log(`[MessagePreview] checkPhoneNumber for ${patientId} (${patient.name}): isValidWhatsAppNumber =`, dbValue, typeof dbValue);
       }
-      
+
       if (dbValue === true) {
         // Database says valid - use it directly, NO API call
         if (process.env.NODE_ENV === 'development') {
@@ -839,7 +859,7 @@ export default function MessagePreviewModal() {
         console.warn(`[MessagePreview] checkPhoneNumber: Patient ${patientId} not found in sortedPatients, will call API`);
       }
     }
-    
+
     // Check if modal is still open and abort flag again before API call
     if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
       setValidationStatus(prev => ({
@@ -853,14 +873,15 @@ export default function MessagePreviewModal() {
       }));
       return null;
     }
-    
+
     // Only call API if database value is null/undefined
-    // Update status to checking
+    // Update status to checking (remove queued flag)
     setValidationStatus(prev => ({
       ...prev,
       [patientId]: {
         isValid: null,
         isChecking: true,
+        isQueued: false, // No longer queued, now actively checking
         attempts: attempt,
       }
     }));
@@ -879,17 +900,21 @@ export default function MessagePreviewModal() {
         }));
         return null;
       }
-      
-      // Pass abort signal to actually cancel the fetch request
-      const result = await whatsappApiClient.checkWhatsAppNumber(
+
+      // Use extension-based check endpoint (NEW)
+      // Get country code from patient or use default
+      const patientCountryCode = patient?.countryCode || '+20';
+      const result = await whatsappApiClient.checkWhatsAppNumberViaExtension(
         phoneNumber,
-        moderatorUserId,
-        userId,
-        abortControllerRef.current?.signal
+        {
+          countryCode: patientCountryCode,
+          forceCheck: force,
+          signal: abortControllerRef.current?.signal
+        }
       );
-      
+
       // Check if modal is still open and abort flag after API call
-      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted || result.state === 'Aborted') {
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted || result.category === 'Aborted') {
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
@@ -901,23 +926,23 @@ export default function MessagePreviewModal() {
         }));
         return null;
       }
-      
+
       // Check if service is unavailable (connection refused, etc.)
-      if (result.state === 'ServiceUnavailable') {
+      if (result.category === 'ServiceUnavailable' || result.category === 'NotConnected') {
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
             isValid: null,
             isChecking: false,
-            error: 'خدمة التحقق من الواتساب غير متاحة. يمكنك المتابعة بدون التحقق.',
+            error: result.message || 'خدمة التحقق من الواتساب غير متاحة. يمكنك المتابعة بدون التحقق.',
             attempts: attempt,
           }
         }));
         return null; // Don't retry if service is unavailable
       }
-      
+
       // Check if result indicates success
-      if (result.isSuccess === true) {
+      if (result.success === true && result.data === true) {
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
@@ -926,7 +951,7 @@ export default function MessagePreviewModal() {
             attempts: attempt,
           }
         }));
-        
+
         // Update database with validation result
         try {
           const patientIdNum = Number(patientId);
@@ -934,7 +959,7 @@ export default function MessagePreviewModal() {
             await patientsApiClient.updatePatient(patientIdNum, {
               isValidWhatsAppNumber: true,
             });
-            
+
             // Refresh patient data in context to update UI with latest database value
             if (queueId) {
               await refreshPatients(queueId);
@@ -944,9 +969,10 @@ export default function MessagePreviewModal() {
           // Log error but don't block UI - validation succeeded, just DB update failed
           console.error(`Failed to update database for patient ${patientId}:`, dbError);
         }
-        
+
         return true;
-      } else if (result.isSuccess === false) {
+      } else if (result.data === false) {
+        // Explicit confirmation: number does NOT have WhatsApp
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
@@ -955,7 +981,7 @@ export default function MessagePreviewModal() {
             attempts: attempt,
           }
         }));
-        
+
         // Update database with validation result
         try {
           const patientIdNum = Number(patientId);
@@ -963,7 +989,7 @@ export default function MessagePreviewModal() {
             await patientsApiClient.updatePatient(patientIdNum, {
               isValidWhatsAppNumber: false,
             });
-            
+
             // Refresh patient data in context to update UI with latest database value
             if (queueId) {
               await refreshPatients(queueId);
@@ -973,11 +999,25 @@ export default function MessagePreviewModal() {
           // Log error but don't block UI - validation succeeded, just DB update failed
           console.error(`Failed to update database for patient ${patientId}:`, dbError);
         }
-        
+
         return false;
+      } else if (result.success === false && (result.data === null || result.data === undefined)) {
+        // Check failed (e.g., extension command error) - status is unknown, NOT "not on WhatsApp"
+        // This handles cases like "message channel closed" extension errors
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            error: result.message || 'فشل التحقق من الرقم - يمكن المحاولة مرة أخرى',
+            attempts: attempt,
+          }
+        }));
+        return null; // Return null to indicate unknown status
       } else {
+
         // Pending or other states - treat as error for retry
-        throw new Error(result.resultMessage || 'Unknown validation state');
+        throw new Error(result.message || 'Unknown validation state');
       }
     } catch (error: any) {
       // Check if modal is still open and error is due to abort
@@ -993,14 +1033,14 @@ export default function MessagePreviewModal() {
         }));
         return null; // Don't retry if aborted or modal closed
       }
-      
+
       // Check if it's a connection error - don't retry
-      const isConnectionError = 
+      const isConnectionError =
         error?.message?.includes('ERR_CONNECTION_REFUSED') ||
         error?.message?.includes('Failed to fetch') ||
         error?.message?.includes('NetworkError') ||
         error?.message?.includes('connection refused');
-      
+
       if (isConnectionError) {
         setValidationStatus(prev => ({
           ...prev,
@@ -1013,7 +1053,7 @@ export default function MessagePreviewModal() {
         }));
         return null; // Don't retry connection errors
       }
-      
+
       // Check if modal is still open and abort flag before retry
       if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
         setValidationStatus(prev => ({
@@ -1027,7 +1067,7 @@ export default function MessagePreviewModal() {
         }));
         return null;
       }
-      
+
       // If we haven't reached max attempts, retry
       if (attempt < maxAttempts) {
         // Wait a bit before retry, but check abort and modal state during wait
@@ -1043,7 +1083,7 @@ export default function MessagePreviewModal() {
           }, 100);
           setTimeout(() => clearInterval(checkAbort), 1000);
         });
-        
+
         // Check if modal is still open and abort flag again after wait
         if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
           setValidationStatus(prev => ({
@@ -1057,7 +1097,7 @@ export default function MessagePreviewModal() {
           }));
           return null;
         }
-        
+
         return checkPhoneNumber(patientId, phoneNumber, attempt + 1);
       } else {
         // Max attempts reached - show error with retry option
@@ -1073,22 +1113,22 @@ export default function MessagePreviewModal() {
         return null;
       }
     }
-  }, [sortedPatients]);
+  }, [sortedPatients, queueId]);
 
   // Validate all patients sequentially (1 at a time)
   const validateAllPatients = useCallback(async () => {
     // Check if modal is still open using ref (for current value)
     if (!isOpenRef.current) return;
-    
+
     // Create new AbortController for this validation session
     abortControllerRef.current = new AbortController();
-    
+
     // Reset abort flag when starting new validation
     abortValidationRef.current = false;
 
     // Get all eligible patients (not excluded, not removed, have phone)
-    const allEligiblePatients = sortedPatients.filter(p => 
-      selectedPatientIds.includes(String(p.id)) && 
+    const allEligiblePatients = sortedPatients.filter(p =>
+      selectedPatientIds.includes(String(p.id)) &&
       !removedPatients.includes(String(p.id)) &&
       p.phone
     );
@@ -1115,6 +1155,7 @@ export default function MessagePreviewModal() {
     const initialStatus: Record<string, {
       isValid: boolean | null;
       isChecking: boolean;
+      isQueued?: boolean;
       error?: string;
       attempts: number;
     }> = {};
@@ -1124,17 +1165,17 @@ export default function MessagePreviewModal() {
 
     allEligiblePatients.forEach(p => {
       const patientId = String(p.id);
-      
+
       // CRITICAL: Check database IsValidWhatsAppNumber attribute FIRST
       // Explicitly check for true, false, null, and undefined
       // If it's true or false, use that value directly (no API call needed)
       const dbValue = p.isValidWhatsAppNumber;
-      
+
       // Debug logging (remove in production if needed)
       if (process.env.NODE_ENV === 'development') {
         console.log(`[MessagePreview] Patient ${patientId} (${p.name}): isValidWhatsAppNumber =`, dbValue, typeof dbValue);
       }
-      
+
       if (dbValue === true) {
         // Database says valid - use it directly, no API call
         if (process.env.NODE_ENV === 'development') {
@@ -1163,6 +1204,7 @@ export default function MessagePreviewModal() {
         initialStatus[patientId] = {
           isValid: null,
           isChecking: false,
+          isQueued: true, // Mark as queued for API validation
           attempts: 0,
         };
         patientsNeedingApiValidation.push(p);
@@ -1188,7 +1230,7 @@ export default function MessagePreviewModal() {
         setIsValidating(false);
         return;
       }
-      
+
       const patientFromArray = patientsNeedingApiValidation[i];
       const patientId = String(patientFromArray.id);
 
@@ -1232,14 +1274,14 @@ export default function MessagePreviewModal() {
 
       // checkPhoneNumber will also check database value before calling API
       // It uses abortControllerRef.current?.signal internally
-      await checkPhoneNumber(patientId, phoneNumber, 1);
-      
+      await checkPhoneNumber(patientId, phoneNumber, 0);
+
       // Check if modal is still open and abort flags after API call
       if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
         setIsValidating(false);
         return;
       }
-      
+
       setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
     }
 
@@ -1256,7 +1298,7 @@ export default function MessagePreviewModal() {
       setValidationPaused(false);
       setShouldResumeValidation(false);
       abortValidationRef.current = false;
-      
+
       // Refresh patients from database to get latest IsValidWhatsAppNumber values
       refreshPatients(queueId).then(() => {
         // After refresh, wait a bit for state to update, then validate
@@ -1274,7 +1316,9 @@ export default function MessagePreviewModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, queueId, selectedPatientIds.length]); // Trigger on open/close and when patient selection changes
 
-  // Retry validation for a specific patient (always re-validates, even if value exists)
+  // Manual retry validation for a specific patient
+  // IMPORTANT: This goes DIRECTLY to WhatsApp via extension (force=true)
+  // Unlike automated validation which checks database first
   const handleRetryValidation = useCallback(async (patientId: string) => {
     // If batch validation is running, pause it
     if (isValidating) {
@@ -1282,11 +1326,11 @@ export default function MessagePreviewModal() {
       abortControllerRef.current?.abort();
       setValidationPaused(true);
       addToast('جاري إيقاف التحقق الحالي مؤقتاً... برجاء الانتظار من دقيقة لدقيقتين... سيتم التحقق من الرقم بعد الانتهاء', 'info');
-      
+
       // Wait for abort to complete
       await new Promise(resolve => setTimeout(resolve, 500));
     }
-    
+
     // First, refresh patient data to get latest from database
     if (queueId) {
       try {
@@ -1314,7 +1358,7 @@ export default function MessagePreviewModal() {
 
     // Create new AbortController for this single validation
     abortControllerRef.current = new AbortController();
-    
+
     const countryCode = patientToUse.countryCode || '+20';
     // Combine country code and phone number: +20 1018542431 -> +201018542431
     const phoneNumber = `${countryCode}${patientToUse.phone}`;
@@ -1329,77 +1373,9 @@ export default function MessagePreviewModal() {
       }
     }));
 
-    // ALWAYS re-validate by calling API directly (bypassing database check)
-    // This ensures we get fresh validation even if database has a value
+    // Unified validation call
     try {
-      const result = await whatsappApiClient.checkWhatsAppNumber(
-        phoneNumber,
-        moderatorUserId,
-        userId,
-        abortControllerRef.current?.signal
-      );
-
-      if (result.isSuccess === true) {
-        setValidationStatus(prev => ({
-          ...prev,
-          [patientId]: {
-            isValid: true,
-            isChecking: false,
-            attempts: 0,
-          }
-        }));
-        
-        // Update database
-        try {
-          const patientIdNum = Number(patientId);
-          if (!isNaN(patientIdNum)) {
-            await patientsApiClient.updatePatient(patientIdNum, {
-              isValidWhatsAppNumber: true,
-            });
-            // Refresh patients to get updated value
-            if (queueId) {
-              await refreshPatients(queueId);
-            }
-          }
-        } catch (dbError) {
-          console.error(`Failed to update database for patient ${patientId}:`, dbError);
-        }
-      } else if (result.isSuccess === false) {
-        setValidationStatus(prev => ({
-          ...prev,
-          [patientId]: {
-            isValid: false,
-            isChecking: false,
-            attempts: 0,
-          }
-        }));
-        
-        // Update database
-        try {
-          const patientIdNum = Number(patientId);
-          if (!isNaN(patientIdNum)) {
-            await patientsApiClient.updatePatient(patientIdNum, {
-              isValidWhatsAppNumber: false,
-            });
-            // Refresh patients to get updated value
-            if (queueId) {
-              await refreshPatients(queueId);
-            }
-          }
-        } catch (dbError) {
-          console.error(`Failed to update database for patient ${patientId}:`, dbError);
-        }
-      } else {
-        setValidationStatus(prev => ({
-          ...prev,
-          [patientId]: {
-            isValid: null,
-            isChecking: false,
-            error: result.resultMessage || 'فشل التحقق من رقم الواتساب',
-            attempts: 0,
-          }
-        }));
-      }
+      await checkPhoneNumber(patientId, phoneNumber, 0, true);
     } catch (error: any) {
       if (error?.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
         setValidationStatus(prev => ({
@@ -1413,7 +1389,7 @@ export default function MessagePreviewModal() {
         }));
         return;
       }
-      
+
       setValidationStatus(prev => ({
         ...prev,
         [patientId]: {
@@ -1445,16 +1421,25 @@ export default function MessagePreviewModal() {
   };
 
   // Handle confirmation to abort validation
-  const handleConfirmAbort = () => {
+  const handleConfirmAbort = async () => {
     // Set abort flag
     abortValidationRef.current = true;
-    
+
     // Actually abort all ongoing fetch requests
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    
+
+    // Server-side cancellation: cancel check session for this moderator
+    // This clears the CheckWhatsApp pause and allows sending to resume
+    try {
+      await whatsappApiClient.cancelCheckSession();
+    } catch (error) {
+      console.error('Failed to cancel check session:', error);
+    }
+    activeCheckSessionsRef.current.clear();
+
     setIsValidating(false);
     setShowCloseConfirmation(false);
     closeModal('messagePreview');
@@ -1474,7 +1459,10 @@ export default function MessagePreviewModal() {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
-      
+
+      // Clear active check sessions
+      activeCheckSessionsRef.current.clear();
+
       // Reset all state variables
       abortValidationRef.current = false;
       setIsValidating(false);
@@ -1485,7 +1473,7 @@ export default function MessagePreviewModal() {
       setIsSending(false);
       setValidationPaused(false);
       setShouldResumeValidation(false);
-      
+
       // Refresh patient data in context when modal closes to ensure latest data
       // This ensures that any validation updates are reflected in the main patient list
       if (queueId) {
@@ -1515,127 +1503,127 @@ export default function MessagePreviewModal() {
         title="معاينة الرسائل قبل الإرسال"
         size="2xl"
       >
-      <div className="flex flex-col h-full space-y-4">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-blue-800">معلومات الحل</h4>
-              <p className="text-sm text-blue-600 mt-2">
-                الإجمالي: {selectedCount} مريض | الموقع الحالي (CQP): {currentQueuePosition}
-              </p>
-            </div>
-            <div className="text-blue-600 text-left">
-              <span className="text-2xl font-bold">{previewPatientCount ?? 0}</span>
-              <p className="text-sm">سيتم إرسال الرسالة لهم</p>
+        <div className="flex flex-col h-full space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-blue-800">معلومات الحل</h4>
+                <p className="text-sm text-blue-600 mt-2">
+                  الإجمالي: {selectedCount} مريض | الموقع الحالي (CQP): {currentQueuePosition}
+                </p>
+              </div>
+              <div className="text-blue-600 text-left">
+                <span className="text-2xl font-bold">{previewPatientCount ?? 0}</span>
+                <p className="text-sm">سيتم إرسال الرسالة لهم</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col flex-1">
-          {missingDefaultTemplate && (
-            <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-200 flex items-start gap-3 text-sm text-yellow-800">
-              <i className="fas fa-exclamation-triangle mt-1"></i>
-              <div>
-                <p className="font-medium">لا يوجد قالب افتراضي معرف لهذا الطابور.</p>
-                <p className="mt-1">قم بإنشاء قالب جديد وجعل حالته DEFAULT من خلال إدارة القوالب، أو اختر قالباً افتراضياً قبل المتابعة. لن يمكنك إرسال الرسائل بدون قالب افتراضي.</p>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col flex-1">
+            {missingDefaultTemplate && (
+              <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-200 flex items-start gap-3 text-sm text-yellow-800">
+                <i className="fas fa-exclamation-triangle mt-1"></i>
+                <div>
+                  <p className="font-medium">لا يوجد قالب افتراضي معرف لهذا الطابور.</p>
+                  <p className="mt-1">قم بإنشاء قالب جديد وجعل حالته DEFAULT من خلال إدارة القوالب، أو اختر قالباً افتراضياً قبل المتابعة. لن يمكنك إرسال الرسائل بدون قالب افتراضي.</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* WhatsApp Validation Progress */}
-          {isValidating && (
-            <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center gap-3">
-              <i className="fas fa-spinner fa-spin text-blue-600"></i>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-blue-800">
-                  جاري التحقق من أرقام الواتساب...
-                </p>
-                <p className="text-xs text-blue-600 mt-1">
-                  {validationProgress.current} / {validationProgress.total}
-                </p>
+            {/* WhatsApp Validation Progress */}
+            {isValidating && (
+              <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center gap-3">
+                <i className="fas fa-spinner fa-spin text-blue-600"></i>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-blue-800">
+                    جاري التحقق من أرقام الواتساب...
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    {validationProgress.current} / {validationProgress.total}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Invalid WhatsApp Numbers Disclaimer */}
-          {(() => {
-            const invalidPatients = resolutions
-              .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
-              .filter((res) => {
-                const status = validationStatus[String(res.patientId)];
-                return status && status.isValid === false;
-              });
+            {/* Invalid WhatsApp Numbers Disclaimer */}
+            {(() => {
+              const invalidPatients = resolutions
+                .filter((res) => res.reason !== 'EXCLUDED' && !removedPatients.includes(String(res.patientId)))
+                .filter((res) => {
+                  const status = validationStatus[String(res.patientId)];
+                  return status && status.isValid === false;
+                });
 
-            if (invalidPatients.length > 0 && !isValidating) {
-              return (
-                <div className="px-4 py-3 bg-red-50 border-b border-red-200">
-                  <div className="flex items-start gap-3 text-sm text-red-800 mb-2">
-                    <i className="fas fa-exclamation-circle mt-1"></i>
-                    <div className="flex-1">
-                      <p className="font-medium">تحذير: بعض أرقام الهاتف غير صالحة للواتساب</p>
-                      <p className="mt-1 text-xs">يرجى إصلاح الأرقام التالية أو إزالتها من المعاينة قبل الإرسال:</p>
+              if (invalidPatients.length > 0 && !isValidating) {
+                return (
+                  <div className="px-4 py-3 bg-red-50 border-b border-red-200">
+                    <div className="flex items-start gap-3 text-sm text-red-800 mb-2">
+                      <i className="fas fa-exclamation-circle mt-1"></i>
+                      <div className="flex-1">
+                        <p className="font-medium">تحذير: بعض أرقام الهاتف غير صالحة للواتساب</p>
+                        <p className="mt-1 text-xs">يرجى إصلاح الأرقام التالية أو إزالتها من المعاينة قبل الإرسال:</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {invalidPatients.map((res) => {
+                        const patient = previewPatients.find((p) => String(p.id) === res.patientId);
+                        if (!patient) return null;
+                        return (
+                          <div key={res.patientId} className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded">
+                            <span className="font-medium">{patient.name}</span> - {formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div className="mt-2 space-y-1">
-                    {invalidPatients.map((res) => {
-                      const patient = previewPatients.find((p) => String(p.id) === res.patientId);
-                      if (!patient) return null;
-                      return (
-                        <div key={res.patientId} className="text-xs text-red-700 bg-red-100 px-2 py-1 rounded">
-                          <span className="font-medium">{patient.name}</span> - {formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
+                );
+              }
+              return null;
+            })()}
 
-          <div className="px-4 py-3 bg-gray-50 border-b flex-shrink-0">
-            <h4 className="font-bold text-gray-800">جدول المعاينة</h4>
-          </div>
+            <div className="px-4 py-3 bg-gray-50 border-b flex-shrink-0">
+              <h4 className="font-bold text-gray-800">جدول المعاينة</h4>
+            </div>
 
-          <div className="overflow-x-auto flex-1">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="px-4 py-2 text-xs font-medium text-gray-600 text-center justify-center">الترتيب (المتبقي)</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الاسم</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الهاتف</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الرسالة</th>
-                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-600">الحالة</th>
-                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-600">الإجراءات</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {(() => {
-                  const filteredResolutions = resolutions.filter((res) => res.reason !== 'EXCLUDED');
-                  if (filteredResolutions.length === 0) {
-                    console.warn('[MessagePreview] No resolutions to display (all excluded or empty)');
-                  } else {
-                    console.log('[MessagePreview] Rendering table with resolutions:', {
-                      total: filteredResolutions.length,
-                      resolutions: filteredResolutions.map(r => ({
-                        patientId: r.patientId,
-                        patientName: r.patientName,
-                        reason: r.reason,
-                        hasResolvedTemplate: !!r.resolvedTemplate,
-                        resolvedTemplateLength: r.resolvedTemplate?.length || 0,
-                        resolvedTemplatePreview: r.resolvedTemplate ? r.resolvedTemplate.substring(0, 50) : 'MISSING',
-                      })),
-                    });
-                  }
-                  return filteredResolutions;
-                })().map((resolution) => {
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-xs font-medium text-gray-600 text-center justify-center">الترتيب (المتبقي)</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الاسم</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الهاتف</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-600">الرسالة</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-600">الحالة</th>
+                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-600">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {(() => {
+                    const filteredResolutions = resolutions.filter((res) => res.reason !== 'EXCLUDED');
+                    if (filteredResolutions.length === 0) {
+                      console.warn('[MessagePreview] No resolutions to display (all excluded or empty)');
+                    } else {
+                      console.log('[MessagePreview] Rendering table with resolutions:', {
+                        total: filteredResolutions.length,
+                        resolutions: filteredResolutions.map(r => ({
+                          patientId: r.patientId,
+                          patientName: r.patientName,
+                          reason: r.reason,
+                          hasResolvedTemplate: !!r.resolvedTemplate,
+                          resolvedTemplateLength: r.resolvedTemplate?.length || 0,
+                          resolvedTemplatePreview: r.resolvedTemplate ? r.resolvedTemplate.substring(0, 50) : 'MISSING',
+                        })),
+                      });
+                    }
+                    return filteredResolutions;
+                  })().map((resolution) => {
                     const patient = previewPatients.find((p) => String(p.id) === resolution.patientId);
                     if (!patient) {
                       console.warn('[MessagePreview] Patient not found for resolution:', resolution.patientId);
                       return null;
                     }
                     const reasonBadge = getReasonBadge(resolution.reason);
-                    
+
                     return (
                       <tr key={resolution.patientId} className="hover:bg-gray-50">
                         <td className="px-4 py-2">
@@ -1649,41 +1637,52 @@ export default function MessagePreviewModal() {
                           </div>
                         </td>
                         <td className="px-4 py-2">{resolution.patientName}</td>
-                        <td className={`px-4 py-2 ${
-                          (() => {
-                            const status = validationStatus[String(resolution.patientId)];
-                            if (status && status.isValid === false) {
-                              return 'bg-red-100 text-red-800 font-medium';
-                            }
-                            return '';
-                          })()
-                        }`}>
+                        <td className={`px-4 py-2 ${(() => {
+                          const status = validationStatus[String(resolution.patientId)];
+                          if (status && status.isValid === false) {
+                            return 'bg-red-100 text-red-800 font-medium';
+                          }
+                          return '';
+                        })()
+                          }`}>
                           <div className="flex items-center gap-2">
                             <span>{formatPhoneNumber(patient.phone || '', patient.countryCode || '+20')}</span>
                             <div className="flex items-center gap-1">
                               {(() => {
                                 const status = validationStatus[String(resolution.patientId)];
+                                // Currently being checked - spinner
                                 if (status?.isChecking) {
-                                  return <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>;
+                                  return <i className="fas fa-spinner fa-spin text-blue-500 text-xs" title="جاري التحقق..."></i>;
                                 }
+                                // Valid WhatsApp number - green check
                                 if (status?.isValid === true) {
                                   return <i className="fas fa-check-circle text-green-500 text-xs" title="رقم واتساب صحيح"></i>;
                                 }
+                                // Invalid WhatsApp number (no account) - red X
                                 if (status?.isValid === false) {
                                   return <i className="fas fa-times-circle text-red-500 text-xs" title="رقم واتساب غير صحيح أو غير مفعّل"></i>;
                                 }
+                                // Error during check - orange warning
                                 if (status?.error) {
                                   const errorMsg = getValidationErrorMessage(status);
                                   return (
-                                    <i 
-                                      className="fas fa-exclamation-triangle text-orange-500 text-xs cursor-help" 
+                                    <i
+                                      className="fas fa-exclamation-triangle text-orange-500 text-xs cursor-help"
                                       title={errorMsg}
                                     ></i>
                                   );
                                 }
+                                // Queued for checking - gray clock
+                                if (status?.isQueued) {
+                                  return <i className="fas fa-clock text-gray-400 text-xs" title="في انتظار التحقق..."></i>;
+                                }
+                                // Not checked yet (no status at all) - gray question mark
+                                if (!status || status.isValid === null) {
+                                  return <i className="fas fa-question-circle text-gray-400 text-xs" title="لم يتم التحقق بعد"></i>;
+                                }
                                 return null;
                               })()}
-                              {/* Always show retry button */}
+                              {/* Always show retry button - goes DIRECTLY to WhatsApp (skips database) */}
                               <button
                                 onClick={() => handleRetryValidation(String(resolution.patientId))}
                                 disabled={(() => {
@@ -1691,7 +1690,7 @@ export default function MessagePreviewModal() {
                                   return status?.isChecking === true;
                                 })()}
                                 className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="إعادة التحقق من رقم الواتساب"
+                                title="تحقق مباشر من واتساب (بدون التحقق من قاعدة البيانات)"
                               >
                                 <i className="fas fa-redo text-xs"></i>
                               </button>
@@ -1703,11 +1702,11 @@ export default function MessagePreviewModal() {
                             <span className="whitespace-pre-wrap break-words">{resolution.resolvedTemplate}</span>
                           ) : (
                             <span className="text-red-500 italic text-xs">
-                              {resolution.reason === 'EXCLUDED' 
-                                ? 'مستبعد (موضع سابق)' 
+                              {resolution.reason === 'EXCLUDED'
+                                ? 'مستبعد (موضع سابق)'
                                 : resolution.reason === 'NO_MATCH'
-                                ? 'لا يوجد شرط مطابق'
-                                : `لا توجد رسالة (${resolution.reason})`}
+                                  ? 'لا يوجد شرط مطابق'
+                                  : `لا توجد رسالة (${resolution.reason})`}
                             </span>
                           )}
                         </td>
@@ -1729,56 +1728,56 @@ export default function MessagePreviewModal() {
                       </tr>
                     );
                   })}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4 border-t flex-shrink-0">
+            <button
+              onClick={handleConfirmSend}
+              disabled={isSending || isValidating}
+              className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              title={isValidating ? 'جاري التحقق من أرقام الواتساب... يرجى الانتظار' : ''}
+            >
+              {isSending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin"></i>
+                  جاري الإرسال...
+                </>
+              ) : isValidating ? (
+                <>
+                  <i className="fas fa-lock"></i>
+                  جاري التحقق... ({validationProgress.current}/{validationProgress.total})
+                </>
+              ) : (
+                <>
+                  <i className="fab fa-whatsapp"></i>
+                  {`تأكيد الإرسال (${previewPatientCount ?? 0})`}
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleCloseModal}
+              className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+            >
+              إلغاء
+            </button>
           </div>
         </div>
+      </Modal>
 
-        <div className="flex gap-3 pt-4 border-t flex-shrink-0">
-          <button
-            onClick={handleConfirmSend}
-            disabled={isSending || isValidating}
-            className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            title={isValidating ? 'جاري التحقق من أرقام الواتساب... يرجى الانتظار' : ''}
-          >
-            {isSending ? (
-              <>
-                <i className="fas fa-spinner fa-spin"></i>
-                جاري الإرسال...
-              </>
-            ) : isValidating ? (
-              <>
-                <i className="fas fa-lock"></i>
-                جاري التحقق... ({validationProgress.current}/{validationProgress.total})
-              </>
-            ) : (
-              <>
-                <i className="fab fa-whatsapp"></i>
-                {`تأكيد الإرسال (${previewPatientCount ?? 0})`}
-              </>
-            )}
-          </button>
-          <button
-            onClick={handleCloseModal}
-            className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors"
-          >
-            إلغاء
-          </button>
-        </div>
-      </div>
-    </Modal>
-    
-    {/* Confirmation Dialog for Aborting Validation */}
-    <ConfirmationDialog
-      isOpen={showCloseConfirmation}
-      title="إلغاء عملية التحقق"
-      message="جاري التحقق من أرقام الواتساب حالياً. هل تريد إلغاء العملية وإغلاق النافذة؟"
-      confirmText="نعم، إلغاء وإغلاق"
-      cancelText="لا، متابعة التحقق"
-      isDangerous={true}
-      onConfirm={handleConfirmAbort}
-      onCancel={handleCancelAbort}
-    />
+      {/* Confirmation Dialog for Aborting Validation */}
+      <ConfirmationDialog
+        isOpen={showCloseConfirmation}
+        title="إلغاء عملية التحقق"
+        message="جاري التحقق من أرقام الواتساب حالياً. هل تريد إلغاء العملية وإغلاق النافذة؟"
+        confirmText="نعم، إلغاء وإغلاق"
+        cancelText="لا، متابعة التحقق"
+        isDangerous={true}
+        onConfirm={handleConfirmAbort}
+        onCancel={handleCancelAbort}
+      />
     </>
   );
 }

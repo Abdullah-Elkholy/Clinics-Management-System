@@ -21,6 +21,7 @@ import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
+import { useWhatsAppSession } from '@/contexts/WhatsAppSessionContext';
 
 export default function QueueDashboard() {
   const { selectedQueueId, queues, queuesLoading, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData, refreshQueues } = useQueue();
@@ -28,36 +29,37 @@ export default function QueueDashboard() {
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { addToast } = useUI();
+  const { detailedStatus } = useWhatsAppSession();
   const router = useRouter();
-  
+
   const queue = queues.find((q) => q.id === selectedQueueId);
-  
+
   // ALL hooks must be declared before any conditional returns
   // Initialize CQP and ETS from queue data
   const [currentCQP, setCurrentCQP] = useState(() => queue?.currentPosition?.toString() || '1');
   const [originalCQP, setOriginalCQP] = useState(() => queue?.currentPosition?.toString() || '1');
   const [isEditingCQP, setIsEditingCQP] = useState(false);
-  
+
   const [currentETS, setCurrentETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
   const [originalETS, setOriginalETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
   const [isEditingETS, setIsEditingETS] = useState(false);
-  
+
   const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingQueueValue, setEditingQueueValue] = useState('');
   const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
-  
+
   // Authentication guard - ensure user has token and valid role
   // Wait for auth validation to complete before checking
   const { isValidating } = useAuth();
-  
+
   useEffect(() => {
     // Wait for auth validation to complete
     if (isValidating) return;
-    
+
     // Check for token
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    
+
     // CRITICAL: Only redirect to login if we're CERTAIN the user is not authenticated
     // Don't redirect if we have a token and isAuthenticated is true, even if user is temporarily null
     // This prevents false redirects during user data refresh after login
@@ -66,14 +68,14 @@ export default function QueueDashboard() {
       router.replace('/');
       return;
     }
-    
+
     // If we have a token but isAuthenticated is false, redirect
     // But if isAuthenticated is true, wait for user object (might be refreshing)
     if (!isAuthenticated) {
       router.replace('/');
       return;
     }
-    
+
     // If we have token and isAuthenticated but no user object yet, wait a bit
     // This handles the case where user data is being refreshed after login
     if (!user) {
@@ -98,7 +100,7 @@ export default function QueueDashboard() {
       if (queuesLoading) {
         return; // Wait for queues to load
       }
-      
+
       // Only check if queues are loaded (even if empty)
       if (queues.length > 0) {
         const selectedQueue = queues.find((q) => q.id === selectedQueueId);
@@ -129,7 +131,7 @@ export default function QueueDashboard() {
             // Check if assignedModerator is explicitly null/undefined (not just not loaded yet)
             // If it's undefined, it might still be loading, so wait a bit
             const hasExplicitlyNoModerator = user.assignedModerator === null || user.assignedModerator === '';
-            
+
             if (hasExplicitlyNoModerator) {
               logger.warn('QueueDashboard: User has no assigned moderator', {
                 userAssignedModerator: user.assignedModerator,
@@ -169,7 +171,7 @@ export default function QueueDashboard() {
       // or user might not have any queues assigned (which is valid)
     }
   }, [isAuthenticated, user, router, isValidating, selectedQueueId, queues, queuesLoading, addToast]);
-  
+
   // Update CQP and ETS when queue data changes
   useEffect(() => {
     if (queue) {
@@ -346,13 +348,13 @@ export default function QueueDashboard() {
       addToast('الموضع الحالي يجب أن يكون أكبر من أو يساوي 1', 'error');
       return;
     }
-    
+
     // Validate CQP <= max patient position
     if (cqpNum > maxPatientPosition) {
       addToast(`الموضع الحالي يجب أن يكون أقل من أو يساوي أكبر موضع في الطابور (${maxPatientPosition})`, 'error');
       return;
     }
-    
+
     const error = validateNumber(currentCQP, 'الموضع الحالي', 1, maxPatientPosition);
     if (error) {
       addToast(error, 'error');
@@ -362,22 +364,22 @@ export default function QueueDashboard() {
       addToast('الطابور غير محدد', 'error');
       return;
     }
-    
+
     try {
       const queueIdNum = Number(selectedQueueId);
       if (isNaN(queueIdNum)) {
         addToast('معرف الطابور غير صالح', 'error');
         return;
       }
-      
+
       await queuesApiClient.updateQueue(queueIdNum, {
         doctorName: queue.doctorName,
         currentPosition: parseInt(currentCQP, 10),
       });
-      
+
       setIsEditingCQP(false);
       addToast('تم تحديث الموضع الحالي بنجاح', 'success');
-      
+
       // Refetch queue metadata to update currentPosition immediately
       if (typeof refreshQueues === 'function') {
         await refreshQueues();
@@ -418,13 +420,13 @@ export default function QueueDashboard() {
       addToast('الوقت المقدر يجب أن يكون أكبر من أو يساوي 1', 'error');
       return;
     }
-    
+
     // Validate ETS <= 600
     if (etsNum > 600) {
       addToast('الوقت المقدر يجب أن يكون أقل من أو يساوي 600', 'error');
       return;
     }
-    
+
     const error = validateNumber(currentETS, 'الوقت المقدر', 1, 600);
     if (error) {
       addToast(error, 'error');
@@ -434,22 +436,22 @@ export default function QueueDashboard() {
       addToast('الطابور غير محدد', 'error');
       return;
     }
-    
+
     try {
       const queueIdNum = Number(selectedQueueId);
       if (isNaN(queueIdNum)) {
         addToast('معرف الطابور غير صالح', 'error');
         return;
       }
-      
+
       await queuesApiClient.updateQueue(queueIdNum, {
         doctorName: queue.doctorName,
         estimatedWaitMinutes: parseInt(currentETS, 10),
       });
-      
+
       setIsEditingETS(false);
       addToast('تم تحديث الوقت المقدر بنجاح', 'success');
-      
+
       // Refetch queue metadata to update estimatedWaitMinutes immediately
       if (typeof refreshQueues === 'function') {
         await refreshQueues();
@@ -509,9 +511,9 @@ export default function QueueDashboard() {
   const conditionsOverlap = (cond1: any, cond2: any): boolean => {
     const range1 = getConditionRange(cond1);
     const range2 = getConditionRange(cond2);
-    
+
     if (!range1 || !range2) return false;
-    
+
     return !(range1.max < range2.min || range2.max < range1.min);
   };
 
@@ -523,9 +525,9 @@ export default function QueueDashboard() {
 
     // Get only active conditions from context (exclude DEFAULT and UNCONDITIONED, exclude deleted)
     const queueConditions = messageConditions.filter(
-      (c) => 
-        c.queueId === selectedQueueId && 
-        c.operator !== 'DEFAULT' && 
+      (c) =>
+        c.queueId === selectedQueueId &&
+        c.operator !== 'DEFAULT' &&
         c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from conflict detection
         ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
         c.templateId &&
@@ -553,7 +555,7 @@ export default function QueueDashboard() {
           const template2 = messageTemplates.find((t) => t.id === cond2.templateId);
           const template1Name = template1?.title || 'قالب غير معروف';
           const template2Name = template2?.title || 'قالب غير معروف';
-          
+
           overlappingConditions.push({
             id1: cond1.id,
             id2: cond2.id,
@@ -575,7 +577,7 @@ export default function QueueDashboard() {
       'GREATER': 'أكثر من',
       'LESS': 'أقل من',
       'RANGE': 'نطاق',
-      'UNCONDITIONED': 'بدون شرط', 
+      'UNCONDITIONED': 'بدون شرط',
       'DEFAULT': 'افتراضي',
     };
 
@@ -599,7 +601,7 @@ export default function QueueDashboard() {
    */
   const getQueueConflictDetails = useCallback(() => {
     if (!selectedQueueId) return null;
-    
+
     const conflicts = detectQueueConflicts();
     if (conflicts.length === 0) {
       // Check for multiple DEFAULT conditions even if no overlaps
@@ -607,7 +609,7 @@ export default function QueueDashboard() {
         (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT'
       );
       const hasMultipleDefaults = defaultConditions.length > 1;
-      
+
       if (hasMultipleDefaults) {
         return {
           hasOverlaps: false,
@@ -664,18 +666,18 @@ export default function QueueDashboard() {
       addToast('الترتيب يجب أن يكون رقم موجب', 'error');
       return;
     }
-    
+
     try {
       const patientIdNum = Number(patientId);
       if (isNaN(patientIdNum)) {
         addToast('معرف المريض غير صالح. برجاء تحديث الصفحة وإعادة المحاولة', 'error');
         return;
       }
-      
+
       await patientsApiClient.updatePatientPosition(patientIdNum, newPosition);
       setEditingQueueId(null);
       addToast('تم تحديث ترتيب الانتظار بنجاح', 'success');
-      
+
       // Refetch patients
       if (typeof refreshPatients === 'function') {
         await refreshPatients();
@@ -810,7 +812,7 @@ export default function QueueDashboard() {
                       addToast('معرّف المريض غير صالح', 'error');
                       return;
                     }
-                    
+
                     logger.info('Deleting patient with ID:', patientId, 'from patient:', patient);
                     await patientsApiClient.deletePatient(patientId);
                     addToast('تم حذف المريض بنجاح', 'success');
@@ -824,7 +826,7 @@ export default function QueueDashboard() {
                     logger.error('Error deleting patient:', error, 'Patient ID:', patient.id);
                     const errorMessage = error?.message || 'فشل حذف المريض';
                     addToast(errorMessage, 'error');
-                    
+
                     // Refresh patients list in case it's stale
                     if (selectedQueueId) {
                       try {
@@ -1064,16 +1066,16 @@ export default function QueueDashboard() {
                     logger.error(`Failed to delete patient ${patientId}:`, error);
                   }
                 }
-                
+
                 if (deletedCount > 0) {
                   addToast(`تم حذف ${deletedCount} مريض بنجاح`, 'success');
                   setSelectedPatients([]);
-                  
+
                   // Refresh patients list from API
                   if (selectedQueueId) {
                     await refreshPatients(selectedQueueId);
                   }
-                  
+
                   // Trigger a custom event to notify other components to refetch
                   setTimeout(() => {
                     window.dispatchEvent(new CustomEvent('patientDataUpdated'));
@@ -1099,7 +1101,7 @@ export default function QueueDashboard() {
             const conflictDetails = getQueueConflictDetails();
             if (conflictDetails) {
               let errorMessage = 'هناك تضارب في الشروط:\n';
-              
+
               // Add overlapping conditions details
               if (conflictDetails.overlappingConditions.length > 0) {
                 errorMessage += '\n• شروط متداخلة:\n';
@@ -1107,20 +1109,25 @@ export default function QueueDashboard() {
                   errorMessage += `  ${index + 1}. ${conflict.description}\n`;
                 });
               }
-              
+
               // Add multiple DEFAULT conditions details
               if (conflictDetails.hasMultipleDefaults) {
                 errorMessage += `\n• يوجد ${conflictDetails.defaultConditions.length} قالب افتراضي (يجب أن يكون هناك قالب افتراضي واحد فقط)`;
               }
-              
+
               errorMessage += '\n\nيرجى حل جميع التضاربات قبل الإرسال';
               addToast(errorMessage, 'error');
               return;
             }
-            
-            // Send to all patients (no need to select)
+
             if (patients.length === 0) {
               addToast('لا يوجد مرضى للإرسال إليهم', 'error');
+              return;
+            }
+
+            // Check WhatsApp connection status
+            if (detailedStatus !== 'connected_idle' && detailedStatus !== 'connected_sending') {
+              addToast('جلسة الواتساب غير متصلة أو غير جاهزة للإرسال. يرجى التحقق من اتصال الإضافة وحالة الواتساب أولاً.', 'error');
               return;
             }
 
@@ -1224,12 +1231,12 @@ export default function QueueDashboard() {
                 const defaultCondition = messageConditions.find(
                   (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT' && c.templateId
                 );
-                
+
                 // Use TemplateId FK directly - no fallback needed since backend always returns templateId
                 const defaultTemplate = defaultCondition?.templateId
                   ? messageTemplates.find((t) => t.id === defaultCondition.templateId)
                   : undefined;
-                
+
                 const hasDefaultTemplate = !!defaultTemplate;
 
                 if (!hasDefaultTemplate) {
@@ -1255,27 +1262,27 @@ export default function QueueDashboard() {
 
                 // Filter active conditions for this queue (exclude DEFAULT and UNCONDITIONED, exclude deleted)
                 const activeConditions = messageConditions.filter(
-                  (c) => 
-                    c.queueId === selectedQueueId && 
-                    c.operator !== 'DEFAULT' && 
+                  (c) =>
+                    c.queueId === selectedQueueId &&
+                    c.operator !== 'DEFAULT' &&
                     c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from display
                     ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
                     c.templateId &&
                     !c.isDeleted // Exclude deleted conditions
                 );
-                
+
                 const hasActiveConditions = activeConditions.length > 0;
 
                 // Get the actual default template text from messageTemplates
                 const defaultTemplateText = defaultTemplate?.content || '';
-                
+
                 // Find template name for each condition
                 const getTemplateNameForCondition = (condition: typeof activeConditions[0]) => {
                   if (!condition.templateId) return 'شرط بدون عنوان';
                   const template = messageTemplates.find((t) => t.id === condition.templateId);
                   return template?.title || 'شرط بدون عنوان';
                 };
-                
+
                 return (
                   <div className="flex flex-col gap-6">
                     <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
@@ -1309,7 +1316,7 @@ export default function QueueDashboard() {
                         </div>
                       )}
                     </div>
-                    
+
                     {hasActiveConditions && (() => {
                       // Detect conflicts
                       const overlappingConditions = detectQueueConflicts();
@@ -1319,7 +1326,7 @@ export default function QueueDashboard() {
                         if (overlap.id1) conflictingIds.add(overlap.id1);
                         if (overlap.id2) conflictingIds.add(overlap.id2);
                       });
-                      
+
                       // activeConditions already excludes DEFAULT and UNCONDITIONED, so no sorting needed
                       // Just use activeConditions directly
                       return (
@@ -1335,35 +1342,32 @@ export default function QueueDashboard() {
                             {activeConditions.map((condition, idx) => {
                               const templateName = getTemplateNameForCondition(condition);
                               const isInConflict = condition.id && conflictingIds.has(condition.id);
-                              const conditionText = 
+                              const conditionText =
                                 condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
-                                condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
-                                condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
-                                condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
-                                condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
-                                '';
-                              
+                                  condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
+                                    condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
+                                      condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
+                                        condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
+                                          '';
+
                               return (
-                                <div 
-                                  key={condition.id || idx} 
-                                  className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${
-                                    isInConflict
+                                <div
+                                  key={condition.id || idx}
+                                  className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${isInConflict
                                       ? 'bg-red-100 border-red-400 hover:bg-red-150'
                                       : 'bg-green-50 border-green-100 hover:border-green-300 hover:bg-green-100'
-                                  }`}
+                                    }`}
                                 >
-                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${
-                                    isInConflict
+                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${isInConflict
                                       ? 'bg-red-300 text-red-900'
                                       : 'bg-green-300 text-green-900'
-                                  }`}>
+                                    }`}>
                                     {idx + 1}
                                   </span>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between">
-                                      <p className={`text-sm font-semibold ${
-                                        isInConflict ? 'text-red-900' : 'text-gray-900'
-                                      }`}>
+                                      <p className={`text-sm font-semibold ${isInConflict ? 'text-red-900' : 'text-gray-900'
+                                        }`}>
                                         {templateName}
                                       </p>
                                       {isInConflict && (
@@ -1374,9 +1378,8 @@ export default function QueueDashboard() {
                                       )}
                                     </div>
                                     {conditionText && (
-                                      <p className={`text-xs mt-1 ${
-                                        isInConflict ? 'text-red-700' : 'text-gray-700'
-                                      }`}>
+                                      <p className={`text-xs mt-1 ${isInConflict ? 'text-red-700' : 'text-gray-700'
+                                        }`}>
                                         {conditionText}
                                       </p>
                                     )}
@@ -1388,7 +1391,7 @@ export default function QueueDashboard() {
                         </div>
                       );
                     })()}
-                    
+
                     {!hasActiveConditions && (
                       <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
                         <p className="text-sm text-gray-600 text-center">
@@ -1410,7 +1413,7 @@ export default function QueueDashboard() {
         const conflicts = detectQueueConflicts();
         return conflicts.length > 0 ? (
           <div className="mb-6">
-            <ConflictWarning 
+            <ConflictWarning
               overlappingConditions={conflicts}
               hasDefaultConflict={false}
             />
@@ -1444,9 +1447,8 @@ export default function QueueDashboard() {
                 {selectedPatients.length > 0 && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <i
-                      className={`fas text-white text-xs ${
-                        selectedPatients.length === patients.length ? 'fa-check' : 'fa-minus'
-                      }`}
+                      className={`fas text-white text-xs ${selectedPatients.length === patients.length ? 'fa-check' : 'fa-minus'
+                        }`}
                     ></i>
                   </div>
                 )}
@@ -1485,9 +1487,8 @@ export default function QueueDashboard() {
                 {tableRows.map((row) => (
                   <tr
                     key={row.id}
-                    className={`border-b hover:bg-gray-50 transition-colors ${
-                      selectedPatients.includes(row.id) ? 'bg-blue-50' : ''
-                    }`}
+                    className={`border-b hover:bg-gray-50 transition-colors ${selectedPatients.includes(row.id) ? 'bg-blue-50' : ''
+                      }`}
                   >
                     <td className="px-6 py-3 text-sm">{row.checkbox}</td>
                     <td className="px-6 py-3 text-sm">{row.queue}</td>
@@ -1503,7 +1504,7 @@ export default function QueueDashboard() {
       )}
 
       {/* Info Box */}
-      <UsageGuideSection 
+      <UsageGuideSection
         items={guideItems}
       />
     </PanelWrapper>

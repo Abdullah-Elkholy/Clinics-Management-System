@@ -12,6 +12,13 @@ export interface OperationResult<T> {
   resultMessage?: string;
 }
 
+export interface ExtensionCheckResult {
+  success: boolean;
+  category: string;
+  message?: string;
+  data?: boolean;
+}
+
 export interface ApiError {
   message: string;
   statusCode?: number;
@@ -102,7 +109,7 @@ async function fetchAPI<T>(
       // This is already an ApiError, re-throw it
       throw error;
     }
-    
+
     // This is a network/fetch error, translate it
     const translatedMessage = translateNetworkError(error);
     throw {
@@ -144,14 +151,14 @@ export async function checkWhatsAppNumber(
         signal, // Pass abort signal to fetch
       }
     );
-    
+
     // Emit event if PendingQR detected for UI updates
     if (result.state === 'PendingQR' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
         detail: { moderatorUserId, source: 'checkWhatsAppNumber' }
       }));
     }
-    
+
     return result;
   } catch (error: any) {
     // Check if error is due to abort
@@ -162,7 +169,7 @@ export async function checkWhatsAppNumber(
         resultMessage: 'تم إلغاء عملية التحقق',
       };
     }
-    
+
     // Handle 405 Method Not Allowed error specifically
     if (error?.statusCode === 405 || error?.message?.includes('405') || error?.message?.includes('Method Not Allowed')) {
       console.error('[WhatsApp API] Method Not Allowed (405) - endpoint may have changed:', error);
@@ -172,20 +179,20 @@ export async function checkWhatsAppNumber(
         resultMessage: 'خطأ في طريقة الاتصال بالخادم. يرجى تحديث الصفحة والمحاولة مرة أخرى.',
       };
     }
-    
+
     // Translate network errors to Arabic
     const translatedMessage = translateNetworkError(error);
-    
+
     // Handle connection and CORS errors gracefully
     const errorMessage = error?.message || '';
-    const isConnectionError = 
+    const isConnectionError =
       errorMessage.includes('ERR_CONNECTION_REFUSED') ||
       errorMessage.includes('Failed to fetch') ||
       errorMessage.includes('NetworkError') ||
       errorMessage.includes('connection refused') ||
       errorMessage.includes('CORS') ||
       errorMessage.includes('Access-Control-Allow-Origin');
-    
+
     if (isConnectionError) {
       return {
         isSuccess: false,
@@ -193,7 +200,7 @@ export async function checkWhatsAppNumber(
         resultMessage: translatedMessage || 'خدمة التحقق من الواتساب غير متاحة. يرجى التأكد من تشغيل الخادم وإعدادات CORS.',
       };
     }
-    
+
     // Return a failure result if request fails (use translated message)
     return {
       isSuccess: false,
@@ -216,23 +223,23 @@ export async function checkAuthentication(moderatorUserId?: number, userId?: num
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
     const url = `/api/WhatsAppUtility/check-authentication${query}`;
-    
+
     console.log('[WhatsApp API] checkAuthentication called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
-    
+
     const result = await fetchAPI<OperationResult<boolean>>(
       url,
       { method: 'GET' }
     );
-    
+
     console.log('[WhatsApp API] checkAuthentication result:', result);
-    
+
     // Emit event if PendingQR detected for UI updates
     if (result.state === 'PendingQR' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
         detail: { moderatorUserId, source: 'checkAuthentication' }
       }));
     }
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] checkAuthentication error:', error);
@@ -258,23 +265,23 @@ export async function authenticate(moderatorUserId?: number, userId?: number): P
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
     const url = `/api/WhatsAppUtility/authenticate${query}`;
-    
+
     console.log('[WhatsApp API] authenticate called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
-    
+
     const result = await fetchAPI<OperationResult<boolean>>(
       url,
       { method: 'POST' }
     );
-    
+
     console.log('[WhatsApp API] authenticate result:', result);
-    
+
     // Emit event if PendingQR detected for UI updates
     if (result.state === 'PendingQR' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
         detail: { moderatorUserId, source: 'authenticate' }
       }));
     }
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] authenticate error:', error);
@@ -346,18 +353,18 @@ export async function getBrowserStatus(moderatorUserId: number): Promise<Browser
     console.log('[WhatsApp API] getBrowserStatus called with moderatorUserId:', moderatorUserId);
     const url = `/api/WhatsAppUtility/browser/status?moderatorUserId=${moderatorUserId}`;
     console.log('[WhatsApp API] Fetching from URL:', url);
-    
+
     const result = await fetchAPI<{ success: boolean; data: BrowserStatus }>(
       url,
       { method: 'GET' }
     );
-    
+
     console.log('[WhatsApp API] getBrowserStatus result:', result);
-    
+
     if (result.success && result.data) {
       return result.data;
     }
-    
+
     return null;
   } catch (error: any) {
     console.error('[WhatsApp API] getBrowserStatus error:', error);
@@ -375,11 +382,11 @@ export async function getAllModeratorsBrowserStatus(): Promise<ModeratorBrowserS
       `/api/WhatsAppUtility/browser/status/all`,
       { method: 'GET' }
     );
-    
+
     if (result.success && result.data) {
       return result.data;
     }
-    
+
     return [];
   } catch (error: any) {
     console.error('[WhatsApp API] getAllModeratorsBrowserStatus error:', error);
@@ -398,7 +405,7 @@ export async function refreshBrowserStatus(moderatorUserId: number): Promise<{ s
       `/api/WhatsAppUtility/browser/refresh?moderatorUserId=${moderatorUserId}`,
       { method: 'POST' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] refreshBrowserStatus error:', error);
@@ -417,7 +424,7 @@ export async function closeBrowserSession(moderatorUserId: number): Promise<{ su
       `/api/WhatsAppUtility/browser/close?moderatorUserId=${moderatorUserId}`,
       { method: 'POST' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] closeBrowserSession error:', error);
@@ -445,7 +452,7 @@ export async function getQRCode(moderatorUserId: number): Promise<QRCodeResponse
       `/api/WhatsAppUtility/qr-code?moderatorUserId=${moderatorUserId}`,
       { method: 'GET' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] getQRCode error:', error);
@@ -519,7 +526,7 @@ async function fetchMainAPI<T>(
       // This is already an ApiError, re-throw it
       throw error;
     }
-    
+
     // This is a network/fetch error, translate it
     const translatedMessage = translateNetworkError(error);
     throw {
@@ -542,18 +549,18 @@ export interface PauseAllResponse {
 }
 
 export async function pauseAllModeratorTasks(
-  moderatorId: number, 
+  moderatorId: number,
   reason?: string
 ): Promise<PauseAllResponse> {
   try {
     const result = await fetchMainAPI<PauseAllResponse>(
       `/Moderators/${moderatorId}/pause-all`,
-      { 
+      {
         method: 'POST',
         body: JSON.stringify({ reason: reason || 'User paused' })
       }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] pauseAllModeratorTasks error:', error);
@@ -572,7 +579,7 @@ export async function resumeAllModeratorTasks(moderatorId: number): Promise<Paus
       `/Moderators/${moderatorId}/resume-all`,
       { method: 'POST' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] resumeAllModeratorTasks error:', error);
@@ -603,7 +610,7 @@ export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPa
       `/Moderators/${moderatorId}/pause-state`,
       { method: 'GET' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] getGlobalPauseState error:', error);
@@ -660,7 +667,7 @@ export async function getCombinedStatus(moderatorId: number): Promise<CombinedSt
       `/Moderators/${moderatorId}/combined-status`,
       { method: 'GET' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] getCombinedStatus error:', error);
@@ -668,9 +675,117 @@ export async function getCombinedStatus(moderatorId: number): Promise<CombinedSt
   }
 }
 
+/**
+ * Check if a phone number has WhatsApp using browser extension (NEW)
+ * This replaces the legacy Playwright-based check with extension-driven validation
+ * Hard-pauses any active sending during check (unresumable until complete)
+ * @param phoneNumber Phone number (local format, e.g., 01234567890)
+ * @param options Configuration options including countryCode and abort signal
+ * @returns ExtensionCheckResult with validation status
+ */
+export async function checkWhatsAppNumberViaExtension(
+  phoneNumber: string,
+  options?: {
+    countryCode?: string;
+    forceCheck?: boolean;
+    signal?: AbortSignal;
+  }
+): Promise<ExtensionCheckResult> {
+  try {
+    const encodedPhoneNumber = encodeURIComponent(phoneNumber);
+    const queryParams = new URLSearchParams();
+    if (options.countryCode) {
+      queryParams.append('countryCode', options.countryCode);
+    }
+    if (options.forceCheck) {
+      queryParams.append('forceCheck', 'true');
+    }
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+    // Use the new extension controller endpoint
+    const result = await fetchMainAPI<{
+      success: boolean;
+      hasWhatsApp: boolean | null;
+      state: string;
+      message?: string;
+    }>(
+      `/extension/whatsapp/check-number/${encodedPhoneNumber}${query}`,
+      {
+        method: 'GET',
+        signal: options?.signal,
+      }
+    );
+
+    // Map response to ExtensionCheckResult format
+    return {
+      success: result.success,
+      category: result.state,
+      message: result.message,
+      data: result.hasWhatsApp ?? undefined,
+    };
+  } catch (error: any) {
+    // Check if error is due to abort
+    if (error?.name === 'AbortError' || options?.signal?.aborted) {
+      return {
+        success: false,
+        category: 'Aborted',
+        message: 'تم إلغاء عملية التحقق',
+      };
+    }
+
+    // Handle connection errors
+    const errorMessage = error?.message || '';
+    const isConnectionError =
+      errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+      errorMessage.includes('Failed to fetch') ||
+      errorMessage.includes('NetworkError');
+
+    if (isConnectionError) {
+      return {
+        success: false,
+        category: 'ServiceUnavailable',
+        message: translateNetworkError(error),
+      };
+    }
+
+    // Return error result
+    return {
+      success: false,
+      category: 'Failed',
+      message: error?.message || 'حدث خطأ أثناء التحقق من الرقم',
+    };
+  }
+}
+
+/**
+ * Cancel any ongoing check session for the current moderator
+ * Clears the CheckWhatsApp pause and allows sending to resume
+ * @returns Success status
+ */
+export async function cancelCheckSession(): Promise<{ success: boolean; message?: string }> {
+  try {
+    const result = await fetchMainAPI<{ success: boolean; message?: string }>(
+      `/extension/whatsapp/check-cancel`,
+      {
+        method: 'POST',
+      }
+    );
+
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] cancelCheckSession error:', error);
+    return {
+      success: false,
+      message: error?.message || 'فشل إلغاء عملية التحقق',
+    };
+  }
+}
+
 // Export the client object for consistency with other API clients
 export const whatsappApiClient = {
   checkWhatsAppNumber,
+  checkWhatsAppNumberViaExtension,
+  cancelCheckSession,
   checkAuthentication,
   authenticate,
   getSessionHealth,

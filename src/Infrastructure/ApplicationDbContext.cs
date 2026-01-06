@@ -20,6 +20,7 @@ namespace Clinics.Infrastructure
         public DbSet<MessageSession> MessageSessions => Set<MessageSession>();
         public DbSet<ModeratorSettings> ModeratorSettings => Set<ModeratorSettings>();
         public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+        public DbSet<PhoneWhatsAppRegistry> PhoneWhatsAppRegistry => Set<PhoneWhatsAppRegistry>();
 
         // Extension Runner entities
         public DbSet<ExtensionDevice> ExtensionDevices => Set<ExtensionDevice>();
@@ -208,6 +209,10 @@ namespace Clinics.Infrastructure
                 .HasForeignKey(a => a.ActorUserId)
                 .OnDelete(DeleteBehavior.SetNull);
             modelBuilder.Entity<AuditLog>().Property(a => a.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // PhoneWhatsAppRegistry configuration
+            modelBuilder.Entity<PhoneWhatsAppRegistry>().HasIndex(p => p.PhoneNumber).IsUnique();
+            modelBuilder.Entity<PhoneWhatsAppRegistry>().HasIndex(p => p.ExpiresAt);
 
             #region Extension Runner Entity Configuration
 

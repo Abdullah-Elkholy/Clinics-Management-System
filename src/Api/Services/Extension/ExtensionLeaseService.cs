@@ -19,7 +19,7 @@ namespace Clinics.Api.Services.Extension
         private readonly TimeSpan _heartbeatExtension = TimeSpan.FromMinutes(2);
 
         public ExtensionLeaseService(
-            ApplicationDbContext db, 
+            ApplicationDbContext db,
             ILogger<ExtensionLeaseService> logger,
             IHubContext<DataUpdateHub> hubContext)
         {
@@ -29,7 +29,7 @@ namespace Clinics.Api.Services.Extension
         }
 
         public async Task<(ExtensionSessionLease? lease, string? leaseToken, string? error)> AcquireLeaseAsync(
-            int moderatorUserId, 
+            int moderatorUserId,
             Guid deviceId,
             bool forceTakeover = false)
         {
@@ -43,8 +43,8 @@ namespace Clinics.Api.Services.Extension
             // First, clean up any expired leases (RevokedAtUtc IS NULL but expired)
             // These would violate the unique constraint if not handled
             var expiredLeases = await _db.ExtensionSessionLeases
-                .Where(l => l.ModeratorUserId == moderatorUserId && 
-                            l.RevokedAtUtc == null && 
+                .Where(l => l.ModeratorUserId == moderatorUserId &&
+                            l.RevokedAtUtc == null &&
                             l.ExpiresAtUtc <= DateTime.UtcNow)
                 .ToListAsync();
 
@@ -62,8 +62,8 @@ namespace Clinics.Api.Services.Extension
 
             // Check for existing active lease (not expired, not revoked)
             var existingLease = await _db.ExtensionSessionLeases
-                .FirstOrDefaultAsync(l => l.ModeratorUserId == moderatorUserId && 
-                                          l.RevokedAtUtc == null && 
+                .FirstOrDefaultAsync(l => l.ModeratorUserId == moderatorUserId &&
+                                          l.RevokedAtUtc == null &&
                                           l.ExpiresAtUtc > DateTime.UtcNow);
 
             if (existingLease != null)
@@ -75,15 +75,15 @@ namespace Clinics.Api.Services.Extension
                     existingLease.LeaseTokenHash = ExtensionPairingService.HashToken(refreshToken);
                     existingLease.ExpiresAtUtc = DateTime.UtcNow.Add(_leaseTtl);
                     existingLease.LastHeartbeatAtUtc = DateTime.UtcNow;
-                    
+
                     await _db.SaveChangesAsync();
-                    
-                    _logger.LogInformation("Lease refreshed for moderator {ModeratorId}, device {DeviceId}", 
+
+                    _logger.LogInformation("Lease refreshed for moderator {ModeratorId}, device {DeviceId}",
                         moderatorUserId, deviceId);
-                    
+
                     return (existingLease, refreshToken, null);
                 }
-                
+
                 if (!forceTakeover)
                 {
                     // Different device has lease
@@ -93,10 +93,10 @@ namespace Clinics.Api.Services.Extension
                 // Takeover: revoke existing lease
                 existingLease.RevokedAtUtc = DateTime.UtcNow;
                 existingLease.RevokedReason = "Takeover";
-                
-                _logger.LogInformation("Lease takeover: revoking lease for device {OldDevice} by {NewDevice}", 
+
+                _logger.LogInformation("Lease takeover: revoking lease for device {OldDevice} by {NewDevice}",
                     existingLease.DeviceId, deviceId);
-                
+
                 // Save revocation first to clear the unique constraint before inserting new lease
                 await _db.SaveChangesAsync();
             }
@@ -115,24 +115,24 @@ namespace Clinics.Api.Services.Extension
             };
 
             _db.ExtensionSessionLeases.Add(newLease);
-            
+
             // Update device last seen
             device.LastSeenAtUtc = DateTime.UtcNow;
-            
+
             await _db.SaveChangesAsync();
 
             // Broadcast lease acquired via SignalR
             newLease.Device = device; // Set for broadcast
             await BroadcastExtensionStatusAsync(moderatorUserId, newLease);
 
-            _logger.LogInformation("Lease acquired for moderator {ModeratorId}, device {DeviceId}", 
+            _logger.LogInformation("Lease acquired for moderator {ModeratorId}, device {DeviceId}",
                 moderatorUserId, deviceId);
 
             return (newLease, leaseToken, null);
         }
 
         public async Task<(bool success, string? error)> HeartbeatAsync(
-            Guid leaseId, 
+            Guid leaseId,
             string leaseToken,
             string? currentUrl = null,
             string? whatsAppStatus = null,
@@ -184,7 +184,7 @@ namespace Clinics.Api.Services.Extension
             // Sync WhatsApp status to WhatsAppSessions table for frontend compatibility
             if (!string.IsNullOrEmpty(whatsAppStatus))
             {
-                _logger.LogInformation("Syncing WhatsApp status '{Status}' to WhatsAppSessions for moderator {ModeratorId}", 
+                _logger.LogInformation("Syncing WhatsApp status '{Status}' to WhatsAppSessions for moderator {ModeratorId}",
                     whatsAppStatus, lease.ModeratorUserId);
                 await SyncWhatsAppSessionStatusAsync(lease.ModeratorUserId, whatsAppStatus);
             }
@@ -197,7 +197,7 @@ namespace Clinics.Api.Services.Extension
             // Broadcast status update via SignalR
             await BroadcastExtensionStatusAsync(lease.ModeratorUserId, lease);
 
-            _logger.LogDebug("Heartbeat processed for lease {LeaseId}, moderator {ModeratorId}, status {Status}", 
+            _logger.LogDebug("Heartbeat processed for lease {LeaseId}, moderator {ModeratorId}, status {Status}",
                 leaseId, lease.ModeratorUserId, whatsAppStatus ?? "null");
 
             return (true, null);
@@ -217,7 +217,7 @@ namespace Clinics.Api.Services.Extension
             }
 
             var moderatorId = lease.ModeratorUserId;
-            
+
             lease.RevokedAtUtc = DateTime.UtcNow;
             lease.RevokedReason = reason;
             await _db.SaveChangesAsync();
@@ -228,7 +228,7 @@ namespace Clinics.Api.Services.Extension
             // Broadcast disconnection via SignalR
             await BroadcastExtensionDisconnectedAsync(moderatorId);
 
-            _logger.LogInformation("Lease {LeaseId} released for moderator {ModeratorId}: {Reason}", 
+            _logger.LogInformation("Lease {LeaseId} released for moderator {ModeratorId}: {Reason}",
                 leaseId, moderatorId, reason);
 
             return true;
@@ -238,8 +238,8 @@ namespace Clinics.Api.Services.Extension
         {
             return await _db.ExtensionSessionLeases
                 .Include(l => l.Device)
-                .FirstOrDefaultAsync(l => l.ModeratorUserId == moderatorUserId && 
-                                          l.RevokedAtUtc == null && 
+                .FirstOrDefaultAsync(l => l.ModeratorUserId == moderatorUserId &&
+                                          l.RevokedAtUtc == null &&
                                           l.ExpiresAtUtc > DateTime.UtcNow);
         }
 
@@ -258,7 +258,7 @@ namespace Clinics.Api.Services.Extension
         public async Task<bool> ForceReleaseLeaseAsync(int moderatorUserId, string reason = "ForceReleased")
         {
             var lease = await _db.ExtensionSessionLeases
-                .FirstOrDefaultAsync(l => l.ModeratorUserId == moderatorUserId && 
+                .FirstOrDefaultAsync(l => l.ModeratorUserId == moderatorUserId &&
                                           l.RevokedAtUtc == null);
 
             if (lease == null) return true; // No active lease
@@ -273,7 +273,7 @@ namespace Clinics.Api.Services.Extension
             // Broadcast disconnection via SignalR
             await BroadcastExtensionDisconnectedAsync(moderatorUserId);
 
-            _logger.LogInformation("Force released lease {LeaseId} for moderator {ModeratorId}: {Reason}", 
+            _logger.LogInformation("Force released lease {LeaseId} for moderator {ModeratorId}: {Reason}",
                 lease.Id, moderatorUserId, reason);
 
             return true;
@@ -296,7 +296,7 @@ namespace Clinics.Api.Services.Extension
             {
                 await _db.SaveChangesAsync();
                 _logger.LogInformation("Expired {Count} stale leases", staleLeases.Count);
-                
+
                 // Sync WhatsApp session status to disconnected for each expired lease
                 foreach (var lease in staleLeases)
                 {
@@ -334,7 +334,7 @@ namespace Clinics.Api.Services.Extension
                     "qr_pending" => "pending",
                     "disconnected" => "disconnected",
                     "phone_disconnected" => "disconnected",
-                    "loading" => "pending",
+                    "loading" => "connected", // Treat loading as connected to prevent auto-pause/lockout
                     "unknown" => "pending",
                     _ => "pending"
                 };
@@ -360,7 +360,7 @@ namespace Clinics.Api.Services.Extension
                         PauseReason = dbStatus != "connected" ? "Extension not connected" : null
                     };
                     _db.WhatsAppSessions.Add(session);
-                    _logger.LogInformation("Created WhatsAppSession for moderator {ModeratorId} with status {Status}", 
+                    _logger.LogInformation("Created WhatsAppSession for moderator {ModeratorId} with status {Status}",
                         moderatorUserId, dbStatus);
                 }
                 else
@@ -369,23 +369,23 @@ namespace Clinics.Api.Services.Extension
                     session.LastSyncAt = DateTime.UtcNow;
                     session.LastActivityAt = DateTime.UtcNow;
                     session.ProviderSessionId = "extension";
-                    
+
                     // Clear pause state when connected
                     if (dbStatus == "connected")
                     {
                         session.IsPaused = false;
                         session.PauseReason = null;
                         _logger.LogInformation("WhatsApp session unpaused for moderator {ModeratorId} - extension connected", moderatorUserId);
-                        
+
                         // CRITICAL: Also unpause any Messages that were paused due to PendingQR/PendingNET/BrowserClosure
                         var pausedMessages = await _db.Messages
-                            .Where(m => m.ModeratorId == moderatorUserId 
+                            .Where(m => m.ModeratorId == moderatorUserId
                                 && !m.IsDeleted
-                                && m.IsPaused 
+                                && m.IsPaused
                                 && (m.PauseReason == "PendingQR" || m.PauseReason == "PendingNET" || m.PauseReason == "BrowserClosure")
                                 && (m.Status == "queued" || m.Status == "sending"))
                             .ToListAsync();
-                        
+
                         if (pausedMessages.Any())
                         {
                             foreach (var message in pausedMessages)
@@ -393,7 +393,7 @@ namespace Clinics.Api.Services.Extension
                                 message.IsPaused = false;
                                 message.PauseReason = null;
                             }
-                            _logger.LogInformation("Unpaused {Count} messages for moderator {ModeratorId} - extension connected", 
+                            _logger.LogInformation("Unpaused {Count} messages for moderator {ModeratorId} - extension connected",
                                 pausedMessages.Count, moderatorUserId);
                         }
                     }
@@ -406,7 +406,7 @@ namespace Clinics.Api.Services.Extension
                             session.IsPaused = true;
                             session.PauseReason = $"Extension status: {extensionStatus}";
                             session.PausedAt = DateTime.UtcNow;
-                            _logger.LogWarning("Auto-paused WhatsApp session for moderator {ModeratorId} - status changed to {Status}", 
+                            _logger.LogWarning("Auto-paused WhatsApp session for moderator {ModeratorId} - status changed to {Status}",
                                 moderatorUserId, extensionStatus);
                         }
                         else
@@ -415,14 +415,14 @@ namespace Clinics.Api.Services.Extension
                             session.PauseReason = $"Extension status: {extensionStatus}";
                         }
                     }
-                    
-                    _logger.LogDebug("Updated WhatsAppSession for moderator {ModeratorId} with status {Status}", 
+
+                    _logger.LogDebug("Updated WhatsAppSession for moderator {ModeratorId} with status {Status}",
                         moderatorUserId, dbStatus);
                 }
-                
+
                 // CRITICAL: Save changes to persist pause state
                 await _db.SaveChangesAsync();
-                
+
                 // CRITICAL: Broadcast WhatsAppSessionUpdated event for real-time frontend updates
                 // This triggers immediate refresh of pause state and resume button enablement
                 await _hubContext.Clients.Group($"moderator-{moderatorUserId}")
@@ -434,7 +434,7 @@ namespace Clinics.Api.Services.Extension
                         pauseReason = session.PauseReason,
                         isResumable = session.IsPaused && dbStatus == "connected" // Only resumable when paused AND connected
                     });
-                
+
                 _logger.LogInformation("Broadcasted WhatsAppSessionUpdated for moderator {ModeratorId}, status={Status}, isPaused={IsPaused}",
                     moderatorUserId, dbStatus, session.IsPaused);
             }
@@ -464,7 +464,7 @@ namespace Clinics.Api.Services.Extension
                         currentUrl = lease.CurrentUrl,
                         expiresAt = lease.ExpiresAtUtc
                     });
-                
+
                 _logger.LogDebug("Broadcast ExtensionStatusUpdated for moderator {ModeratorId}", moderatorUserId);
             }
             catch (Exception ex)
@@ -492,7 +492,7 @@ namespace Clinics.Api.Services.Extension
                         currentUrl = (string?)null,
                         expiresAt = (DateTime?)null
                     });
-                
+
                 _logger.LogDebug("Broadcast ExtensionDisconnected for moderator {ModeratorId}", moderatorUserId);
             }
             catch (Exception ex)

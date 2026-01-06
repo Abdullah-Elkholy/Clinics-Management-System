@@ -9,19 +9,19 @@ try {
 const CONFIG = {
   // API base URL - will be configured via options page
   apiBaseUrl: '',
-  
+
   // SignalR hub URL
   extensionHubUrl: '/extensionHub',
-  
+
   // Heartbeat interval (ms)
   heartbeatInterval: 30000, // 30 seconds
-  
+
   // Command poll interval when SignalR disconnected (ms)
   pollInterval: 5000, // 5 seconds
-  
+
   // Reconnect delay (ms)
   reconnectDelay: 3000,
-  
+
   // Max reconnect attempts
   maxReconnectAttempts: 10
 };
@@ -77,7 +77,7 @@ async function loadConfig() {
     state.isConnected = stored.isConnected;
   }
   console.log('[Extension] Config loaded:', { apiBaseUrl: CONFIG.apiBaseUrl, hasToken: !!state.deviceToken, isConnected: state.isConnected, hasLease: !!state.leaseToken });
-  
+
   // If we were connected, restart heartbeat
   if (state.isConnected && state.leaseToken) {
     console.log('[Extension] Resuming session after service worker restart');
@@ -91,8 +91,8 @@ async function saveDeviceToken(token, moderatorId, moderatorUsername, moderatorN
   state.moderatorId = moderatorId;
   state.moderatorUsername = moderatorUsername || null;
   state.moderatorName = moderatorName || null;
-  await chrome.storage.local.set({ 
-    deviceToken: token, 
+  await chrome.storage.local.set({
+    deviceToken: token,
     moderatorId: moderatorId,
     moderatorUsername: moderatorUsername || null,
     moderatorName: moderatorName || null
@@ -116,31 +116,31 @@ async function apiCall(endpoint, method = 'GET', body = null) {
   if (!CONFIG.apiBaseUrl) {
     throw new Error('API URL not configured');
   }
-  
+
   const headers = {
     'Content-Type': 'application/json'
   };
-  
+
   if (state.deviceToken) {
     headers['X-Extension-Token'] = state.deviceToken;
   }
-  
+
   if (state.leaseToken) {
     headers['X-Lease-Token'] = state.leaseToken;
   }
-  
+
   const options = {
     method,
     headers,
     credentials: 'include'
   };
-  
+
   if (body) {
     options.body = JSON.stringify(body);
   }
-  
+
   const response = await fetch(`${CONFIG.apiBaseUrl}${endpoint}`, options);
-  
+
   if (!response.ok) {
     let errorMessage = `API error ${response.status}`;
     try {
@@ -155,7 +155,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     } catch {
       // Ignore parse errors
     }
-    
+
     // Check for invalid/revoked device token - auto-unpair
     const isInvalidToken = response.status === 401 || response.status === 403 ||
       errorMessage.toLowerCase().includes('invalid device token') ||
@@ -164,7 +164,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
       errorMessage.toLowerCase().includes('token expired') ||
       errorMessage.includes('الجهاز غير موجود') ||
       errorMessage.includes('رمز غير صالح');
-    
+
     if (isInvalidToken && state.deviceToken) {
       console.warn('[Extension] Device token is invalid or revoked. Auto-clearing for re-pairing.');
       await clearDeviceToken();
@@ -178,10 +178,10 @@ async function apiCall(endpoint, method = 'GET', body = null) {
       broadcastState();
       throw new Error('DEVICE_REVOKED');
     }
-    
+
     throw new Error(errorMessage);
   }
-  
+
   const text = await response.text();
   return text ? JSON.parse(text) : null;
 }
@@ -197,7 +197,7 @@ async function completePairing(code) {
       extensionVersion: chrome.runtime.getManifest().version,
       userAgent: navigator.userAgent
     });
-    
+
     // Backend returns: { deviceId, moderatorUserId, moderatorUsername, moderatorName, deviceToken, tokenExpiresAt }
     // Check if we got a valid token back
     console.log('[Extension] Pairing API response:', JSON.stringify(result));
@@ -227,7 +227,7 @@ async function getOrCreateDeviceId() {
   if (stored.deviceId) {
     return stored.deviceId;
   }
-  
+
   // Generate a new device ID
   const deviceId = crypto.randomUUID();
   await chrome.storage.local.set({ deviceId });
@@ -241,28 +241,28 @@ async function acquireLease(forceTakeover = false) {
     if (!state.deviceToken) {
       return { success: false, error: 'Device not paired' };
     }
-    
+
     const deviceId = await getOrCreateDeviceId();
     const result = await apiCall('/api/extension/lease/acquire', 'POST', {
       deviceId: deviceId,
       deviceToken: state.deviceToken,
       forceTakeover: forceTakeover
     });
-    
+
     // Backend returns: { leaseId, leaseToken, moderatorUserId, expiresAt }
     if (result && result.leaseToken) {
       state.leaseToken = result.leaseToken;
       state.leaseId = result.leaseId;
       state.isConnected = true;
       state.reconnectAttempts = 0;
-      
+
       // CRITICAL: Persist lease state to survive service worker restart
-      await chrome.storage.local.set({ 
-        leaseToken: result.leaseToken, 
+      await chrome.storage.local.set({
+        leaseToken: result.leaseToken,
         leaseId: result.leaseId,
-        isConnected: true 
+        isConnected: true
       });
-      
+
       console.log('[Extension] Lease acquired successfully, state persisted');
       startHeartbeat();
       await connectSignalR();
@@ -270,22 +270,22 @@ async function acquireLease(forceTakeover = false) {
       return { success: true };
     } else if (result && result.error) {
       // Handle specific error for existing session
-      return { 
-        success: false, 
-        error: result.error, 
-        existingDevice: result.existingDeviceName 
+      return {
+        success: false,
+        error: result.error,
+        existingDevice: result.existingDeviceName
       };
     } else {
       return { success: false, error: 'Failed to acquire lease' };
     }
   } catch (error) {
     console.error('[Extension] Lease acquire error:', error);
-    
+
     // Check if device was revoked - return special flag for UI
     if (error.message === 'DEVICE_REVOKED') {
       return { success: false, error: 'تم إلغاء إقران الجهاز. يرجى إعادة الإقران.', deviceRevoked: true };
     }
-    
+
     // Check if error message contains info about existing session
     const errorMsg = error.message || '';
     if (errorMsg.includes('session') || errorMsg.includes('جلسة')) {
@@ -300,19 +300,19 @@ async function releaseLease() {
   try {
     stopHeartbeat();
     disconnectSignalR();
-    
+
     // Clear command queue immediately to stop any pending commands
     const queueLength = state.commandQueue.length;
     state.commandQueue = [];
     state.isProcessingCommand = false;
-    
+
     // Clear processed command IDs for fresh start on next session
     state.processedCommandIds.clear();
-    
+
     if (queueLength > 0) {
       console.log('[Extension] Cleared command queue on lease release, discarded:', queueLength, 'commands');
     }
-    
+
     if (state.leaseToken && state.leaseId) {
       await apiCall('/api/extension/lease/release', 'POST', {
         leaseId: state.leaseId,
@@ -320,14 +320,14 @@ async function releaseLease() {
         reason: 'UserDisconnected'
       });
     }
-    
+
     state.leaseToken = null;
     state.leaseId = null;
     state.isConnected = false;
-    
+
     // Clear persisted lease state
     await chrome.storage.local.remove(['leaseToken', 'leaseId', 'isConnected']);
-    
+
     broadcastState();
     return { success: true };
   } catch (error) {
@@ -339,10 +339,10 @@ async function releaseLease() {
 // Start heartbeat
 function startHeartbeat() {
   stopHeartbeat();
-  
+
   // Send immediate heartbeat
   sendHeartbeat();
-  
+
   state.heartbeatTimer = setInterval(async () => {
     await sendHeartbeat();
   }, CONFIG.heartbeatInterval);
@@ -355,9 +355,9 @@ async function sendHeartbeat() {
       console.warn('[Extension] Cannot send heartbeat: no lease');
       return;
     }
-    
+
     console.log('[Extension] Sending heartbeat with status:', state.whatsAppStatus);
-    
+
     await apiCall('/api/extension/lease/heartbeat', 'POST', {
       leaseId: state.leaseId,
       leaseToken: state.leaseToken,
@@ -367,13 +367,13 @@ async function sendHeartbeat() {
     console.log('[Extension] Heartbeat sent successfully');
   } catch (error) {
     console.error('[Extension] Heartbeat failed:', error);
-    
+
     // If device was revoked, the apiCall already handled cleanup
     if (error.message === 'DEVICE_REVOKED') {
       console.log('[Extension] Device revoked during heartbeat, state already cleared');
       return;
     }
-    
+
     // If heartbeat fails with lease error, mark as disconnected
     if (error.message?.includes('Lease') || error.message?.includes('lease') || error.message?.includes('expired')) {
       handleDisconnect();
@@ -471,16 +471,16 @@ async function registerWithHub() {
       console.log('[Extension] Cannot register with hub - no active lease');
       return;
     }
-    
+
     const deviceId = await getOrCreateDeviceId();
-    
-    const result = await state.hubConnection.invoke('Register', 
-      state.leaseId, 
+
+    const result = await state.hubConnection.invoke('Register',
+      state.leaseId,
       state.leaseToken,
       state.moderatorId,
       deviceId
     );
-    
+
     if (result.success) {
       console.log('[Extension] Registered with hub, pending commands:', result.pendingCommands?.length || 0);
       // Queue any pending commands for sequential processing
@@ -510,7 +510,7 @@ function startPolling() {
   stopPolling();
   state.pollTimer = setInterval(async () => {
     if (!state.isConnected) return;
-    
+
     try {
       const commands = await apiCall('/api/extension/commands/pending', 'GET');
       if (commands && commands.length > 0) {
@@ -534,25 +534,25 @@ function stopPolling() {
 // Queue a command for sequential processing
 function queueCommand(command) {
   const cmdId = command.commandId || command.id;
-  
+
   // Don't queue if no active lease
   if (!state.leaseId || !state.leaseToken) {
     console.log('[Extension] Ignoring command - no active lease:', cmdId);
     return;
   }
-  
+
   // Check if command was already processed (prevent duplicates)
   if (state.processedCommandIds.has(cmdId)) {
     console.log('[Extension] Ignoring duplicate command (already processed):', cmdId);
     return;
   }
-  
+
   // Check if command is already in queue
   if (state.commandQueue.some(c => (c.commandId || c.id) === cmdId)) {
     console.log('[Extension] Ignoring duplicate command (already in queue):', cmdId);
     return;
   }
-  
+
   state.commandQueue.push(command);
   console.log('[Extension] Command queued, queue length:', state.commandQueue.length);
   processNextCommand();
@@ -564,31 +564,31 @@ async function processNextCommand() {
   if (state.isProcessingCommand || state.commandQueue.length === 0) {
     return;
   }
-  
+
   // Check if lease is still active - if not, clear queue
   if (!state.leaseId || !state.leaseToken) {
     console.log('[Extension] Clearing queue - no active lease. Discarding:', state.commandQueue.length, 'commands');
     state.commandQueue = [];
     return;
   }
-  
+
   // Check if WhatsApp is ready
   if (state.whatsAppStatus !== 'connected') {
     console.log('[Extension] Waiting for WhatsApp to be connected. Current status:', state.whatsAppStatus);
     // Don't process yet, will retry when status changes
     return;
   }
-  
+
   state.isProcessingCommand = true;
   const command = state.commandQueue.shift();
-  
+
   try {
     await processCommand(command);
   } finally {
     state.isProcessingCommand = false;
     // Process next command after a delay to avoid overwhelming WhatsApp
     if (state.commandQueue.length > 0) {
-      setTimeout(() => processNextCommand(), 2000); // 2 second delay between commands
+      setTimeout(() => processNextCommand(), 200); // 200ms delay between commands (Reduced from 2000)
     }
   }
 }
@@ -597,61 +597,63 @@ async function processNextCommand() {
 async function processCommand(command) {
   const cmdId = command.commandId || command.id; // Support both formats
   console.log('[Extension] Processing command:', command.commandType, cmdId);
-  
+
   // Double-check for duplicates (in case of race condition)
   if (state.processedCommandIds.has(cmdId)) {
     console.log('[Extension] Skipping duplicate command in processCommand:', cmdId);
     return;
   }
-  
+
   // Mark as processed immediately to prevent re-processing
   state.processedCommandIds.add(cmdId);
-  
+
   // Clean up old processed IDs to prevent memory leak (keep last 100)
   if (state.processedCommandIds.size > 100) {
     const idsArray = Array.from(state.processedCommandIds);
     state.processedCommandIds = new Set(idsArray.slice(-50));
   }
-  
+
   // Validate state before processing
   if (!state.leaseId || !state.leaseToken) {
     console.error('[Extension] Cannot process command - no active lease. leaseId:', state.leaseId, 'leaseToken:', !!state.leaseToken);
     return;
   }
-  
+
   // Auth payload required for all command API calls
   const authPayload = {
     leaseId: state.leaseId,
     leaseToken: state.leaseToken
   };
-  
+
   console.log('[Extension] Command auth - leaseId:', state.leaseId);
-  
+
   try {
     // Check if WhatsApp tab exists
     const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
     if (tabs.length === 0) {
       throw new Error('WhatsApp tab not found - please open web.whatsapp.com');
     }
-    
+
     const tab = tabs[0];
-    
+
     // Acknowledge receipt first
     await apiCall(`/api/extension/commands/${cmdId}/ack`, 'POST', authPayload);
     console.log('[Extension] Command acknowledged:', cmdId);
-    
+
     let result;
-    
+
     // Special handling for SendMessage - use two-phase approach
     if (command.commandType === 'SendMessage') {
       result = await handleSendMessage(tab, command, authPayload);
+    } else if (command.commandType === 'CheckWhatsAppNumber') {
+      result = await handleCheckNumber(tab, command, authPayload);
     } else {
       // For other commands, use simple content script execution
       result = await executeSimpleCommand(tab, command);
     }
-    
+
     console.log('[Extension] Command result:', result);
-    
+
     // Report result
     if (result && result.success) {
       await apiCall(`/api/extension/commands/${cmdId}/complete`, 'POST', {
@@ -695,40 +697,127 @@ async function executeSimpleCommand(tab, command) {
     });
     await new Promise(r => setTimeout(r, 1000));
   }
-  
+
   // Send command with timeout
   return await Promise.race([
     chrome.tabs.sendMessage(tab.id, {
       type: 'EXECUTE_COMMAND',
       command: command
     }),
-    new Promise((_, reject) => 
+    new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Content script timeout - 60 seconds')), 60000)
     )
   ]);
 }
 
-// Handle SendMessage with two-phase approach
-async function handleSendMessage(tab, command, authPayload) {
-  console.log('[Extension] handleSendMessage - starting two-phase approach');
-  
+// Handle CheckWhatsAppNumber with two-phase approach
+async function handleCheckNumber(tab, command, authPayload) {
+  console.log('[Extension] handleCheckNumber - starting two-phase approach');
+
   // Parse payload
   let payload = command.payload;
   if (typeof payload === 'string') {
     payload = JSON.parse(payload);
   }
-  
+
+  const phoneNumber = payload.phoneNumber || payload.phone;
+  // Prioritize E164 format if available (provided by backend)
+  const e164Phone = payload.e164Phone || payload.E164Phone;
+  const countryCode = payload.countryCode || '';
+
+  // Get session ID for logging
+  const sessionId = payload.sessionId;
+
+  if (!phoneNumber) {
+    throw new Error('Phone number not provided in payload');
+  }
+
+  // Determine the best number to use for navigation
+  let cleanNumber;
+
+  if (e164Phone) {
+    console.log('[Extension] Using E164 phone from payload:', e164Phone);
+    cleanNumber = e164Phone.replace(/[^\d]/g, '');
+  } else {
+    // Fallback to manual construction
+    cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+
+    // If phone doesn't start with country code digits and we have a country code, prepend it
+    // (Logic matched with handleSendMessage)
+    if (countryCode && !cleanNumber.startsWith(countryCode.replace('+', ''))) {
+      cleanNumber = countryCode.replace('+', '') + cleanNumber.replace(/^0+/, '');
+      console.log('[Extension] Applied country code correction. Result:', cleanNumber);
+    }
+  }
+
+  const chatUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
+
+  console.log('[Extension] Phase 1 - Navigating to chat URL:', chatUrl);
+
+  // Check if we are already on the correct URL to avoid reload
+  if (tab.url === chatUrl) {
+    console.log('[Extension] Already on correct URL, skipping navigation');
+  } else {
+    // Navigate to the chat URL
+    await chrome.tabs.update(tab.id, { url: chatUrl });
+
+    // Wait for the tab to complete loading
+    await waitForTabComplete(tab.id, 30000);
+    console.log('[Extension] Tab loaded after navigation');
+
+    // Wait additional time for WhatsApp to initialize
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  // Inject content script
+  console.log('[Extension] Injecting content script after navigation...');
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ['content.js']
+  });
+
+  // Wait for content script to initialize
+  await new Promise(r => setTimeout(r, 1000));
+
+  // Phase 2: Check status without navigation
+  console.log('[Extension] Phase 2 - Checking status...');
+
+  const result = await Promise.race([
+    chrome.tabs.sendMessage(tab.id, {
+      type: 'CHECK_NUMBER_STATUS',
+      phoneNumber: phoneNumber,
+      sessionId: sessionId
+    }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Check number timeout - 60 seconds')), 60000)
+    )
+  ]);
+
+  console.log('[Extension] Check result:', result);
+  return result;
+}
+
+// Handle SendMessage with two-phase approach
+async function handleSendMessage(tab, command, authPayload) {
+  console.log('[Extension] handleSendMessage - starting two-phase approach');
+
+  // Parse payload
+  let payload = command.payload;
+  if (typeof payload === 'string') {
+    payload = JSON.parse(payload);
+  }
+
   const phoneNumber = payload.phoneNumber || payload.patientPhone;
   const countryCode = payload.countryCode || '';
   const messageText = payload.text || payload.messageText || payload.content;
-  
+
   if (!phoneNumber) {
     throw new Error('Phone number not provided in payload');
   }
   if (!messageText) {
     throw new Error('Message text not provided in payload');
   }
-  
+
   // Debug logging for newlines
   console.log('[Extension] SendMessage to:', phoneNumber, 'CountryCode:', countryCode);
   console.log('[Extension] Message text length:', messageText.length);
@@ -736,40 +825,40 @@ async function handleSendMessage(tab, command, authPayload) {
   console.log('[Extension] Newline count:', (messageText.match(/\n/g) || []).length);
   console.log('[Extension] First 100 chars:', messageText.substring(0, 100));
   console.log('[Extension] Message text char codes (first 50):', [...messageText.substring(0, 50)].map(c => c.charCodeAt(0)));
-  
+
   // Clean phone number and ensure it includes country code
   let cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
-  
+
   // If phone doesn't start with country code digits and we have a country code, prepend it
   if (countryCode && !cleanNumber.startsWith(countryCode.replace('+', ''))) {
     // Remove leading zeros from local number and prepend country code (without +)
     cleanNumber = countryCode.replace('+', '') + cleanNumber.replace(/^0+/, '');
   }
-  
+
   const chatUrl = `https://web.whatsapp.com/send?phone=${cleanNumber}`;
-  
+
   console.log('[Extension] Phase 1 - Navigating to chat URL:', chatUrl);
-  
+
   // Navigate to the chat URL directly (this handles navigation without needing content script)
   await chrome.tabs.update(tab.id, { url: chatUrl });
-  
+
   // Wait for the tab to complete loading
   await waitForTabComplete(tab.id, 30000);
   console.log('[Extension] Tab loaded after navigation');
-  
+
   // Wait additional time for WhatsApp to initialize
   await new Promise(r => setTimeout(r, 2000));
-  
+
   // Inject content script (fresh injection after navigation)
   console.log('[Extension] Injecting content script after navigation...');
   await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     files: ['content.js']
   });
-  
+
   // Wait for content script to initialize
   await new Promise(r => setTimeout(r, 1000));
-  
+
   // Verify content script is ready with retries
   let contentReady = false;
   let lastStatus = 'unknown';
@@ -791,7 +880,7 @@ async function handleSendMessage(tab, command, authPayload) {
     }
     await new Promise(r => setTimeout(r, 1000));
   }
-  
+
   // If still not connected after 5 attempts, try a few more times with longer waits
   if (!contentReady) {
     console.log('[Extension] WhatsApp not connected after initial attempts, waiting longer...');
@@ -812,24 +901,24 @@ async function handleSendMessage(tab, command, authPayload) {
       await new Promise(r => setTimeout(r, 2000));
     }
   }
-  
+
   if (!contentReady) {
     throw new Error(`Content script not ready after navigation. Last status: ${lastStatus}`);
   }
-  
+
   console.log('[Extension] Phase 2 - Sending message...');
-  
+
   // Send the message
   const result = await Promise.race([
     chrome.tabs.sendMessage(tab.id, {
       type: 'SEND_MESSAGE_ONLY',
       text: messageText
     }),
-    new Promise((_, reject) => 
+    new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Send message timeout - 60 seconds')), 60000)
     )
   ]);
-  
+
   console.log('[Extension] SendMessage result:', result);
   return result;
 }
@@ -841,7 +930,7 @@ function waitForTabComplete(tabId, timeout = 30000) {
       chrome.tabs.onUpdated.removeListener(listener);
       reject(new Error('Tab load timeout'));
     }, timeout);
-    
+
     const listener = (updatedTabId, changeInfo) => {
       if (updatedTabId === tabId && changeInfo.status === 'complete') {
         clearTimeout(timeoutId);
@@ -849,9 +938,9 @@ function waitForTabComplete(tabId, timeout = 30000) {
         resolve();
       }
     };
-    
+
     chrome.tabs.onUpdated.addListener(listener);
-    
+
     // Also check current state in case it's already complete
     chrome.tabs.get(tabId).then(tab => {
       if (tab.status === 'complete') {
@@ -870,12 +959,12 @@ async function handleDisconnect() {
   state.leaseId = null;
   stopHeartbeat();
   stopPolling();
-  
+
   // Clear persisted lease state
   await chrome.storage.local.remove(['leaseToken', 'leaseId', 'isConnected']);
-  
+
   broadcastState();
-  
+
   // Attempt reconnect if we have a device token
   if (state.deviceToken && state.reconnectAttempts < CONFIG.maxReconnectAttempts) {
     state.reconnectAttempts++;
@@ -899,14 +988,14 @@ function broadcastState() {
       whatsAppStatus: state.whatsAppStatus
     }
   };
-  
+
   // Send to popup
-  chrome.runtime.sendMessage(stateMsg).catch(() => {});
-  
+  chrome.runtime.sendMessage(stateMsg).catch(() => { });
+
   // Send to content script
   chrome.tabs.query({ url: 'https://web.whatsapp.com/*' }, (tabs) => {
     tabs.forEach(tab => {
-      chrome.tabs.sendMessage(tab.id, stateMsg).catch(() => {});
+      chrome.tabs.sendMessage(tab.id, stateMsg).catch(() => { });
     });
   });
 }
@@ -914,7 +1003,7 @@ function broadcastState() {
 // Message handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Extension] Message received:', message.type);
-  
+
   (async () => {
     try {
       switch (message.type) {
@@ -929,34 +1018,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             apiBaseUrl: CONFIG.apiBaseUrl
           });
           break;
-          
+
         case 'SET_API_URL':
           CONFIG.apiBaseUrl = message.url;
           await chrome.storage.local.set({ apiBaseUrl: message.url });
           sendResponse({ success: true });
           break;
-          
+
         case 'COMPLETE_PAIRING':
           const pairingResult = await completePairing(message.code);
           sendResponse(pairingResult);
           break;
-          
+
         case 'ACQUIRE_LEASE':
           const leaseResult = await acquireLease(message.forceTakeover);
           sendResponse(leaseResult);
           break;
-          
+
         case 'RELEASE_LEASE':
           const releaseResult = await releaseLease();
           sendResponse(releaseResult);
           break;
-          
+
         case 'UNPAIR':
           await releaseLease();
           await clearDeviceToken();
           sendResponse({ success: true });
           break;
-          
+
         case 'WHATSAPP_STATUS':
           const previousStatus = state.whatsAppStatus;
           state.whatsAppStatus = message.status;
@@ -974,7 +1063,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           sendResponse({ success: true });
           break;
-          
+
         default:
           sendResponse({ error: 'Unknown message type' });
       }
@@ -983,14 +1072,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ error: error.message });
     }
   })();
-  
+
   return true; // Keep channel open for async response
 });
 
 // Initialize on startup
 loadConfig().then(() => {
   console.log('[Extension] Background script initialized');
-  
+
   // If we have a device token, try to acquire lease
   if (state.deviceToken) {
     acquireLease().catch(console.error);

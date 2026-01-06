@@ -689,7 +689,7 @@ namespace Clinics.Domain
         public int? PausedBy { get; set; }
 
         /// <summary>
-        /// Reason for global pause (e.g., "PendingQR", "PendingNET", "BrowserClosed", "Authentication check", "check-whatsapp")
+        /// Reason for global pause (e.g., "PendingQR", "PendingNET", "BrowserClosed", "Authentication check", "CheckWhatsApp")
         /// Max 100 characters for database efficiency
         /// </summary>
         [StringLength(100)]
@@ -699,12 +699,15 @@ namespace Clinics.Domain
         /// Computed property indicating whether the session can be resumed.
         /// CRITICAL: A paused session is ONLY resumable when:
         /// - It is paused AND
-        /// - Session Status is "connected" (authenticated and working)
-        /// This ensures users cannot resume when session is pending/disconnected,
+        /// - Session Status is "connected" (authenticated and working) AND
+        /// - PauseReason is NOT "CheckWhatsApp" (checks must complete before resuming)
+        /// This ensures users cannot resume when session is pending/disconnected or during check operations,
         /// preventing message sending failures and providing clear feedback.
         /// </summary>
         [System.ComponentModel.DataAnnotations.Schema.NotMapped]
-        public bool IsResumable => IsPaused && Status == "connected";
+        public bool IsResumable => IsPaused 
+            && Status == "connected" 
+            && PauseReason?.Contains("CheckWhatsApp", StringComparison.OrdinalIgnoreCase) != true;
 
         // Soft-delete fields
         public bool IsDeleted { get; set; } = false;
@@ -740,6 +743,14 @@ namespace Clinics.Domain
 
         [Required]
         public int UserId { get; set; }
+
+        /// <summary>
+        /// Type of session: "send" for message sending, "check_whatsapp" for number validation.
+        /// Check sessions have higher priority and don't appear in CompletedTasksPanel.
+        /// </summary>
+        [Required]
+        [StringLength(20)]
+        public string SessionType { get; set; } = MessageSessionTypes.Send;
 
         [Required]
         [StringLength(20)]
@@ -1380,6 +1391,15 @@ namespace Clinics.Domain
     }
 
     /// <summary>
+    /// Message session types for distinguishing send vs check operations.
+    /// </summary>
+    public static class MessageSessionTypes
+    {
+        public const string Send = "send";
+        public const string CheckWhatsApp = "check_whatsapp";
+    }
+
+    /// <summary>
     /// Enum for extension command types.
     /// </summary>
     public static class ExtensionCommandTypes
@@ -1434,5 +1454,23 @@ namespace Clinics.Domain
     }
 
     #endregion
-}
+    public class PhoneWhatsAppRegistry
+    {
+        [Key]
+        public int Id { get; set; }
 
+        [Required]
+        [MaxLength(20)]
+        public string PhoneNumber { get; set; } = null!; // E.164 format
+
+        public bool HasWhatsApp { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? ExpiresAt { get; set; }
+
+        public int? CheckedByUserId { get; set; }
+
+        public int ValidationCount { get; set; }
+    }
+}
