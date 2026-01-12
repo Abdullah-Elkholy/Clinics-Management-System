@@ -1,10 +1,34 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useUI } from '@/contexts/UIContext';
 import { useWhatsAppSession, ExtensionStatus, WhatsAppSessionData } from '@/contexts/WhatsAppSessionContext';
 import extensionApiClient from '@/services/api/extensionApiClient';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+
+/**
+ * Format time ago in Arabic (e.g., "منذ 30 ثانية", "منذ 5 دقائق")
+ */
+function formatTimeAgo(date: string | Date | undefined): string {
+  if (!date) return 'لا يوجد';
+  
+  const now = Date.now();
+  const past = new Date(date).getTime();
+  const diffSeconds = Math.floor((now - past) / 1000);
+  
+  if (diffSeconds < 60) {
+    return `منذ ${diffSeconds} ثانية`;
+  } else if (diffSeconds < 3600) {
+    const minutes = Math.floor(diffSeconds / 60);
+    return `منذ ${minutes} ${minutes === 1 ? 'دقيقة' : minutes === 2 ? 'دقيقتين' : 'دقائق'}`;
+  } else if (diffSeconds < 86400) {
+    const hours = Math.floor(diffSeconds / 3600);
+    return `منذ ${hours} ${hours === 1 ? 'ساعة' : hours === 2 ? 'ساعتين' : 'ساعات'}`;
+  } else {
+    const days = Math.floor(diffSeconds / 86400);
+    return `منذ ${days} ${days === 1 ? 'يوم' : days === 2 ? 'يومين' : 'أيام'}`;
+  }
+}
 
 interface ExtensionDevice {
   id: string;
@@ -13,6 +37,9 @@ interface ExtensionDevice {
   extensionVersion?: string;
   lastSeenAt?: string;
   createdAt: string;
+  isActive?: boolean;
+  revokedAt?: string;
+  revokedReason?: string;
 }
 
 interface LeaseStatus {
@@ -64,6 +91,47 @@ export default function ExtensionPairingSection({
   const [countdown, setCountdown] = useState<number>(0);
   const [pairingSuccess, setPairingSuccess] = useState(false);
   const [initialDeviceCount, setInitialDeviceCount] = useState<number | null>(null);
+  const [currentTime, setCurrentTime] = useState(Date.now()); // For relative time updates
+
+  // Update current time every 10 seconds for relative time display
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 10000); // Update every 10 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Memoize formatted times to prevent unnecessary re-renders
+  const lastSyncDisplay = useMemo(() => {
+    if (sessionData?.lastSyncAt) {
+      return formatTimeAgo(sessionData.lastSyncAt);
+    } else if (parentExtensionStatus?.lastHeartbeat) {
+      return formatTimeAgo(parentExtensionStatus.lastHeartbeat);
+    }
+    return 'لم يتم المزامنة بعد';
+  }, [sessionData?.lastSyncAt, parentExtensionStatus?.lastHeartbeat, currentTime]);
+
+  const lastActivityDisplay = useMemo(() => {
+    if (parentExtensionStatus?.lastHeartbeat) {
+      return formatTimeAgo(parentExtensionStatus.lastHeartbeat);
+    } else if (sessionData?.lastActivityAt) {
+      return formatTimeAgo(sessionData.lastActivityAt);
+    }
+    return 'لا يوجد نشاط';
+  }, [parentExtensionStatus?.lastHeartbeat, sessionData?.lastActivityAt, currentTime]);
+
+  const leaseLastHeartbeatDisplay = useMemo(() => {
+    if (leaseStatus?.lastHeartbeat) {
+      return formatTimeAgo(leaseStatus.lastHeartbeat);
+    }
+    return null;
+  }, [leaseStatus?.lastHeartbeat, currentTime]);
+
+  // Filter active (non-revoked) devices
+  const activeDevices = useMemo(() => {
+    return devices.filter(d => !d.revokedAt);
+  }, [devices]);
 
   // Load devices and lease status
   const loadData = useCallback(async () => {
@@ -99,19 +167,74 @@ export default function ExtensionPairingSection({
   useEffect(() => {
     loadData();
     
-    // Refresh lease status every 30 seconds
+    // Refresh lease status AND devices every 10 seconds (silently - no error toasts on heartbeat failures)
+    // Faster polling to detect device revocations from extension quickly
     const interval = setInterval(() => {
+      // Poll lease status
       extensionApiClient.getLeaseStatus().then((result) => {
         if (result.success) {
-          setLeaseStatus({
-            hasActiveLease: result.hasActiveLease ?? false,
-            deviceName: result.deviceName,
-            whatsAppStatus: result.whatsAppStatus,
-            lastHeartbeat: result.lastHeartbeat,
+          // Only update state if values actually changed to prevent unnecessary re-renders
+          setLeaseStatus((prev) => {
+            if (!prev) {
+              return {
+                hasActiveLease: result.hasActiveLease ?? false,
+                deviceName: result.deviceName,
+                whatsAppStatus: result.whatsAppStatus,
+                lastHeartbeat: result.lastHeartbeat,
+              };
+            }
+            
+            // Deep comparison - only update if something changed
+            const hasChanged = 
+              prev.hasActiveLease !== (result.hasActiveLease ?? false) ||
+              prev.deviceName !== result.deviceName ||
+              prev.whatsAppStatus !== result.whatsAppStatus ||
+              // Only update lastHeartbeat if it changed by more than 5 seconds (reduce flicker)
+              (result.lastHeartbeat && prev.lastHeartbeat && 
+                Math.abs(new Date(result.lastHeartbeat).getTime() - new Date(prev.lastHeartbeat).getTime()) > 5000);
+            
+            return hasChanged ? {
+              hasActiveLease: result.hasActiveLease ?? false,
+              deviceName: result.deviceName,
+              whatsAppStatus: result.whatsAppStatus,
+              lastHeartbeat: result.lastHeartbeat,
+            } : prev;
           });
         }
+        // Silently ignore heartbeat failures - don't disrupt user with errors
+      }).catch(() => {
+        // Silently handle connection errors during heartbeat polling
       });
-    }, 30000);
+
+      // Poll devices to detect revocation from extension
+      extensionApiClient.getDevices().then((result) => {
+        if (result.success && result.devices) {
+          setDevices((prev) => {
+            // Deep comparison: check if any device changed (including revocation status)
+            const prevActiveIds = new Set(prev.filter(d => !d.revokedAt).map(d => d.id));
+            const newActiveIds = new Set(result.devices.filter(d => !d.revokedAt).map(d => d.id));
+            
+            // Check if active device IDs changed
+            const activeIdsChanged = 
+              prevActiveIds.size !== newActiveIds.size ||
+              [...prevActiveIds].some(id => !newActiveIds.has(id)) ||
+              [...newActiveIds].some(id => !prevActiveIds.has(id));
+            
+            // Check if total device list changed
+            const totalCountChanged = prev.length !== result.devices.length;
+            
+            // Update if active devices changed OR if a device was revoked/added
+            if (activeIdsChanged || totalCountChanged) {
+              return result.devices;
+            }
+            
+            return prev;
+          });
+        }
+      }).catch(() => {
+        // Silently handle connection errors
+      });
+    }, 10000); // Poll every 10 seconds to detect revocations quickly
     
     return () => clearInterval(interval);
   }, [loadData]);
@@ -216,10 +339,6 @@ export default function ExtensionPairingSection({
         // Refresh devices list in case the UI was out of sync
         loadData();
       }
-    } catch (error: any) {
-      addToast(error.message || 'حدث خطأ', 'error');
-      // Refresh devices list in case of error
-      loadData();
     } finally {
       setIsGenerating(false);
     }
@@ -242,8 +361,8 @@ export default function ExtensionPairingSection({
       } else {
         addToast(result.error || 'فشل إلغاء الإقران', 'error');
       }
-    } catch (error: any) {
-      addToast(error.message || 'حدث خطأ', 'error');
+    } finally {
+      // Always refresh after attempt
     }
   };
 
@@ -264,8 +383,8 @@ export default function ExtensionPairingSection({
       } else {
         addToast(result.error || 'فشل فصل الإضافة', 'error');
       }
-    } catch (error: any) {
-      addToast(error.message || 'حدث خطأ', 'error');
+    } finally {
+      // Always refresh after attempt
     }
   };
 
@@ -372,12 +491,7 @@ export default function ExtensionPairingSection({
               آخر مزامنة
             </p>
             <p className={`text-sm ${isBackendDisconnected ? 'text-red-600' : 'text-gray-900'}`}>
-              {isBackendDisconnected ? 'تعذر التحقق' :
-               sessionData?.lastSyncAt 
-                ? formatLocalDateTime(sessionData.lastSyncAt)
-                : parentExtensionStatus?.lastHeartbeat
-                  ? formatLocalDateTime(parentExtensionStatus.lastHeartbeat)
-                  : 'لم يتم المزامنة بعد'}
+              {isBackendDisconnected ? 'تعذر التحقق' : lastSyncDisplay}
             </p>
           </div>
 
@@ -388,12 +502,7 @@ export default function ExtensionPairingSection({
               آخر نشاط
             </p>
             <p className={`text-sm ${isBackendDisconnected ? 'text-red-600' : 'text-gray-900'}`}>
-              {isBackendDisconnected ? 'تعذر التحقق' :
-               parentExtensionStatus?.lastHeartbeat 
-                ? formatLocalDateTime(parentExtensionStatus.lastHeartbeat)
-                : sessionData?.lastActivityAt
-                  ? formatLocalDateTime(sessionData.lastActivityAt)
-                  : 'لا يوجد نشاط'}
+              {isBackendDisconnected ? 'تعذر التحقق' : lastActivityDisplay}
             </p>
           </div>
         </div>
@@ -452,11 +561,11 @@ export default function ExtensionPairingSection({
               </div>
             )}
             
-            {leaseStatus.lastHeartbeat && (
+            {leaseLastHeartbeatDisplay && (
               <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                 <span className="text-sm text-gray-600">آخر نشاط:</span>
                 <span className="text-sm text-gray-900">
-                  {new Date(leaseStatus.lastHeartbeat).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(leaseStatus.lastHeartbeat).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  {leaseLastHeartbeatDisplay}
                 </span>
               </div>
             )}
@@ -515,7 +624,7 @@ export default function ExtensionPairingSection({
         ) : (
           <div className="text-center">
             {/* Check if there's already a paired device */}
-            {devices.length > 0 ? (
+            {activeDevices.length > 0 ? (
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
                 <div className="flex items-start gap-3">
                   <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5"></i>
@@ -562,9 +671,9 @@ export default function ExtensionPairingSection({
         <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <i className="fas fa-laptop"></i>
           الأجهزة المقترنة
-          {devices.length > 0 && (
+          {activeDevices.length > 0 && (
             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-              {devices.length}
+              {activeDevices.length}
             </span>
           )}
         </h4>
@@ -574,7 +683,7 @@ export default function ExtensionPairingSection({
             <i className="fas fa-spinner fa-spin ml-2"></i>
             جاري التحميل...
           </div>
-        ) : devices.length === 0 ? (
+        ) : activeDevices.length === 0 ? (
           <div className="text-center py-6 text-gray-500">
             <i className="fas fa-laptop text-3xl mb-2 opacity-30"></i>
             <p>لا توجد أجهزة مقترنة</p>
@@ -582,7 +691,7 @@ export default function ExtensionPairingSection({
           </div>
         ) : (
           <div className="space-y-3">
-            {devices.map((device) => (
+            {activeDevices.map((device) => (
               <div
                 key={device.id}
                 className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"

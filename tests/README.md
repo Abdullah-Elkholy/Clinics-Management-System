@@ -139,7 +139,16 @@ The solution currently has 31 warnings (pre-existing, not test-related). These a
 
 ## ✅ TEST RESET AND REBUILD PLAN COMPLETE
 
-All backend phases complete. **14 defects** logged for future review.
+All backend phases complete. **11 of 14 defects fixed** (1 N/A, 2 deferred).
+
+### Defect Fixes Applied (Jan 6, 2026)
+| Fixed | Service/File |
+|-------|--------------|
+| DEF-003,004,005 | `MessageContentSanitizer.cs` |
+| DEF-006,007,008,009,010 | `ExtensionCommandValidator.cs`, `ExtensionCommandCleanupService.cs` |
+| DEF-011 | `UserRole.cs` (case-insensitive) |
+| DEF-013 | `Patient.RowVersion` + migration |
+| DEF-014 | `MessageStatusStateMachine.cs` |
 
 ---
 
@@ -167,4 +176,4 @@ Run with: `cd apps/web && npm run test:e2e`
 
 ---
 
-## 🎯 GRAND TOTAL: 468 tests (402 backend + 49 Jest + 17 E2E)
+## 🎯 GRAND TOTAL: 500 tests (434 backend + 49 Jest + 17 E2E) ✅ ALL PASSING

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Manage Conditions Modal Component (Operator-Driven)
  * File: apps/web/components/Modals/ManageConditionsModal.tsx
  * 
@@ -238,7 +238,7 @@ export default function ManageConditionsModal() {
     
     const targetQueueId = queueId || selectedQueueId;
     if (!targetQueueId) {
-      addToast('معرف الطابور غير متوفر', 'error');
+      addToast('معرف العيادة غير متوفر', 'error');
       return;
     }
 
@@ -334,7 +334,7 @@ export default function ManageConditionsModal() {
         const queueIdNum = Number(targetQueueId);
         
         if (isNaN(templateBackendId)) throw new Error('معرف القالب غير صالح');
-        if (isNaN(queueIdNum)) throw new Error('معرف الطابور غير صالح');
+        if (isNaN(queueIdNum)) throw new Error('معرف العيادة غير صالح');
 
         await messageApiClient.createCondition({
           templateId: templateBackendId,
@@ -563,7 +563,7 @@ export default function ManageConditionsModal() {
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title={`إدارة الشروط - ${queue?.doctorName || data.queueName || 'طابور'}`}
+      title={`إدارة الشروط - ${queue?.doctorName || data.queueName || 'عيادة'}`}
       size="2xl"
     >
       <div className="flex flex-col h-full space-y-4">
@@ -789,7 +789,7 @@ export default function ManageConditionsModal() {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <i className="fas fa-circle-minus text-2xl mb-2 block"></i>
-              <p className="text-sm">لا توجد قوالب في هذا الطابور</p>
+              <p className="text-sm">لا توجد قوالب في هذه العيادة</p>
             </div>
           )}
         </div>
@@ -851,3 +851,5 @@ export default function ManageConditionsModal() {
     </Modal>
   );
 }
+
+

@@ -57,7 +57,7 @@ export default function TemplatesManagementView() {
         setTrashTotalCount(response.totalCount);
         setTrashPageNumber(page);
       } catch (error: any) {
-        setTrashError(error?.message || 'Failed to load trash templates');
+        setTrashError(error?.message || 'فشل تحميل القوالب المحذوفة');
         logger.error('Error loading trash templates:', error);
       } finally {
         setIsLoadingTrash(false);
@@ -81,7 +81,7 @@ export default function TemplatesManagementView() {
         setArchivedTotalCount(response.totalCount);
         setArchivedPageNumber(page);
       } catch (error: any) {
-        setArchivedError(error?.message || 'Failed to load archived templates');
+        setArchivedError(error?.message || 'فشل تحميل القوالب المؤرشفة');
         logger.error('Error loading archived templates:', error);
       } finally {
         setIsLoadingArchived(false);
@@ -113,7 +113,7 @@ export default function TemplatesManagementView() {
         // Reload trash list
         loadTrashTemplates(trashPageNumber);
       } catch (error: any) {
-        addToast(error?.message || 'Failed to restore template', 'error');
+        addToast(error?.message || 'فشل استعادة القالب', 'error');
         throw error;
       }
     },

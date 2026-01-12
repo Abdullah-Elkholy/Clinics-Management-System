@@ -183,11 +183,48 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// Delete/revoke a device (alternative DELETE endpoint).
+        /// Self-revoke: Allow extension to revoke itself using device token.
+        /// Extension calls this when user clicks "إلغاء الإقران" button.
+        /// </summary>
+        [HttpPost("self-revoke")]
+        [AllowAnonymous]
+        public async Task<ActionResult> SelfRevokeDevice([FromBody] SelfRevokeRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.DeviceToken))
+            {
+                return BadRequest(new { error = "Device token is required" });
+            }
+
+            // Validate device token and get device
+            var tokenHash = HashDeviceToken(request.DeviceToken);
+            var device = await _db.ExtensionDevices
+                .FirstOrDefaultAsync(d => d.TokenHash == tokenHash && d.RevokedAtUtc == null);
+
+            if (device == null)
+            {
+                return Unauthorized(new { error = "Invalid or revoked device token" });
+            }
+
+            // Revoke the device
+            var success = await _pairingService.RevokeDeviceAsync(device.Id, request.Reason ?? "SelfRevoke");
+
+            if (success)
+            {
+                _logger.LogInformation("Device {DeviceId} self-revoked by extension", device.Id);
+                return Ok(new { success = true });
+            }
+
+            return BadRequest(new { error = "Failed to revoke device" });
+        }
+
+        /// <summary>
+        /// [DEPRECATED] Delete/revoke a device (hard delete).
         /// This permanently removes the device and all associated data.
+        /// Use POST /devices/{deviceId}/revoke for soft-revoke with traceability.
         /// </summary>
         [HttpDelete("devices/{deviceId}")]
         [Authorize(Policy = "ModeratorOrAbove")]
+        [Obsolete("Use RevokeDevice (POST /devices/{deviceId}/revoke) for soft-revoke with audit traceability")]
         public async Task<ActionResult> DeleteDevice(Guid deviceId)
         {
             var moderatorId = GetModeratorId();
@@ -202,6 +239,9 @@ namespace Clinics.Api.Controllers
             {
                 return NotFound(new { error = "Device not found" });
             }
+
+            // Log deprecation warning
+            _logger.LogWarning("Deprecated DeleteDevice endpoint called for device {DeviceId}. Use RevokeDevice instead.", deviceId);
 
             var success = await _pairingService.DeleteDeviceAsync(deviceId);
 
@@ -327,6 +367,10 @@ namespace Clinics.Api.Controllers
 
             var lease = await _leaseService.GetActiveLeaseAsync(moderatorId.Value);
 
+            // Calculate isOnline on server side to avoid timezone issues
+            var isOnline = lease != null &&
+                (DateTime.UtcNow - lease.LastHeartbeatAtUtc).TotalSeconds < 60;
+
             return Ok(new LeaseStatusResponse
             {
                 HasActiveLease = lease != null,
@@ -336,7 +380,8 @@ namespace Clinics.Api.Controllers
                 WhatsAppStatus = lease?.WhatsAppStatus,
                 CurrentUrl = lease?.CurrentUrl,
                 LastHeartbeat = lease?.LastHeartbeatAtUtc,
-                ExpiresAt = lease?.ExpiresAtUtc
+                ExpiresAt = lease?.ExpiresAtUtc,
+                IsOnline = isOnline
             });
         }
 
@@ -598,21 +643,64 @@ namespace Clinics.Api.Controllers
 
         private async Task<Domain.ExtensionDevice?> ValidateDeviceToken(string deviceId, string deviceToken)
         {
-            // Look up by the extension's DeviceId (string), not the DB primary key (Guid)
-            var device = await _db.ExtensionDevices
-                .FirstOrDefaultAsync(d => d.DeviceId == deviceId);
-            if (device == null) return null;
+            // CRITICAL FIX: The extension sends the Id (GUID) returned from pairing,
+            // NOT the DeviceId string field. CompletePairing returns device.Id as the deviceId.
+            // First try to parse as GUID and look up by Id (primary key)
+            Domain.ExtensionDevice? device = null;
+            if (Guid.TryParse(deviceId, out var parsedId))
+            {
+                device = await _db.ExtensionDevices
+                    .FirstOrDefaultAsync(d => d.Id == parsedId);
+            }
 
-            if (!device.IsActive) return null;
+            // Fallback: also check by DeviceId string for backwards compatibility
+            if (device == null)
+            {
+                device = await _db.ExtensionDevices
+                    .FirstOrDefaultAsync(d => d.DeviceId == deviceId);
+            }
 
+            if (device == null)
+            {
+                _logger.LogWarning("Device not found for deviceId {DeviceId}", deviceId);
+                return null;
+            }
+
+            // Check if device is revoked
+            if (device.RevokedAtUtc != null)
+            {
+                _logger.LogWarning("Device {DeviceId} is revoked", deviceId);
+                return null;
+            }
+
+            // Validate token hash
             var tokenHash = ExtensionPairingService.HashToken(deviceToken);
-            if (device.TokenHash != tokenHash) return null;
+            if (device.TokenHash != tokenHash)
+            {
+                _logger.LogWarning("Token hash mismatch for device {DeviceId}", deviceId);
+                return null;
+            }
+
+            // Auto-extend token if expired (but not revoked) - allows continued use
+            if (device.TokenExpiresAtUtc <= DateTime.UtcNow)
+            {
+                device.TokenExpiresAtUtc = DateTime.UtcNow.AddDays(30);
+                _logger.LogInformation("Extended expired token for device {DeviceId} (was {OldExpiry}, now {NewExpiry})",
+                    deviceId, device.TokenExpiresAtUtc.AddDays(-30), device.TokenExpiresAtUtc);
+            }
 
             // Update last seen
             device.LastSeenAtUtc = DateTime.UtcNow;
             await _db.SaveChangesAsync();
 
             return device;
+        }
+
+        private string HashDeviceToken(string token)
+        {
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(token));
+            return Convert.ToBase64String(bytes);
         }
 
         private int? GetUserId()
@@ -673,6 +761,12 @@ namespace Clinics.Api.Controllers
         public string? Reason { get; set; }
     }
 
+    public class SelfRevokeRequest
+    {
+        public string DeviceToken { get; set; } = "";
+        public string? Reason { get; set; }
+    }
+
     public class LeaseAcquireRequest
     {
         /// <summary>
@@ -717,6 +811,7 @@ namespace Clinics.Api.Controllers
         public string? CurrentUrl { get; set; }
         public DateTime? LastHeartbeat { get; set; }
         public DateTime? ExpiresAt { get; set; }
+        public bool IsOnline { get; set; }  // Calculated server-side: heartbeat within last 60 seconds
     }
 
     public class CommandDto

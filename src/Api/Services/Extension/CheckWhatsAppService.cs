@@ -293,31 +293,63 @@ namespace Clinics.Api.Services.Extension
                 // Step 7: Wait for command completion
                 var result = await WaitForCheckCommandResult(command.Id, cancellationToken);
 
-                // Step 7.1: Update Cache if successful
+                // Step 7.1: Update Cache if successful (wrapped in transaction for atomicity)
                 if (result.Success && result.HasWhatsApp.HasValue)
                 {
-                    var hasWhatsApp = result.HasWhatsApp.Value;
-                    var existingEntry = await _db.PhoneWhatsAppRegistry
-                        .FirstOrDefaultAsync(r => r.PhoneNumber == e164Phone, cancellationToken);
-
-                    if (existingEntry == null)
+                    await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+                    try
                     {
-                        existingEntry = new PhoneWhatsAppRegistry
+                        var hasWhatsApp = result.HasWhatsApp.Value;
+                        var existingEntry = await _db.PhoneWhatsAppRegistry
+                            .FirstOrDefaultAsync(r => r.PhoneNumber == e164Phone, cancellationToken);
+
+                        if (existingEntry == null)
                         {
-                            PhoneNumber = e164Phone,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        _db.PhoneWhatsAppRegistry.Add(existingEntry);
+                            existingEntry = new PhoneWhatsAppRegistry
+                            {
+                                PhoneNumber = e164Phone,
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            _db.PhoneWhatsAppRegistry.Add(existingEntry);
+                        }
+
+                        existingEntry.HasWhatsApp = hasWhatsApp;
+                        existingEntry.CheckedByUserId = userId;
+                        existingEntry.ValidationCount++;
+                        // Cache policy: Valid = 30 days, Invalid = 7 days
+                        existingEntry.ExpiresAt = DateTime.UtcNow.AddDays(hasWhatsApp ? 30 : 7);
+
+                        // Sync to Patient.IsValidWhatsAppNumber for all patients with this phone
+                        var patientsToUpdate = await _db.Patients
+                            .Where(p => (p.PhoneNumber == e164Phone ||
+                                        p.PhoneNumber == phoneNumber ||
+                                        ("+" + p.CountryCode + p.PhoneNumber.TrimStart('0')) == e164Phone)
+                                   && !p.IsDeleted)
+                            .ToListAsync(cancellationToken);
+
+                        foreach (var patient in patientsToUpdate)
+                        {
+                            patient.IsValidWhatsAppNumber = hasWhatsApp;
+                            patient.UpdatedAt = DateTime.UtcNow;
+                        }
+
+                        if (patientsToUpdate.Count > 0)
+                        {
+                            _logger.LogInformation(
+                                "Synced IsValidWhatsAppNumber={HasWhatsApp} to {Count} patients with phone {Phone}",
+                                hasWhatsApp, patientsToUpdate.Count, e164Phone);
+                        }
+
+                        await _db.SaveChangesAsync(cancellationToken);
+                        await transaction.CommitAsync(cancellationToken);
+                        _logger.LogInformation("Updated cache for {PhoneNumber}: HasWhatsApp={Status}", e164Phone, hasWhatsApp);
                     }
-
-                    existingEntry.HasWhatsApp = hasWhatsApp;
-                    existingEntry.CheckedByUserId = userId;
-                    existingEntry.ValidationCount++;
-                    // Cache policy: Valid = 30 days, Invalid = 7 days
-                    existingEntry.ExpiresAt = DateTime.UtcNow.AddDays(hasWhatsApp ? 30 : 7);
-
-                    await _db.SaveChangesAsync(cancellationToken);
-                    _logger.LogInformation("Updated cache for {PhoneNumber}: HasWhatsApp={Status}", e164Phone, hasWhatsApp);
+                    catch (Exception ex)
+                    {
+                        await transaction.RollbackAsync(cancellationToken);
+                        _logger.LogError(ex, "Failed to update cache and patient sync for {PhoneNumber}", e164Phone);
+                        // Don't fail the whole operation - cache update failure is not critical
+                    }
                 }
 
                 return result;

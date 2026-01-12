@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Enhanced Queue Messages Section Component
  * File: apps/web/components/Queue/EnhancedQueueMessagesSection.tsx
  *
@@ -213,7 +213,7 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
     return (
       <div className="p-6 bg-gray-50 border border-gray-200 rounded-lg text-center">
         <i className="fas fa-inbox text-4xl text-gray-400 mb-3"></i>
-        <p className="text-gray-600 mb-4">لا توجد قوالب رسائل لهذا الطابور</p>
+        <p className="text-gray-600 mb-4">لا توجد قوالب رسائل لهذه العيادة</p>
         <button
           onClick={() => {
             setEditingTemplate(null);
@@ -515,3 +515,5 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
 };
 
 export default EnhancedQueueMessagesSection;
+
+

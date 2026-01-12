@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Role & Permission System - Single Source of Truth
  * Implements SOLID principles for centralized role/permission management
  */
@@ -97,19 +97,19 @@ export const ROLE_METADATA: Record<UserRole, { displayName: string; description:
   },
   [UserRole.SecondaryAdmin]: {
     displayName: 'المدير الثانوي',
-    description: 'إدارة المشرفين والطوابير والرسائل',
+    description: 'إدارة المشرفين والعيادات والرسائل',
     color: 'orange',
     icon: 'cog',
   },
   [UserRole.Moderator]: {
     displayName: 'المشرف',
-    description: 'إدارة الطوابير والمستخدمين والرسائل',
+    description: 'إدارة العيادات والمستخدمين والرسائل',
     color: 'blue',
     icon: 'user-tie',
   },
   [UserRole.User]: {
     displayName: 'مستخدم',
-    description: 'عرض الطوابير والمرضى والرسائل',
+    description: 'عرض العيادات والمرضى والرسائل',
     color: 'gray',
     icon: 'user',
   },
@@ -256,3 +256,4 @@ export const PANEL_ACCESS: Record<string, UserRole[]> = {
   messages: [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User],
   management: [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin],
 };
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Centralized Application Configuration
  * Single source of truth for all app-wide constants, defaults, and settings
  */
@@ -187,7 +187,7 @@ export const SUCCESS_MESSAGES = {
   FILE_UPLOADED: (count: number) => `تم رفع الملف بنجاح - تم إضافة ${count} مريض`,
   ACCOUNT_UPDATED: 'تم تحديث معلومات الحساب بنجاح',
   USER_UPDATED: 'تم تحديث بيانات المستخدم بنجاح',
-  QUEUE_CREATED: 'تم إنشاء الطابور بنجاح',
+  QUEUE_CREATED: 'تم إنشاء العيادة بنجاح',
   TEMPLATE_CREATED: 'تم إنشاء القالب بنجاح',
   PATIENT_ADDED: 'تم إضافة المريض بنجاح',
   PATIENTS_ADDED: (count: number) => `تم إضافة ${count} مريض بنجاح`,
@@ -246,3 +246,4 @@ export const getConfig = () => ({
   API_CONFIG,
   FEATURE_FLAGS,
 });
+

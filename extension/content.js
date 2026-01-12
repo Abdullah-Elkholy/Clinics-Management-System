@@ -133,10 +133,18 @@ function anyMatch(selectors) {
 }
 
 // Detect current WhatsApp status using Playwright selectors
+// PRIORITY ORDER: Check connected state FIRST, then QR code
+// This prevents false qr_pending when generic selectors like "canvas" match on authenticated pages
 function detectStatus() {
-  // Check for QR code (not logged in) - using QrCodeSelectors
-  if (anyMatch(SELECTORS.qrCodeSelectors)) {
-    return 'qr_pending';
+  // Check for main chat interface (logged in) FIRST - using ChatUIReadySelectors
+  // The most reliable indicator is having a footer (message input area)
+  const hasFooter = !!document.querySelector("footer");
+  const hasChatList = !!document.querySelector("div[aria-label='Chat list']") ||
+    !!document.querySelector("div[data-testid='chat-list']");
+
+  if (hasFooter && hasChatList) {
+    // Definitely connected - has both footer and chat list
+    return 'connected';
   }
 
   // Check for loading/startup - using ProgressBarSelectors
@@ -144,7 +152,30 @@ function detectStatus() {
     return 'loading';
   }
 
-  // Check for main chat interface (logged in) - using ChatUIReadySelectors
+  // Now check for QR code (not logged in) - but be more specific
+  // Only use the most reliable QR selectors to avoid false positives
+  const reliableQrSelectors = [
+    "div[data-ref]",                                    // QR code data reference
+    "div[aria-label*='scan qr code' i]",               // "Scan QR Code" aria label
+    "div[aria-label*='link with qr code' i]",          // "Link with QR Code" aria label
+    "div[aria-label*='to use whatsapp on your computer' i]", // Landing page text
+    "div[aria-label*='session expired' i]"             // Session expired
+  ];
+
+  for (const selector of reliableQrSelectors) {
+    if (document.querySelector(selector)) {
+      console.log('[WhatsApp Runner] QR code detected via:', selector);
+      return 'qr_pending';
+    }
+  }
+
+  // Fallback: if footer exists but no chat list, still consider connected
+  // This handles edge cases during navigation
+  if (hasFooter) {
+    return 'connected';
+  }
+
+  // Last resort: check all chat UI selectors
   if (anyMatch(SELECTORS.chatUIReadySelectors)) {
     return 'connected';
   }
@@ -544,7 +575,7 @@ async function executeCommand(command) {
         console.log('[WhatsApp Runner] Phase 1: Waiting for "Starting chat" dialog to appear/disappear...');
         let startingChatSeen = false;
         let startingChatGone = false;
-        
+
         while (elapsed < maxWaitMs && !startingChatGone) {
           await new Promise(r => setTimeout(r, pollInterval));
           elapsed += pollInterval;
@@ -576,11 +607,11 @@ async function executeCommand(command) {
         // Phase 2: Check for WhatsApp status - MATCH PLAYWRIGHT ORDER
         // Playwright: First checks input field (hasWhatsApp), THEN error dialog (doesn't have)
         console.log('[WhatsApp Runner] Phase 2: Checking for chat input or error dialog...');
-        
+
         // Reset elapsed for phase 2
         elapsed = 0;
         const phase2MaxWait = Math.max(maxWaitMs - elapsed, 10000); // At least 10 seconds for phase 2
-        
+
         while (elapsed < phase2MaxWait && hasWhatsApp === null) {
           await new Promise(r => setTimeout(r, pollInterval));
           elapsed += pollInterval;
@@ -588,7 +619,7 @@ async function executeCommand(command) {
           // CRITICAL: Check for error dialog FIRST since false positives are worse than false negatives
           // Note: Playwright checks input first, but we've seen false positives from stale inputs
           // So we prioritize detecting the error dialog to avoid false positives
-          
+
           // Check for error dialog first
           let errorDialogFound = false;
           for (const selector of SELECTORS.errorDialogSelectors) {
@@ -600,14 +631,14 @@ async function executeCommand(command) {
               break;
             }
           }
-          
+
           // Fallback: Check for text content in any dialog element
           if (!errorDialogFound && hasWhatsApp === null) {
             const dialogs = document.querySelectorAll('div[role="dialog"], div[data-animate-modal-popup="true"], div[data-animate-modal-body="true"]');
             for (const dialog of dialogs) {
               const text = dialog.textContent || dialog.innerText || '';
-              if (text.includes('Phone number shared via url is invalid') || 
-                  (text.toLowerCase().includes('phone number') && text.toLowerCase().includes('invalid'))) {
+              if (text.includes('Phone number shared via url is invalid') ||
+                (text.toLowerCase().includes('phone number') && text.toLowerCase().includes('invalid'))) {
                 console.log('[WhatsApp Runner] 🚫 Error dialog found via text content - number does NOT have WhatsApp');
                 hasWhatsApp = false;
                 errorDialogFound = true;
@@ -615,7 +646,7 @@ async function executeCommand(command) {
               }
             }
           }
-          
+
           // Only check for input field if no error dialog was found
           // AND we're sure the "Starting chat" dialog is gone
           if (hasWhatsApp === null && !errorDialogFound) {
@@ -627,12 +658,12 @@ async function executeCommand(command) {
                 break;
               }
             }
-            
+
             if (stillStarting) {
               console.log('[WhatsApp Runner] "Starting chat" still showing, waiting...');
               continue; // Don't check input yet
             }
-            
+
             // Now safe to check for input field
             for (const selector of SELECTORS.inputFieldSelectors) {
               const input = document.querySelector(selector);
@@ -648,7 +679,7 @@ async function executeCommand(command) {
                       break;
                     }
                   }
-                  
+
                   if (!errorAfterInput) {
                     console.log('[WhatsApp Runner] ✅ Input field found - number has WhatsApp');
                     hasWhatsApp = true;

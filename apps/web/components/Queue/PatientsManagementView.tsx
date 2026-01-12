@@ -57,7 +57,7 @@ export default function PatientsManagementView() {
         setTrashTotalCount(response.totalCount);
         setTrashPageNumber(page);
       } catch (error: any) {
-        setTrashError(error?.message || 'Failed to load trash patients');
+        setTrashError(error?.message || 'فشل تحميل المرضى المحذوفين');
         logger.error('Error loading trash patients:', error);
       } finally {
         setIsLoadingTrash(false);
@@ -81,7 +81,7 @@ export default function PatientsManagementView() {
         setArchivedTotalCount(response.totalCount);
         setArchivedPageNumber(page);
       } catch (error: any) {
-        setArchivedError(error?.message || 'Failed to load archived patients');
+        setArchivedError(error?.message || 'فشل تحميل المرضى المؤرشفين');
         logger.error('Error loading archived patients:', error);
       } finally {
         setIsLoadingArchived(false);
@@ -113,7 +113,7 @@ export default function PatientsManagementView() {
         // Reload trash list
         loadTrashPatients(trashPageNumber);
       } catch (error: any) {
-        addToast(error?.message || 'Failed to restore patient', 'error');
+        addToast(error?.message || 'فشل استعادة المريض', 'error');
         throw error;
       }
     },

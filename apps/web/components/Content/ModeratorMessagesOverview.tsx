@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
@@ -37,11 +37,11 @@ const USAGE_GUIDE_ITEMS = [
   },
   {
     title: 'توسيع بطاقة المشرف',
-    description: 'انقر على بطاقة المشرف لعرض جميع الطوابير والقوالب الخاصة به'
+    description: 'انقر على بطاقة المشرف لعرض جميع العيادات والقوالب الخاصة به'
   },
   {
     title: 'إدارة القوالب',
-    description: 'يمكنك تحرير وحذف قوالب الرسائل من داخل كل طابور'
+    description: 'يمكنك تحرير وحذف قوالب الرسائل من داخل كل عيادة'
   },
   {
     title: 'كشف التضاربات',
@@ -820,10 +820,10 @@ export default function ModeratorMessagesOverview() {
       
       return [
         {
-          label: 'عدد الطوابير',
+          label: 'عدد العيادات',
           value: assignedModerator ? assignedModerator.queuesCount.toString() : '0',
           color: 'blue' as const,
-          info: 'عدد طوابير المشرف الخاص بك'
+          info: 'عدد عيادات المشرف الخاص بك'
         },
         {
           label: 'عدد القوالب',
@@ -854,10 +854,10 @@ export default function ModeratorMessagesOverview() {
       // Moderator view: their own stats
       return [
         {
-          label: 'عدد الطوابير',
+          label: 'عدد العيادات',
           value: moderators.length > 0 ? moderators[0].queuesCount.toString() : '0',
           color: 'blue' as const,
-          info: 'عدد طوابيرك'
+          info: 'عدد عياداتك'
         },
         {
           label: 'عدد القوالب',
@@ -1009,7 +1009,7 @@ export default function ModeratorMessagesOverview() {
                     {/* Stats Badges */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                        🏥 {moderator.queuesCount} طابور
+                        🏥 {moderator.queuesCount} عيادة
                       </span>
                       <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
                         📧 {moderator.templatesCount} قالب
@@ -1030,7 +1030,7 @@ export default function ModeratorMessagesOverview() {
                   {moderator.conflictCount > 0 && (
                     <div className="border-t border-red-100 px-4 py-2 bg-red-50 space-y-2">
                       <p className="text-xs font-semibold text-red-900">
-                        ⛔ طوابير بها تضاربات:
+                        ⛔ عيادات بها تضاربات:
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {moderator.queues
@@ -1067,10 +1067,10 @@ export default function ModeratorMessagesOverview() {
                               key={queue?.id}
                               className="inline-flex items-center gap-1 px-2 py-1 bg-red-200 text-red-800 rounded text-xs font-medium cursor-pointer hover:bg-red-300 transition-colors"
                               onClick={() => toggleQueueExpanded(String(queue?.id))}
-                              title="اضغط لفتح الطابور"
+                              title="اضغط لفتح العيادة"
                             >
                               <i className="fas fa-exclamation-triangle"></i>
-                              {queue?.doctorName || `الطابور #${queue?.id}`}
+                              {queue?.doctorName || `العيادة #${queue?.id}`}
                             </span>
                           ))}
                       </div>
@@ -1082,7 +1082,7 @@ export default function ModeratorMessagesOverview() {
                     <div className="border-t border-gray-200 p-4 bg-gray-50 space-y-4">
                       {moderatorQueues.length === 0 ? (
                         <div className="text-center py-8">
-                          <p className="text-gray-500 text-sm">لا توجد طوابير لهذا المشرف بعد</p>
+                          <p className="text-gray-500 text-sm">لا توجد عيادات لهذا المشرف بعد</p>
                         </div>
                       ) : (
                         <div className="space-y-3">
@@ -1113,7 +1113,7 @@ export default function ModeratorMessagesOverview() {
                                     <div className="text-right">
                                       <h5 className="font-medium text-gray-900">
                                         <i className="fas fa-hospital-user text-blue-600 ml-2"></i>
-                                        {queue.doctorName || `الطابور #${queue.id}`}
+                                        {queue.doctorName || `العيادة #${queue.id}`}
                                       </h5>
                                       <p className="text-xs text-gray-600 mt-1">
                                         📧 {queueTemplates.length} قالب رسالة
@@ -1294,7 +1294,7 @@ export default function ModeratorMessagesOverview() {
                                       </div>
                                     ) : (
                                       <div className="text-center py-4">
-                                        <p className="text-gray-500 text-sm">لا توجد قوالب رسائل في هذا الطابور بعد</p>
+                                        <p className="text-gray-500 text-sm">لا توجد قوالب رسائل في هذه العيادة بعد</p>
                                       </div>
                                     )}
                                   </div>
@@ -1322,3 +1322,5 @@ export default function ModeratorMessagesOverview() {
     </PanelWrapper>
   );
 }
+
+

@@ -14,8 +14,8 @@ test.describe('Template Management E2E', () => {
     });
 
     test('template list page loads', async ({ page }) => {
-        // Check if navigation works
-        await expect(page).toHaveTitle(/Clinics/);
+        // Check if navigation works - app uses Arabic title
+        await expect(page).toHaveTitle(/نظام|Clinics|العيادات/);
     });
 
     test('can navigate to templates section', async ({ page }) => {

@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/rules-of-hooks */
+﻿/* eslint-disable react-hooks/rules-of-hooks */
 /* NOTE: This component has early returns before hooks which violates Rules of Hooks.
    This needs major refactoring to move all hooks before conditional returns.
    Temporarily disabled the lint rule to allow build to proceed. */
@@ -354,6 +354,24 @@ export default function UserManagementPanel() {
     setActiveTab(tab);
     sessionStorage.setItem('userManagementActiveTab', tab);
   };
+
+  // Allow other UI (e.g. Header) to force-switch the active tab without leaving the panel.
+  useEffect(() => {
+    const onExternalTabChange = (event: Event) => {
+      const requestedTab = (event as CustomEvent<string>).detail;
+      if (!requestedTab) return;
+
+      const allowedTabs = ['moderators', 'myUsers', 'secondaryAdmins', 'whatsappAuth', 'quota', 'accountSettings', 'logs', 'trash'];
+      if (!allowedTabs.includes(requestedTab)) return;
+
+      handleTabChange(requestedTab as any);
+    };
+
+    window.addEventListener('userManagementActiveTabChange', onExternalTabChange as EventListener);
+    return () => {
+      window.removeEventListener('userManagementActiveTabChange', onExternalTabChange as EventListener);
+    };
+  }, []);
   
   // Sync when selectedRole changes (no console logging)
   useEffect(() => {
@@ -448,7 +466,7 @@ export default function UserManagementPanel() {
       setTrashQueuesTotalCount(response.totalCount);
       setTrashQueuesPageNumber(page);
     } catch (error: any) {
-      setTrashQueuesError(error?.message || 'فشل تحميل الطوابير المحذوفة');
+      setTrashQueuesError(error?.message || 'فشل تحميل العيادات المحذوفة');
       logger.error('Error loading trash queues:', error);
     } finally {
       setIsLoadingTrashQueues(false);
@@ -874,7 +892,7 @@ export default function UserManagementPanel() {
   const handleRestoreQueue = async (queueId: string | number) => {
     try {
       await queuesApiClient.restoreQueue(Number(queueId));
-      addToast('تم استعادة الطابور بنجاح', 'success');
+      addToast('تم استعادة العيادة بنجاح', 'success');
       await loadTrashQueues(trashQueuesPageNumber);
       // Refresh sidebar queues
       if (refreshQueues) {
@@ -884,7 +902,7 @@ export default function UserManagementPanel() {
       window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
       window.dispatchEvent(new CustomEvent('queueDataUpdated'));
     } catch (error: any) {
-      addToast(error?.message || 'فشل استعادة الطابور', 'error');
+      addToast(error?.message || 'فشل استعادة العيادة', 'error');
     }
   };
 
@@ -2187,7 +2205,7 @@ export default function UserManagementPanel() {
                 المهملات
               </h3>
               <p className="text-sm text-red-700 mt-2">
-                يمكنك استعادة العناصر المحذوفة خلال 30 يوم من تاريخ الحذف. المهملات تحتوي على المستخدمين والطوابير والقوالب والمرضى المحذوفين.
+                يمكنك استعادة العناصر المحذوفة خلال 30 يوم من تاريخ الحذف. المهملات تحتوي على المستخدمين والعيادات والقوالب والمرضى المحذوفين.
               </p>
             </div>
 
@@ -2241,7 +2259,7 @@ export default function UserManagementPanel() {
               >
                 <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
                   <i className="fas fa-layer-group text-purple-600"></i>
-                  الطوابير المحذوفة
+                  العيادات المحذوفة
                 </h4>
                 <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('queues') ? 'rotate-180' : ''}`}></i>
               </button>
@@ -2432,3 +2450,4 @@ export default function UserManagementPanel() {
     </>
   );
 }
+

@@ -22,6 +22,9 @@ export interface ExtensionDevice {
   extensionVersion?: string;
   lastSeenAt?: string;
   createdAt: string;
+  isActive?: boolean;
+  revokedAt?: string;
+  revokedReason?: string;
 }
 
 export interface ExtensionLeaseStatus {
@@ -33,6 +36,7 @@ export interface ExtensionLeaseStatus {
   whatsAppStatus?: string;
   currentUrl?: string;
   lastHeartbeat?: string;
+  isOnline?: boolean;  // Server-calculated: heartbeat within last 60 seconds
 }
 
 export interface StartPairingResult {
@@ -49,6 +53,7 @@ export interface LeaseStatusResult {
   deviceName?: string;
   whatsAppStatus?: string;
   lastHeartbeat?: string;
+  isOnline?: boolean;  // Server-calculated: heartbeat within last 60 seconds
   error?: string;
 }
 
@@ -100,20 +105,23 @@ async function fetchExtensionAPI<T>(
       const errorMessage = typeof data === 'object' && data !== null && 'error' in data
         ? (data as { error: string }).error
         : typeof data === 'string'
-        ? data
-        : `HTTP ${response.status}`;
+          ? data
+          : `HTTP ${response.status}`;
       throw new Error(errorMessage);
     }
 
     return data as T;
   } catch (error: unknown) {
     if (error instanceof Error) {
+      // Network/connection errors (backend not running)
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error(translateNetworkError(error.message));
+        throw new Error('تعذر الاتصال بالخادم. تأكد من أن الخادم يعمل وحاول مرة أخرى');
       }
+      // Other errors - pass through
       throw error;
     }
-    throw new Error('Unknown error occurred');
+    // Unknown error type
+    throw new Error('حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى');
   }
 }
 
@@ -139,24 +147,27 @@ export const extensionApiClient = {
     } catch (error: any) {
       return {
         success: false,
-        error: error.message || 'Failed to generate pairing code',
+        error: error.message || 'فشل إنشاء رمز الإقران. تأكد من اتصالك بالخادم',
       };
     }
   },
 
   /**
-   * Revoke a paired device
+   * Revoke a paired device (soft-revoke for traceability - marks as revoked, keeps record)
    */
   async revokeDevice(deviceId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      await fetchExtensionAPI(`/extension/devices/${deviceId}`, {
-        method: 'DELETE',
+      // Use POST /revoke endpoint for soft-revoke (traceability)
+      // DELETE would hard-delete the device and lose audit trail
+      await fetchExtensionAPI(`/extension/devices/${deviceId}/revoke`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'UserRevoked' }),
       });
       return { success: true };
     } catch (error: any) {
       return {
         success: false,
-        error: error.message || 'Failed to revoke device',
+        error: error.message || 'فشل إلغاء إقران الجهاز. تأكد من اتصالك بالخادم',
       };
     }
   },
@@ -171,7 +182,7 @@ export const extensionApiClient = {
     } catch (error: any) {
       return {
         success: false,
-        error: error.message || 'Failed to get devices',
+        error: error.message || 'فشل تحميل الأجهزة المقترنة. تأكد من اتصالك بالخادم',
       };
     }
   },
@@ -188,11 +199,12 @@ export const extensionApiClient = {
         deviceName: result.deviceName,
         whatsAppStatus: result.whatsAppStatus,
         lastHeartbeat: result.lastHeartbeat,
+        isOnline: result.isOnline,
       };
     } catch (error: any) {
       return {
         success: false,
-        error: error.message || 'Failed to get lease status',
+        error: error.message || 'فشل تحميل حالة الاتصال. تأكد من اتصالك بالخادم',
       };
     }
   },
@@ -209,7 +221,7 @@ export const extensionApiClient = {
     } catch (error: any) {
       return {
         success: false,
-        error: error.message || 'Failed to release lease',
+        error: error.message || 'فشل فصل الإضافة. تأكد من اتصالك بالخادم',
       };
     }
   },

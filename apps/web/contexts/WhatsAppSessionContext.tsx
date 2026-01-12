@@ -206,17 +206,13 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     try {
       const result = await extensionApiClient.getLeaseStatus();
       if (result.success) {
-        // Calculate if extension is online (heartbeat within last 60 seconds)
-        const isOnline = result.lastHeartbeat 
-          ? (Date.now() - new Date(result.lastHeartbeat).getTime()) < 60000
-          : false;
-        
+        // Use server-calculated isOnline to avoid timezone issues
         const extStatus: ExtensionStatus = {
           hasActiveLease: result.hasActiveLease || false,
           deviceName: result.deviceName,
           whatsAppStatus: result.whatsAppStatus,
           lastHeartbeat: result.lastHeartbeat,
-          isOnline,
+          isOnline: result.isOnline ?? false,
         };
         setExtensionStatus(extStatus);
         
@@ -267,7 +263,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
           setSessionData(null);
           return;
         }
-        throw new Error(`Failed to fetch session: ${response.status}`);
+        throw new Error(`فشل تحميل الجلسة: ${response.status}`);
       }
 
       const result = await response.json();
@@ -469,20 +465,12 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     }
   }, [moderatorId, refreshSessionStatus, refreshGlobalPauseState, user]);
 
+  // Deprecated: Session health was for the old ClinicsManagementService approach
+  // With extension-based WhatsApp integration, this is no longer needed
   const refreshSessionHealth = useCallback(async () => {
-    if (!moderatorId) {
-      setSessionHealth(null);
-      return;
-    }
-
-    try {
-      const health = await whatsappApiClient.getSessionHealth(moderatorId);
-      setSessionHealth(health);
-    } catch (err: any) {
-      console.error('[WhatsAppSessionContext] Error fetching session health:', err);
-      setSessionHealth(null);
-    }
-  }, [moderatorId]);
+    // No-op: Session health polling is deprecated with extension-based approach
+    setSessionHealth(null);
+  }, []);
 
   const startAuthentication = useCallback(async () => {
     try {
@@ -625,7 +613,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
     if (moderatorId) {
       // Use combined status for initial load (reduces 4 API calls to 1)
       refreshCombinedStatus();
-      refreshSessionHealth(); // Health is separate since it's less frequently needed
+      // Note: refreshSessionHealth is deprecated - session health was for old ClinicsManagementService
     } else {
       // No moderatorId - set disconnected state
       setSessionStatus('disconnected');
@@ -660,8 +648,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
       if (!document.hidden && moderatorId) {
         // Use combined status - 1 API call instead of 4
         refreshCombinedStatus();
-        // Health is polled less frequently - only when visible
-        refreshSessionHealth();
+        // Note: Session health polling removed - was for old ClinicsManagementService approach
       }
     }, 5000); // 5 seconds - faster updates for pause state and resume button
 

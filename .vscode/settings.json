@@ -1,6 +1,6 @@
 {
+    "omnisharp.dotnetPath": "C:\\Program Files\\dotnet",
     "chat.tools.terminal.autoApprove": {
-        
         "cd": true,
         "echo": true,
         "ls": true,

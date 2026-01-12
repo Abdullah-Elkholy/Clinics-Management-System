@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { ModeratorQuota } from '@/types/user';
@@ -211,14 +211,14 @@ export default function ModeratorQuotaDisplay({
 
           {/* Queues Quota */}
           {renderQuotaBreakdown(
-            'الطوابير',
+            'العيادات',
             displayQuota.queuesQuota,
             'fa-layer-group',
             'bg-purple-50',
             'text-purple-900',
             'bg-purple-500',
             onEditQueues ? () => onEditQueues(displayQuota) : undefined,
-            'تعديل الطوابير',
+            'تعديل العيادات',
             'fa-edit',
             'bg-purple-600 hover:bg-purple-700'
           )}
@@ -227,3 +227,4 @@ export default function ModeratorQuotaDisplay({
     </div>
   );
 }
+

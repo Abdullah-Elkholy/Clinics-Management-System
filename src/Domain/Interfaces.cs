@@ -25,20 +25,6 @@ namespace Clinics.Domain
         int? UpdatedBy { get; set; }
     }
 
-    /// <summary>
-    /// Enum for audit log action types.
-    /// </summary>
-    public enum AuditAction
-    {
-        Create = 0,
-        Update = 1,
-        SoftDelete = 2,
-        Restore = 3,
-        Purge = 4,
-        ToggleDefault = 5,
-        QuotaConsume = 6,
-        QuotaRelease = 7,
-        RestoreBlocked = 8,
-        Other = 99
-    }
+    // AuditAction enum REMOVED: No longer used after AuditLog removal
 }
+

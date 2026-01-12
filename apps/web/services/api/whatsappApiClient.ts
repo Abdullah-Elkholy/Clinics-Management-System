@@ -28,11 +28,7 @@ export interface ApiError {
 // API Client Configuration
 // ============================================
 
-const getClinicsManagementBaseUrl = (): string => {
-  const baseUrl = process.env.NEXT_PUBLIC_CLINICS_MANAGEMENT_URL || 'http://localhost:5185';
-  // Ensure no trailing slash
-  return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-};
+
 
 /**
  * Get main API base URL (for endpoints that are on the main API server, not ClinicsManagementService)
@@ -43,81 +39,6 @@ const getMainApiBaseUrl = (): string => {
   return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
 };
 
-/**
- * Make fetch request to ClinicsManagementService
- */
-async function fetchAPI<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const BASE_URL = getClinicsManagementBaseUrl();
-  const url = `${BASE_URL}${endpoint}`;
-
-  // Get auth token from localStorage
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
-
-  // Add Authorization header if token exists
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      // Include signal if provided for cancellation
-      signal: options.signal,
-    });
-
-    // Handle non-JSON responses
-    let data: unknown;
-    const contentType = response.headers.get('content-type');
-    if (contentType?.includes('application/json')) {
-      data = await response.json();
-    } else {
-      data = await response.text();
-    }
-
-    if (!response.ok) {
-      // Try to extract meaningful error messages
-      let message: string | undefined;
-      if (typeof data === 'string') {
-        message = data;
-      } else if (data && typeof data === 'object') {
-        const obj = data as any;
-        if (obj.message) message = obj.message;
-        else if (obj.error) message = obj.error;
-        else if (obj.resultMessage) message = obj.resultMessage;
-        else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
-      }
-
-      throw {
-        message: message || 'API request failed',
-        statusCode: response.status,
-      } as ApiError;
-    }
-
-    return data as T;
-  } catch (error) {
-    // Translate network errors to Arabic
-    if (error && typeof error === 'object' && 'statusCode' in error) {
-      // This is already an ApiError, re-throw it
-      throw error;
-    }
-
-    // This is a network/fetch error, translate it
-    const translatedMessage = translateNetworkError(error);
-    throw {
-      message: translatedMessage,
-      statusCode: 0, // Network errors don't have status codes
-    } as ApiError;
-  }
-}
 
 // ============================================
 // WhatsApp Utility API Methods
@@ -144,8 +65,8 @@ export async function checkWhatsAppNumber(
     if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    const result = await fetchAPI<OperationResult<boolean>>(
-      `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}${query}`,
+    const result = await fetchMainAPI<OperationResult<boolean>>(
+      `/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}${query}`,
       {
         method: 'GET', // Changed from POST to GET to match backend endpoint
         signal, // Pass abort signal to fetch
@@ -222,11 +143,11 @@ export async function checkAuthentication(moderatorUserId?: number, userId?: num
     if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    const url = `/api/WhatsAppUtility/check-authentication${query}`;
+    const url = `/WhatsAppUtility/check-authentication${query}`;
 
     console.log('[WhatsApp API] checkAuthentication called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
 
-    const result = await fetchAPI<OperationResult<boolean>>(
+    const result = await fetchMainAPI<OperationResult<boolean>>(
       url,
       { method: 'GET' }
     );
@@ -264,11 +185,11 @@ export async function authenticate(moderatorUserId?: number, userId?: number): P
     if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    const url = `/api/WhatsAppUtility/authenticate${query}`;
+    const url = `/WhatsAppUtility/authenticate${query}`;
 
     console.log('[WhatsApp API] authenticate called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
 
-    const result = await fetchAPI<OperationResult<boolean>>(
+    const result = await fetchMainAPI<OperationResult<boolean>>(
       url,
       { method: 'POST' }
     );
@@ -296,8 +217,10 @@ export async function authenticate(moderatorUserId?: number, userId?: number): P
 
 /**
  * Get session health metrics for a moderator
+ * @deprecated This function was used for the old ClinicsManagementService approach.
+ * Session health is no longer applicable with the extension-based WhatsApp integration.
  * @param moderatorUserId - Moderator user ID to get health metrics for
- * @returns Session health metrics including size, backup status, and provider session ID
+ * @returns Always returns null - kept for backward compatibility
  */
 export async function getSessionHealth(moderatorUserId: number): Promise<{
   currentSizeBytes: number;
@@ -314,16 +237,9 @@ export async function getSessionHealth(moderatorUserId: number): Promise<{
   thresholdMB: number;
   exceedsThreshold: boolean;
 } | null> {
-  try {
-    const result = await fetchAPI<any>(
-      `/api/SessionManagement/health?moderatorUserId=${moderatorUserId}`,
-      { method: 'GET' }
-    );
-    return result;
-  } catch (error: any) {
-    console.error('[WhatsApp API] getSessionHealth error:', error);
-    return null;
-  }
+  // Deprecated: Session health was for the old ClinicsManagementService approach
+  // With extension-based WhatsApp integration, this is no longer needed
+  return null;
 }
 
 /**
@@ -348,70 +264,9 @@ export interface ModeratorBrowserStatus extends BrowserStatus {
   error?: string;
 }
 
-export async function getBrowserStatus(moderatorUserId: number): Promise<BrowserStatus | null> {
-  try {
-    console.log('[WhatsApp API] getBrowserStatus called with moderatorUserId:', moderatorUserId);
-    const url = `/api/WhatsAppUtility/browser/status?moderatorUserId=${moderatorUserId}`;
-    console.log('[WhatsApp API] Fetching from URL:', url);
 
-    const result = await fetchAPI<{ success: boolean; data: BrowserStatus }>(
-      url,
-      { method: 'GET' }
-    );
 
-    console.log('[WhatsApp API] getBrowserStatus result:', result);
 
-    if (result.success && result.data) {
-      return result.data;
-    }
-
-    return null;
-  } catch (error: any) {
-    console.error('[WhatsApp API] getBrowserStatus error:', error);
-    return null;
-  }
-}
-
-/**
- * Get browser status for all moderators (Admin only)
- * @returns List of browser status for all moderators
- */
-export async function getAllModeratorsBrowserStatus(): Promise<ModeratorBrowserStatus[]> {
-  try {
-    const result = await fetchAPI<{ success: boolean; data: ModeratorBrowserStatus[] }>(
-      `/api/WhatsAppUtility/browser/status/all`,
-      { method: 'GET' }
-    );
-
-    if (result.success && result.data) {
-      return result.data;
-    }
-
-    return [];
-  } catch (error: any) {
-    console.error('[WhatsApp API] getAllModeratorsBrowserStatus error:', error);
-    return [];
-  }
-}
-
-/**
- * Refresh browser status for a moderator
- * @param moderatorUserId - Moderator user ID
- * @returns Success response
- */
-export async function refreshBrowserStatus(moderatorUserId: number): Promise<{ success: boolean; message?: string }> {
-  try {
-    const result = await fetchAPI<{ success: boolean; message?: string }>(
-      `/api/WhatsAppUtility/browser/refresh?moderatorUserId=${moderatorUserId}`,
-      { method: 'POST' }
-    );
-
-    return result;
-  } catch (error: any) {
-    console.error('[WhatsApp API] refreshBrowserStatus error:', error);
-    throw error;
-  }
-}
 
 /**
  * Close browser session for a moderator
@@ -420,8 +275,8 @@ export async function refreshBrowserStatus(moderatorUserId: number): Promise<{ s
  */
 export async function closeBrowserSession(moderatorUserId: number): Promise<{ success: boolean; message?: string }> {
   try {
-    const result = await fetchAPI<{ success: boolean; message?: string }>(
-      `/api/WhatsAppUtility/browser/close?moderatorUserId=${moderatorUserId}`,
+    const result = await fetchMainAPI<{ success: boolean; message?: string }>(
+      `/WhatsAppUtility/browser/close?moderatorUserId=${moderatorUserId}`,
       { method: 'POST' }
     );
 
@@ -448,8 +303,8 @@ export interface QRCodeResponse {
 
 export async function getQRCode(moderatorUserId: number): Promise<QRCodeResponse> {
   try {
-    const result = await fetchAPI<QRCodeResponse>(
-      `/api/WhatsAppUtility/qr-code?moderatorUserId=${moderatorUserId}`,
+    const result = await fetchMainAPI<QRCodeResponse>(
+      `/WhatsAppUtility/qr-code?moderatorUserId=${moderatorUserId}`,
       { method: 'GET' }
     );
 
@@ -789,9 +644,7 @@ export const whatsappApiClient = {
   checkAuthentication,
   authenticate,
   getSessionHealth,
-  getBrowserStatus,
-  getAllModeratorsBrowserStatus,
-  refreshBrowserStatus,
+
   closeBrowserSession,
   getQRCode,
   pauseAllModeratorTasks,

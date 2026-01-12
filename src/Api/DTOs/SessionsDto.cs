@@ -9,6 +9,13 @@ public class OngoingSessionDto
     public int Total { get; set; }
     public int Sent { get; set; }
     public string Status { get; set; } = "active"; // active, paused
+    
+    /// <summary>
+    /// Indicates if this session is currently being processed (has messages with 'sending' status).
+    /// Used by frontend to sort sessions and show active processing indicator.
+    /// </summary>
+    public bool IsProcessing { get; set; } = false;
+    
     public List<SessionPatientDto> Patients { get; set; } = new();
     
     /// <summary>
@@ -66,7 +73,11 @@ public class CompletedSessionDto
     public int Total { get; set; }
     public int Sent { get; set; }
     public int Failed { get; set; } // Number of failed messages
+    public int Queued { get; set; } // Number of queued/pending messages
     public bool HasFailedMessages { get; set; } // Indicates if session has any failed messages
+    public bool HasOngoingMessages { get; set; } // Indicates if session still has queued/sending messages
+    public bool IsFullyCompleted { get; set; } // True if all messages are sent or failed (no queued)
+    public string SessionStatus { get; set; } = "completed"; // "in_progress" or "completed"
     public List<SentMessageDto> SentMessages { get; set; } = new(); // Only successfully sent messages
 }
 

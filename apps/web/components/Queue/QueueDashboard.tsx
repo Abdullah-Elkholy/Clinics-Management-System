@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useRouter } from 'next/navigation';
 import { useQueue } from '@/contexts/QueueContext';
@@ -122,7 +122,7 @@ export default function QueueDashboard() {
               if (typeof window !== 'undefined') {
                 localStorage.removeItem('selectedQueueId');
               }
-              addToast('ليس لديك صلاحية للوصول إلى هذا الطابور', 'error');
+              addToast('ليس لديك صلاحية للوصول إلى هذه العيادة', 'error');
               router.replace('/home');
               return;
             }
@@ -215,15 +215,15 @@ export default function QueueDashboard() {
     const baseItems = [
       {
         title: '',
-        description: 'كل دكتور/عيادة له قائمة المرضى الخاصة وقوالب الرسائل والشروط الخاصة به المنفصلة عن باقي الدكاترة/العيادات',
+        description: 'للتمكن من إرسال الرسائل, يجب أولا التأكد من وجود مريض واحد على الأقل مضاف عن طريق زر "إضافة مريض يدوياً" أو "رفع ملف المرضى", ووجود رسالة افتراضية من خلال زر "تحديث الشروط" بالأعلى إذا كان هناك رسائل تم إنشاؤها أو التوجه إلى قسم "الرسائل" في الشريط الجانبي لإنشاء رسالة وجعلها افتراضية, وعدم وجود أي تضاربات في شروط الرسائل عن طريق نفس الواجهة',
       },
       {
         title: '',
-        description: 'لكل مشرف عدد محدود من "الرسائل المرسلة" و"عدد الطوابير (الدكاترة)", برجاء مراجعة الإدارة في حالة نفاذهم',
+        description: 'كل عيادة لها قائمة المرضى الخاصة وقوالب الرسائل والشروط الخاصة بها المنفصلة عن باقي العيادات',
       },
       {
         title: '',
-        description: 'للتمكن من إرسال الرسائل, يجب أولا التأكد من وجود مريض واحد على الأقل مضاف عن طريق زر "إضافة مريض يدوياً" أو "رفع ملف المرضى", ووجود رسالة افتراضية من خلال زر "تحديث الشروط" بالأعلى إذا كان هناك رسائل تم إنشاؤها أو قسم "الرسائل" في الشريط الجانبي لإنشاء رسالة وجعلها افتراضية, وعدم وجود أي تضاربات في شروط الرسائل عن طريق نفس الزر',
+        description: 'لكل مشرف عدد محدود من "الرسائل المرسلة" و"عدد العيادات", برجاء مراجعة الإدارة في حالة نفاذهم',
       },
       {
         title: 'CQP',
@@ -239,19 +239,19 @@ export default function QueueDashboard() {
       },
       {
         title: 'إدارة المستخدمين',
-        description: 'لإدارة المستخدمين المصرح لك بهم ومراجعة عدد الرسائل والطوابير المسموحة، توجه إلى قسم الإدارة في الشريط الجانبي'
+        description: 'لإدارة المستخدمين المصرح لك بهم ومراجعة عدد الرسائل والعيادات المسموحة، توجه إلى قسم الإدارة في الشريط الجانبي'
       },
       {
-        title: 'إضافة طابور',
-        description: 'لإضافة طابور جديد، استخدم زر الزائد "إضافة طابور" في الشريط الجانبي. للعلم أن الطوابير محدودة لكل مشرف, برجاء الرجوع للإدارة في حالة نفاذهم'
+        title: 'إضافة عيادة',
+        description: 'لإضافة عيادة جديدة، استخدم زر الزائد "إضافة عيادة" في الشريط الجانبي. للعلم أن العيادات محدودة لكل مشرف, برجاء الرجوع للإدارة في حالة نفاذهم'
       },
       {
-        title: 'تعديل اسم الطابور',
-        description: 'لتعديل اسم الطابور, استخدم زر القلم "تعديل" بجوار الاسم في الشريط الجانبي',
+        title: 'تعديل اسم العيادة',
+        description: 'لتعديل اسم العيادة, استخدم زر القلم "تعديل" بجوار الاسم في الشريط الجانبي',
       },
       {
-        title: 'حذف الطابور بالكامل',
-        description: 'لحذف الطابور بالكامل, استخدم زر سلة المهملات "حذف" بجوار الاسم في الشريط الجانبي',
+        title: 'حذف العيادة بالكامل',
+        description: 'لحذف العيادة بالكامل, استخدم زر سلة المهملات "حذف" بجوار الاسم في الشريط الجانبي',
       },
       {
         title: 'المهام الجارية',
@@ -290,8 +290,8 @@ export default function QueueDashboard() {
         description: 'لحذف مرضى محددين، اخترهم ثم استخدم زر "حذف المحددين" في الأعلى'
       },
       {
-        title: 'حذف مريض من الطابور',
-        description: 'لحذف مريض من الطابور، استخدم زر سلة المهملات "حذف" في عمود الإجراءات'
+        title: 'حذف مريض من العيادة',
+        description: 'لحذف مريض من العيادة، استخدم زر سلة المهملات "حذف" في عمود الإجراءات'
       },
       {
         title: 'تعديل بيانات المريض',
@@ -311,7 +311,7 @@ export default function QueueDashboard() {
         // Add warning item if no default template
         baseItems.push({
           title: '⚠️ تنبيه هام',
-          description: 'لم يتم تحديد قالب رسالة افتراضي لهذه الطابور. يجب إنشاء قالب افتراضي قبل تفعيل الرسائل الآلية.'
+          description: 'لم يتم تحديد قالب رسالة افتراضي لهذه العيادة. يجب إنشاء قالب افتراضي قبل تفعيل الرسائل الآلية.'
         });
       }
     }
@@ -351,7 +351,7 @@ export default function QueueDashboard() {
 
     // Validate CQP <= max patient position
     if (cqpNum > maxPatientPosition) {
-      addToast(`الموضع الحالي يجب أن يكون أقل من أو يساوي أكبر موضع في الطابور (${maxPatientPosition})`, 'error');
+      addToast(`الموضع الحالي يجب أن يكون أقل من أو يساوي أكبر موضع في العيادة (${maxPatientPosition})`, 'error');
       return;
     }
 
@@ -361,14 +361,14 @@ export default function QueueDashboard() {
       return;
     }
     if (!queue || !selectedQueueId) {
-      addToast('الطابور غير محدد', 'error');
+      addToast('العيادة غير محدد', 'error');
       return;
     }
 
     try {
       const queueIdNum = Number(selectedQueueId);
       if (isNaN(queueIdNum)) {
-        addToast('معرف الطابور غير صالح', 'error');
+        addToast('معرف العيادة غير صالح', 'error');
         return;
       }
 
@@ -433,14 +433,14 @@ export default function QueueDashboard() {
       return;
     }
     if (!queue || !selectedQueueId) {
-      addToast('الطابور غير محدد', 'error');
+      addToast('العيادة غير محدد', 'error');
       return;
     }
 
     try {
       const queueIdNum = Number(selectedQueueId);
       if (isNaN(queueIdNum)) {
-        addToast('معرف الطابور غير صالح', 'error');
+        addToast('معرف العيادة غير صالح', 'error');
         return;
       }
 
@@ -862,7 +862,7 @@ export default function QueueDashboard() {
             icon: 'fa-users',
           },
           {
-            label: 'المحددون',
+            label: 'المحددون حاليًا',
             value: selectedPatients.length.toString(),
             icon: 'fa-check-circle',
           },
@@ -1143,7 +1143,7 @@ export default function QueueDashboard() {
               selectedPatients: patients.map(p => p.id), // Send to ALL patients
               selectedPatientCount: patients.length,
               queueId: selectedQueueId,
-              queueName: queue?.doctorName || 'طابور',
+              queueName: queue?.doctorName || 'عيادة',
               currentCQP: parseInt(currentCQP),
               estimatedTimeRemaining: parseInt(currentETS),
               patients: patients, // All patients
@@ -1183,7 +1183,7 @@ export default function QueueDashboard() {
                 openModal('manageConditions', {
                   templateId: null,
                   queueId: selectedQueueId,
-                  queueName: queue?.doctorName || 'طابور',
+                  queueName: queue?.doctorName || 'عيادة',
                   currentConditions: messageConditions,
                   allConditions: messageConditions,
                   allTemplates: [], // Templates will be populated by the context
@@ -1200,7 +1200,7 @@ export default function QueueDashboard() {
                   openModal('manageConditions', {
                     templateId: null,
                     queueId: selectedQueueId,
-                    queueName: queue?.doctorName || 'طابور',
+                    queueName: queue?.doctorName || 'عيادة',
                     currentConditions: messageConditions,
                     allConditions: messageConditions,
                     allTemplates: [], // Templates will be populated by the context
@@ -1354,13 +1354,13 @@ export default function QueueDashboard() {
                                 <div
                                   key={condition.id || idx}
                                   className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${isInConflict
-                                      ? 'bg-red-100 border-red-400 hover:bg-red-150'
-                                      : 'bg-green-50 border-green-100 hover:border-green-300 hover:bg-green-100'
+                                    ? 'bg-red-100 border-red-400 hover:bg-red-150'
+                                    : 'bg-green-50 border-green-100 hover:border-green-300 hover:bg-green-100'
                                     }`}
                                 >
                                   <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${isInConflict
-                                      ? 'bg-red-300 text-red-900'
-                                      : 'bg-green-300 text-green-900'
+                                    ? 'bg-red-300 text-red-900'
+                                    : 'bg-green-300 text-green-900'
                                     }`}>
                                     {idx + 1}
                                   </span>
@@ -1510,3 +1510,6 @@ export default function QueueDashboard() {
     </PanelWrapper>
   );
 }
+
+
+

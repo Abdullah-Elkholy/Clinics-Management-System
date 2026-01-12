@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 /* Lines 2-11 omitted */
 import { ConditionApplicationSection } from '../Common/ConditionApplicationSection';
 import UsageGuideSection from '../Common/UsageGuideSection';
@@ -320,7 +320,7 @@ export default function EditTemplateModal() {
     // Validate queue ID
     const queueIdNum = Number(currentTemplate.queueId);
     if (isNaN(queueIdNum)) {
-      addToast('معرّف الطابور غير صالح', 'error');
+      addToast('معرّف العيادة غير صالح', 'error');
       return;
     }
 
@@ -421,7 +421,7 @@ export default function EditTemplateModal() {
           if (errorMessage.includes('A default template already exists') || errorMessage.includes('default template already exists')) {
             const shouldOverride = await confirm({
               title: 'قالب افتراضي موجود بالفعل',
-              message: 'يوجد قالب افتراضي آخر في هذا الطابور. هل تريد جعل هذا القالب هو الافتراضي وتغيير القالب الآخر إلى "بدون قالب"؟',
+              message: 'يوجد قالب افتراضي آخر في هذه العيادة. هل تريد جعل هذا القالب هو الافتراضي وتغيير القالب الآخر إلى "بدون قالب"؟',
               confirmText: 'نعم، تغيير',
               cancelText: 'إلغاء',
             });
@@ -723,7 +723,7 @@ export default function EditTemplateModal() {
             >
               <span className="font-bold text-lg text-blue-600">{'{PQP}'}</span>
               <br />
-              <span className="text-sm font-medium text-gray-700">الموضع الحالي للمريض في الطابور</span>
+              <span className="text-sm font-medium text-gray-700">الموضع الحالي للمريض في العيادة</span>
             </button>
             <button
               type="button"
@@ -733,7 +733,7 @@ export default function EditTemplateModal() {
             >
               <span className="font-bold text-lg text-blue-600">{'{CQP}'}</span>
               <br />
-              <span className="text-sm font-medium text-gray-700">الموضع الحالي لمجمل الطابور</span>
+              <span className="text-sm font-medium text-gray-700">الموضع الحالي لمجمل العيادة</span>
             </button>
             <button
               type="button"
@@ -869,7 +869,7 @@ export default function EditTemplateModal() {
             },
             {
               title: 'قالب افتراضي',
-              description: 'يمكنك تعيين قالب واحد فقط كقالب افتراضي لكل طابور. سيتم إرسال هذا القالب عندما لا ينطبق أي شرط آخر'
+              description: 'يمكنك تعيين قالب واحد فقط كقالب افتراضي لكل عيادة. سيتم إرسال هذا القالب عندما لا ينطبق أي شرط آخر'
             },
             {
               title: 'جميع القيم يجب أن تكون أكبر من صفر (≥1)',
@@ -929,7 +929,7 @@ export default function EditTemplateModal() {
         message={
           <div className="space-y-3">
             <p>
-              القالب الافتراضي الحالي للطابور هو: <strong className="text-blue-600">{existingDefaultTemplate?.title}</strong>
+              القالب الافتراضي الحالي للعيادة هو: <strong className="text-blue-600">{existingDefaultTemplate?.title}</strong>
             </p>
             <p>
               هل تريد استبدال القالب الافتراضي الحالي بهذا القالب؟
@@ -971,3 +971,5 @@ export default function EditTemplateModal() {
     </Modal>
   );
 }
+
+

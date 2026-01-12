@@ -4,7 +4,6 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
-import { useQueue } from '@/contexts/QueueContext';
 import * as messageApiClient from '@/services/api/messageApiClient';
 // Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
@@ -42,7 +41,11 @@ interface Session {
   totalPatients: number;
   sentCount: number;
   failedCount: number;
+  queuedCount: number;  // Number of queued/pending messages
   hasFailedMessages: boolean;
+  hasOngoingMessages: boolean;  // True if session still has queued/sending messages
+  isFullyCompleted: boolean;  // True if all messages are sent or failed
+  sessionStatus: 'in_progress' | 'completed';
   completedAt: string;
   sentMessages: SentMessage[];
 }
@@ -70,7 +73,6 @@ export default function CompletedTasksPanel() {
   const { user, isAuthenticated } = useAuth();
   const { addToast } = useUI();
   const router = useRouter();
-  const { selectedQueueId } = useQueue();
 
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
@@ -130,7 +132,11 @@ export default function CompletedTasksPanel() {
           totalPatients: session.total,
           sentCount: session.sent,
           failedCount: session.failed || 0,
+          queuedCount: session.queued || 0,
           hasFailedMessages: session.hasFailedMessages || false,
+          hasOngoingMessages: session.hasOngoingMessages || false,
+          isFullyCompleted: session.isFullyCompleted ?? true,
+          sessionStatus: session.sessionStatus || 'completed',
           completedAt: session.completedAt,
           sentMessages: (session.sentMessages || []).map((msg: any) => ({
             messageId: msg.messageId,
@@ -145,15 +151,10 @@ export default function CompletedTasksPanel() {
           } as SentMessage)),
         }));
 
-        // Filter by selectedQueueId if one is selected
-        let filteredSessions = transformedSessions;
-        if (selectedQueueId) {
-          filteredSessions = transformedSessions.filter(
-            session => String(session.queueId) === String(selectedQueueId)
-          );
-        }
+        // CompletedTasksPanel shows ALL completed sessions for the moderator across all queues (no filtering by selectedQueueId)
+        // These panels are global for the moderator and WhatsAppSession, not queue-specific
 
-        setSessions(filteredSessions);
+        setSessions(transformedSessions);
       }
     } catch (err: any) {
       // Check if error is due to PendingQR (authentication required)
@@ -163,7 +164,7 @@ export default function CompletedTasksPanel() {
         setSessions([]);
         setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
       } else {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to load completed sessions';
+        const errorMessage = err instanceof Error ? err.message : 'فشل تحميل الجلسات المكتملة';
         setError(errorMessage);
         logger.error('Failed to load completed sessions:', err);
         addToast('فشل تحميل الجلسات المكتملة', 'error');
@@ -172,7 +173,7 @@ export default function CompletedTasksPanel() {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [addToast, selectedQueueId]);
+  }, [addToast]);
 
   /**
    * Load sessions on mount and when data updates
@@ -348,31 +349,46 @@ export default function CompletedTasksPanel() {
           return (
             <div
               key={session.id}
-              className="bg-white rounded-lg shadow overflow-hidden border border-green-200"
+              className={`bg-white rounded-lg shadow overflow-hidden border ${session.isFullyCompleted ? 'border-green-200' : 'border-blue-200'}`}
             >
               {/* Session Header - Fully Clickable */}
               <div
-                className="px-6 py-4 border-b bg-gradient-to-r from-green-50 to-emerald-50 cursor-pointer hover:from-green-100 hover:to-emerald-100 transition-colors"
+                className={`px-6 py-4 border-b cursor-pointer transition-colors ${
+                  session.isFullyCompleted 
+                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100' 
+                    : 'bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100'
+                }`}
                 onClick={() => toggleSessionExpand(session.id)}
               >
                 <div className="flex items-center gap-4 justify-between">
                   <div className="flex items-center gap-4 flex-1">
                     {/* Collapse Button with Improved UI */}
                     <div className="flex items-center gap-2">
-                      <button className="text-green-600 text-xl transition-transform duration-300">
+                      <button className={`${session.isFullyCompleted ? 'text-green-600' : 'text-blue-600'} text-xl transition-transform duration-300`}>
                         <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
                       </button>
-                      <span className="text-sm font-medium text-green-600 whitespace-nowrap">القائمة</span>
+                      <span className={`text-sm font-medium ${session.isFullyCompleted ? 'text-green-600' : 'text-blue-600'} whitespace-nowrap`}>القائمة</span>
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
                         <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
-                        <Badge color="green" label="✓ مكتملة" />
+                        {session.isFullyCompleted ? (
+                          <Badge color="green" label="✓ مكتملة" />
+                        ) : (
+                          <Badge color="blue" label="⏳ متبقية" />
+                        )}
+                        {session.hasOngoingMessages && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            {session.queuedCount} رسالة متبقية
+                          </span>
+                        )}
                       </div>
                       <div className="text-sm text-gray-600 mt-2">
                         <span>جلسة: <strong>{session.sessionId}</strong></span>
                         <span className="mx-4">تاريخ الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
-                        <span className="mx-4">تاريخ الإكمال: <strong>{session.completedAt ? formatLocalDateTime(session.completedAt) : 'غير محدد'}</strong></span>
+                        {session.isFullyCompleted && (
+                          <span className="mx-4">تاريخ الإكمال: <strong>{session.completedAt ? formatLocalDateTime(session.completedAt) : 'غير محدد'}</strong></span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -380,10 +396,10 @@ export default function CompletedTasksPanel() {
                   <div className="flex items-center gap-4">
                     {/* Completion Summary */}
                     <div className="text-right">
-                      <div className="text-sm font-medium text-gray-700 mb-1">نسبة الإكمال</div>
+                      <div className="text-sm font-medium text-gray-700 mb-1">نسبة الإرسال</div>
                       <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-green-500"
+                          className={`h-full ${session.isFullyCompleted ? 'bg-green-500' : 'bg-blue-500'}`}
                           style={{ width: `${progressPercent}%` }}
                         ></div>
                       </div>
@@ -396,12 +412,26 @@ export default function CompletedTasksPanel() {
               {/* Session Content (Expandable) */}
               {isExpanded && (
                 <div className="p-6 bg-gray-50">
+                  {/* In Progress Notice */}
+                  {session.hasOngoingMessages && (
+                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                      <i className="fas fa-clock text-blue-600 text-lg mt-0.5"></i>
+                      <div className="flex-1">
+                        <h5 className="font-semibold text-blue-800 mb-1">رسائل متبقية</h5>
+                        <p className="text-sm text-blue-700">
+                          هذه الجلسة لديها <strong>{session.queuedCount}</strong> رسالة متبقية. 
+                          القائمة أدناه تعرض الرسائل المرسلة بنجاح حتى الآن.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Session Stats */}
-                  <div className="grid grid-cols-4 gap-4 mb-6">
+                  <div className={`grid ${session.hasOngoingMessages ? 'grid-cols-5' : 'grid-cols-4'} gap-4 mb-6`}>
                     <div className="bg-white rounded-lg p-4 border border-blue-200">
                       <div className="text-sm text-gray-600 flex items-center gap-1">
                         <i className="fas fa-users text-blue-500 text-xs"></i>
-                        إجمالي المرضى
+                        إجمالي الرسائل
                       </div>
                       <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
                     </div>
@@ -412,6 +442,15 @@ export default function CompletedTasksPanel() {
                       </div>
                       <div className="text-2xl font-bold text-green-600">{session.sentCount}</div>
                     </div>
+                    {session.hasOngoingMessages && (
+                      <div className="bg-white rounded-lg p-4 border border-blue-200">
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <i className="fas fa-clock text-blue-500 text-xs"></i>
+                          متبقية
+                        </div>
+                        <div className="text-2xl font-bold text-blue-600">{session.queuedCount}</div>
+                      </div>
+                    )}
                     <div className="bg-white rounded-lg p-4 border border-red-200">
                       <div className="text-sm text-gray-600 flex items-center gap-1">
                         <i className="fas fa-times-circle text-red-500 text-xs"></i>
@@ -425,7 +464,7 @@ export default function CompletedTasksPanel() {
                         معدل النجاح
                       </div>
                       <div className="text-2xl font-bold text-green-600">
-                        {Math.round((session.sentCount / session.totalPatients) * 100)}%
+                        {session.totalPatients > 0 ? Math.round((session.sentCount / session.totalPatients) * 100) : 0}%
                       </div>
                     </div>
                   </div>

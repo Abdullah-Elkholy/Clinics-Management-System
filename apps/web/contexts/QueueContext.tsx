@@ -114,7 +114,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     } catch (error) {
       logger.warn('Failed to load queues from API:', error);
-      setQueuesError('Failed to load queues');
+      setQueuesError('فشل تحميل قوائم الانتظار. تأكد من اتصالك بالخادم');
       setQueues([]);
     } finally {
       setQueuesLoading(false);

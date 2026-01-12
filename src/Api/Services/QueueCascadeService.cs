@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Queue Cascade Service - Soft Delete Handler
  * File: src/Api/Services/QueueCascadeService.cs
  * 
@@ -86,7 +86,7 @@ public class QueueCascadeService : IQueueCascadeService
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error soft-deleting queue {QueueId}", queueId);
-                return (false, "حدث خطأ أثناء حذف الطابور");
+                return (false, "حدث خطأ أثناء حذف العيادة");
             }
         }
         else
@@ -197,7 +197,7 @@ public class QueueCascadeService : IQueueCascadeService
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error restoring queue {QueueId}", queueId);
-                return (false, "حدث خطأ أثناء استعادة الطابور");
+                return (false, "حدث خطأ أثناء استعادة العيادة");
             }
         }
         else
@@ -214,7 +214,7 @@ public class QueueCascadeService : IQueueCascadeService
 
         if (queue == null)
         {
-            return (false, "الطابور المحذوف غير موجود");
+            return (false, "العيادة المحذوفة غير موجود");
         }
 
         // Check if within 30-day window
@@ -360,7 +360,7 @@ public class QueueCascadeService : IQueueCascadeService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error restoring queue {QueueId}", queueId);
-            return (false, "حدث خطأ أثناء استعادة الطابور");
+            return (false, "حدث خطأ أثناء استعادة العيادة");
         }
     }
 
@@ -449,3 +449,5 @@ public class QueueCascadeService : IQueueCascadeService
         }
     }
 }
+
+

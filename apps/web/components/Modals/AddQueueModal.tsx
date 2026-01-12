@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useModal } from '@/contexts/ModalContext';
 import { useQueue } from '@/contexts/QueueContext';
@@ -83,7 +83,7 @@ export default function AddQueueModal() {
         currentPosition: 1,
         isActive: true,
       });
-      addToast('تم إضافة الطابور بنجاح', 'success');
+      addToast('تم إضافة العيادة بنجاح', 'success');
       
       // Refresh queues list from backend to include the newly created queue
       // Wait for refetch to complete before closing modal and dispatching event
@@ -134,14 +134,14 @@ export default function AddQueueModal() {
         setErrors({});
         setTouched(false);
       }}
-      title={moderatorInfo ? `إضافة طابور للمشرف: ${moderatorInfo.name} (@${moderatorInfo.username})` : 'إضافة طابور جديد'}
+      title={moderatorInfo ? `إضافة عيادة للمشرف: ${moderatorInfo.name} (@${moderatorInfo.username})` : 'إضافة عيادة جديدة'}
       size="lg"
     >
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {moderatorInfo && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
             <i className="fas fa-user-tie text-blue-600"></i>
-            <span>سيتم ربط هذا الطابور تلقائياً بالمشرف <strong>{moderatorInfo.name}</strong></span>
+            <span>سيتم ربط هذه العيادة تلقائياً بالمشرف <strong>{moderatorInfo.name}</strong></span>
           </div>
         )}
         {/* Validation Errors Alert - Only show if user touched field and there are errors */}
@@ -226,3 +226,5 @@ export default function AddQueueModal() {
     </Modal>
   );
 }
+
+

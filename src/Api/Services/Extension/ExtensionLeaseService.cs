@@ -197,8 +197,9 @@ namespace Clinics.Api.Services.Extension
             // Broadcast status update via SignalR
             await BroadcastExtensionStatusAsync(lease.ModeratorUserId, lease);
 
-            _logger.LogDebug("Heartbeat processed for lease {LeaseId}, moderator {ModeratorId}, status {Status}",
-                leaseId, lease.ModeratorUserId, whatsAppStatus ?? "null");
+            // Log at Info level for easier debugging of status sync issues
+            _logger.LogInformation("💓 Heartbeat processed: LeaseId={LeaseId}, ModeratorId={ModeratorId}, WhatsAppStatus={Status}, PreviousStatus={PrevStatus}",
+                leaseId, lease.ModeratorUserId, whatsAppStatus ?? "null", lease.WhatsAppStatus ?? "null");
 
             return (true, null);
         }
@@ -348,11 +349,9 @@ namespace Clinics.Api.Services.Extension
                     session = new Clinics.Domain.WhatsAppSession
                     {
                         ModeratorUserId = moderatorUserId,
-                        SessionName = $"extension-session-{moderatorUserId}",
+                        // SessionName, LastSyncAt, ProviderSessionId REMOVED - deprecated columns
                         Status = dbStatus,
-                        LastSyncAt = DateTime.UtcNow,
                         CreatedAt = DateTime.UtcNow,
-                        ProviderSessionId = "extension",
                         CreatedByUserId = moderatorUserId,
                         LastActivityUserId = moderatorUserId,
                         LastActivityAt = DateTime.UtcNow,
@@ -366,9 +365,8 @@ namespace Clinics.Api.Services.Extension
                 else
                 {
                     session.Status = dbStatus;
-                    session.LastSyncAt = DateTime.UtcNow;
+                    // LastSyncAt, ProviderSessionId REMOVED - deprecated columns
                     session.LastActivityAt = DateTime.UtcNow;
-                    session.ProviderSessionId = "extension";
 
                     // Clear pause state when connected
                     if (dbStatus == "connected")

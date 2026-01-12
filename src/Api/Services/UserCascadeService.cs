@@ -1,4 +1,4 @@
-/**
+﻿/**
  * User Cascade Service - Soft Delete Handler
  * File: src/Api/Services/UserCascadeService.cs
  * 
@@ -92,7 +92,7 @@ public class UserCascadeService : IUserCascadeService
                     {
                         await transaction.RollbackAsync();
                         _logger.LogError("Failed to soft-delete Queue {QueueId} for moderator {UserId}: {Error}", queue.Id, userId, error);
-                        return (false, $"فشل حذف الطابور: {error}");
+                        return (false, $"فشل حذف العيادة: {error}");
                     }
                 }
 
@@ -190,7 +190,7 @@ public class UserCascadeService : IUserCascadeService
                     {
                         await transaction.RollbackAsync();
                         _logger.LogError("Failed to restore Queue {QueueId} for moderator {UserId}: {Error}", queue.Id, userId, error);
-                        return (false, $"فشل استعادة الطابور: {error}");
+                        return (false, $"فشل استعادة العيادة: {error}");
                     }
                 }
 
@@ -291,3 +291,4 @@ public class UserCascadeService : IUserCascadeService
         return deleted;
     }
 }
+

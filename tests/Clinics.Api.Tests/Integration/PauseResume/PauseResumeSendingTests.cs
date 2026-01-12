@@ -31,7 +31,6 @@ public class PauseResumeSendingTests
     private readonly List<Message> _messages = new();
     private readonly List<WhatsAppSession> _whatsAppSessions = new();
     private readonly List<MessageSession> _messageSessions = new();
-    private readonly List<FailedTask> _failedTasks = new();
 
     public PauseResumeSendingTests()
     {
@@ -89,15 +88,8 @@ public class PauseResumeSendingTests
                 _messageSessions.AsQueryable().Where(predicate.Compile()));
         _mockUnitOfWork.Setup(u => u.MessageSessions).Returns(mockMessageSessionsRepo.Object);
 
-        // FailedTasks repository mock
-        var mockFailedTasksRepo = new Mock<IRepository<FailedTask>>();
-        mockFailedTasksRepo.Setup(r => r.AddAsync(It.IsAny<FailedTask>()))
-            .ReturnsAsync((FailedTask ft) =>
-            {
-                _failedTasks.Add(ft);
-                return ft;
-            });
-        _mockUnitOfWork.Setup(u => u.FailedTasks).Returns(mockFailedTasksRepo.Object);
+        // FailedTasks repository mock removed - FailedTask entity deprecated
+        // Tests that relied on FailedTask creation should be updated
 
         // Transaction management
         _mockUnitOfWork.Setup(u => u.BeginTransactionAsync()).Returns(Task.CompletedTask);
@@ -666,10 +658,10 @@ public class PauseResumeSendingTests
         var message = _messages.First(m => m.Id == msgId);
         message.Status.Should().Be("failed");
         message.Attempts.Should().Be(1); // Actual attempt
-
-        _failedTasks.Should().HaveCount(1);
-        _failedTasks[0].MessageId.Should().Be(msgId);
-        _failedTasks[0].Reason.Should().Be("provider_failure");
+        // FailedTask assertions removed - entity deprecated
+        // _failedTasks.Should().HaveCount(1);
+        // _failedTasks[0].MessageId.Should().Be(msgId);
+        // _failedTasks[0].Reason.Should().Be("provider_failure");
     }
 
     #endregion

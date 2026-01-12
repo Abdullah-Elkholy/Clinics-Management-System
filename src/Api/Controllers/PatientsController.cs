@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
@@ -146,7 +146,7 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { success = false, error = "Phone number is required" });
 
                 if (req.QueueId <= 0)
-                    return BadRequest(new { success = false, error = "معرف الطابور مطلوب", message = "معرف الطابور مطلوب وصحيح." });
+                    return BadRequest(new { success = false, error = "معرف العيادة مطلوب", message = "معرف العيادة مطلوب وصحيح." });
 
                 if (!ModelState.IsValid)
                     return BadRequest(new { success = false, errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) });
@@ -154,7 +154,7 @@ namespace Clinics.Api.Controllers
                 // Verify queue exists
                 var queueExists = await _db.Queues.AnyAsync(q => q.Id == req.QueueId && !q.IsDeleted);
                 if (!queueExists)
-                    return BadRequest(new { success = false, error = "الطابور غير موجود", message = "الطابور المحدد غير موجود." });
+                    return BadRequest(new { success = false, error = "العيادة غير موجودة", message = "العيادة المحددة غير موجود." });
 
                 // Determine insertion position: max(active patients) + 1. Only count active (!IsDeleted) patients.
                 // Client-provided position is ignored per business rule (baseline always at end).
@@ -563,12 +563,12 @@ namespace Clinics.Api.Controllers
                 var isAdmin = _userContext.IsAdmin();
 
                 if (!queueId.HasValue)
-                    return BadRequest(new { success = false, error = "معرف الطابور مطلوب", message = "معرف الطابور مطلوب.", statusCode = 400 });
+                    return BadRequest(new { success = false, error = "معرف العيادة مطلوب", message = "معرف العيادة مطلوب.", statusCode = 400 });
 
                 // Verify queue access
                 var queue = await _db.Queues.FindAsync(queueId.Value);
                 if (queue == null)
-                    return NotFound(new { success = false, error = "الطابور غير موجود", message = "الطابور غير موجود.", statusCode = 404 });
+                    return NotFound(new { success = false, error = "العيادة غير موجودة", message = "العيادة غير موجودة.", statusCode = 404 });
 
                 if (!isAdmin && queue.ModeratorId != moderatorId)
                     return Forbid();
@@ -613,7 +613,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 if (!queueId.HasValue)
-                    return BadRequest(new { success = false, error = "معرف الطابور مطلوب", message = "معرف الطابور مطلوب.", statusCode = 400 });
+                    return BadRequest(new { success = false, error = "معرف العيادة مطلوب", message = "معرف العيادة مطلوب.", statusCode = 400 });
 
                 var query = _ttlQueries.QueryArchived(30)
                     .Where(p => p.QueueId == queueId.Value)
@@ -667,7 +667,7 @@ namespace Clinics.Api.Controllers
                 // Verify queue access
                 var queue = await _db.Queues.FindAsync(patient.QueueId);
                 if (queue == null)
-                    return NotFound(new { success = false, error = "طابور المريض غير موجود", message = "طابور المريض غير موجود.", statusCode = 404 });
+                    return NotFound(new { success = false, error = "عيادة المريض غير موجود", message = "عيادة المريض غير موجود.", statusCode = 404 });
 
                 if (!isAdmin && queue.ModeratorId != moderatorId)
                     return Forbid();
@@ -718,3 +718,5 @@ namespace Clinics.Api.Controllers
         }
     }
 }
+
+

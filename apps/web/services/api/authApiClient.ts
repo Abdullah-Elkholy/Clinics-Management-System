@@ -58,29 +58,38 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
   const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}/auth/login`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(credentials),
-  });
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    });
 
-  let data: unknown;
-  const contentType = response.headers.get('content-type');
-  if (contentType?.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
+
+    if (!response.ok) {
+      const message = (typeof data === 'string' ? data : ((data as Record<string, unknown>)?.errors as Array<{message: string}>)?.[0]?.message || (data as Record<string, unknown>)?.message as string) || response.statusText || 'Login failed';
+      // Don't trigger global auth handler for login endpoint - these are expected errors
+      throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
+    }
+
+    return data as LoginResponse;
+  } catch (error) {
+    // Handle network errors (fetch failures)
+    if (error instanceof ApiError) {
+      throw error; // Re-throw our ApiError as-is
+    }
+    // Network error from fetch (TypeError: Failed to fetch)
+    throw new ApiError('تعذر الاتصال بالخادم. تأكد من أن الخادم يعمل وحاول مرة أخرى', 0);
   }
-
-  if (!response.ok) {
-    const message = (typeof data === 'string' ? data : ((data as Record<string, unknown>)?.errors as Array<{message: string}>)?.[0]?.message || (data as Record<string, unknown>)?.message as string) || response.statusText || 'Login failed';
-    // Don't trigger global auth handler for login endpoint - these are expected errors
-    throw new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
-  }
-
-  return data as LoginResponse;
 }
 
 /**
@@ -99,87 +108,96 @@ export async function getCurrentUser(): Promise<User> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    headers,
-  });
+  try {
+    const response = await fetch(url, {
+      headers,
+    });
 
-  let data: unknown;
-  const contentType = response.headers.get('content-type');
-  if (contentType?.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
+    let data: unknown;
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
 
-  if (!response.ok) {
-    const message = (typeof data === 'string' ? data : (data as Record<string, unknown>)?.message as string) || response.statusText || 'Failed to get current user';
-    const error = new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
-    
-    // Handle auth errors globally, but only if this is NOT a user data refresh after login
-    // We check this by seeing if we have a token - if we do, it might be a refresh issue, not auth failure
-    // Only trigger logout if we're certain it's an auth failure (no token or token is definitely invalid)
-    if (response.status === 401 || response.status === 403) {
-      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      // Only trigger global logout if we don't have a token
-      // If we have a token but get 401, it might be a temporary issue or token refresh needed
-      // Let the caller handle it (they might want to retry or use cached user data)
-      if (!token) {
-        const { handleApiError } = require('@/utils/apiInterceptor');
-        handleApiError({ statusCode: response.status, message });
-      } else {
-        // We have a token but got 401/403 - log but don't trigger logout
-        // This might be a temporary issue or the token needs refresh
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[getCurrentUser] Got 401/403 but token exists - might be temporary or need refresh');
+    if (!response.ok) {
+      const message = (typeof data === 'string' ? data : (data as Record<string, unknown>)?.message as string) || response.statusText || 'فشل تحميل بيانات المستخدم الحالي';
+      const error = new ApiError(message, response.status, typeof data === 'string' ? { raw: data } : data);
+      
+      // Handle auth errors globally, but only if this is NOT a user data refresh after login
+      // We check this by seeing if we have a token - if we do, it might be a refresh issue, not auth failure
+      // Only trigger logout if we're certain it's an auth failure (no token or token is definitely invalid)
+      if (response.status === 401 || response.status === 403) {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        // Only trigger global logout if we don't have a token
+        // If we have a token but get 401, it might be a temporary issue or token refresh needed
+        // Let the caller handle it (they might want to retry or use cached user data)
+        if (!token) {
+          const { handleApiError } = require('@/utils/apiInterceptor');
+          handleApiError({ statusCode: response.status, message });
+        } else {
+          // We have a token but got 401/403 - log but don't trigger logout
+          // This might be a temporary issue or the token needs refresh
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[getCurrentUser] Got 401/403 but token exists - might be temporary or need refresh');
+          }
         }
       }
+      
+      throw error;
     }
-    
-    throw error;
-  }
 
-  // Backend returns { success: true, data: { Id, Username, FirstName, LastName, Role, ... } }
-  // Need to unwrap and convert PascalCase to camelCase
-  const responseData = data as { success: boolean; data: any };
-  if (responseData.success && responseData.data) {
-    const userData = responseData.data;
-    
-    // Debug log in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[getCurrentUser] Backend response data:', userData);
-      console.log('[getCurrentUser] Role value:', userData.Role || userData.role);
+    // Backend returns { success: true, data: { Id, Username, FirstName, LastName, Role, ... } }
+    // Need to unwrap and convert PascalCase to camelCase
+    const responseData = data as { success: boolean; data: any };
+    if (responseData.success && responseData.data) {
+      const userData = responseData.data;
+      
+      // Debug log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[getCurrentUser] Backend response data:', userData);
+        console.log('[getCurrentUser] Role value:', userData.Role || userData.role);
+      }
+      
+      // Backend only returns minimal fields from /auth/me endpoint
+      // Provide sensible defaults for required User interface fields
+      const user = {
+        id: String(userData.Id || userData.id || ''),
+        username: userData.Username || userData.username || '',
+        firstName: userData.FirstName || userData.firstName || '',
+        lastName: userData.LastName || userData.lastName || '',
+        role: userData.Role || userData.role,
+        // Fields not returned by backend - use sensible defaults
+        isActive: true, // User must be active to be authenticated
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        // Optional fields
+        lastLogin: undefined,
+        assignedModerator: userData.AssignedModerator || userData.assignedModerator || userData.ModeratorId || userData.moderatorId,
+        moderatorQuota: userData.ModeratorQuota || userData.moderatorQuota,
+        createdBy: undefined,
+        isDeleted: false,
+        deletedAt: undefined,
+      } as User;
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[getCurrentUser] Mapped user object:', user);
+      }
+      
+      return user;
     }
-    
-    // Backend only returns minimal fields from /auth/me endpoint
-    // Provide sensible defaults for required User interface fields
-    const user = {
-      id: String(userData.Id || userData.id || ''),
-      username: userData.Username || userData.username || '',
-      firstName: userData.FirstName || userData.firstName || '',
-      lastName: userData.LastName || userData.lastName || '',
-      role: userData.Role || userData.role,
-      // Fields not returned by backend - use sensible defaults
-      isActive: true, // User must be active to be authenticated
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      // Optional fields
-      lastLogin: undefined,
-      assignedModerator: userData.AssignedModerator || userData.assignedModerator || userData.ModeratorId || userData.moderatorId,
-      moderatorQuota: userData.ModeratorQuota || userData.moderatorQuota,
-      createdBy: undefined,
-      isDeleted: false,
-      deletedAt: undefined,
-    } as User;
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[getCurrentUser] Mapped user object:', user);
-    }
-    
-    return user;
-  }
 
-  // Fallback: try to use data directly (shouldn't happen with current backend)
-  return data as User;
+    // Fallback: try to use data directly (shouldn't happen with current backend)
+    return data as User;
+  } catch (error) {
+    // Handle network errors (fetch failures)
+    if (error instanceof ApiError) {
+      throw error; // Re-throw our ApiError as-is
+    }
+    // Network error from fetch (TypeError: Failed to fetch)
+    throw new ApiError('تعذر الاتصال بالخادم. تأكد من أن الخادم يعمل وحاول مرة أخرى', 0);
+  }
 }
 
 /**

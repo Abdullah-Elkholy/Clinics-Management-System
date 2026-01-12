@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
@@ -26,7 +26,7 @@ const AVAILABLE_VARIABLES = [
   },
   {
     code: '{CQP}',
-    label: 'الموضع الحالي في الطابور',
+    label: 'الموضع الحالي في العيادة',
     description: 'Current Queue Position',
     example: '3',
   },
@@ -576,3 +576,4 @@ export default function MessageTemplateEditorModal({
     </div>
   );
 }
+

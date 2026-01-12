@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+﻿/* eslint-disable no-console */
 /* NOTE: This component has extensive debug logging for message preview functionality.
    Console statements are kept for debugging production issues. */
 'use client';
@@ -137,7 +137,7 @@ export default function MessagePreviewModal() {
   // Get real templates and conditions from context
   const realTemplates = useMemo(() => {
     if (!queueId) {
-      console.warn('[MessagePreview] No queueId available, cannot load templates');
+      // No queueId means no queue selected - this is expected, not an error
       return [];
     }
     // Filter out deleted templates
@@ -145,18 +145,12 @@ export default function MessagePreviewModal() {
       String(t.queueId) === String(queueId) &&
       !t.isDeleted // Exclude deleted templates
     );
-    if (filtered.length === 0) {
-      console.warn('[MessagePreview] No templates found for queueId:', queueId, {
-        totalTemplates: messageTemplates.length,
-        availableQueueIds: [...new Set(messageTemplates.map(t => t.queueId))],
-      });
-    }
     return filtered;
   }, [messageTemplates, queueId]);
 
   const realConditions = useMemo(() => {
     if (!queueId) {
-      console.warn('[MessagePreview] No queueId available, cannot load conditions');
+      // No queueId means no queue selected - this is expected, not an error
       return [];
     }
     // Filter conditions for this queue and populate template content from templates
@@ -168,111 +162,26 @@ export default function MessagePreviewModal() {
       !c.isDeleted // Exclude deleted conditions
     );
 
-    if (filtered.length === 0) {
-      console.warn('[MessagePreview] No conditions found for queueId:', queueId, {
-        totalConditions: messageConditions.length,
-        availableQueueIds: [...new Set(messageConditions.map(c => c.queueId))],
-        dataQueueId: data?.queueId,
-        selectedQueueId,
-        finalQueueId: queueId,
-      });
-    }
 
-    // Comprehensive logging for debugging
-    if (filtered.length > 0) {
-      console.log('[MessagePreview] Processing conditions:', {
-        queueId,
-        conditionsCount: filtered.length,
-        templatesCount: realTemplates.length,
-        conditions: filtered.map(c => ({
-          id: c.id,
-          templateId: c.templateId,
-          templateIdType: typeof c.templateId,
-          operator: c.operator,
-          hasTemplateContent: !!c.template && c.template.trim().length > 0,
-          templateLength: c.template?.length || 0,
-          templatePreview: c.template ? c.template.substring(0, 100) : 'EMPTY',
-          templateIsEmptyString: c.template === '',
-          templateIsUndefined: c.template === undefined,
-        })),
-        availableTemplates: realTemplates.map(t => ({
-          id: t.id,
-          idType: typeof t.id,
-          title: t.title,
-          contentLength: t.content?.length || 0,
-          contentPreview: t.content ? t.content.substring(0, 100) : 'EMPTY',
-        })),
-      });
-    }
 
     return filtered.map(condition => {
       // Priority 1: Look up template content from templateId (most reliable)
       if (condition.templateId) {
         const template = realTemplates.find(t => String(t.id) === String(condition.templateId));
         if (template && template.content && template.content.trim().length > 0) {
-          console.log('[MessagePreview] ✅ Found template for condition:', {
-            conditionId: condition.id,
-            templateId: condition.templateId,
-            operator: condition.operator,
-            templateTitle: template.title,
-            templateContentLength: template.content.length,
-            templateContentPreview: template.content.substring(0, 100),
-          });
           return {
             ...condition,
             template: template.content, // Use actual template content from MessageTemplate
           };
         }
-        // Log warning if templateId exists but template not found
-        console.warn('[MessagePreview] ❌ Template not found for condition:', {
-          conditionId: condition.id,
-          templateId: condition.templateId,
-          templateIdType: typeof condition.templateId,
-          operator: condition.operator,
-          templateFound: !!template,
-          templateHasContent: template ? !!template.content : false,
-          templateContentLength: template ? template.content?.length || 0 : 0,
-          availableTemplateIds: realTemplates.map(t => ({
-            id: t.id,
-            idType: typeof t.id,
-            title: t.title,
-          })),
-          availableTemplateTitles: realTemplates.map(t => t.title),
-        });
       }
 
       // Priority 2: If condition already has template content, use it (fallback from QueueContext)
       if (condition.template && condition.template.trim().length > 0) {
-        console.log('[MessagePreview] ✅ Using existing template content from condition:', {
-          conditionId: condition.id,
-          templateId: condition.templateId,
-          operator: condition.operator,
-          templateContentLength: condition.template.length,
-          templateContentPreview: condition.template.substring(0, 100),
-        });
         return condition;
       }
 
-      // Priority 3: If no template found, return condition with empty template (will show empty message)
-      // This should not happen in normal operation, but handle gracefully
-      console.error('[MessagePreview] ❌❌❌ Condition without template content - THIS IS A PROBLEM:', {
-        conditionId: condition.id,
-        templateId: condition.templateId,
-        operator: condition.operator,
-        hasTemplateId: !!condition.templateId,
-        hasTemplateContent: !!condition.template,
-        templateContent: condition.template,
-        templateIsEmptyString: condition.template === '',
-        templateIsUndefined: condition.template === undefined,
-        templateIsNull: condition.template === null,
-        availableTemplates: realTemplates.map(t => ({
-          id: t.id,
-          idType: typeof t.id,
-          title: t.title,
-          contentLength: t.content?.length || 0,
-          contentPreview: t.content ? t.content.substring(0, 50) : 'EMPTY',
-        })),
-      });
+      // Priority 3: If no template found, return condition with empty template
       return condition;
     });
   }, [messageConditions, queueId, realTemplates]);
@@ -282,9 +191,7 @@ export default function MessagePreviewModal() {
     // Find condition with DEFAULT operator
     const defaultCondition = realConditions.find(c => c.operator === 'DEFAULT');
     if (!defaultCondition) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[MessagePreview] No DEFAULT condition found');
-      }
+      // No default condition is expected for unconfigured queues - not an error
       return undefined;
     }
 
@@ -293,13 +200,6 @@ export default function MessagePreviewModal() {
       const template = realTemplates.find(t => String(t.id) === String(defaultCondition.templateId));
       if (template) {
         return template;
-      }
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[MessagePreview] DEFAULT condition template not found:', {
-          conditionId: defaultCondition.id,
-          templateId: defaultCondition.templateId,
-          availableTemplateIds: realTemplates.map(t => t.id),
-        });
       }
     }
 
@@ -415,56 +315,8 @@ export default function MessagePreviewModal() {
   }, [sortedPatients, selectedPatientIds, removedPatients]);
 
   const resolutions = useMemo(() => {
-    // CRITICAL LOGGING: Log the entire messageConfig before resolution
-    console.log('[MessagePreview] RESOLUTION START - Full messageConfig:', {
-      queueId: messageConfig.queueId,
-      queueName: messageConfig.queueName,
-      currentQueuePosition,
-      patientCount: patientArray.length,
-      conditionsCount: messageConfig.conditions?.length || 0,
-      defaultTemplateExists: !!messageConfig.defaultTemplate,
-      defaultTemplateLength: messageConfig.defaultTemplate?.length || 0,
-      defaultTemplatePreview: messageConfig.defaultTemplate ? messageConfig.defaultTemplate.substring(0, 100) : 'MISSING',
-      conditions: messageConfig.conditions?.map(c => ({
-        id: c.id,
-        templateId: c.templateId,
-        operator: c.operator,
-        value: c.value,
-        minValue: c.minValue,
-        maxValue: c.maxValue,
-        priority: c.priority,
-        enabled: c.enabled,
-        templateLength: c.template?.length || 0,
-        templatePreview: c.template ? c.template.substring(0, 150) : 'EMPTY',
-        hasTemplateContent: !!c.template && c.template.trim().length > 0,
-        templateIsEmptyString: c.template === '',
-        templateIsUndefined: c.template === undefined,
-        templateIsNull: c.template === null,
-      })),
-      patients: patientArray.map(p => ({
-        id: p.id,
-        name: p.name,
-        position: p.position,
-      })),
-    });
-
-    // CRITICAL: Explicitly log each condition's template content status
-    if (messageConfig.conditions && messageConfig.conditions.length > 0) {
-      console.log('[MessagePreview] 🔍 DETAILED CONDITION TEMPLATE CHECK:');
-      messageConfig.conditions.forEach((c, idx) => {
-        const hasContent = !!c.template && c.template.trim().length > 0;
-        console.log(`  Condition ${idx + 1} (${c.id}):`, {
-          operator: c.operator,
-          templateId: c.templateId,
-          hasTemplateContent: hasContent,
-          templateLength: c.template?.length || 0,
-          templatePreview: c.template ? c.template.substring(0, 100) : '❌ EMPTY',
-          templateValue: c.template, // Show full template value
-        });
-      });
-    } else {
-      console.warn('[MessagePreview] ⚠️ NO CONDITIONS IN MESSAGECONFIG!');
-    }
+    // No conditions is expected when queue hasn't been configured yet - not an error
+    // Only log if we have conditions but they're misconfigured (later in this function)
 
     // Calculate offset (CalculatedPosition) for each patient: position - CQP
     // This is what conditions are matched against
@@ -475,43 +327,9 @@ export default function MessagePreviewModal() {
       { estimatedTimePerSessionMinutes: estimatedTimePerSession }
     );
 
-    // Debug logging (only log when there are actual results to avoid spam)
+    // Only log diagnostics if there are actual issues (reduced console spam)
     if (results.length > 0) {
-      console.log('[MessagePreview] Resolutions with CalculatedPosition (offset):', {
-        config: {
-          queueId: messageConfig.queueId,
-          queueName: messageConfig.queueName,
-          currentQueuePosition, // CQP
-          conditionsCount: messageConfig.conditions?.length || 0,
-          defaultTemplate: messageConfig.defaultTemplate ? `${messageConfig.defaultTemplate.substring(0, 50)}...` : 'missing',
-          conditions: messageConfig.conditions?.map(c => ({
-            id: c.id,
-            operator: c.operator,
-            value: c.value,
-            minValue: c.minValue,
-            maxValue: c.maxValue,
-            template: c.template ? `${c.template.substring(0, 50)}...` : 'EMPTY',
-            templateId: c.templateId,
-            enabled: c.enabled,
-            priority: c.priority,
-            templateLength: c.template?.length || 0,
-            hasTemplateContent: !!c.template && c.template.trim().length > 0,
-          })),
-        },
-        patients: patientArray.length,
-        results: results.map(r => ({
-          patientId: r.patientId,
-          patientPosition: r.patientPosition,
-          offset: r.offset, // CalculatedPosition = position - CQP
-          reason: r.reason,
-          matchedConditionId: r.matchedConditionId,
-          hasTemplate: !!r.resolvedTemplate,
-          templateLength: r.resolvedTemplate?.length || 0,
-          templatePreview: r.resolvedTemplate ? `${r.resolvedTemplate.substring(0, 50)}...` : 'NO TEMPLATE',
-        })),
-      });
-
-      // Additional diagnostic: Check if any conditions have empty templates
+      // Check for conditions with empty templates - this is the real issue
       const conditionsWithEmptyTemplates = messageConfig.conditions?.filter(c => !c.template || c.template.trim().length === 0) || [];
       if (conditionsWithEmptyTemplates.length > 0) {
         console.warn('[MessagePreview] Conditions with empty templates:', conditionsWithEmptyTemplates.map(c => ({
@@ -690,10 +508,13 @@ export default function MessagePreviewModal() {
 
     setIsSending(true);
     try {
+      // Generate unique correlationId for idempotency - prevents duplicate messages on retry or double-click
+      const correlationId = crypto.randomUUID();
       await messageApiClient.sendMessages({
         templateId: templateToUse,
         patientIds: patientIdsToSend,
         channel: 'whatsapp',
+        correlationId,
       });
 
       addToast(`تم إرسال ${patientIdsToSend.length} رسالة بنجاح`, 'success');
@@ -1524,7 +1345,7 @@ export default function MessagePreviewModal() {
               <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-200 flex items-start gap-3 text-sm text-yellow-800">
                 <i className="fas fa-exclamation-triangle mt-1"></i>
                 <div>
-                  <p className="font-medium">لا يوجد قالب افتراضي معرف لهذا الطابور.</p>
+                  <p className="font-medium">لا يوجد قالب افتراضي معرف لهذه العيادة.</p>
                   <p className="mt-1">قم بإنشاء قالب جديد وجعل حالته DEFAULT من خلال إدارة القوالب، أو اختر قالباً افتراضياً قبل المتابعة. لن يمكنك إرسال الرسائل بدون قالب افتراضي.</p>
                 </div>
               </div>
@@ -1781,3 +1602,5 @@ export default function MessagePreviewModal() {
     </>
   );
 }
+
+

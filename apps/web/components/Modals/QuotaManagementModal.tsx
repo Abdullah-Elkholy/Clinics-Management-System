@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
@@ -82,7 +82,7 @@ export default function QuotaManagementModal() {
       });
 
       addToast(
-        `تم إضافة ${amount} ${type === 'messages' ? 'رسالة' : 'طابور'} للمشرف بنجاح`,
+        `تم إضافة ${amount} ${type === 'messages' ? 'رسالة' : 'عيادة'} للمشرف بنجاح`,
         'success'
       );
       
@@ -170,7 +170,7 @@ export default function QuotaManagementModal() {
 
           {/* Queues Quota */}
           <div className="border border-gray-200 rounded-lg p-4">
-            <h4 className="font-medium text-gray-800 mb-3">حصة الطوابير</h4>
+            <h4 className="font-medium text-gray-800 mb-3">حصة العيادات</h4>
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
                 <div className="text-2xl font-bold text-blue-600">{currentQueuesQuota === -1 ? 'غير محدود' : currentQueuesQuota}</div>
@@ -186,7 +186,7 @@ export default function QuotaManagementModal() {
               </div>
             </div>
             <div className="flex gap-2">
-              <label htmlFor="quota-queues" className="sr-only">كمية الطوابير المراد إضافتها</label>
+              <label htmlFor="quota-queues" className="sr-only">كمية العيادات المراد إضافتها</label>
               <input
                 id="quota-queues"
                 name="addQueues"
@@ -230,3 +230,4 @@ export default function QuotaManagementModal() {
     </Modal>
   );
 }
+

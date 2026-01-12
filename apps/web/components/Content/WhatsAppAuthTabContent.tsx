@@ -3,19 +3,20 @@
 import React, { useEffect } from 'react';
 import { useWhatsAppSession, DetailedSessionStatus } from '@/contexts/WhatsAppSessionContext';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { translatePauseReason } from '@/utils/pauseReasonTranslations';
 import ExtensionPairingSection from './ExtensionPairingSection';
 
 export default function WhatsAppAuthTabContent() {
-  const { 
-    sessionData, 
-    globalPauseState, 
+  const {
+    sessionData,
+    globalPauseState,
     detailedStatus,
     extensionStatus,
     refreshExtensionStatus,
     isLoading,
     error
   } = useWhatsAppSession();
-  
+
   // Refresh extension status on mount
   useEffect(() => {
     refreshExtensionStatus();
@@ -57,7 +58,7 @@ export default function WhatsAppAuthTabContent() {
         textColor: 'text-amber-800',
         icon: 'fa-pause-circle',
         label: 'متصل (متوقف مؤقتاً)',
-        sublabel: globalPauseState?.pauseReason || 'تم الإيقاف المؤقت',
+        sublabel: translatePauseReason(globalPauseState?.pauseReason),
       },
       'extension_connected': {
         bgColor: 'bg-blue-100',
@@ -123,7 +124,7 @@ export default function WhatsAppAuthTabContent() {
   // Get WhatsApp status display with proper handling of unknown statuses
   const getWhatsAppStatusText = (status?: string): string => {
     if (!status) return 'في انتظار الاتصال';
-    
+
     const statusLower = status.toLowerCase();
     switch (statusLower) {
       case 'connected':
@@ -151,7 +152,7 @@ export default function WhatsAppAuthTabContent() {
   return (
     <div className="space-y-6">
       {/* Extension Pairing Section - includes Session Info */}
-      <ExtensionPairingSection 
+      <ExtensionPairingSection
         statusDisplay={statusDisplay}
         isBackendDisconnected={isBackendDisconnected}
         extensionStatus={extensionStatus}

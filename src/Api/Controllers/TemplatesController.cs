@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.DTOs;
@@ -78,7 +78,7 @@ namespace Clinics.Api.Controllers
                     // Verify moderator owns this queue
                     var queue = await _db.Queues.FindAsync(queueId.Value);
                     if (queue == null || queue.IsDeleted)
-                        return NotFound(new { message = "الطابور غير موجود" });
+                        return NotFound(new { message = "العيادة غير موجودة" });
 
                     // Check ownership
                     if (!isAdmin)
@@ -841,3 +841,5 @@ namespace Clinics.Api.Controllers
     // Note: UpdateTemplateRequest is defined in Clinics.Api.DTOs.TemplateConditionDtos
     // This duplicate definition has been removed.
 }
+
+

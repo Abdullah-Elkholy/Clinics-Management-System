@@ -67,15 +67,14 @@ builder.Services.AddSingleton<IdempotencyService>();  // Idempotency service for
 builder.Services.AddSingleton<CircuitBreakerService>();  // Circuit breaker for WhatsApp service resilience
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
-builder.Services.AddScoped<IAuditService, AuditService>();
+// IAuditService and AuditService REMOVED - deprecated
 builder.Services.AddScoped<Clinics.Api.Services.IMessageSessionCascadeService, Clinics.Api.Services.MessageSessionCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IQueueCascadeService, Clinics.Api.Services.QueueCascadeService>();
-// Also register the Infrastructure QueueCascadeService for QuotaService which depends on it
-builder.Services.AddScoped<Clinics.Infrastructure.Services.IQueueCascadeService, Clinics.Infrastructure.Services.QueueCascadeService>();
+// Infrastructure.Services.IQueueCascadeService REMOVED - consolidated to Api.Services
 builder.Services.AddScoped<Clinics.Api.Services.ITemplateCascadeService, Clinics.Api.Services.TemplateCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IPatientCascadeService, Clinics.Api.Services.PatientCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IUserCascadeService, Clinics.Api.Services.UserCascadeService>();
-builder.Services.AddScoped<IModeratorCascadeService, ModeratorCascadeService>();
+builder.Services.AddScoped<Clinics.Api.Services.IModeratorCascadeService, Clinics.Api.Services.ModeratorCascadeService>();
 
 // JWT Auth
 builder.Services.AddAuthentication(options =>
@@ -86,10 +85,10 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false;
     options.SaveToken = true;
-    
+
     var useTestKey = builder.Configuration["USE_TEST_KEY"] == "true";
-    var baseKey = useTestKey 
-        ? "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456" 
+    var baseKey = useTestKey
+        ? "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456"
         : (builder.Configuration["Jwt:Key"] ?? "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!");
 
     byte[] signingKeyBytes;
@@ -114,17 +113,17 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var dbContext = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
-            
+
             // Extract user ID from claims
-            var userIdClaim = context.Principal?.Claims.FirstOrDefault(c => 
-                c.Type == System.Security.Claims.ClaimTypes.NameIdentifier || 
-                c.Type == "sub" || 
+            var userIdClaim = context.Principal?.Claims.FirstOrDefault(c =>
+                c.Type == System.Security.Claims.ClaimTypes.NameIdentifier ||
+                c.Type == "sub" ||
                 c.Type == "userId");
-            
+
             if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
             {
                 var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
-                
+
                 // Reject token if user is deleted or doesn't exist
                 if (user == null || user.IsDeleted)
                 {
@@ -152,12 +151,12 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowCredentials(); // Required for HttpOnly cookies and SignalR
     });
-    
+
     // Separate policy for browser extensions (they don't need credentials for pairing)
     options.AddPolicy("ExtensionPolicy", policy =>
     {
-        policy.SetIsOriginAllowed(origin => 
-                origin.StartsWith("chrome-extension://") || 
+        policy.SetIsOriginAllowed(origin =>
+                origin.StartsWith("chrome-extension://") ||
                 origin.StartsWith("moz-extension://") ||
                 origin.StartsWith("http://localhost") ||
                 origin.StartsWith("https://localhost"))
@@ -298,7 +297,7 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        
+
         // Apply any pending migrations (including seeded data in migration)
         db.Database.Migrate();
     }

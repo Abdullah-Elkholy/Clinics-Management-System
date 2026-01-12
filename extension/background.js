@@ -29,6 +29,7 @@ const CONFIG = {
 // State
 let state = {
   deviceToken: null,
+  backendDeviceId: null, // UUID from backend (ExtensionDevice.Id)
   leaseToken: null,
   leaseId: null, // Store lease ID for heartbeat
   moderatorId: null,
@@ -50,12 +51,15 @@ let state = {
 
 // Load configuration from storage
 async function loadConfig() {
-  const stored = await chrome.storage.local.get(['apiBaseUrl', 'deviceToken', 'moderatorId', 'moderatorUsername', 'moderatorName', 'leaseToken', 'isConnected', 'leaseId']);
+  const stored = await chrome.storage.local.get(['apiBaseUrl', 'deviceToken', 'backendDeviceId', 'moderatorId', 'moderatorUsername', 'moderatorName', 'leaseToken', 'isConnected', 'leaseId']);
   if (stored.apiBaseUrl) {
     CONFIG.apiBaseUrl = stored.apiBaseUrl;
   }
   if (stored.deviceToken) {
     state.deviceToken = stored.deviceToken;
+  }
+  if (stored.backendDeviceId) {
+    state.backendDeviceId = stored.backendDeviceId;
   }
   if (stored.moderatorId) {
     state.moderatorId = stored.moderatorId;
@@ -86,13 +90,15 @@ async function loadConfig() {
 }
 
 // Save device token
-async function saveDeviceToken(token, moderatorId, moderatorUsername, moderatorName) {
+async function saveDeviceToken(token, backendDeviceId, moderatorId, moderatorUsername, moderatorName) {
   state.deviceToken = token;
+  state.backendDeviceId = backendDeviceId;
   state.moderatorId = moderatorId;
   state.moderatorUsername = moderatorUsername || null;
   state.moderatorName = moderatorName || null;
   await chrome.storage.local.set({
     deviceToken: token,
+    backendDeviceId: backendDeviceId,
     moderatorId: moderatorId,
     moderatorUsername: moderatorUsername || null,
     moderatorName: moderatorName || null
@@ -103,11 +109,12 @@ async function saveDeviceToken(token, moderatorId, moderatorUsername, moderatorN
 // Clear device token
 async function clearDeviceToken() {
   state.deviceToken = null;
+  state.backendDeviceId = null;
   state.leaseToken = null;
   state.moderatorId = null;
   state.moderatorUsername = null;
   state.moderatorName = null;
-  await chrome.storage.local.remove(['deviceToken', 'moderatorId', 'moderatorUsername', 'moderatorName']);
+  await chrome.storage.local.remove(['deviceToken', 'backendDeviceId', 'moderatorId', 'moderatorUsername', 'moderatorName']);
   console.log('[Extension] Device token cleared');
 }
 
@@ -202,7 +209,7 @@ async function completePairing(code) {
     // Check if we got a valid token back
     console.log('[Extension] Pairing API response:', JSON.stringify(result));
     if (result && result.deviceToken) {
-      await saveDeviceToken(result.deviceToken, result.moderatorUserId, result.moderatorUsername, result.moderatorName);
+      await saveDeviceToken(result.deviceToken, result.deviceId, result.moderatorUserId, result.moderatorUsername, result.moderatorName);
       console.log('[Extension] Pairing successful for moderator:', result.moderatorUserId, result.moderatorUsername);
       console.log('[Extension] Device token saved, state.deviceToken is now:', state.deviceToken ? 'set' : 'null');
       // Broadcast the updated state to the popup
@@ -237,12 +244,21 @@ async function getOrCreateDeviceId() {
 // Acquire session lease
 async function acquireLease(forceTakeover = false) {
   try {
-    // Need device token to acquire lease
+    // Need device token AND backend device ID to acquire lease
     if (!state.deviceToken) {
       return { success: false, error: 'Device not paired' };
     }
 
-    const deviceId = await getOrCreateDeviceId();
+    // CRITICAL FIX: Use backendDeviceId (returned from pairing), not local getOrCreateDeviceId()
+    // The backend validates the token against the device ID it issued
+    if (!state.backendDeviceId) {
+      console.error('[Extension] backendDeviceId is missing - pairing may be incomplete');
+      return { success: false, error: 'Device pairing incomplete - missing device ID' };
+    }
+
+    const deviceId = state.backendDeviceId;
+    console.log('[Extension] Acquiring lease with backendDeviceId:', deviceId);
+
     const result = await apiCall('/api/extension/lease/acquire', 'POST', {
       deviceId: deviceId,
       deviceToken: state.deviceToken,
@@ -1041,6 +1057,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           break;
 
         case 'UNPAIR':
+          // First, revoke the device on the backend using the self-revoke endpoint
+          if (state.deviceToken) {
+            try {
+              await apiCall('/api/extension/self-revoke', 'POST', {
+                deviceToken: state.deviceToken,
+                reason: 'UserRequestedUnpair'
+              });
+              console.log('[Extension] Device revoked on backend via self-revoke');
+            } catch (error) {
+              console.warn('[Extension] Failed to revoke device on backend:', error);
+              // Continue with local cleanup even if backend call fails
+            }
+          }
+          // Release lease and clear local storage
           await releaseLease();
           await clearDeviceToken();
           sendResponse({ success: true });

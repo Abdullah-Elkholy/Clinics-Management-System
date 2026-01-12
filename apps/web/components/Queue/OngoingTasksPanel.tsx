@@ -7,7 +7,6 @@ import { useSignalR } from '@/contexts/SignalRContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
-import { useQueue } from '@/contexts/QueueContext';
 import { createDeleteConfirmation, createActionConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 // Mock data removed - using API data instead
@@ -25,6 +24,7 @@ import { patientsApiClient } from '@/services/api/patientsApiClient';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 import { whatsappApiClient, GlobalPauseState } from '@/services/api/whatsappApiClient';
 import { debounce } from '@/utils/debounce';
+import { translatePauseReason } from '@/utils/pauseReasonTranslations';
 
 interface Session {
   id: string;
@@ -38,6 +38,7 @@ interface Session {
   failedCount: number;
   patients: (Patient & { isPaused?: boolean; messageId?: string })[];
   isPaused?: boolean;
+  isProcessing?: boolean; // Backend flag indicating if session is currently being processed
 }
 
 const ONGOING_TASKS_GUIDE_ITEMS = [
@@ -47,7 +48,7 @@ const ONGOING_TASKS_GUIDE_ITEMS = [
   },
   {
     title: '',
-    description: 'لاحظ شريط التقدم الذي يوضح نسبة الرسائل المرسلة من إجمالي المرضى'
+    description: 'لاحظ شريط التقدم الذي يوضح نسبة الرسائل المرسلة من إجمالي الرسائل'
   },
   {
     title: '',
@@ -65,7 +66,6 @@ export default function OngoingTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const router = useRouter();
-  const { selectedQueueId } = useQueue();
 
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
@@ -119,7 +119,7 @@ export default function OngoingTasksPanel() {
 
       if (response.success && response.data) {
         // Transform API response to Session format
-        let transformedSessions: Session[] = response.data.map((session: OngoingSessionDto) => ({
+        const transformedSessions: Session[] = response.data.map((session: OngoingSessionDto) => ({
           id: String(session.sessionId), // Ensure sessionId is string (Guid serialized as string)
           sessionId: String(session.sessionId),
           queueId: session.queueId,
@@ -130,6 +130,7 @@ export default function OngoingTasksPanel() {
           sentCount: session.sent,
           failedCount: session.patients.filter((p: SessionPatientDto) => p.status === 'failed').length,
           isPaused: session.status === 'paused',
+          isProcessing: session.isProcessing ?? false, // Backend-calculated processing state
           patients: session.patients.map((p: SessionPatientDto) => ({
             id: String(p.patientId),
             name: p.name,
@@ -145,12 +146,8 @@ export default function OngoingTasksPanel() {
           } as Patient & { isPaused?: boolean; messageId?: string })),
         }));
 
-        // Filter by selectedQueueId if one is selected
-        if (selectedQueueId) {
-          transformedSessions = transformedSessions.filter(
-            session => String(session.queueId) === String(selectedQueueId)
-          );
-        }
+        // OngoingTasksPanel shows ALL sessions across all queues (no filtering by selectedQueueId)
+        // The floating section and this panel should show the same sessions
 
         setSessions(transformedSessions);
 
@@ -169,7 +166,7 @@ export default function OngoingTasksPanel() {
         setSessions([]); // Clear sessions to show empty state
         setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
       } else {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to load ongoing sessions';
+        const errorMessage = err instanceof Error ? err.message : 'فشل تحميل الجلسات الجارية';
         setError(errorMessage);
         logger.error('Failed to load ongoing sessions:', err);
         addToast('فشل تحميل الجلسات الجارية', 'error');
@@ -178,7 +175,7 @@ export default function OngoingTasksPanel() {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [addToast, selectedQueueId]);
+  }, [addToast]);
 
   /**
    * Load global pause state for moderator
@@ -279,7 +276,7 @@ export default function OngoingTasksPanel() {
   useEffect(() => {
     loadOngoingSessions();
     loadGlobalPauseState();
-  }, [loadOngoingSessions, loadGlobalPauseState, selectedQueueId]);
+  }, [loadOngoingSessions, loadGlobalPauseState]);
 
   /**
    * SignalR Integration - Real-time updates (replaces polling)
@@ -632,6 +629,32 @@ export default function OngoingTasksPanel() {
   }, [sessions, confirm, addToast, loadOngoingSessions]);
 
   /**
+   * Sort sessions by processing priority:
+   * 1. Sessions with 'sending' messages (currently active) - highest priority
+   * 2. Non-paused sessions with queued messages (ready to process)
+   * 3. Paused sessions (waiting)
+   * Within each group, sort by StartTime (oldest first = FIFO)
+   */
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      // Use backend-calculated isProcessing flag for consistency
+      const aIsProcessing = a.isProcessing ?? false;
+      const bIsProcessing = b.isProcessing ?? false;
+
+      // Priority 1: Processing sessions (actively sending) go first
+      if (aIsProcessing && !bIsProcessing) return -1;
+      if (!aIsProcessing && bIsProcessing) return 1;
+
+      // Priority 2: Non-paused before paused
+      if (!a.isPaused && b.isPaused) return -1;
+      if (a.isPaused && !b.isPaused) return 1;
+
+      // Priority 3: Within same pause state, oldest (earliest StartTime) first (FIFO)
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+  }, [sessions]);
+
+  /**
    * Memoize computed stats
    */
   const stats = useMemo(() => [
@@ -718,8 +741,8 @@ export default function OngoingTasksPanel() {
     failedAttempts: (
       <span
         className={`px-3 py-1 rounded-full text-sm font-medium ${(patient.failureMetrics?.attempts ?? 0) > 0
-            ? 'bg-red-100 text-red-700'
-            : 'bg-green-100 text-green-700'
+          ? 'bg-red-100 text-red-700'
+          : 'bg-green-100 text-green-700'
           }`}
       >
         {patient.failureMetrics?.attempts ?? 0}
@@ -733,10 +756,10 @@ export default function OngoingTasksPanel() {
           }
           disabled={globalPauseState?.isPaused === true || sessionIsPaused}
           className={`px-2 py-1 rounded text-sm ${globalPauseState?.isPaused === true || sessionIsPaused
-              ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
-              : patient.isPaused
-                ? 'bg-green-50 text-green-600 hover:bg-green-100'
-                : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
+            ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+            : patient.isPaused
+              ? 'bg-green-50 text-green-600 hover:bg-green-100'
+              : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
             }`}
           title={
             globalPauseState?.isPaused === true
@@ -749,13 +772,6 @@ export default function OngoingTasksPanel() {
           }
         >
           <i className={`fas fa-${patient.isPaused ? 'play' : 'pause'}`}></i>
-        </button>
-        <button
-          onClick={() => handleEditPatient(patient)}
-          className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded text-sm"
-          title="تعديل"
-        >
-          <i className="fas fa-edit"></i>
         </button>
         <button
           onClick={() => handleDeletePatient(sessionId, patient.id)}
@@ -851,8 +867,8 @@ export default function OngoingTasksPanel() {
                   onClick={handleGlobalResume}
                   disabled={isResumeDisabled}
                   className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${isResumeDisabled
-                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                      : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
+                    ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
                     }`}
                   title={isResumeDisabled ? 'لا يمكن الاستئناف - يتطلب المصادقة أولاً' : 'استئناف جميع مهام المشرف'}
                 >
@@ -867,22 +883,22 @@ export default function OngoingTasksPanel() {
                 </button>
                 {globalPauseState.pauseReason && (
                   <div className={`text-sm flex items-center gap-2 ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
-                      ? 'text-yellow-700 font-semibold'
-                      : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
-                        ? 'text-green-600 font-semibold'
-                        : globalPauseState.pauseReason?.includes('BrowserClosure')
-                          ? 'text-red-600'
-                          : 'text-orange-600'
+                    ? 'text-yellow-700 font-semibold'
+                    : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
+                      ? 'text-green-600 font-semibold'
+                      : globalPauseState.pauseReason?.includes('BrowserClosure')
+                        ? 'text-red-600'
+                        : 'text-orange-600'
                     }`}>
                     <i className={`fas ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
-                        ? 'fa-exclamation-triangle'
-                        : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
-                          ? 'fa-check-circle'
-                          : globalPauseState.pauseReason?.includes('BrowserClosure')
-                            ? 'fa-times-circle'
-                            : 'fa-wifi'
+                      ? 'fa-exclamation-triangle'
+                      : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
+                        ? 'fa-check-circle'
+                        : globalPauseState.pauseReason?.includes('BrowserClosure')
+                          ? 'fa-times-circle'
+                          : 'fa-wifi'
                       }`}></i>
-                    <span>{globalPauseState.pauseReason}</span>
+                    <span>{translatePauseReason(globalPauseState.pauseReason)}</span>
                     {globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable && (
                       <span className="text-xs">(يجب المصادقة أولاً)</span>
                     )}
@@ -908,23 +924,53 @@ export default function OngoingTasksPanel() {
 
       {/* Sessions List */}
       <div className="space-y-4">
-        {sessions.map((session) => {
+        {sortedSessions.map((session, index) => {
           const isExpanded = expandedSessions.has(session.id);
           const progressPercent = getProgressPercentage(session);
           const selectedCount = selectedPatients.get(session.id)?.size || 0;
+          // Use backend-calculated isProcessing flag for faster tag updates
+          const isCurrentlyActive = (session.isProcessing ?? false) && !session.isPaused;
+          const isNextInQueue = index === 1 && (sortedSessions[0].isProcessing ?? false) && !sortedSessions[0].isPaused;
 
           return (
             <div
               key={session.id}
-              className="bg-white rounded-lg shadow overflow-hidden border"
+              className={`bg-white rounded-lg shadow overflow-hidden border-2 transition-all duration-500 ease-in-out transform hover:scale-[1.01] ${isCurrentlyActive
+                  ? 'animate-glow-sending border-blue-500 shadow-xl shadow-blue-200/50 order-0'
+                  : isNextInQueue
+                    ? 'border-green-400 shadow-lg shadow-green-100/50 order-1'
+                    : session.isPaused
+                      ? 'border-yellow-300 order-2'
+                      : 'border-gray-200 order-3'
+                }`}
+              style={{
+                animation: isCurrentlyActive ? 'slideToTop 0.5s ease-out' : 'none'
+              }}
             >
+              {/* Active Session Badge */}
+              {isCurrentlyActive && (
+                <div className="absolute top-2 right-2 z-10 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 animate-pulse">
+                  <i className="fas fa-bolt"></i>
+                  <span>جارٍ المعالجة الآن</span>
+                </div>
+              )}
+              {/* Next in Queue Badge */}
+              {isNextInQueue && (
+                <div className="absolute top-2 right-2 z-10 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
+                  <i className="fas fa-clock"></i>
+                  <span>التالي في الدور</span>
+                </div>
+              )}
               {/* Session Header - Fully Clickable */}
               <div
-                className={`px-6 py-4 border-b cursor-pointer transition-colors ${session.isPaused
-                    ? 'bg-gradient-to-r from-yellow-100 to-orange-50'
-                    : 'bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100'
+                className={`px-6 py-4 border-b cursor-pointer transition-colors relative ${isCurrentlyActive
+                    ? 'bg-gradient-to-r from-blue-50 via-blue-100 to-purple-100'
+                    : session.isPaused
+                      ? 'bg-gradient-to-r from-yellow-100 to-orange-50'
+                      : 'bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100'
                   }`}
                 onClick={() => toggleSessionExpand(session.id)}
+                style={{ paddingTop: (isCurrentlyActive || isNextInQueue) ? '3rem' : '1rem' }}
               >
                 <div className="flex items-center gap-4 justify-between">
                   <div className="flex items-center gap-4 flex-1">
@@ -957,10 +1003,10 @@ export default function OngoingTasksPanel() {
                       <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
                           className={`h-full ${session.isPaused
-                              ? 'bg-yellow-500'
-                              : progressPercent === 100
-                                ? 'bg-green-500'
-                                : 'bg-blue-500'
+                            ? 'bg-yellow-500'
+                            : progressPercent === 100
+                              ? 'bg-green-500'
+                              : 'bg-blue-500'
                             }`}
                           style={{ width: `${progressPercent}%` }}
                         ></div>
@@ -977,10 +1023,10 @@ export default function OngoingTasksPanel() {
                         }}
                         disabled={globalPauseState?.isPaused === true}
                         className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${globalPauseState?.isPaused === true
-                            ? 'bg-gray-400 text-white cursor-not-allowed opacity-50'
-                            : session.isPaused
-                              ? 'bg-green-500 text-white hover:bg-green-600'
-                              : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                          ? 'bg-gray-400 text-white cursor-not-allowed opacity-50'
+                          : session.isPaused
+                            ? 'bg-green-500 text-white hover:bg-green-600'
+                            : 'bg-yellow-500 text-white hover:bg-yellow-600'
                           }`}
                         title={globalPauseState?.isPaused === true ? 'تم إيقاف جميع المهام على مستوى المشرف' : (session.isPaused ? 'استئناف الجلسة' : 'إيقاف الجلسة')}
                       >

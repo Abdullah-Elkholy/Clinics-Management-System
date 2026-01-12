@@ -170,13 +170,26 @@ public class PatientCascadeService : IPatientCascadeService
 
     public async Task<int> PermanentlyDeleteArchivedPatientsAsync()
     {
-        var archivedPatients = await _db.Patients
-            .Where(p => p.IsDeleted && p.DeletedAt.HasValue && (DateTime.UtcNow - p.DeletedAt.Value).TotalDays > TTL_DAYS)
-            .ToListAsync();
+        // Wrap bulk delete in transaction for atomicity
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var archivedPatients = await _db.Patients
+                .Where(p => p.IsDeleted && p.DeletedAt.HasValue && (DateTime.UtcNow - p.DeletedAt.Value).TotalDays > TTL_DAYS)
+                .ToListAsync();
 
-        _db.Patients.RemoveRange(archivedPatients);
-        int deleted = await _db.SaveChangesAsync();
-        _logger.LogInformation("Permanently deleted {Count} archived patients", deleted);
-        return deleted;
+            _db.Patients.RemoveRange(archivedPatients);
+            int deleted = await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation("Permanently deleted {Count} archived patients", deleted);
+            return deleted;
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Error permanently deleting archived patients");
+            throw;
+        }
     }
 }

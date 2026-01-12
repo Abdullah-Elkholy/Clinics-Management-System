@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { ModeratorQuota, User } from '@/types/user';
@@ -63,7 +63,7 @@ export default function ModeratorQuotaModal({
       }
 
       if (queuesMode === 'add' && quota.queuesQuota.limit === -1) {
-        setError('لا يمكن إضافة قيم عندما تكون الحصة غير محدودة حالياً للطوابير. اختر "تعيين الحد" بدلاً من ذلك');
+        setError('لا يمكن إضافة قيم عندما تكون الحصة غير محدودة حالياً للعيادات. اختر "تعيين الحد" بدلاً من ذلك');
         setSaving(false);
         return;
       }
@@ -348,7 +348,7 @@ export default function ModeratorQuotaModal({
 
           {/* Queues Quota Section */}
           {renderQuotaSection(
-            'حد الطوابير',
+            'حد العيادات',
             'fa-layer-group',
             formData.queuesQuota,
             quota.queuesQuota,
@@ -407,3 +407,4 @@ export default function ModeratorQuotaModal({
     </>
   );
 }
+

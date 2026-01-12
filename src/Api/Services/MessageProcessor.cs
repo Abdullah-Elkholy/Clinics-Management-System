@@ -8,6 +8,7 @@ using Clinics.Api.Controllers;
 using Microsoft.AspNetCore.SignalR;
 using Clinics.Api.Hubs;
 using Clinics.Api.Services.Extension;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Clinics.Api.Services
 {
@@ -26,6 +27,7 @@ namespace Clinics.Api.Services
         private readonly ILogger<MessageProcessor> _logger;
         private readonly IHubContext<DataUpdateHub> _hubContext;
         private readonly IExtensionCommandService _commandService;
+        private readonly IServiceScopeFactory _scopeFactory;
 
         public MessageProcessor(
             ApplicationDbContext db,
@@ -35,7 +37,8 @@ namespace Clinics.Api.Services
             CircuitBreakerService circuitBreaker,
             ILogger<MessageProcessor> logger,
             IHubContext<DataUpdateHub> hubContext,
-            IExtensionCommandService commandService)
+            IExtensionCommandService commandService,
+            IServiceScopeFactory scopeFactory)
         {
             _db = db;
             _providerFactory = providerFactory;
@@ -45,6 +48,7 @@ namespace Clinics.Api.Services
             _logger = logger;
             _hubContext = hubContext;
             _commandService = commandService;
+            _scopeFactory = scopeFactory;
         }
 
         public async Task ProcessQueuedMessagesAsync(int maxBatch = 50)
@@ -178,6 +182,30 @@ namespace Clinics.Api.Services
                         continue; // Skip paused messages
                     }
 
+                    // CRITICAL: Check if moderator was globally paused while we were claiming
+                    // This ensures global pause can interrupt even claimed messages
+                    if (m.ModeratorId.HasValue)
+                    {
+                        var whatsappSession = await _db.WhatsAppSessions
+                            .FirstOrDefaultAsync(ws => ws.ModeratorUserId == m.ModeratorId.Value && !ws.IsDeleted);
+
+                        if (whatsappSession != null && whatsappSession.IsPaused)
+                        {
+                            _logger.LogInformation("StateTransition: {PreviousState} → {NewState} for message {MessageId} (moderator globally paused)",
+                                "sending", "queued(global_pause)", m.Id);
+
+                            // Release claim - reset to queued
+                            m.Status = "queued";
+                            m.InFlightCommandId = null; // Clear in-flight command
+                            await _db.SaveChangesAsync();
+
+                            // Notify UI via SignalR for immediate tag update
+                            await NotifyMessageUpdate(m, "paused");
+
+                            continue; // Skip this message, moderator is globally paused
+                        }
+                    }
+
                     // Check circuit breaker state before attempting send
                     if (m.ModeratorId.HasValue)
                     {
@@ -196,6 +224,81 @@ namespace Clinics.Api.Services
                     // Message is already claimed as 'sending' by ClaimNextEligibleMessageAsync
                     // Attempts was already incremented, LastAttemptAt was already set
 
+                    // CRITICAL FIX: Create cancellation token source for pause interruption
+                    // This token will be cancelled if pause is detected during send operation
+                    using var sendCts = new CancellationTokenSource();
+
+                    // THREADING FIX: Create separate DbContext scope for monitoring task to avoid concurrent access
+                    // DbContext is not thread-safe and must not be shared between threads
+                    var monitoringTask = Task.Run(async () =>
+                    {
+                        // Create a new scope with its own DbContext instance for this background task
+                        using var scope = _scopeFactory.CreateScope();
+                        var monitoringDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                        try
+                        {
+                            // Poll for pause state every 200ms during send operation
+                            while (!sendCts.Token.IsCancellationRequested)
+                            {
+                                await Task.Delay(200, sendCts.Token);
+
+                                // Check all 3 levels of pause hierarchy
+                                // 1. Global pause (WhatsAppSession.IsPaused)
+                                if (m.ModeratorId.HasValue)
+                                {
+                                    var whatsappSession = await monitoringDb.WhatsAppSessions
+                                        .AsNoTracking()
+                                        .FirstOrDefaultAsync(ws => ws.ModeratorUserId == m.ModeratorId.Value && !ws.IsDeleted, sendCts.Token);
+
+                                    if (whatsappSession?.IsPaused == true)
+                                    {
+                                        _logger.LogWarning("Global pause detected during send for moderator {ModeratorId} - cancelling message {MessageId}",
+                                            m.ModeratorId.Value, m.Id);
+                                        sendCts.Cancel();
+                                        return;
+                                    }
+                                }
+
+                                // 2. Session pause (MessageSession.IsPaused)
+                                if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid))
+                                {
+                                    var messageSession = await monitoringDb.MessageSessions
+                                        .AsNoTracking()
+                                        .FirstOrDefaultAsync(s => s.Id == sessionGuid && !s.IsDeleted, sendCts.Token);
+
+                                    if (messageSession?.IsPaused == true)
+                                    {
+                                        _logger.LogWarning("Session pause detected during send for session {SessionId} - cancelling message {MessageId}",
+                                            sessionGuid, m.Id);
+                                        sendCts.Cancel();
+                                        return;
+                                    }
+                                }
+
+                                // 3. Message pause (Message.IsPaused)
+                                var currentMessage = await monitoringDb.Messages
+                                    .AsNoTracking()
+                                    .FirstOrDefaultAsync(msg => msg.Id == m.Id, sendCts.Token);
+
+                                if (currentMessage?.IsPaused == true)
+                                {
+                                    _logger.LogWarning("Message pause detected during send - cancelling message {MessageId}", m.Id);
+                                    sendCts.Cancel();
+                                    return;
+                                }
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Expected when sendCts is cancelled - normal flow
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error in pause monitoring task for message {MessageId}", m.Id);
+                        }
+                    });
+
                     // Execute send through circuit breaker using the appropriate provider
                     (bool success, string? providerId, string? providerResponse) result;
                     try
@@ -210,8 +313,8 @@ namespace Clinics.Api.Services
                                 var providerName = providerResult.providerName;
                                 _logger.LogDebug("Using {ProviderName} provider for message {MessageId}", providerName, m.Id);
 
-                                // Send via the selected provider
-                                var sendResult = await provider.SendMessageAsync(m);
+                                // CRITICAL: Pass cancellation token to provider for pause interruption
+                                var sendResult = await provider.SendMessageAsync(m, sendCts.Token);
 
                                 // Convert WhatsAppSendResult to legacy tuple format for compatibility
                                 return (sendResult.Success, providerName, sendResult.ProviderResponse ?? sendResult.ErrorMessage);
@@ -222,6 +325,34 @@ namespace Clinics.Api.Services
                             // No moderator ID - use legacy sender as fallback
                             result = await _legacySender.SendAsync(m);
                         }
+
+                        // Stop monitoring task after send completes
+                        sendCts.Cancel();
+                        try { await monitoringTask; } catch { /* Ignore */ }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Pause was triggered during send - reset message to queued
+                        _logger.LogInformation("StateTransition: {PreviousState} → {NewState} for message {MessageId} (cancelled by pause during send)",
+                            "sending", "queued(cancelled)", m.Id);
+
+                        m.Status = "queued";
+                        m.IsPaused = true;
+                        m.PausedAt = DateTime.UtcNow;
+                        m.PauseReason = m.PauseReason ?? "UserPaused"; // Keep existing pause reason if set
+                        m.ErrorMessage = "تم إيقاف الإرسال أثناء المحاولة";
+                        m.Attempts -= 1; // Don't count cancelled attempts
+                        m.InFlightCommandId = null;
+                        await _db.SaveChangesAsync();
+
+                        // Notify UI via SignalR
+                        await NotifyMessageUpdate(m, "paused");
+
+                        // Stop monitoring task
+                        sendCts.Cancel();
+                        try { await monitoringTask; } catch { /* Ignore */ }
+
+                        continue; // Skip to next message
                     }
                     catch (CircuitBreakerOpenException cbEx)
                     {
@@ -235,7 +366,13 @@ namespace Clinics.Api.Services
                         m.PauseReason = "CircuitBreakerOpen";
                         m.ErrorMessage = $"Circuit breaker open. Retry after {cbEx.RetryAfter.TotalSeconds:F0}s";
                         m.Attempts -= 1; // Don't count circuit breaker trips as attempts
+                        m.InFlightCommandId = null;
                         await _db.SaveChangesAsync();
+
+                        // Stop monitoring task
+                        sendCts.Cancel();
+                        try { await monitoringTask; } catch { /* Ignore */ }
+
                         continue;
                     }
 
@@ -304,7 +441,7 @@ namespace Clinics.Api.Services
 
                         m.Status = "sent";
                         m.SentAt = DateTime.UtcNow;
-                        m.ProviderMessageId = result.providerId;
+                        // ProviderMessageId REMOVED - no longer stored
                         m.InFlightCommandId = null; // Clear in-flight command on success
 
                         // CRITICAL: Save with concurrency conflict handling
@@ -330,7 +467,7 @@ namespace Clinics.Api.Services
                             // Otherwise, re-apply our sent status and try again
                             m.Status = "sent";
                             m.SentAt = DateTime.UtcNow;
-                            m.ProviderMessageId = result.providerId;
+                            // ProviderMessageId REMOVED
                             m.InFlightCommandId = null;
                             await _db.SaveChangesAsync();
                         }
@@ -405,18 +542,7 @@ namespace Clinics.Api.Services
                             m.ErrorMessage = result.providerResponse ?? "Provider returned failure";
                             m.InFlightCommandId = null;
 
-                            // Create failed task
-                            var ft = new FailedTask
-                            {
-                                MessageId = m.Id,
-                                PatientId = m.PatientId,
-                                QueueId = m.QueueId,
-                                Reason = "provider_failure",
-                                ProviderResponse = result.providerResponse,
-                                CreatedAt = DateTime.UtcNow,
-                                RetryCount = 0
-                            };
-                            _db.FailedTasks.Add(ft);
+                            // FailedTask entity REMOVED - failures now tracked via Message.Status = 'failed'
 
                             // Update session failed count
                             if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid))
@@ -479,6 +605,7 @@ namespace Clinics.Api.Services
                     m.PauseReason = errorType;
                     m.Attempts -= 1; // Don't count this as a failed attempt
                     m.ErrorMessage = ex.Message; // Store error message for user visibility
+                    m.InFlightCommandId = null;
                     await _db.SaveChangesAsync();
 
                     // Pause global WhatsAppSession for this moderator (3-tier hierarchy: top level)
@@ -538,7 +665,7 @@ namespace Clinics.Api.Services
                     m.Status = "failed";
                     m.ErrorMessage = ex.Message;
                     m.InFlightCommandId = null;
-                    _db.FailedTasks.Add(new FailedTask { MessageId = m.Id, PatientId = m.PatientId, QueueId = m.QueueId, Reason = "exception", ProviderResponse = ex.Message, CreatedAt = DateTime.UtcNow, RetryCount = m.Attempts });
+                    // FailedTask entity REMOVED - failures tracked via Message.Status
                     await _db.SaveChangesAsync();
                 }
             }
@@ -675,8 +802,9 @@ namespace Clinics.Api.Services
                             AND sending.IsDeleted = 0
                       )
                     -- Priority: check_whatsapp sessions first (0), then send sessions (1)
+                    -- Within session, order by CalculatedPosition (ascending) to match MessagePreviewModal ordering
                     ORDER BY CASE WHEN s.SessionType = 'check_whatsapp' THEN 0 ELSE 1 END ASC,
-                             COALESCE(s.StartTime, m.CreatedAt) ASC, m.CreatedAt ASC, m.Id ASC
+                             COALESCE(s.StartTime, m.CreatedAt) ASC, m.CalculatedPosition ASC, m.Id ASC
                 )
                 UPDATE m
                 SET m.Status = 'sending',

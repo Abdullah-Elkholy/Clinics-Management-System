@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { useModal } from '../../contexts/ModalContext';
+import { useUI } from '../../contexts/UIContext';
 import { useWhatsAppSession, DetailedSessionStatus, ExtensionStatus } from '../../contexts/WhatsAppSessionContext';
 import { getRoleDisplayName } from '../../lib/auth';
 import { User } from '../../types';
@@ -120,13 +120,36 @@ const getDetailedStatusDisplay = (
 
 export default function Header() {
   const { user, logout } = useAuth();
-  const { openModal } = useModal();
+  const { setCurrentPanel, currentPanel } = useUI();
   const { sessionStatus, detailedStatus, extensionStatus, globalPauseState } = useWhatsAppSession();
 
   if (!user) return null;
 
   // Get status display based on detailed status
   const statusDisplay = getDetailedStatusDisplay(detailedStatus, extensionStatus, sessionStatus, globalPauseState);
+
+  // Navigate to WhatsApp Auth tab in management panel
+  const handleWhatsAppStatusClick = () => {
+    // Persist desired tab (used when management panel mounts)
+    sessionStorage.setItem('userManagementActiveTab', 'whatsappAuth');
+
+    const dispatchTabSwitch = () => {
+      // Used when management panel is already mounted (same-panel navigation)
+      window.dispatchEvent(
+        new CustomEvent('userManagementActiveTabChange', { detail: 'whatsappAuth' })
+      );
+    };
+
+    if (currentPanel === 'management') {
+      // Already on management panel: force-switch tab immediately
+      dispatchTabSwitch();
+      return;
+    }
+
+    // Navigate to management panel, then request tab switch (next tick)
+    setCurrentPanel('management');
+    setTimeout(dispatchTabSwitch, 0);
+  };
 
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
@@ -156,7 +179,7 @@ export default function Header() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-800">نظام إدارة العيادات</h1>
-            <p className="text-sm text-gray-600">{roleDisplay}</p>
+            <p className="text-sm text-gray-600">{roleDisplay}/ {fullName}</p>
           </div>
         </div>
 
@@ -165,40 +188,37 @@ export default function Header() {
           {/* WhatsApp Status - Hidden for admin, shown for moderator and user */}
           {user.role !== 'primary_admin' && user.role !== 'secondary_admin' && (
             <div 
-              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer hover:opacity-90 transition-opacity ${statusDisplay.bgColor}`}
-              onClick={() => openModal('whatsappAuth')}
-              title={statusDisplay.sublabel || statusDisplay.label}
+              className="hidden sm:flex items-center gap-2 cursor-pointer group"
+              onClick={handleWhatsAppStatusClick}
+              title="اضغط لفتح إعدادات ربط واتساب"
             >
-              {/* Status icon */}
-              <i className={`fas fa-${statusDisplay.icon} ${statusDisplay.textColor} text-sm ${statusDisplay.icon === 'spinner' ? 'animate-spin' : ''}`}></i>
-              
-              {/* Status dot */}
-              <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
-              
-              {/* Status text */}
-              <div className="flex flex-col">
-                <span className={`text-sm font-medium ${statusDisplay.textColor}`}>
-                  {statusDisplay.label}
-                </span>
-                {statusDisplay.sublabel && (
-                  <span className={`text-xs ${statusDisplay.textColor} opacity-75`}>
-                    {statusDisplay.sublabel}
+              {/* Status pill */}
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full group-hover:ring-2 group-hover:ring-blue-300 transition-all ${statusDisplay.bgColor}`}>
+                {/* Status icon */}
+                <i className={`fas fa-${statusDisplay.icon} ${statusDisplay.textColor} text-sm ${statusDisplay.icon === 'spinner' ? 'animate-spin' : ''}`}></i>
+                
+                {/* Status dot */}
+                <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
+                
+                {/* Status text */}
+                <div className="flex flex-col">
+                  <span className={`text-sm font-medium ${statusDisplay.textColor}`}>
+                    {statusDisplay.label}
                   </span>
-                )}
+                  {statusDisplay.sublabel && (
+                    <span className={`text-xs ${statusDisplay.textColor} opacity-75`}>
+                      {statusDisplay.sublabel}
+                    </span>
+                  )}
+                </div>
               </div>
+              {/* Settings icon hint */}
+              <i className="fas fa-cog text-gray-400 group-hover:text-blue-500 group-hover:rotate-90 transition-all text-sm"></i>
             </div>
           )}
 
-          {/* User Info and Logout */}
-          <div className="flex items-center space-x-3 space-x-reverse pl-4 border-l border-gray-200">
-            <span className="text-sm text-gray-700 font-medium">{fullName}</span>
-            <button
-              onClick={() => openModal('accountInfo')}
-              className="text-blue-600 hover:text-blue-700 transition-colors"
-              title="معلومات الحساب"
-            >
-              <i className="fas fa-user-circle text-lg"></i>
-            </button>
+          {/* Logout */}
+          <div className="flex items-center pl-4 border-l border-gray-200">
             <button
               onClick={logout}
               className="text-red-600 hover:text-red-700 transition-colors"

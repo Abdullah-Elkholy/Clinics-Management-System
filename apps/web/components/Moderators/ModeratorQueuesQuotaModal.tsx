@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { ModeratorQuota, User } from '@/types/user';
@@ -227,7 +227,7 @@ export default function ModeratorQueuesQuotaModal({
         <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
           <h2 className="text-base font-semibold text-gray-900">
             <i className="fas fa-layer-group text-purple-600 ml-2"></i>
-            إدارة حصة الطوابير - {moderatorName}
+            إدارة حصة العيادات - {moderatorName}
           </h2>
           <button
             onClick={onClose}
@@ -373,7 +373,7 @@ export default function ModeratorQueuesQuotaModal({
             <div className="flex gap-2">
               <i className="fas fa-info-circle text-purple-600 mt-0.5 flex-shrink-0 text-xs"></i>
               <div className="text-xs text-purple-800">
-                <p className="font-semibold mb-1">ملاحظات عن الطوابير:</p>
+                <p className="font-semibold mb-1">ملاحظات عن العيادات:</p>
                 <ul className="space-y-0.5 list-disc list-inside text-xs">
                   <li>الحصة تتراكم ولا تُعاد تعيينها تلقائياً</li>
                   <li>اختر "تعيين الحد" لتحديد إجمالي جديد</li>
@@ -416,3 +416,4 @@ export default function ModeratorQueuesQuotaModal({
     </>
   );
 }
+

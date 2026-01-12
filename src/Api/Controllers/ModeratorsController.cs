@@ -69,10 +69,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
@@ -175,22 +175,8 @@ namespace Clinics.Api.Controllers
                 _db.Users.Add(moderator);
                 await _db.SaveChangesAsync();
 
-                // Create moderator settings
-                // Handle spaces in WhatsApp phone number (remove them for consistency)
-                var whatsappPhoneCleaned = !string.IsNullOrWhiteSpace(req.WhatsAppPhoneNumber)
-                    ? req.WhatsAppPhoneNumber.Replace(" ", "")
-                    : req.WhatsAppPhoneNumber;
-                
-                var settings = new ModeratorSettings
-                {
-                    ModeratorUserId = moderator.Id,
-                    WhatsAppPhoneNumber = whatsappPhoneCleaned,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _db.ModeratorSettings.Add(settings);
+                // ModeratorSettings creation REMOVED - entity deprecated
+                // WhatsAppPhoneNumber stored in request but not persisted
 
                 // Create default quota (unlimited messages and queues: -1 = unlimited)
                 var quota = new Quota
@@ -212,7 +198,6 @@ namespace Clinics.Api.Controllers
                     Username = moderator.Username,
                     FirstName = moderator.FirstName,
                     LastName = moderator.LastName,
-                    WhatsAppPhoneNumber = whatsappPhoneCleaned,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -249,24 +234,7 @@ namespace Clinics.Api.Controllers
                 if (!string.IsNullOrEmpty(req.LastName))
                     moderator.LastName = req.LastName;
 
-                // Update moderator settings
-                var settings = await _db.ModeratorSettings
-                    .Where(m => m.ModeratorUserId == id)
-                    .FirstOrDefaultAsync();
-
-                if (settings != null)
-                {
-                    if (!string.IsNullOrEmpty(req.WhatsAppPhoneNumber))
-                    {
-                        // Handle spaces in WhatsApp phone number (remove them for consistency)
-                        settings.WhatsAppPhoneNumber = req.WhatsAppPhoneNumber.Replace(" ", "");
-                    }
-
-                    if (req.IsActive.HasValue)
-                        settings.IsActive = req.IsActive.Value;
-
-                    settings.UpdatedAt = DateTime.UtcNow;
-                }
+                // ModeratorSettings update REMOVED - entity deprecated
 
                 await _db.SaveChangesAsync();
 
@@ -276,8 +244,7 @@ namespace Clinics.Api.Controllers
                     Username = moderator.Username,
                     FirstName = moderator.FirstName,
                     LastName = moderator.LastName,
-                    WhatsAppPhoneNumber = settings?.WhatsAppPhoneNumber,
-                    IsActive = settings?.IsActive ?? true,
+                    IsActive = true, // Default active
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -315,13 +282,7 @@ namespace Clinics.Api.Controllers
                 if (hasManagedUsers)
                     return BadRequest(new { success = false, error = "Cannot delete moderator with managed users" });
 
-                // Delete related data
-                var settings = await _db.ModeratorSettings
-                    .Where(m => m.ModeratorUserId == id)
-                    .FirstOrDefaultAsync();
-
-                if (settings != null)
-                    _db.ModeratorSettings.Remove(settings);
+                // ModeratorSettings deletion REMOVED - entity deprecated
 
                 // Delete associated quota
                 var quota = await _db.Quotas
@@ -458,38 +419,38 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(dbEx, "Database error adding user to moderator");
                 var innerMessage = dbEx.InnerException?.Message ?? dbEx.Message;
-                
+
                 // Check for unique constraint violation on Username
                 if (innerMessage.Contains("IX_Users_Username", StringComparison.OrdinalIgnoreCase) ||
-                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) && 
+                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) &&
                     (innerMessage.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
                      innerMessage.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
                      innerMessage.Contains("unique constraint", StringComparison.OrdinalIgnoreCase)))
                 {
-                    return BadRequest(new 
-                    { 
-                        success = false, 
+                    return BadRequest(new
+                    {
+                        success = false,
                         error = "اسم المستخدم موجود بالفعل",
                         message = $"اسم المستخدم '{req.Username}' موجود بالفعل. يرجى اختيار اسم مستخدم آخر."
                     });
                 }
-                
+
                 // Other database constraint violations
-                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) || 
+                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) ||
                     innerMessage.Contains("constraint", StringComparison.OrdinalIgnoreCase))
                 {
-                    return BadRequest(new 
-                    { 
-                        success = false, 
+                    return BadRequest(new
+                    {
+                        success = false,
                         error = "تعذر إنشاء المستخدم",
                         message = "تعذر إنشاء المستخدم بسبب بيانات غير صالحة أو انتهاك قيد قاعدة البيانات."
                     });
                 }
-                
+
                 // Generic database error
-                return StatusCode(500, new 
-                { 
-                    success = false, 
+                return StatusCode(500, new
+                {
+                    success = false,
                     error = "حدث خطأ أثناء إضافة المستخدم",
                     message = "حدث خطأ أثناء إضافة المستخدم. يرجى المحاولة مرة أخرى."
                 });
@@ -497,9 +458,9 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding user to moderator");
-                return StatusCode(500, new 
-                { 
-                    success = false, 
+                return StatusCode(500, new
+                {
+                    success = false,
                     error = "حدث خطأ غير متوقع أثناء إضافة المستخدم",
                     message = "حدث خطأ غير متوقع أثناء إضافة المستخدم. يرجى المحاولة مرة أخرى."
                 });
@@ -517,10 +478,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
@@ -530,7 +491,7 @@ namespace Clinics.Api.Controllers
                 // - Moderators can only view their own session
                 // - Users can only view their assigned moderator's session
                 var isAdmin = currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin";
-                
+
                 if (!isAdmin)
                 {
                     if (currentUser?.Role == "user" && currentUser.ModeratorId != id)
@@ -551,11 +512,9 @@ namespace Clinics.Api.Controllers
                 {
                     Id = session.Id,
                     ModeratorUserId = session.ModeratorUserId,
-                    SessionName = session.SessionName,
+                    // SessionName, LastSyncAt, ProviderSessionId REMOVED - deprecated
                     Status = session.Status,
-                    LastSyncAt = session.LastSyncAt,
                     CreatedAt = session.CreatedAt,
-                    ProviderSessionId = session.ProviderSessionId,
                     CreatedByUserId = session.CreatedByUserId,
                     LastActivityUserId = session.LastActivityUserId,
                     LastActivityAt = session.LastActivityAt
@@ -590,7 +549,7 @@ namespace Clinics.Api.Controllers
 
                 // Verify user has permission to pause this moderator's tasks
                 var currentUser = await _db.Users.FindAsync(userId);
-                if (currentUser == null) 
+                if (currentUser == null)
                     return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
@@ -679,7 +638,7 @@ namespace Clinics.Api.Controllers
 
                 // Verify permissions (same as pause - users can manage)
                 var currentUser = await _db.Users.FindAsync(userId);
-                if (currentUser == null) 
+                if (currentUser == null)
                     return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
@@ -716,7 +675,7 @@ namespace Clinics.Api.Controllers
                 {
                     if (whatsappSession.Status != "connected")
                     {
-                        _logger.LogWarning("Attempted to manually resume PendingQR pause for moderator {ModeratorId}, but Status is not 'connected'. Current Status: {Status}", 
+                        _logger.LogWarning("Attempted to manually resume PendingQR pause for moderator {ModeratorId}, but Status is not 'connected'. Current Status: {Status}",
                             moderatorId, whatsappSession.Status);
                         return BadRequest(new
                         {
@@ -732,7 +691,7 @@ namespace Clinics.Api.Controllers
                 // This prevents resuming when session is disconnected/pending
                 if (whatsappSession.Status != "connected")
                 {
-                    _logger.LogWarning("Cannot resume moderator {ModeratorId} tasks: Session status is '{Status}', must be 'connected'", 
+                    _logger.LogWarning("Cannot resume moderator {ModeratorId} tasks: Session status is '{Status}', must be 'connected'",
                         moderatorId, whatsappSession.Status);
                     return BadRequest(new
                     {
@@ -793,7 +752,7 @@ namespace Clinics.Api.Controllers
                 }
 
                 var currentUser = await _db.Users.FindAsync(userId);
-                if (currentUser == null) 
+                if (currentUser == null)
                     return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
@@ -870,8 +829,8 @@ namespace Clinics.Api.Controllers
                 var currentUser = await _db.Users
                     .AsNoTracking()
                     .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
-                    
-                if (currentUser == null) 
+
+                if (currentUser == null)
                     return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
@@ -896,33 +855,30 @@ namespace Clinics.Api.Controllers
                 var extensionLease = await _db.ExtensionSessionLeases
                     .AsNoTracking()
                     .Include(e => e.Device)
-                    .Where(e => e.ModeratorUserId == moderatorId 
-                        && e.RevokedAtUtc == null 
+                    .Where(e => e.ModeratorUserId == moderatorId
+                        && e.RevokedAtUtc == null
                         && e.ExpiresAtUtc > DateTime.UtcNow)
                     .FirstOrDefaultAsync();
 
                 // Calculate extension online status (heartbeat within 60 seconds)
-                var isExtensionOnline = extensionLease != null 
+                var isExtensionOnline = extensionLease != null
                     && (DateTime.UtcNow - extensionLease.LastHeartbeatAtUtc).TotalSeconds < 60;
 
                 return Ok(new
                 {
                     success = true,
                     timestamp = DateTime.UtcNow,
-                    
-                    // Session data
+
+                    // Session data (deprecated SessionName, LastSyncAt, ProviderSessionId removed)
                     session = session == null ? null : new
                     {
                         id = session.Id,
                         moderatorUserId = session.ModeratorUserId,
-                        sessionName = session.SessionName,
                         status = session.Status,
-                        lastSyncAt = session.LastSyncAt,
                         createdAt = session.CreatedAt,
-                        providerSessionId = session.ProviderSessionId,
                         lastActivityAt = session.LastActivityAt
                     },
-                    
+
                     // Pause state
                     pauseState = new
                     {
@@ -932,7 +888,7 @@ namespace Clinics.Api.Controllers
                         pausedBy = session?.PausedBy,
                         isResumable = session?.IsResumable ?? false
                     },
-                    
+
                     // Extension status
                     extension = new
                     {

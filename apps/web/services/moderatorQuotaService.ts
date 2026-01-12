@@ -46,7 +46,7 @@ class ModeratorQuotaService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to fetch quota: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `فشل تحميل الحصة: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`,
       };
     }
   }
@@ -114,7 +114,7 @@ class ModeratorQuotaService {
       
       return {
         success: false,
-        error: `Failed to fetch quota: ${errorMessage}`,
+        error: `فشل تحميل الحصة: ${errorMessage}`,
       };
     }
   }
@@ -269,7 +269,7 @@ class ModeratorQuotaService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to fetch quotas: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `فشل تحميل الحصص: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`,
       };
     }
   }

@@ -301,12 +301,10 @@ public class RoleEnforcementTests
     [Fact]
     public void EdgeCase_CaseSensitiveRole_ShouldMatch()
     {
-        // DEFECT: Case mismatch could cause role bypass
-        // Current implementation is case-sensitive
+        // DEF-011 FIXED: Role matching is now case-insensitive
+        // Uppercase role should correctly map to PrimaryAdmin
         var role = UserRoleExtensions.FromRoleName("PRIMARY_ADMIN");
-        role.Should().Be(UserRole.User); // Documents current behavior (case-sensitive)
-
-        // This could be a defect - uppercase should probably match
+        role.Should().Be(UserRole.PrimaryAdmin, "Role matching should be case-insensitive after DEF-011 fix");
     }
 
     #endregion

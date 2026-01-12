@@ -52,12 +52,12 @@ export function useModeratorQuota(moderatorId: string) {
         setState((prev) => ({
           ...prev,
           loading: false,
-          error: (is405Error || is403Error || is401Error) ? null : (result.error || 'Failed to fetch quota'),
+          error: (is405Error || is403Error || is401Error) ? null : (result.error || 'فشل تحميل الحصة'),
         }));
       }
     } catch (error) {
       // Silently handle 405, 401, 403 errors
-      const errorMsg = error instanceof Error ? error.message : 'Failed to fetch quota';
+      const errorMsg = error instanceof Error ? error.message : 'فشل تحميل الحصة';
       const is405Error = errorMsg.includes('405') || errorMsg.includes('Method Not Allowed');
       const is403Error = errorMsg.includes('403') || errorMsg.includes('Forbidden');
       const is401Error = errorMsg.includes('401') || errorMsg.includes('Unauthorized');
@@ -184,7 +184,7 @@ export function useModeratorQuota(moderatorId: string) {
         setState((prev) => ({
           ...prev,
           loading: false,
-          error: result.error || 'Failed to fetch quota',
+          error: result.error || 'فشل تحميل الحصة',
         }));
       }
     } catch (error) {
@@ -192,7 +192,7 @@ export function useModeratorQuota(moderatorId: string) {
         ...prev,
         loading: false,
         error:
-          error instanceof Error ? error.message : 'Failed to fetch quota',
+          error instanceof Error ? error.message : 'فشل تحميل الحصة',
       }));
     }
   }, [moderatorId]);

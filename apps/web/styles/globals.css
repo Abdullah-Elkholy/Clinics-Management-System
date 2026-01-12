@@ -2,4 +2,115 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================
+   Universal Visual Enhancements
+   ============================================ */
 
+/* Button Hover Effects */
+@layer components {
+  .btn-enhanced {
+    @apply relative overflow-hidden transition-all duration-300 ease-out;
+    @apply hover:scale-105 hover:shadow-lg;
+    @apply active:scale-95 active:shadow-md;
+  }
+
+  .btn-enhanced::after {
+    content: '';
+    @apply absolute inset-0 bg-white opacity-0 transition-opacity duration-300;
+  }
+
+  .btn-enhanced:hover::after {
+    @apply opacity-10;
+  }
+
+  /* Glassmorphism Cards */
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-md border border-white/20;
+    @apply shadow-lg rounded-xl;
+  }
+
+  .glass-card-dark {
+    @apply bg-gray-900/80 backdrop-blur-md border border-gray-700/30;
+    @apply shadow-lg rounded-xl;
+  }
+
+  /* Table Row Highlights */
+  .table-row-enhanced {
+    @apply transition-all duration-200 ease-out;
+    @apply hover:bg-blue-50/50 hover:shadow-sm;
+  }
+
+  .table-row-enhanced:hover td {
+    @apply border-blue-100;
+  }
+
+  /* Animated Loading States */
+  .skeleton-loading {
+    @apply relative overflow-hidden bg-gray-200 rounded;
+  }
+
+  .skeleton-loading::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    animation: skeleton-shimmer 1.5s infinite;
+  }
+
+  /* Premium Input Focus */
+  .input-enhanced {
+    @apply transition-all duration-200;
+    @apply focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50;
+    @apply focus:border-blue-500 focus:shadow-md;
+  }
+
+  /* Badge Glow Effect */
+  .badge-glow {
+    @apply relative;
+    animation: badge-pulse 2s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}
+
+/* RTL Support for Animations */
+[dir="rtl"] .skeleton-loading::after {
+  animation: skeleton-shimmer-rtl 1.5s infinite;
+}
+
+@keyframes skeleton-shimmer-rtl {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+/* Slide to Top Animation for Active Session */
+@keyframes slideToTop {
+  0% {
+    transform: translateY(20px);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Glow animation for sending messages */
+@keyframes glow-sending {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3), 0 0 40px rgba(59, 130, 246, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.6), 0 0 60px rgba(59, 130, 246, 0.2);
+  }
+}
+
+.animate-glow-sending {
+  animation: glow-sending 2s ease-in-out infinite;
+}

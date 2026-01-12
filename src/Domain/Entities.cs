@@ -163,7 +163,7 @@ namespace Clinics.Domain
         [Phone]
         public string PhoneNumber { get; set; } = null!;
 
-    // PhoneExtension removed: all numbers validated and stored as single E.164 phone number.
+        // PhoneExtension removed: all numbers validated and stored as single E.164 phone number.
 
         /// <summary>
         /// Country code for the phone number (e.g., "+20", "+966")
@@ -209,6 +209,14 @@ namespace Clinics.Domain
         public DateTime? RestoredAt { get; set; }
 
         public int? RestoredBy { get; set; }
+
+        /// <summary>
+        /// DEF-013 FIX: Row version for optimistic concurrency control.
+        /// Prevents race conditions when multiple users update the same patient's position.
+        /// EF Core will automatically check this value and throw DbUpdateConcurrencyException if stale.
+        /// </summary>
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
     }
 
     [Table("MessageTemplates")]
@@ -392,9 +400,6 @@ namespace Clinics.Domain
         [ForeignKey(nameof(ModeratorId))]
         public User? Moderator { get; set; }
 
-        [StringLength(100)]
-        public string? ProviderMessageId { get; set; }
-
         /// <summary>
         /// Session identifier for grouping related messages.
         /// Messages sent together in a batch share the same SessionId.
@@ -409,12 +414,6 @@ namespace Clinics.Domain
         /// </summary>
         public Guid? CorrelationId { get; set; }
 
-        /// <summary>
-        /// WhatsApp session name being used in that process.
-        /// Stored from WhatsAppSession.SessionName for the moderator.
-        /// </summary>
-        [StringLength(20)]
-        public string Channel { get; set; } = "whatsapp";
 
         [Required]
         public int Attempts { get; set; }
@@ -492,45 +491,8 @@ namespace Clinics.Domain
         public int? DeletedBy { get; set; }
     }
 
-    [Table("FailedTasks")]
-    public class FailedTask
-    {
-        [Key]
-        public long Id { get; set; }
-
-        /// <summary>
-        /// Reference to the failed message.
-        /// Changed from long to Guid to match Message.Id type.
-        /// </summary>
-        public Guid? MessageId { get; set; }
-
-        [ForeignKey(nameof(MessageId))]
-        public Message? Message { get; set; }
-
-        public int? PatientId { get; set; }
-
-        [ForeignKey(nameof(PatientId))]
-        public Patient? Patient { get; set; }
-
-        public int? QueueId { get; set; }
-
-        [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
-
-        [StringLength(500)]
-        public string? Reason { get; set; }
-
-        [StringLength(2000)]
-        public string? ProviderResponse { get; set; }
-
-        [Required]
-        public DateTime CreatedAt { get; set; }
-
-        public DateTime? LastRetryAt { get; set; }
-
-        [Required]
-        public int RetryCount { get; set; }
-    }
+    // FailedTask entity REMOVED: Failures now tracked via Message.Status = "failed"
+    // Migration will drop FailedTasks table
 
     [Table("Quotas")]
     public class Quota
@@ -651,16 +613,10 @@ namespace Clinics.Domain
         [Required]
         public int ModeratorUserId { get; set; }
 
-        [StringLength(100)]
-        public string? SessionName { get; set; }
-
-        [StringLength(100)]
-        public string? ProviderSessionId { get; set; }
+        // SessionName, ProviderSessionId, LastSyncAt REMOVED - deprecated columns
 
         [StringLength(20)]
         public string? Status { get; set; }
-
-        public DateTime? LastSyncAt { get; set; }
 
         [Required]
         public DateTime CreatedAt { get; set; }
@@ -705,8 +661,8 @@ namespace Clinics.Domain
         /// preventing message sending failures and providing clear feedback.
         /// </summary>
         [System.ComponentModel.DataAnnotations.Schema.NotMapped]
-        public bool IsResumable => IsPaused 
-            && Status == "connected" 
+        public bool IsResumable => IsPaused
+            && Status == "connected"
             && PauseReason?.Contains("CheckWhatsApp", StringComparison.OrdinalIgnoreCase) != true;
 
         // Soft-delete fields
@@ -829,39 +785,9 @@ namespace Clinics.Domain
         public int? DeletedBy { get; set; }
     }
 
-    /// <summary>
-    /// Settings and configuration specific to each moderator
-    /// </summary>
-    [Table("ModeratorSettings")]
-    public class ModeratorSettings
-    {
-        [Key]
-        public int Id { get; set; }
-
-        [Required]
-        public int ModeratorUserId { get; set; }
-
-        [ForeignKey(nameof(ModeratorUserId))]
-        public User? Moderator { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
-
-        /// <summary>
-        /// WhatsApp phone number associated with this moderator
-        /// </summary>
-        [StringLength(20)]
-        [Phone]
-        public string? WhatsAppPhoneNumber { get; set; }
-
-        /// <summary>
-        /// Whether this moderator's settings are active
-        /// </summary>
-        public bool IsActive { get; set; } = true;
-
-        [Required]
-        public DateTime CreatedAt { get; set; }
-
-        [Required]
-        public DateTime UpdatedAt { get; set; }
-    }
+    // ModeratorSettings entity REMOVED: No longer used
+    // WhatsApp phone number tracked via WhatsAppSession
+    // Migration will drop ModeratorSettings table
 
     /// <summary>
     /// MessageCondition: One-to-one REQUIRED relationship with MessageTemplate.
@@ -981,69 +907,8 @@ namespace Clinics.Domain
         public int? RestoredBy { get; set; }
     }
 
-    /// <summary>
-    /// AuditLog entity tracks all significant operations for compliance and debugging.
-    /// Used to log: Create, Update, SoftDelete, Restore, Purge, and quota operations.
-    /// </summary>
-    [Table("AuditLogs")]
-    public class AuditLog
-    {
-        [Key]
-        public int Id { get; set; }
-
-        /// <summary>
-        /// The type of action performed (Create, Update, SoftDelete, Restore, Purge, etc.)
-        /// </summary>
-        [Required]
-        public AuditAction Action { get; set; }
-
-        /// <summary>
-        /// The entity type being modified (e.g., "Queue", "Patient", "MessageTemplate").
-        /// </summary>
-        [Required]
-        [StringLength(50)]
-        public string EntityType { get; set; } = null!;
-
-        /// <summary>
-        /// The primary key of the entity being modified.
-        /// </summary>
-        [Required]
-        public int EntityId { get; set; }
-
-        /// <summary>
-        /// The ID of the user who performed the action.
-        /// </summary>
-        public int? ActorUserId { get; set; }
-
-        [ForeignKey(nameof(ActorUserId))]
-        public User? Actor { get; set; }
-
-        /// <summary>
-        /// Timestamp when the action occurred.
-        /// </summary>
-        [Required]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        /// <summary>
-        /// JSON representation of changes (new values after operation, or reason for deletion).
-        /// Stored as string for flexibility across entity types.
-        /// Example: {"QueueId":5,"PatientCount":0,"MessageCount":0}
-        /// </summary>
-        [Column(TypeName = "nvarchar(max)")]
-        public string? Changes { get; set; }
-
-        /// <summary>
-        /// Optional notes or reason for the operation (e.g., "User requested deletion", "Quota recovery").
-        /// </summary>
-        [StringLength(500)]
-        public string? Notes { get; set; }
-
-        /// <summary>
-        /// Optional JSON for additional context (e.g., quota released: 100, cascade impact).
-        /// </summary>
-        [Column(TypeName = "nvarchar(max)")]
-        public string? Metadata { get; set; }
-    }
+    // AuditLog entity REMOVED: No longer used
+    // Migration will drop AuditLogs table
 
     #region Extension Runner Entities
 
@@ -1134,6 +999,12 @@ namespace Clinics.Domain
         /// </summary>
         [NotMapped]
         public bool IsActive => RevokedAtUtc == null && TokenExpiresAtUtc > DateTime.UtcNow;
+
+        /// <summary>
+        /// The pairing code that was used to pair this device (optional, one-to-one).
+        /// Reverse navigation from ExtensionPairingCode.UsedByDevice.
+        /// </summary>
+        public ExtensionPairingCode? PairingCode { get; set; }
     }
 
     /// <summary>
@@ -1439,13 +1310,13 @@ namespace Clinics.Domain
         public const string PendingNET = "pendingNET";
         public const string Waiting = "waiting";
         public const string Failed = "failed";
-        
+
         /// <summary>
         /// Extension command timed out but may still complete later.
         /// Message should stay in 'sending' state.
         /// </summary>
         public const string ExtensionTimeout = "extensionTimeout";
-        
+
         /// <summary>
         /// No active extension lease for the moderator.
         /// User needs to connect the browser extension.

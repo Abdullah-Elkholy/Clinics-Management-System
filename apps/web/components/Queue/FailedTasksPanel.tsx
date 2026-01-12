@@ -6,7 +6,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
-import { useQueue } from '@/contexts/QueueContext';
 import { createBulkDeleteConfirmation, createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 // Mock data removed - using API data instead
@@ -62,7 +61,6 @@ export default function FailedTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const router = useRouter();
-  const { selectedQueueId } = useQueue();
 
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
@@ -164,18 +162,13 @@ export default function FailedTasksPanel() {
           };
         });
 
-        // Filter by selectedQueueId if one is selected
-        let filteredSessions = transformedSessions;
-        if (selectedQueueId) {
-          filteredSessions = transformedSessions.filter(
-            session => String(session.queueId) === String(selectedQueueId)
-          );
-        }
+        // FailedTasksPanel shows ALL failed sessions for the moderator across all queues (no filtering by selectedQueueId)
+        // These panels are global for the moderator and WhatsAppSession, not queue-specific
 
         logger.debug('[FailedTasksPanel] Setting transformed sessions:', {
-          count: filteredSessions.length
+          count: transformedSessions.length
         });
-        setSessions(filteredSessions);
+        setSessions(transformedSessions);
         logger.debug('[FailedTasksPanel] Sessions set successfully');
       } else {
         logger.warn('[FailedTasksPanel] Response not successful or no data:', {
@@ -200,7 +193,7 @@ export default function FailedTasksPanel() {
         setSessions([]);
         setError('جلسة الواتساب تحتاج إلى المصادقة. يرجى الذهاب إلى لوحة مصادقة الواتساب للمصادقة.');
       } else {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to load failed sessions';
+        const errorMessage = err instanceof Error ? err.message : 'فشل تحميل الجلسات الفاشلة';
         setError(errorMessage);
         logger.error('[FailedTasksPanel] Failed to load failed sessions:', err);
         addToast('فشل تحميل الجلسات الفاشلة', 'error');
@@ -211,7 +204,7 @@ export default function FailedTasksPanel() {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [page, pageSize, user, addToast, selectedQueueId]);
+  }, [page, pageSize, user, addToast]);
 
   /**
    * Load sessions on mount and when dependencies change
@@ -451,14 +444,8 @@ export default function FailedTasksPanel() {
           } as Patient)),
         }));
 
-        // Filter by selectedQueueId if one is selected
-        let filteredSessions = transformedSessions;
-        if (selectedQueueId) {
-          filteredSessions = transformedSessions.filter(
-            session => String(session.queueId) === String(selectedQueueId)
-          );
-        }
-        setSessions(filteredSessions);
+        // FailedTasksPanel shows ALL failed sessions for the moderator across all queues (no filtering by selectedQueueId)
+        setSessions(transformedSessions);
       }
 
       setSelectedPatients((prev) => {
@@ -853,13 +840,6 @@ export default function FailedTasksPanel() {
           <i className="fas fa-redo"></i>
         </button>
         <button
-          onClick={() => handleEditPatient(patient)}
-          className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded text-sm"
-          title="تعديل"
-        >
-          <i className="fas fa-edit"></i>
-        </button>
-        <button
           onClick={() => handleDeletePatient(sessionId, patient.id)}
           className="bg-red-50 text-red-600 hover:bg-red-100 px-2 py-1 rounded text-sm"
           title="حذف"
@@ -980,7 +960,7 @@ export default function FailedTasksPanel() {
                     <div className="bg-white rounded-lg p-4 border border-blue-200">
                       <div className="text-sm text-gray-600 flex items-center gap-1">
                         <i className="fas fa-users text-blue-500 text-xs"></i>
-                        إجمالي المرضى
+                        إجمالي الرسائل
                       </div>
                       <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
                     </div>

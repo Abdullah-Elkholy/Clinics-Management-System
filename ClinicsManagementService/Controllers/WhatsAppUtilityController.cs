@@ -118,8 +118,8 @@ namespace ClinicsManagementService.Controllers
                 if (effectiveModeratorId == 1)
                 {
                     _notifier.Notify($"❌ Admin user (ID=1) attempted to use WhatsApp session. Admins should specify a moderator ID.");
-                    return BadRequest(new 
-                    { 
+                    return BadRequest(new
+                    {
                         error = "InvalidModeratorId",
                         code = "ADMIN_CANNOT_HAVE_SESSION",
                         message = "المسؤول لا يمكنه استخدام جلسة واتساب. يجب تحديد معرف أحد المشرفين.",
@@ -132,14 +132,14 @@ namespace ClinicsManagementService.Controllers
                 if (operationLock == null)
                 {
                     _notifier.Notify($"⏱️ [Moderator {effectiveModeratorId}] Another operation is in progress");
-                    return StatusCode(503, new 
-                    { 
+                    return StatusCode(503, new
+                    {
                         error = "OperationInProgress",
                         code = "BUSY",
                         message = "عملية أخرى قيد التنفيذ. يرجى الانتظار."
                     });
                 }
-                
+
                 // Restore session from backup before checking WhatsApp number
                 try
                 {
@@ -151,50 +151,8 @@ namespace ClinicsManagementService.Controllers
                     _notifier.Notify($"⚠️ Session restore failed (non-critical): {restoreEx.Message}");
                 }
 
-                // Validate: Prevent checking your own WhatsApp number
-                // Get moderator's WhatsApp phone number
-                var moderatorSettings = await _dbContext.Set<ModeratorSettings>()
-                    .FirstOrDefaultAsync(m => m.ModeratorUserId == effectiveModeratorId);
-                
-                if (moderatorSettings != null && !string.IsNullOrEmpty(moderatorSettings.WhatsAppPhoneNumber))
-                {
-                    // Normalize phone numbers for comparison (remove all non-digit characters)
-                    var normalizePhone = (string? phone) => 
-                    {
-                        if (string.IsNullOrEmpty(phone)) return null;
-                        // Remove all non-digit characters, but keep digits
-                        var digitsOnly = new string(phone.Where(char.IsDigit).ToArray());
-                        return digitsOnly;
-                    };
-                    
-                    var moderatorPhoneNormalized = normalizePhone(moderatorSettings.WhatsAppPhoneNumber);
-                    var checkPhoneNormalized = normalizePhone(phoneNumber);
-                    
-                    // Check if the phone number being checked matches the moderator's WhatsApp phone
-                    if (!string.IsNullOrEmpty(moderatorPhoneNormalized) && !string.IsNullOrEmpty(checkPhoneNormalized))
-                    {
-                        // Try different combinations:
-                        // 1. Direct match
-                        // 2. Moderator phone ends with check phone (if check phone is shorter, like without country code)
-                        // 3. Check phone ends with moderator phone (if moderator phone is shorter)
-                        var isOwnNumber = checkPhoneNormalized == moderatorPhoneNormalized ||
-                                         (moderatorPhoneNormalized.EndsWith(checkPhoneNormalized) && 
-                                          checkPhoneNormalized.Length >= 7) || // At least 7 digits match
-                                         (checkPhoneNormalized.EndsWith(moderatorPhoneNormalized) &&
-                                          moderatorPhoneNormalized.Length >= 7); // At least 7 digits match
-                        
-                        if (isOwnNumber)
-                        {
-                            _notifier.Notify($"❌ [Moderator {effectiveModeratorId}] Cannot check own WhatsApp number: {phoneNumber}");
-                            return BadRequest(new 
-                            { 
-                                error = "لا يمكن التحقق من رقم الواتساب الخاص بك. واتساب لا يدعم إرسال الرسائل إلى نفس الرقم.",
-                                code = "SELF_MESSAGE_NOT_SUPPORTED",
-                                message = "لا يمكن التحقق من رقم الواتساب الخاص بك. واتساب لا يدعم إرسال الرسائل إلى نفس الرقم."
-                            });
-                        }
-                    }
-                }
+                // Self-number validation REMOVED - ModeratorSettings entity deprecated
+                // WhatsApp handles self-messaging prevention internally
 
                 // Check if WhatsApp session is paused due to PendingQR (unified session per moderator)
                 // This check prevents operations when authentication is required
@@ -202,8 +160,8 @@ namespace ClinicsManagementService.Controllers
                 if (hasPausedMessages)
                 {
                     _notifier.Notify($"❌ [Moderator {effectiveModeratorId}] Cannot check WhatsApp - session requires authentication (PendingQR)");
-                    return BadRequest(new 
-                    { 
+                    return BadRequest(new
+                    {
                         error = "PendingQR",
                         code = "AUTHENTICATION_REQUIRED",
                         message = "جلسة الواتساب تحتاج إلى المصادقة. يرجى المصادقة أولاً قبل التحقق من الأرقام."
@@ -228,7 +186,7 @@ namespace ClinicsManagementService.Controllers
 
                 // Use the moderator-specific browser session (AFTER auto-restore check)
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
-                
+
                 var result = await _whatsAppService.CheckWhatsAppNumberAsync(phoneNumber, browserSession, cancellationToken);
 
                 // Check cancellation before disposing
@@ -323,14 +281,14 @@ namespace ClinicsManagementService.Controllers
                 if (operationLock == null)
                 {
                     _notifier.Notify($"⏱️ [Moderator {effectiveModeratorId}] Another operation is in progress");
-                    return StatusCode(503, new 
-                    { 
+                    return StatusCode(503, new
+                    {
                         error = "OperationInProgress",
                         code = "BUSY",
                         message = "عملية أخرى قيد التنفيذ. يرجى الانتظار."
                     });
                 }
-                
+
                 // Restore session from backup before checking authentication
                 try
                 {
@@ -341,7 +299,7 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Session restore failed (non-critical): {restoreEx.Message}");
                 }
-                
+
                 // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {
@@ -354,7 +312,7 @@ namespace ClinicsManagementService.Controllers
                 // Get the moderator-specific session
                 var browserSession = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 await browserSession.InitializeAsync();
-                
+
                 var url = WhatsAppConfiguration.WhatsAppBaseUrl;
                 _notifier.Notify($"🔗 [AUTH CHECK] Navigating to {url}...");
                 await browserSession.NavigateToAsync(url);
@@ -366,7 +324,7 @@ namespace ClinicsManagementService.Controllers
                 if (waitUIResult.IsSuccess == true && waitUIResult.State == OperationState.Success)
                 {
                     _notifier.Notify($"✅ [AUTH CHECK] Already authenticated - Updating DB for moderator {effectiveModeratorId}");
-                    
+
                     // Update database: connected (track which user performed the check)
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
@@ -375,12 +333,12 @@ namespace ClinicsManagementService.Controllers
                 else if (waitUIResult.IsPendingQr())
                 {
                     _notifier.Notify($"⚠️ [AUTH CHECK] Pending authentication - Updating DB for moderator {effectiveModeratorId}");
-                    
+
                     // Update database: pending (track which user performed the check)
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "pending", activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTH CHECK] Database updated: ModeratorUserId={effectiveModeratorId}, Status=pending, ActivityUserId={userId ?? effectiveModeratorId}");
                 }
-                                // Check and auto-restore if session size exceeds threshold for this moderator
+                // Check and auto-restore if session size exceeds threshold for this moderator
                 try
                 {
                     await _sessionOptimizer.CheckAndAutoRestoreIfNeededAsync(effectiveModeratorId);
@@ -389,7 +347,7 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ Auto-restore check failed (non-critical): {optimizeEx.Message}");
                 }
-                
+
                 // Dispose the browser session after authentication check is complete
                 try
                 {
@@ -401,14 +359,14 @@ namespace ClinicsManagementService.Controllers
                 {
                     _notifier.Notify($"⚠️ [AUTH CHECK] Failed to dispose session (non-critical): {disposeEx.Message}");
                 }
-                
+
                 return Ok(waitUIResult);
             }
             catch (Exception ex)
             {
                 _notifier.Notify($"❌ [AUTH CHECK] Exception: {ex.Message}");
                 _notifier.Notify($"❌ [AUTH CHECK] Stack trace: {ex.StackTrace}");
-                
+
                 // Ensure session is disposed even if error occurred
                 if (effectiveModeratorId > 0)
                 {
@@ -421,7 +379,7 @@ namespace ClinicsManagementService.Controllers
                         // Ignore dispose errors in exception handler
                     }
                 }
-                
+
                 // Return only the error message without stack trace to avoid large toast messages
                 return Ok(OperationResult<bool>.Failure($"فشل التحقق من المصادقة: {ex.Message}"));
             }
@@ -464,8 +422,8 @@ namespace ClinicsManagementService.Controllers
                 if (effectiveModeratorId == 1)
                 {
                     _notifier.Notify($"❌ Admin user (ID=1) attempted to create WhatsApp session. Admins should use moderator sessions.");
-                    return BadRequest(new 
-                    { 
+                    return BadRequest(new
+                    {
                         error = "InvalidModeratorId",
                         code = "ADMIN_CANNOT_HAVE_SESSION",
                         message = "المسؤول لا يمكنه إنشاء جلسة واتساب. يجب استخدام جلسة أحد المشرفين.",
@@ -478,8 +436,8 @@ namespace ClinicsManagementService.Controllers
                 if (operationLock == null)
                 {
                     _notifier.Notify($"⏱️ [Moderator {effectiveModeratorId}] Another operation is in progress");
-                    return StatusCode(503, new 
-                    { 
+                    return StatusCode(503, new
+                    {
                         error = "OperationInProgress",
                         code = "BUSY",
                         message = "عملية أخرى قيد التنفيذ. يرجى الانتظار."
@@ -510,16 +468,16 @@ namespace ClinicsManagementService.Controllers
                 // First quick pass: check if already authenticated (ChatUI present)
                 var initial = await _whatsAppUIService.WaitForPageLoadAsync(browserSession, WhatsAppConfiguration.ChatUIReadySelectors);
                 _notifier.Notify($"📊 [AUTHENTICATE] Initial check - Success: {initial.IsSuccess}, State: {initial.State}");
-                
+
                 if (initial.IsSuccess == true)
                 {
                     _notifier.Notify($"✅ [AUTHENTICATE] Already authenticated - Updating DB for moderator {effectiveModeratorId}");
-                    
+
                     // Update database: connected (track which user performed authentication)
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                     _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
                     _notifier.Notify($"ℹ️ [AUTHENTICATE] Tasks remain paused - user must click Resume button to continue");
-                    
+
                     return Ok(OperationResult<bool>.Success(true));
                 }
 
@@ -561,12 +519,12 @@ namespace ClinicsManagementService.Controllers
                                     if (element != null)
                                     {
                                         _notifier.Notify($"✅ [AUTHENTICATE] QR scanned successfully - Chat UI detected - Updating DB for moderator {effectiveModeratorId}");
-                                        
+
                                         // Update database: connected (track which user completed authentication)
                                         await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow, activityUserId: userId ?? effectiveModeratorId);
                                         _notifier.Notify($"💾 [AUTHENTICATE] Database updated: ModeratorUserId={effectiveModeratorId}, Status=connected, ActivityUserId={userId ?? effectiveModeratorId}");
                                         _notifier.Notify($"ℹ️ [AUTHENTICATE] Tasks remain paused - user must click Resume button to continue");
-                                        
+
                                         // Optimize and backup authenticated session
                                         try
                                         {
@@ -576,7 +534,7 @@ namespace ClinicsManagementService.Controllers
                                         {
                                             _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
                                         }
-                                        
+
                                         return Ok(OperationResult<bool>.Success(true));
                                     }
                                 }
@@ -623,7 +581,7 @@ namespace ClinicsManagementService.Controllers
                                 else if (monitoringResult.IsSuccess == true)
                                 {
                                     _notifier.Notify("✅ Authentication completed (monitoring detected success).");
-                                    
+
                                     // Optimize and backup authenticated session
                                     try
                                     {
@@ -633,7 +591,7 @@ namespace ClinicsManagementService.Controllers
                                     {
                                         _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
                                     }
-                                    
+
                                     return Ok(OperationResult<bool>.Success(true));
                                 }
                                 else if (monitoringResult.IsSuccess == false)
@@ -685,7 +643,7 @@ namespace ClinicsManagementService.Controllers
                 if (waitForAuth.IsSuccess == true)
                 {
                     _notifier.Notify("✅ Authentication completed: Chat UI detected.");
-                    
+
                     // Optimize and backup authenticated session
                     try
                     {
@@ -695,7 +653,7 @@ namespace ClinicsManagementService.Controllers
                     {
                         _notifier.Notify($"⚠️ Session optimization failed (non-critical): {optimizeEx.Message}");
                     }
-                    
+
                     return Ok(OperationResult<bool>.Success(true));
                 }
 
@@ -754,13 +712,13 @@ namespace ClinicsManagementService.Controllers
 
                 // Check if session exists
                 var session = await _sessionManager.GetCurrentSessionAsync(effectiveModeratorId);
-                
+
                 if (session == null)
                 {
-                    return Ok(new 
-                    { 
-                        success = true, 
-                        data = new 
+                    return Ok(new
+                    {
+                        success = true,
+                        data = new
                         {
                             isActive = false,
                             isHealthy = false,
@@ -782,9 +740,9 @@ namespace ClinicsManagementService.Controllers
                 {
                     currentUrl = await session.GetUrlAsync();
                     // Only check for blank pages, not URL content (WhatsApp may show base URL even when on chat)
-                    isHealthy = !string.IsNullOrWhiteSpace(currentUrl) 
+                    isHealthy = !string.IsNullOrWhiteSpace(currentUrl)
                         && currentUrl != "about:blank";
-                    
+
                     // Check authentication status by looking for ChatUI selectors
                     foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
                     {
@@ -808,8 +766,8 @@ namespace ClinicsManagementService.Controllers
 
                 // Get database session info
                 var dbSession = await _sessionSyncService.GetSessionStatusAsync(effectiveModeratorId);
-                var sessionAge = dbSession?.CreatedAt != null 
-                    ? DateTime.UtcNow - dbSession.CreatedAt 
+                var sessionAge = dbSession?.CreatedAt != null
+                    ? DateTime.UtcNow - dbSession.CreatedAt
                     : (TimeSpan?)null;
 
                 var result = new
@@ -854,7 +812,7 @@ namespace ClinicsManagementService.Controllers
                     {
                         // Check if session exists
                         var session = await _sessionManager.GetCurrentSessionAsync(moderator.Id);
-                        
+
                         bool isActive = session != null;
                         bool isHealthy = false;
                         string? currentUrl = null;
@@ -866,9 +824,9 @@ namespace ClinicsManagementService.Controllers
                             {
                                 currentUrl = await session.GetUrlAsync();
                                 // Only check for blank pages, not URL content (WhatsApp may show base URL even when on chat)
-                                isHealthy = !string.IsNullOrWhiteSpace(currentUrl) 
+                                isHealthy = !string.IsNullOrWhiteSpace(currentUrl)
                                     && currentUrl != "about:blank";
-                                
+
                                 // Check authentication status
                                 foreach (var selector in WhatsAppConfiguration.ChatUIReadySelectors)
                                 {
@@ -892,8 +850,8 @@ namespace ClinicsManagementService.Controllers
 
                         // Get database session info
                         var dbSession = await _sessionSyncService.GetSessionStatusAsync(moderator.Id);
-                        var sessionAge = dbSession?.CreatedAt != null 
-                            ? DateTime.UtcNow - dbSession.CreatedAt 
+                        var sessionAge = dbSession?.CreatedAt != null
+                            ? DateTime.UtcNow - dbSession.CreatedAt
                             : (TimeSpan?)null;
 
                         statusList.Add(new
@@ -961,7 +919,7 @@ namespace ClinicsManagementService.Controllers
                 // Get session and refresh by navigating to WhatsApp base URL
                 var session = await _sessionManager.GetOrCreateSessionAsync(effectiveModeratorId);
                 await session.InitializeAsync();
-                
+
                 var url = WhatsAppConfiguration.WhatsAppBaseUrl;
                 _notifier.Notify($"🔄 Refreshing browser session for moderator {effectiveModeratorId}...");
                 await session.NavigateToAsync(url);
@@ -971,7 +929,7 @@ namespace ClinicsManagementService.Controllers
 
                 // Check authentication status
                 var waitResult = await _whatsAppUIService.WaitForPageLoadAsync(session, WhatsAppConfiguration.ChatUIReadySelectors);
-                
+
                 if (waitResult.IsSuccess == true)
                 {
                     await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "connected", DateTime.UtcNow);
@@ -1013,10 +971,10 @@ namespace ClinicsManagementService.Controllers
                 int effectiveModeratorId = moderatorUserId.Value;
 
                 _notifier.Notify($"🚪 Closing browser session for moderator {effectiveModeratorId}...");
-                
+
                 // Dispose session
                 await _sessionManager.DisposeSessionAsync(effectiveModeratorId);
-                
+
                 // Update database status
                 await _sessionSyncService.UpdateSessionStatusAsync(effectiveModeratorId, "disconnected");
 
@@ -1088,10 +1046,10 @@ namespace ClinicsManagementService.Controllers
                     {
                         // Convert to base64 for JSON response
                         var base64Image = Convert.ToBase64String(screenshotBytes);
-                        return Ok(new 
-                        { 
-                            success = true, 
-                            data = new 
+                        return Ok(new
+                        {
+                            success = true,
+                            data = new
                             {
                                 qrCodeImage = base64Image,
                                 format = "image/png"
@@ -1104,7 +1062,7 @@ namespace ClinicsManagementService.Controllers
                     _notifier.Notify($"⚠️ Error taking QR code screenshot: {screenshotEx.Message}");
                     // Fall through to return error
                 }
-                
+
                 return NotFound(new { success = false, error = "فشل التقاط صورة رمز QR" });
             }
             catch (Exception ex)

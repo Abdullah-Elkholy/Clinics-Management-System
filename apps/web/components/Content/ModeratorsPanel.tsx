@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { ModeratorDetails, CreateModeratorRequest, UpdateModeratorRequest, AddUserToModeratorRequest } from '@/types/moderator';
@@ -380,7 +380,7 @@ export default function ModeratorsPanel() {
                 />
                 <input
                   type="number"
-                  placeholder="حصة الطوابير"
+                  placeholder="حصة العيادات"
                   value={formData.queuesQuota}
                   onChange={(e) =>
                     setFormData({
@@ -473,7 +473,7 @@ export default function ModeratorsPanel() {
                       <span className="font-semibold">{moderator.managedUsersCount}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">الطوابير:</span>
+                      <span className="text-gray-600">العيادات:</span>
                       <span className="font-semibold">{moderator.queuesCount}</span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -580,7 +580,7 @@ export default function ModeratorsPanel() {
                   {/* Queues Quota */}
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">الطوابير</span>
+                      <span className="text-sm font-medium text-gray-700">العيادات</span>
                       <span className="text-sm font-semibold">
                         {moderator.quota.queuesQuota.used} / {moderator.quota.queuesQuota.limit === -1 ? 'غير محدود' : moderator.quota.queuesQuota.limit.toLocaleString('ar-SA')}
                       </span>
@@ -716,3 +716,4 @@ export default function ModeratorsPanel() {
     </PanelWrapper>
   );
 }
+

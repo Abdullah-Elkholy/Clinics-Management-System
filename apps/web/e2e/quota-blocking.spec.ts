@@ -57,7 +57,7 @@ test.describe('Quota Enforcement E2E', () => {
         await page.goto('/');
 
         // Quota display should update when refreshed
-        const refreshButton = page.locator('[data-testid="refresh-quota"], text=تحديث');
+        const refreshButton = page.locator('[data-testid="refresh-quota"]').or(page.locator('text=تحديث'));
         if (await refreshButton.isVisible()) {
             await refreshButton.click();
             // Wait for update

@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useModal } from '@/contexts/ModalContext';
@@ -100,7 +100,7 @@ export default function EditQueueModal() {
     setTouched(true);
     
     if (!queue?.id) {
-      addToast('خطأ: معرّف الطابور غير صالح', 'error');
+      addToast('خطأ: معرّف العيادة غير صالح', 'error');
       logger.error('Queue ID is missing or invalid:', queue);
       return;
     }
@@ -164,7 +164,7 @@ export default function EditQueueModal() {
       }
       
       logger.error('Failed to update queue:', { error: err, parsed: errorMessage });
-      addToast(`حدث خطأ أثناء تحديث الطابور: ${errorMessage}`, 'error');
+      addToast(`حدث خطأ أثناء تحديث العيادة: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -192,7 +192,7 @@ export default function EditQueueModal() {
         setErrors({});
         setTouched(false);
       }}
-      title="تعديل الطابور"
+      title="تعديل العيادة"
       size="md"
     >
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
@@ -256,3 +256,4 @@ export default function EditQueueModal() {
     </Modal>
   );
 }
+
