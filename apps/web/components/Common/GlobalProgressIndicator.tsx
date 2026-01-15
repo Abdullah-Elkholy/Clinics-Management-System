@@ -4,7 +4,10 @@ import React, { useState } from 'react';
 import { useGlobalProgress } from '@/contexts/GlobalProgressContext';
 import { useWhatsAppSession, DetailedSessionStatus } from '@/contexts/WhatsAppSessionContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { translatePauseReason } from '@/utils/pauseReasonTranslations';
+import { parseAsUtc } from '@/utils/dateTimeUtils';
 
 /**
  * GlobalProgressIndicator
@@ -27,9 +30,18 @@ export const GlobalProgressIndicator: React.FC = () => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const { setCurrentPanel, currentPanel } = useUI();
+  const { selectedModeratorId } = useQueue();
+  const { user } = useAuth();
+
+  // Check if current user is Admin
+  const isAdmin = user?.role === 'primary_admin' || user?.role === 'secondary_admin';
 
   // Navigate to WhatsApp Auth tab in management panel (same pattern as Header.tsx)
+  // Navigate to WhatsApp Auth tab in management panel (same pattern as Header.tsx)
   const handleWhatsAppAuthClick = () => {
+    // Disable navigation for Admins (they don't have this tab in their view)
+    if (isAdmin) return;
+
     // Persist desired tab (used when management panel mounts)
     sessionStorage.setItem('userManagementActiveTab', 'whatsappAuth');
 
@@ -89,7 +101,7 @@ export const GlobalProgressIndicator: React.FC = () => {
    */
   const calculateMetrics = (op: any) => {
     const now = Date.now();
-    const startTime = new Date(op.startedAt).getTime();
+    const startTime = parseAsUtc(op.startedAt)?.getTime() || now;
     const elapsedSeconds = (now - startTime) / 1000;
 
     // Messages per second
@@ -131,7 +143,8 @@ export const GlobalProgressIndicator: React.FC = () => {
   };
 
   // Don't render if no ongoing operations and not loading
-  if (!hasOngoingOperations && !isLoading) {
+  // Also don't render if no moderator is selected (Admin hasn't selected a queue yet)
+  if ((!hasOngoingOperations && !isLoading) || selectedModeratorId === null) {
     return null;
   }
 
@@ -222,7 +235,7 @@ export const GlobalProgressIndicator: React.FC = () => {
     >
       {/* Connection Status Bar - Clickable for navigation to WhatsApp auth */}
       <div
-        className={`px-4 py-2 rounded-t-lg flex items-center justify-between cursor-pointer hover:opacity-90 transition-opacity ${detailedStatus === 'connected_idle' || detailedStatus === 'connected_sending'
+        className={`px-4 py-2 rounded-t-lg flex items-center justify-between transition-opacity ${detailedStatus === 'connected_idle' || detailedStatus === 'connected_sending'
           ? 'bg-green-50 border-b border-green-200'
           : detailedStatus === 'extension_connected'
             ? 'bg-blue-50 border-b border-blue-200'
@@ -231,9 +244,9 @@ export const GlobalProgressIndicator: React.FC = () => {
               : detailedStatus === 'pending_qr' || detailedStatus === 'pending_net'
                 ? 'bg-yellow-50 border-b border-yellow-200'
                 : 'bg-red-50 border-b border-red-200'
-          }`}
+          } ${!isAdmin ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
         onClick={handleWhatsAppAuthClick}
-        title="انقر للانتقال إلى صفحة مصادقة واتساب">
+        title={!isAdmin ? "انقر للانتقال إلى صفحة مصادقة واتساب" : "حالة اتصال المشرف"}>
         <div className="flex items-center gap-2">
           <i className={`fas ${connectionStatus.icon} ${connectionStatus.color}`}></i>
           <span className={`text-xs font-medium ${connectionStatus.color}`}>
@@ -387,7 +400,7 @@ export const GlobalProgressIndicator: React.FC = () => {
                           {op.queueName}
                         </div>
                         <div className="text-xs text-gray-500 mt-0.5">
-                          {new Date(op.startedAt).toLocaleTimeString('ar-EG', {
+                          {parseAsUtc(op.startedAt)?.toLocaleTimeString('ar-EG', {
                             hour: '2-digit',
                             minute: '2-digit'
                           })}

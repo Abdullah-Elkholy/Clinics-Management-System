@@ -62,26 +62,26 @@ export default function ModeratorMessagesQuotaModal({
     if (value === '' || value.trim() === '') {
       return -1;
     }
-    
+
     // Remove any non-numeric characters except minus sign at the start
     const cleaned = value.trim().replace(/[^\d-]/g, '');
     if (cleaned === '' || cleaned === '-') {
       return -1;
     }
-    
+
     // Use Number() for better handling of large numbers
     const num = Number(cleaned);
-    
+
     // Check if it's a valid number and not NaN or Infinity
     if (isNaN(num) || !isFinite(num)) {
       return -1;
     }
-    
+
     // Ensure it's an integer
     if (num % 1 !== 0) {
       return Math.floor(num);
     }
-    
+
     return num;
   };
 
@@ -97,13 +97,13 @@ export default function ModeratorMessagesQuotaModal({
 
       // Validate long integer maximum for messages quota
       if (formData.messagesQuota.limit !== -1 && formData.messagesQuota.limit > MAX_SAFE_INTEGER) {
-        setError(`القيمة القصوى المسموحة هي ${MAX_SAFE_INTEGER.toLocaleString('ar-SA')}`);
+        setError(`القيمة القصوى المسموحة هي ${MAX_SAFE_INTEGER.toLocaleString('ar-EG-u-nu-latn')}`);
         setSaving(false);
         return;
       }
 
       if (mode === 'set' && formData.messagesQuota.limit !== -1 && formData.messagesQuota.limit < formData.messagesQuota.used) {
-        setError(`الحد لا يمكن أن يكون أقل من الكمية المستخدمة (${formData.messagesQuota.used.toLocaleString('ar-SA')})`);
+        setError(`الحد لا يمكن أن يكون أقل من الكمية المستخدمة (${formData.messagesQuota.used.toLocaleString('ar-EG-u-nu-latn')})`);
         setSaving(false);
         return;
       }
@@ -119,9 +119,9 @@ export default function ModeratorMessagesQuotaModal({
         const currentLimit = quota.messagesQuota.limit;
         const delta = parseLargeInteger(inputValue);
         const maxAddable = MAX_SAFE_INTEGER - currentLimit;
-        
+
         if (delta > maxAddable || delta <= 0) {
-          setError(`لا يمكن إضافة أكثر من ${maxAddable.toLocaleString('ar-SA')} (الحد الأقصى: ${MAX_SAFE_INTEGER.toLocaleString('ar-SA')})`);
+          setError(`لا يمكن إضافة أكثر من ${maxAddable.toLocaleString('ar-EG-u-nu-latn')} (الحد الأقصى: ${MAX_SAFE_INTEGER.toLocaleString('ar-EG-u-nu-latn')})`);
           setSaving(false);
           return;
         }
@@ -133,7 +133,7 @@ export default function ModeratorMessagesQuotaModal({
         messagesQuota: { ...formData.messagesQuota },
         queuesQuota: { ...quota.queuesQuota }, // Keep original queues quota
       };
-      
+
       if (mode === 'unlimited') {
         // For 'unlimited' mode, set limit to -1
         quotaToSave.messagesQuota = {
@@ -157,8 +157,8 @@ export default function ModeratorMessagesQuotaModal({
         // For 'set' mode, use the calculated limit from formData (capped at MAX_SAFE_INTEGER)
         quotaToSave.messagesQuota = {
           ...formData.messagesQuota,
-          limit: formData.messagesQuota.limit > MAX_SAFE_INTEGER 
-            ? MAX_SAFE_INTEGER 
+          limit: formData.messagesQuota.limit > MAX_SAFE_INTEGER
+            ? MAX_SAFE_INTEGER
             : formData.messagesQuota.limit,
         };
       } else if (mode === 'add' && inputValue === '') {
@@ -166,7 +166,7 @@ export default function ModeratorMessagesQuotaModal({
         setSaving(false);
         return;
       }
-      
+
       // Pass mode information via a custom property
       const quotaWithMode = { ...quotaToSave, _mode: mode } as any;
       await onSave(quotaWithMode as ModeratorQuota);
@@ -185,7 +185,7 @@ export default function ModeratorMessagesQuotaModal({
     }
 
     const currentLimit = quota.messagesQuota.limit;
-    
+
     if (mode === 'add' && currentLimit === -1) {
       return;
     }
@@ -198,7 +198,7 @@ export default function ModeratorMessagesQuotaModal({
     // For 'add' mode, cap the input value itself at (MAX_SAFE_INTEGER - currentLimit)
     if (mode === 'add' && currentLimit !== -1 && parsedValue !== -1 && parsedValue > 0) {
       const maxAddable = MAX_SAFE_INTEGER - currentLimit;
-      
+
       if (parsedValue > maxAddable) {
         // Cap the input value at maxAddable
         const cappedValue = String(maxAddable);
@@ -293,19 +293,19 @@ export default function ModeratorMessagesQuotaModal({
               <div>
                 <div className="text-blue-900 opacity-70 font-medium mb-0.5 text-xs">الإجمالي</div>
                 <div className="text-blue-900 font-bold text-xs">
-                  {wasUnlimited ? 'غير محدود' : quota.messagesQuota.limit.toLocaleString('ar-SA')}
+                  {wasUnlimited ? 'غير محدود' : quota.messagesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
               <div>
                 <div className="text-blue-900 opacity-70 font-medium mb-0.5 text-xs">المستخدم</div>
                 <div className="text-blue-900 font-bold text-xs">
-                  {quota.messagesQuota.used.toLocaleString('ar-SA')}
+                  {quota.messagesQuota.used.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
               <div>
                 <div className="text-blue-900 opacity-70 font-medium mb-0.5 text-xs">المتبقي</div>
                 <div className="text-blue-900 font-bold text-xs">
-                  {wasUnlimited ? 'غير محدود' : originalRemaining.toLocaleString('ar-SA')}
+                  {wasUnlimited ? 'غير محدود' : originalRemaining.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
             </div>
@@ -319,8 +319,8 @@ export default function ModeratorMessagesQuotaModal({
               onChange={(e) => handleLimitChange(e.target.value)}
               disabled={saving || isLoading || (mode === 'add' && wasUnlimited) || mode === 'unlimited'}
               placeholder={mode === 'unlimited' ? 'غير محدود' : (mode === 'add' ? 'أدخل الكمية المراد إضافتها' : 'أدخل الحد الجديد')}
-              max={mode === 'add' && quota.messagesQuota.limit !== -1 
-                ? MAX_SAFE_INTEGER - quota.messagesQuota.limit 
+              max={mode === 'add' && quota.messagesQuota.limit !== -1
+                ? MAX_SAFE_INTEGER - quota.messagesQuota.limit
                 : MAX_SAFE_INTEGER}
               className="flex-1 px-3 py-1.5 text-right text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
@@ -374,9 +374,9 @@ export default function ModeratorMessagesQuotaModal({
             </p>
           ) : (
             <p className="text-xs text-gray-600">
-              {mode === 'set' 
+              {mode === 'set'
                 ? `سيتم تعيين القيمة المدخلة لتصبح هي نفسها الحد الإجمالي`
-                : `سيتم إضافة القيمة المدخلة على الحد الحالي (${quota.messagesQuota.limit === -1 ? 'غير محدود' : quota.messagesQuota.limit.toLocaleString('ar-SA')})`}
+                : `سيتم إضافة القيمة المدخلة على الحد الحالي (${quota.messagesQuota.limit === -1 ? 'غير محدود' : quota.messagesQuota.limit.toLocaleString('ar-EG-u-nu-latn')})`}
             </p>
           )}
 
@@ -388,19 +388,19 @@ export default function ModeratorMessagesQuotaModal({
                 <div>
                   <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">الإجمالي</div>
                   <div className="text-green-900 font-bold text-xs">
-                    {isUnlimited ? 'غير محدود' : formData.messagesQuota.limit.toLocaleString('ar-SA')}
+                    {isUnlimited ? 'غير محدود' : formData.messagesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                   </div>
                 </div>
                 <div>
                   <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">المستخدم</div>
                   <div className="text-green-900 font-bold text-xs">
-                    {formData.messagesQuota.used.toLocaleString('ar-SA')}
+                    {formData.messagesQuota.used.toLocaleString('ar-EG-u-nu-latn')}
                   </div>
                 </div>
                 <div>
                   <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">المتبقي</div>
                   <div className="text-green-900 font-bold text-xs">
-                    {isUnlimited ? 'غير محدود' : remaining.toLocaleString('ar-SA')}
+                    {isUnlimited ? 'غير محدود' : remaining.toLocaleString('ar-EG-u-nu-latn')}
                   </div>
                 </div>
               </div>

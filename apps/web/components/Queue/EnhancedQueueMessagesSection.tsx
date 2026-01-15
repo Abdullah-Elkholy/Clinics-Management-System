@@ -11,7 +11,7 @@
 
 'use client';
 
-import { formatLocalDate } from '@/utils/dateTimeUtils';
+import { formatLocalDate, parseAsUtc } from '@/utils/dateTimeUtils';
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
@@ -80,7 +80,11 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
 
     // Sort
     if (sortBy === 'date') {
-      result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      result.sort((a, b) => {
+        const dateA = parseAsUtc(a.createdAt)?.getTime() || 0;
+        const dateB = parseAsUtc(b.createdAt)?.getTime() || 0;
+        return dateB - dateA;
+      });
     } else if (sortBy === 'title') {
       result.sort((a, b) => a.title.localeCompare(b.title, 'ar'));
     }
@@ -153,7 +157,7 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
         await deleteMessageTemplate(id);
       }
       onTemplateDeleted?.();
-    } 
+    }
     // isActive removed - activate/deactivate actions no longer available
 
     setSelectedTemplates(new Set());
@@ -382,13 +386,12 @@ const EnhancedQueueMessagesSection: React.FC<EnhancedQueueMessagesSectionProps> 
             <div className="flex gap-3">
               <button
                 onClick={handleBulkAction}
-                className={`flex-1 px-4 py-2 rounded-lg text-white font-medium transition-colors ${
-                  bulkAction === 'delete'
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : bulkAction === 'activate'
-                      ? 'bg-green-600 hover:bg-green-700'
-                      : 'bg-yellow-600 hover:bg-yellow-700'
-                }`}
+                className={`flex-1 px-4 py-2 rounded-lg text-white font-medium transition-colors ${bulkAction === 'delete'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : bulkAction === 'activate'
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-yellow-600 hover:bg-yellow-700'
+                  }`}
               >
                 تأكيد
               </button>
@@ -429,7 +432,7 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
   onEdit,
   onDelete,
   onDuplicate,
-    onToggleStatus: _onToggleStatus,
+  onToggleStatus: _onToggleStatus,
 }) => {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
@@ -451,14 +454,12 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 {/* Status Badge */}
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                    'bg-green-100 text-green-800'
-                  }`}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${'bg-green-100 text-green-800'
+                    }`}
                 >
                   <i
-                    className={`fas fa-circle text-xs ${
-                      'text-green-600'
-                    }`}
+                    className={`fas fa-circle text-xs ${'text-green-600'
+                      }`}
                   ></i>
                   نشط
                 </span>

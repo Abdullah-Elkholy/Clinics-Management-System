@@ -56,6 +56,7 @@ interface QueueContextType {
   conditionsError: string | null;
   isMutatingTemplate: boolean;
   isMutatingCondition: boolean;
+  selectedModeratorId: number | null;  // NEW: Derived from selected queue's moderatorId
 }
 
 export const QueueContext = createContext<QueueContextType | null>(null);
@@ -81,6 +82,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [conditionsError, setConditionsError] = useState<string | null>(null);
   const [isMutatingTemplate, setIsMutatingTemplate] = useState(false);
   const [isMutatingCondition, setIsMutatingCondition] = useState(false);
+  const [selectedModeratorId, setSelectedModeratorId] = useState<number | null>(null);
 
   // Load queues and moderators on mount (only if authenticated)
   useEffect(() => {
@@ -122,11 +124,24 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   // Memoized list of moderators with aggregated stats
-  // Use real moderator data from backend instead of mock data
   const moderators = useMemo(
     () => groupQueuesByModerator(queues, messageTemplates, messageConditions, userManagementState.moderators),
     [queues, messageTemplates, messageConditions, userManagementState.moderators]
   );
+
+  // NEW: Auto-derive selectedModeratorId from the selected queue
+  useEffect(() => {
+    if (selectedQueueId) {
+      const queue = queues.find(q => String(q.id) === String(selectedQueueId));
+      if (queue?.moderatorId) {
+        setSelectedModeratorId(Number(queue.moderatorId));
+      } else {
+        setSelectedModeratorId(null);
+      }
+    } else {
+      setSelectedModeratorId(null);
+    }
+  }, [selectedQueueId, queues]);
 
   // Load patients from API when selected queue changes
   useEffect(() => {
@@ -167,7 +182,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Use countryCode from DTO if available, otherwise extract from phone number
         let countryCode = dto.countryCode || '+20';
         let phone = phoneNumber;
-        
+
         // If phone number is in E.164 format (starts with +), extract country code and phone
         if (phoneNumber.startsWith('+')) {
           const countryCodeDigits = countryCode.replace(/[^\d]/g, '');
@@ -180,7 +195,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
           } else {
             // Try to extract country code from phone number
-        const match = phoneNumber.match(/^\+(\d{1,3})(.*)$/);
+            const match = phoneNumber.match(/^\+(\d{1,3})(.*)$/);
             if (match) {
               countryCode = `+${match[1]}`;
               phone = match[2];
@@ -273,7 +288,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         } else {
           // Remove templates for this queue only
-          setMessageTemplates((prevTemplates) => 
+          setMessageTemplates((prevTemplates) =>
             prevTemplates.filter(t => String(t.queueId) !== String(selectedQueueId))
           );
         }
@@ -323,7 +338,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
         } else {
           // Remove conditions for this queue only
-          setMessageConditions((prevConditions) => 
+          setMessageConditions((prevConditions) =>
             prevConditions.filter(c => String(c.queueId) !== String(selectedQueueId))
           );
         }
@@ -747,21 +762,21 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           newTemplates = templateDtos.map((dto: TemplateDto) =>
             templateDtoToModel(dto, queueId)
           );
-          
+
           // Update templates: replace templates for this queue, keep others
           // CRITICAL FIX: Only update if templates actually changed to prevent infinite loops
           setMessageTemplates((prevTemplates) => {
             const templatesForOtherQueues = prevTemplates.filter(t => String(t.queueId) !== String(queueId));
             const existingTemplatesForQueue = prevTemplates.filter(t => String(t.queueId) === String(queueId));
-            
+
             // Compare new templates with existing ones by ID and key properties
             // Only update if there are actual changes (different IDs, count, or content)
             const existingIds = new Set(existingTemplatesForQueue.map(t => t.id));
             const newIds = new Set(newTemplates.map(t => t.id));
-            const idsChanged = existingIds.size !== newIds.size || 
-                              ![...existingIds].every(id => newIds.has(id)) ||
-                              ![...newIds].every(id => existingIds.has(id));
-            
+            const idsChanged = existingIds.size !== newIds.size ||
+              ![...existingIds].every(id => newIds.has(id)) ||
+              ![...newIds].every(id => existingIds.has(id));
+
             // Also check if content changed (simple comparison by JSON stringify of key fields)
             const existingTemplatesStr = JSON.stringify(existingTemplatesForQueue.map(t => ({
               id: t.id,
@@ -769,25 +784,25 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               content: t.content,
               queueId: t.queueId
             })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
-            
+
             const newTemplatesStr = JSON.stringify(newTemplates.map(t => ({
               id: t.id,
               title: t.title,
               content: t.content,
               queueId: t.queueId
             })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
-            
+
             const contentChanged = existingTemplatesStr !== newTemplatesStr;
-            
+
             // Only create new array if data actually changed
             if (idsChanged || contentChanged) {
               return [...templatesForOtherQueues, ...newTemplates];
             }
-            
+
             // Return previous array reference if nothing changed (prevents unnecessary re-renders)
             return prevTemplates;
           });
-          
+
           if (newTemplates.length > 0) {
             setSelectedMessageTemplateId(newTemplates[0].id);
           }
@@ -813,20 +828,20 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
             return condition;
           });
-          
+
           // Update conditions state: replace conditions for this queue, keep others
           // CRITICAL FIX: Only update if conditions actually changed to prevent infinite loops
           setMessageConditions((prevConditions) => {
             const conditionsForOtherQueues = prevConditions.filter(c => String(c.queueId) !== String(queueId));
             const existingConditionsForQueue = prevConditions.filter(c => String(c.queueId) === String(queueId));
-            
+
             // Compare new conditions with existing ones
             const existingIds = new Set(existingConditionsForQueue.map(c => c.id));
             const newIds = new Set(conditions.map(c => c.id));
-            const idsChanged = existingIds.size !== newIds.size || 
-                              ![...existingIds].every(id => newIds.has(id)) ||
-                              ![...newIds].every(id => existingIds.has(id));
-            
+            const idsChanged = existingIds.size !== newIds.size ||
+              ![...existingIds].every(id => newIds.has(id)) ||
+              ![...newIds].every(id => existingIds.has(id));
+
             // Also check if condition properties changed
             const existingConditionsStr = JSON.stringify(existingConditionsForQueue.map(c => ({
               id: c.id,
@@ -837,7 +852,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               templateId: c.templateId,
               queueId: c.queueId
             })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
-            
+
             const newConditionsStr = JSON.stringify(conditions.map(c => ({
               id: c.id,
               operator: c.operator,
@@ -847,14 +862,14 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               templateId: c.templateId,
               queueId: c.queueId
             })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
-            
+
             const contentChanged = existingConditionsStr !== newConditionsStr;
-            
+
             // Only create new array if data actually changed
             if (idsChanged || contentChanged) {
               return [...conditionsForOtherQueues, ...conditions];
             }
-            
+
             // Return previous array reference if nothing changed (prevents unnecessary re-renders)
             return prevConditions;
           });
@@ -924,6 +939,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         conditionsError,
         isMutatingTemplate,
         isMutatingCondition,
+        selectedModeratorId,  // NEW: For moderator-specific filtering in task panels
       }}
     >
       {children}

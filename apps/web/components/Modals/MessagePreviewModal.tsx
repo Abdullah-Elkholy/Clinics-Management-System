@@ -46,7 +46,8 @@ export default function MessagePreviewModal() {
   const [validationStatus, setValidationStatus] = useState<Record<string, {
     isValid: boolean | null; // null = checking/not checked, true = valid, false = invalid
     isChecking: boolean;
-    isQueued?: boolean; // true = waiting in queue to be checked
+    isQueued?: boolean; // true = waiting in queue to be checked (batch)
+    isManualCheck?: boolean; // true = this is a manual retry check (purple vs blue)
     error?: string;
     attempts: number;
   }>>({});
@@ -55,11 +56,19 @@ export default function MessagePreviewModal() {
   const [validationPaused, setValidationPaused] = useState(false);
   const [shouldResumeValidation, setShouldResumeValidation] = useState(false);
 
+  // Queue for manual validation requests (processed after batch validation completes)
+  const manualValidationQueueRef = useRef<string[]>([]);
+  // Ref to store processManualValidationQueue function (avoids circular dependency)
+  const processManualValidationQueueRef = useRef<(() => Promise<void>) | null>(null);
+
   // Track check session IDs for server-side cancellation
   const activeCheckSessionsRef = useRef<Set<string>>(new Set());
 
-  // Abort controller to actually cancel fetch requests
+  // Abort controller for batch validation (validateAllPatients)
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Per-patient abort controllers for manual retry validations (prevents concurrent overwrites)
+  const patientAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   // Abort flag to cancel validation when modal closes
   const abortValidationRef = useRef(false);
@@ -607,16 +616,20 @@ export default function MessagePreviewModal() {
   };
 
   // Check a single phone number with retry logic (max 2 attempts)
+  // Optional abortSignal parameter allows manual retries to use per-patient abort controllers
   const checkPhoneNumber = useCallback(async (
     patientId: string,
     phoneNumber: string,
     attempt = 0,
-    force = false
+    force = false,
+    abortSignal?: AbortSignal
   ): Promise<boolean | null> => {
     const maxAttempts = 2;
+    // Use provided signal (for manual retries) or batch controller signal
+    const effectiveSignal = abortSignal || abortControllerRef.current?.signal;
 
     // Check if modal is still open and validation was aborted
-    if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+    if (!isOpenRef.current || abortValidationRef.current || effectiveSignal?.aborted) {
       setValidationStatus(prev => ({
         ...prev,
         [patientId]: {
@@ -630,8 +643,11 @@ export default function MessagePreviewModal() {
     }
 
     // CRITICAL: FIRST check database IsValidWhatsAppNumber attribute BEFORE calling API
-    // Look up patient from sortedPatients to get latest database value
-    const patient = sortedPatients.find(p => String(p.id) === patientId);
+    // Look up patient from multiple sources to handle stale data when switching queues
+    const patientFromPreview = previewPatients.find(p => String(p.id) === patientId);
+    const patientFromSorted = sortedPatients.find(p => String(p.id) === patientId);
+    const patientFromContext = contextPatients.find(p => String(p.id) === patientId);
+    const patient = patientFromPreview || patientFromSorted || patientFromContext;
 
     if (!force && patient) {
       // Check database value FIRST - if it exists, use it directly (NO API CALL)
@@ -677,12 +693,12 @@ export default function MessagePreviewModal() {
       }
     } else {
       if (process.env.NODE_ENV === 'development') {
-        console.warn(`[MessagePreview] checkPhoneNumber: Patient ${patientId} not found in sortedPatients, will call API`);
+        console.warn(`[MessagePreview] checkPhoneNumber: Patient ${patientId} not found in any source (preview: ${!!patientFromPreview}, sorted: ${!!patientFromSorted}, context: ${!!patientFromContext}), will call API`);
       }
     }
 
     // Check if modal is still open and abort flag again before API call
-    if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+    if (!isOpenRef.current || abortValidationRef.current || effectiveSignal?.aborted) {
       setValidationStatus(prev => ({
         ...prev,
         [patientId]: {
@@ -730,12 +746,12 @@ export default function MessagePreviewModal() {
         {
           countryCode: patientCountryCode,
           forceCheck: force,
-          signal: abortControllerRef.current?.signal
+          signal: effectiveSignal
         }
       );
 
       // Check if modal is still open and abort flag after API call
-      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted || result.category === 'Aborted') {
+      if (!isOpenRef.current || abortValidationRef.current || effectiveSignal?.aborted || result.category === 'Aborted') {
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
@@ -842,7 +858,7 @@ export default function MessagePreviewModal() {
       }
     } catch (error: any) {
       // Check if modal is still open and error is due to abort
-      if (!isOpenRef.current || error?.name === 'AbortError' || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+      if (!isOpenRef.current || error?.name === 'AbortError' || abortValidationRef.current || effectiveSignal?.aborted) {
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
@@ -876,7 +892,7 @@ export default function MessagePreviewModal() {
       }
 
       // Check if modal is still open and abort flag before retry
-      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+      if (!isOpenRef.current || abortValidationRef.current || effectiveSignal?.aborted) {
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
@@ -896,7 +912,7 @@ export default function MessagePreviewModal() {
           const timeout = setTimeout(resolve, 1000);
           // Check abort and modal state every 100ms during wait
           const checkAbort = setInterval(() => {
-            if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+            if (!isOpenRef.current || abortValidationRef.current || effectiveSignal?.aborted) {
               clearTimeout(timeout);
               clearInterval(checkAbort);
               resolve(undefined);
@@ -906,7 +922,7 @@ export default function MessagePreviewModal() {
         });
 
         // Check if modal is still open and abort flag again after wait
-        if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        if (!isOpenRef.current || abortValidationRef.current || effectiveSignal?.aborted) {
           setValidationStatus(prev => ({
             ...prev,
             [patientId]: {
@@ -919,7 +935,8 @@ export default function MessagePreviewModal() {
           return null;
         }
 
-        return checkPhoneNumber(patientId, phoneNumber, attempt + 1);
+        // Pass the same abort signal for recursive retry
+        return checkPhoneNumber(patientId, phoneNumber, attempt + 1, force, abortSignal);
       } else {
         // Max attempts reached - show error with retry option
         setValidationStatus(prev => ({
@@ -934,7 +951,7 @@ export default function MessagePreviewModal() {
         return null;
       }
     }
-  }, [sortedPatients, queueId]);
+  }, [previewPatients, sortedPatients, contextPatients, queueId]);
 
   // Validate all patients sequentially (1 at a time)
   const validateAllPatients = useCallback(async () => {
@@ -1040,73 +1057,81 @@ export default function MessagePreviewModal() {
       return;
     }
 
-    setIsValidating(true);
-    // Progress counter only includes patients that actually need API validation
-    setValidationProgress({ current: 0, total: patientsNeedingApiValidation.length });
+    try {
+      setIsValidating(true);
+      // Progress counter only includes patients that actually need API validation
+      setValidationProgress({ current: 0, total: patientsNeedingApiValidation.length });
 
-    // Only call check-whatsapp endpoint for patients where database value is null
-    for (let i = 0; i < patientsNeedingApiValidation.length; i++) {
-      // Check if modal is still open and abort flags at start of each iteration
-      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
-        setIsValidating(false);
-        return;
-      }
-
-      const patientFromArray = patientsNeedingApiValidation[i];
-      const patientId = String(patientFromArray.id);
-
-      // CRITICAL: Fresh lookup from sortedPatients to get latest database value
-      // Don't rely on patientFromArray which might have stale data
-      const freshPatient = sortedPatients.find(p => String(p.id) === patientId);
-
-      // Double-check: only validate if database value is still null
-      // (in case it was updated by another process or between iterations)
-      if (freshPatient && (freshPatient.isValidWhatsAppNumber === true || freshPatient.isValidWhatsAppNumber === false)) {
-        // Check if modal is still open before updating state
+      // Only call check-whatsapp endpoint for patients where database value is null
+      for (let i = 0; i < patientsNeedingApiValidation.length; i++) {
+        // Check if modal is still open and abort flags at start of each iteration
         if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
-          setIsValidating(false);
           return;
         }
-        // Database value exists now - use it instead of API call
-        setValidationStatus(prev => ({
-          ...prev,
-          [patientId]: {
-            isValid: freshPatient.isValidWhatsAppNumber === true,
-            isChecking: false,
-            attempts: 0,
+
+        const patientFromArray = patientsNeedingApiValidation[i];
+        const patientId = String(patientFromArray.id);
+
+        // CRITICAL: Fresh lookup from sortedPatients to get latest database value
+        // Don't rely on patientFromArray which might have stale data
+        const freshPatient = sortedPatients.find(p => String(p.id) === patientId);
+
+        // Double-check: only validate if database value is still null
+        // (in case it was updated by another process or between iterations)
+        if (freshPatient && (freshPatient.isValidWhatsAppNumber === true || freshPatient.isValidWhatsAppNumber === false)) {
+          // Check if modal is still open before updating state
+          if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+            return;
           }
-        }));
-        setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
-        continue;
+          // Database value exists now - use it instead of API call
+          setValidationStatus(prev => ({
+            ...prev,
+            [patientId]: {
+              isValid: freshPatient.isValidWhatsAppNumber === true,
+              isChecking: false,
+              attempts: 0,
+            }
+          }));
+          setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
+          continue;
+        }
+
+        // Check if modal is still open and abort flags before API call
+        if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+          return;
+        }
+
+        // Build full phone number with country code (E.164 format for WhatsApp API)
+        // Use freshPatient if available, otherwise fallback to patientFromArray
+        const patientToUse = freshPatient || patientFromArray;
+        const countryCode = patientToUse.countryCode || '+20';
+        // Combine country code and phone number: +20 1018542431 -> +201018542431
+        const phoneNumber = `${countryCode}${patientToUse.phone}`;
+
+        // checkPhoneNumber will also check database value before calling API
+        // It uses abortControllerRef.current?.signal internally
+        await checkPhoneNumber(patientId, phoneNumber, 0);
+
+        // Check if modal is still open and abort flags after API call
+        if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+          return;
+        }
+
+        setValidationProgress(prev => ({ ...prev, current: i + 1 }));
       }
+    } catch (error) {
+      console.error('[MessagePreview] validateAllPatients error:', error);
+    } finally {
+      setIsValidating(false);
 
-      // Check if modal is still open and abort flags before API call
-      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
-        setIsValidating(false);
-        return;
+      // After batch validation completes (or errors/aborts), process any queued manual validation requests
+      // Only process queue if modal is still open and NOT aborted
+      if (isOpenRef.current && !abortValidationRef.current && !abortControllerRef.current?.signal.aborted) {
+        if (processManualValidationQueueRef.current) {
+          await processManualValidationQueueRef.current();
+        }
       }
-
-      // Build full phone number with country code (E.164 format for WhatsApp API)
-      // Use freshPatient if available, otherwise fallback to patientFromArray
-      const patientToUse = freshPatient || patientFromArray;
-      const countryCode = patientToUse.countryCode || '+20';
-      // Combine country code and phone number: +20 1018542431 -> +201018542431
-      const phoneNumber = `${countryCode}${patientToUse.phone}`;
-
-      // checkPhoneNumber will also check database value before calling API
-      // It uses abortControllerRef.current?.signal internally
-      await checkPhoneNumber(patientId, phoneNumber, 0);
-
-      // Check if modal is still open and abort flags after API call
-      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
-        setIsValidating(false);
-        return;
-      }
-
-      setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
     }
-
-    setIsValidating(false);
   }, [isOpen, sortedPatients, selectedPatientIds, removedPatients, checkPhoneNumber]);
 
   // Refresh patient data and trigger validation when modal opens
@@ -1119,6 +1144,12 @@ export default function MessagePreviewModal() {
       setValidationPaused(false);
       setShouldResumeValidation(false);
       abortValidationRef.current = false;
+      setIsSending(false); // Fix: Reset sending state in case it was stuck
+
+      // Clear refs to prevent stale state from previous opens
+      manualValidationQueueRef.current = [];
+      activeCheckSessionsRef.current.clear();
+      patientAbortControllersRef.current.clear();
 
       // Refresh patients from database to get latest IsValidWhatsAppNumber values
       refreshPatients(queueId).then(() => {
@@ -1140,70 +1171,135 @@ export default function MessagePreviewModal() {
   // Manual retry validation for a specific patient
   // IMPORTANT: This goes DIRECTLY to WhatsApp via extension (force=true)
   // Unlike automated validation which checks database first
+  // Queues requests during batch validation, processes after batch completes
   const handleRetryValidation = useCallback(async (patientId: string) => {
-    // If batch validation is running, pause it
+    // If batch validation is running, add to queue instead of processing immediately
     if (isValidating) {
-      // Abort current validation
-      abortControllerRef.current?.abort();
-      setValidationPaused(true);
-      addToast('جاري إيقاف التحقق الحالي مؤقتاً... برجاء الانتظار من دقيقة لدقيقتين... سيتم التحقق من الرقم بعد الانتهاء', 'info');
-
-      // Wait for abort to complete
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    // First, refresh patient data to get latest from database
-    if (queueId) {
-      try {
-        await refreshPatients(queueId);
-        // Wait a bit for state to update
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
-        console.error('Failed to refresh patient data:', error);
-      }
-    }
-
-    // Get fresh patient data after refresh
-    const patient = sortedPatients.find(p => String(p.id) === patientId);
-    if (!patient || !patient.phone) {
-      // If still not found, try to get from contextPatients
-      const contextPatient = contextPatients.find(p => String(p.id) === patientId);
-      if (!contextPatient || !contextPatient.phone) {
-        addToast('لم يتم العثور على بيانات المريض', 'error');
-        return;
-      }
-    }
-
-    const patientToUse = patient || contextPatients.find(p => String(p.id) === patientId);
-    if (!patientToUse || !patientToUse.phone) return;
-
-    // Create new AbortController for this single validation
-    abortControllerRef.current = new AbortController();
-
-    const countryCode = patientToUse.countryCode || '+20';
-    // Combine country code and phone number: +20 1018542431 -> +201018542431
-    const phoneNumber = `${countryCode}${patientToUse.phone}`;
-
-    // Reset validation status before retry
-    setValidationStatus(prev => ({
-      ...prev,
-      [patientId]: {
-        isValid: null,
-        isChecking: true,
-        attempts: 0,
-      }
-    }));
-
-    // Unified validation call
-    try {
-      await checkPhoneNumber(patientId, phoneNumber, 0, true);
-    } catch (error: any) {
-      if (error?.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+      // Check if already in queue
+      if (!manualValidationQueueRef.current.includes(patientId)) {
+        manualValidationQueueRef.current.push(patientId);
+        // Mark as queued for manual check (gray clock icon)
         setValidationStatus(prev => ({
           ...prev,
           [patientId]: {
             isValid: null,
             isChecking: false,
+            isQueued: true,
+            isManualCheck: true, // Mark as manual for queued display
+            attempts: 0,
+          }
+        }));
+        // Update total count to include newly queued item so progress (X/total) reflects it
+        setValidationProgress(prev => ({ ...prev, total: prev.total + 1 }));
+        addToast('تم إضافة الرقم لقائمة الانتظار. سيتم التحقق بعد انتهاء التحقق التلقائي.', 'info');
+      } else {
+        addToast('هذا الرقم موجود بالفعل في قائمة الانتظار', 'info');
+      }
+      return;
+    }
+
+    // Not in batch validation - check if another manual check is in progress
+    const isAnyManualCheckInProgress = Array.from(patientAbortControllersRef.current.keys()).length > 0;
+
+    if (isAnyManualCheckInProgress) {
+      // Another manual check is running - add to queue
+      if (!manualValidationQueueRef.current.includes(patientId)) {
+        manualValidationQueueRef.current.push(patientId);
+        // Update total count to include newly queued item
+        setValidationProgress(prev => ({ current: prev.current, total: prev.total + 1 }));
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            isQueued: true,
+            isManualCheck: true,
+            attempts: 0,
+          }
+        }));
+        addToast('تم إضافة الرقم لقائمة الانتظار. سيتم التحقق بعد انتهاء التحقق الحالي.', 'info');
+      }
+      return;
+    }
+
+    // Starting a new manual validation - set validating state
+    setIsValidating(true);
+    setValidationProgress({ current: 0, total: 1 + manualValidationQueueRef.current.length });
+
+    // Execute the manual validation directly
+    await executeManualValidation(patientId);
+    setValidationProgress(prev => ({ current: prev.current + 1, total: prev.total }));
+
+    // After this validation completes, process any other queued items
+    if (processManualValidationQueueRef.current) {
+      await processManualValidationQueueRef.current();
+    }
+
+    // All manual checks done - reset validating state
+    setIsValidating(false);
+    setValidationProgress({ current: 0, total: 0 });
+  }, [isValidating, addToast]);
+
+  // Execute a single manual validation (called by handleRetryValidation and processManualValidationQueue)
+  const executeManualValidation = useCallback(async (patientId: string) => {
+    // Get patient data - IMPORTANT: try multiple sources to handle stale data when switching queues
+    // 1. First try resolutions (most reliable - derived from current modal data)
+    const patientResolution = resolutions.find(r => String(r.patientId) === patientId);
+    // 2. Then try previewPatients (current modal data)
+    const patientFromPreview = previewPatients.find(p => String(p.id) === patientId);
+    // 3. Then try sortedPatients and contextPatients as fallbacks
+    const patientFromSorted = sortedPatients.find(p => String(p.id) === patientId);
+    const patientFromContext = contextPatients.find(p => String(p.id) === patientId);
+
+    const patient = patientFromPreview || patientFromSorted || patientFromContext;
+
+    // Debug log to help diagnose stale data issues
+    console.log('[MessagePreview] executeManualValidation lookup:', {
+      patientId,
+      foundInResolutions: !!patientResolution,
+      foundInPreview: !!patientFromPreview,
+      foundInSorted: !!patientFromSorted,
+      foundInContext: !!patientFromContext,
+      resolutionsCount: resolutions.length,
+      previewPatientsCount: previewPatients.length,
+      sortedPatientsCount: sortedPatients.length,
+    });
+
+    if (!patient || !patient.phone) {
+      addToast('لم يتم العثور على بيانات المريض', 'error');
+      return;
+    }
+
+    // Create abort controller for this validation
+    const patientAbortController = new AbortController();
+    patientAbortControllersRef.current.set(patientId, patientAbortController);
+
+    const countryCode = patient.countryCode || '+20';
+    const phoneNumber = `${countryCode}${patient.phone}`;
+
+    // Mark as checking with manual flag (purple spinner)
+    setValidationStatus(prev => ({
+      ...prev,
+      [patientId]: {
+        isValid: null,
+        isChecking: true,
+        isQueued: false,
+        isManualCheck: true, // Purple spinner for manual check
+        attempts: 0,
+      }
+    }));
+
+    try {
+      // Force=true ensures we always call WhatsApp API (no database cache)
+      await checkPhoneNumber(patientId, phoneNumber, 0, true, patientAbortController.signal);
+    } catch (error: any) {
+      if (error?.name === 'AbortError' || patientAbortController.signal.aborted) {
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: null,
+            isChecking: false,
+            isManualCheck: true,
             error: 'تم إلغاء عملية التحقق',
             attempts: 0,
           }
@@ -1216,23 +1312,49 @@ export default function MessagePreviewModal() {
         [patientId]: {
           isValid: null,
           isChecking: false,
+          isManualCheck: true,
           error: error?.message || 'فشل التحقق من رقم الواتساب',
           attempts: 0,
         }
       }));
     } finally {
-      // If validation was paused, resume it after this retry completes
-      if (validationPaused) {
-        setValidationPaused(false);
-        setShouldResumeValidation(true);
-        addToast('استئناف التحقق من أرقام الواتساب...', 'success');
-      }
+      // Clean up the patient's abort controller
+      patientAbortControllersRef.current.delete(patientId);
     }
-  }, [sortedPatients, contextPatients, checkPhoneNumber, queueId, refreshPatients, addToast, isValidating, validationPaused]);
+  }, [resolutions, previewPatients, sortedPatients, contextPatients, checkPhoneNumber, addToast]);
 
-  // Handle modal close with confirmation if validating
+  // Process queued manual validation requests one at a time
+  const processManualValidationQueue = useCallback(async () => {
+    while (manualValidationQueueRef.current.length > 0) {
+      // Check if modal is still open
+      if (!isOpenRef.current || abortValidationRef.current) {
+        // Clear queue on abort or modal close
+        manualValidationQueueRef.current = [];
+        return;
+      }
+
+      // Get the next patient from queue
+      const patientId = manualValidationQueueRef.current.shift();
+      if (!patientId) continue;
+
+      // Execute validation for this patient
+      await executeManualValidation(patientId);
+
+      // Update progress
+      setValidationProgress(prev => ({ current: prev.current + 1, total: prev.total }));
+    }
+  }, [executeManualValidation]);
+
+  // Assign processManualValidationQueue to ref for use in validateAllPatients
+  useEffect(() => {
+    processManualValidationQueueRef.current = processManualValidationQueue;
+  }, [processManualValidationQueue]);
+
+  // Handle modal close with confirmation if validating or manual check in progress
   const handleCloseModal = () => {
-    if (isValidating) {
+    // Check if batch validation OR manual validation is in progress
+    const isManualCheckInProgress = patientAbortControllersRef.current.size > 0 || manualValidationQueueRef.current.length > 0;
+    if (isValidating || isManualCheckInProgress) {
       // Show confirmation dialog
       setShowCloseConfirmation(true);
     } else {
@@ -1275,14 +1397,23 @@ export default function MessagePreviewModal() {
   // Reset all state and abort processes when modal closes
   useEffect(() => {
     if (!isOpen) {
-      // Abort any ongoing requests
+      // Abort any ongoing batch validation requests
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
 
+      // Abort all per-patient validation requests
+      patientAbortControllersRef.current.forEach((controller) => {
+        controller.abort();
+      });
+      patientAbortControllersRef.current.clear();
+
       // Clear active check sessions
       activeCheckSessionsRef.current.clear();
+
+      // Clear manual validation queue
+      manualValidationQueueRef.current = [];
 
       // Reset all state variables
       abortValidationRef.current = false;
@@ -1471,9 +1602,18 @@ export default function MessagePreviewModal() {
                             <div className="flex items-center gap-1">
                               {(() => {
                                 const status = validationStatus[String(resolution.patientId)];
-                                // Currently being checked - spinner
+                                // Currently being checked - show spinner (blue for batch, purple for manual)
                                 if (status?.isChecking) {
-                                  return <i className="fas fa-spinner fa-spin text-blue-500 text-xs" title="جاري التحقق..."></i>;
+                                  if (status.isManualCheck) {
+                                    // Manual check - purple spinner with border
+                                    return (
+                                      <span className="inline-flex items-center justify-center w-4 h-4 border border-purple-400 rounded-full">
+                                        <i className="fas fa-spinner fa-spin text-purple-600 text-xs" title="جاري التحقق يدوياً..."></i>
+                                      </span>
+                                    );
+                                  }
+                                  // Batch check - blue spinner
+                                  return <i className="fas fa-spinner fa-spin text-blue-500 text-xs" title="جاري التحقق التلقائي..."></i>;
                                 }
                                 // Valid WhatsApp number - green check
                                 if (status?.isValid === true) {
@@ -1493,8 +1633,17 @@ export default function MessagePreviewModal() {
                                     ></i>
                                   );
                                 }
-                                // Queued for checking - gray clock
+                                // Queued for checking - gray clock (shows for both batch queued and manual queued)
                                 if (status?.isQueued) {
+                                  if (status.isManualCheck) {
+                                    // Queued manual check - gray clock with text indicator
+                                    return (
+                                      <span className="inline-flex items-center gap-0.5" title="في انتظار التحقق اليدوي...">
+                                        <i className="fas fa-clock text-gray-400 text-xs"></i>
+                                        <span className="text-gray-400 text-xs">#</span>
+                                      </span>
+                                    );
+                                  }
                                   return <i className="fas fa-clock text-gray-400 text-xs" title="في انتظار التحقق..."></i>;
                                 }
                                 // Not checked yet (no status at all) - gray question mark
@@ -1508,10 +1657,18 @@ export default function MessagePreviewModal() {
                                 onClick={() => handleRetryValidation(String(resolution.patientId))}
                                 disabled={(() => {
                                   const status = validationStatus[String(resolution.patientId)];
-                                  return status?.isChecking === true;
+                                  // Disable when checking OR when queued for manual check
+                                  return status?.isChecking === true || (status?.isQueued && status?.isManualCheck);
                                 })()}
-                                className="text-xs text-blue-600 hover:text-blue-800 underline disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="تحقق مباشر من واتساب (بدون التحقق من قاعدة البيانات)"
+                                className={`text-xs underline disabled:opacity-50 disabled:cursor-not-allowed ${validationStatus[String(resolution.patientId)]?.isQueued && validationStatus[String(resolution.patientId)]?.isManualCheck
+                                  ? 'text-gray-400'
+                                  : 'text-blue-600 hover:text-blue-800'
+                                  }`}
+                                title={
+                                  validationStatus[String(resolution.patientId)]?.isQueued && validationStatus[String(resolution.patientId)]?.isManualCheck
+                                    ? 'في قائمة الانتظار للتحقق اليدوي'
+                                    : 'تحقق مباشر من واتساب (بدون التحقق من قاعدة البيانات)'
+                                }
                               >
                                 <i className="fas fa-redo text-xs"></i>
                               </button>
@@ -1568,8 +1725,8 @@ export default function MessagePreviewModal() {
                 </>
               ) : isValidating ? (
                 <>
-                  <i className="fas fa-lock"></i>
-                  جاري التحقق... ({validationProgress.current}/{validationProgress.total})
+                  <i className="fas fa-spinner fa-spin"></i>
+                  جاري التحقق... ({validationProgress.current + 1}/{validationProgress.total})
                 </>
               ) : (
                 <>

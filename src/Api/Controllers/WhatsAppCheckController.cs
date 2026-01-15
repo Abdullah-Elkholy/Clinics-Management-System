@@ -43,8 +43,7 @@ namespace Clinics.Api.Controllers
         [Authorize(Policy = "ModeratorOrAbove")]
         public async Task<ActionResult<OperationResult<bool>>> CheckPhoneNumber(
             string phoneNumber,
-            [FromQuery] int? queueId = null,
-            [FromQuery] bool forceCheck = false)
+            [FromQuery] int? queueId = null)
         {
             var moderatorId = GetModeratorId();
             if (moderatorId == null)

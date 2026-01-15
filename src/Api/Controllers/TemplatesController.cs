@@ -55,7 +55,7 @@ namespace Clinics.Api.Controllers
                     return Unauthorized(new { message = "User not found" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
-                
+
                 // Get effective moderator ID: moderators use their own ID, users use their ModeratorId
                 int? moderatorId = null;
                 if (currentUser.Role == "moderator")
@@ -103,7 +103,7 @@ namespace Clinics.Api.Controllers
                             .Where(q => !q.IsDeleted && q.ModeratorId == moderatorId.Value)
                             .Select(q => q.Id)
                             .ToListAsync();
-                        
+
                         query = query.Where(t => moderatorQueueIds.Contains(t.QueueId));
                     }
                     // Admins can see all templates
@@ -114,7 +114,7 @@ namespace Clinics.Api.Controllers
                     .AsNoTracking()
                     .OrderBy(t => t.CreatedAt)
                     .ToListAsync();
-                
+
                 var dtos = templates.Select(t => new TemplateDto
                 {
                     Id = t.Id,
@@ -168,7 +168,7 @@ namespace Clinics.Api.Controllers
                 var template = await _db.MessageTemplates
                     .Include(t => t.Condition) // Include the Condition navigation property
                     .FirstOrDefaultAsync(t => t.Id == id && !t.IsDeleted);
-                
+
                 if (template == null)
                     return NotFound(new { message = "Template not found" });
 
@@ -267,11 +267,11 @@ namespace Clinics.Api.Controllers
                     return Forbid();
 
                 var userId = _userContext.GetUserId();
-                
+
                 // Step 1: Validate and prepare condition data first
                 // Determine operator: default to UNCONDITIONED if not provided
-                var conditionOperator = string.IsNullOrWhiteSpace(req.ConditionOperator) 
-                    ? "UNCONDITIONED" 
+                var conditionOperator = string.IsNullOrWhiteSpace(req.ConditionOperator)
+                    ? "UNCONDITIONED"
                     : req.ConditionOperator.ToUpper();
 
                 // Validate operator
@@ -335,8 +335,8 @@ namespace Clinics.Api.Controllers
                     TemplateId = null, // Will set after template is created
                     QueueId = req.QueueId,
                     Operator = conditionOperator,
-                    Value = conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS" 
-                        ? req.ConditionValue 
+                    Value = conditionOperator == "EQUAL" || conditionOperator == "GREATER" || conditionOperator == "LESS"
+                        ? req.ConditionValue
                         : null,
                     MinValue = conditionOperator == "RANGE" ? req.ConditionMinValue : null,
                     MaxValue = conditionOperator == "RANGE" ? req.ConditionMaxValue : null,
@@ -506,10 +506,10 @@ namespace Clinics.Api.Controllers
 
                 // Get current user ID for audit
                 var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
-                
+
                 // Soft-delete template and cascade to related entities
                 var (success, errorMessage) = await _templateCascadeService.SoftDeleteTemplateAsync(id, userId);
-                
+
                 if (!success)
                 {
                     return BadRequest(new { success = false, error = errorMessage });
@@ -563,9 +563,9 @@ namespace Clinics.Api.Controllers
                         // Find the current DEFAULT condition in the same queue (if any) and set it to UNCONDITIONED
                         // Only change the condition that is currently DEFAULT, not all other conditions
                         var currentDefaultCondition = await _db.Set<MessageCondition>()
-                            .FirstOrDefaultAsync(c => 
-                                c.QueueId == template.QueueId && 
-                                c.Operator == "DEFAULT" && 
+                            .FirstOrDefaultAsync(c =>
+                                c.QueueId == template.QueueId &&
+                                c.Operator == "DEFAULT" &&
                                 c.TemplateId != id); // Exclude the template we're setting as default
 
                         if (currentDefaultCondition != null)
@@ -607,7 +607,7 @@ namespace Clinics.Api.Controllers
                             };
                             _db.Set<MessageCondition>().Add(condition);
                             await _db.SaveChangesAsync(); // Save to get condition ID
-                            
+
                             // Update template with MessageConditionId (maintain bidirectional relationship)
                             template.MessageConditionId = condition.Id;
                         }
@@ -658,7 +658,7 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// GET /api/templates/trash?page=1&pageSize=10
+        /// GET /api/templates/trash?page=1&amp;pageSize=10
         /// Get soft-deleted templates (trash) for moderator's queues or all if admin.
         /// </summary>
         [HttpGet("trash")]
@@ -681,10 +681,9 @@ namespace Clinics.Api.Controllers
 
                 // Filter out templates that belong to deleted queues
                 // Use a subquery instead of Include to avoid loading entire Queue entities
-                query = query.Where(t => 
-                    t.QueueId == null || 
-                    !_db.Queues.IgnoreQueryFilters().Any(q => 
-                        q.Id == t.QueueId && 
+                query = query.Where(t =>
+                    !_db.Queues.IgnoreQueryFilters().Any(q =>
+                        q.Id == t.QueueId &&
                         q.IsDeleted));
 
                 var total = await query.CountAsync();
@@ -742,7 +741,7 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// GET /api/templates/archived?page=1&pageSize=10
+        /// GET /api/templates/archived?page=1&amp;pageSize=10
         /// Admin-only endpoint to view archived templates (soft-deleted 30+ days ago).
         /// </summary>
         [HttpGet("archived")]

@@ -457,6 +457,11 @@ export interface GlobalPauseState {
    * (either not PendingQR, or PendingQR but now connected/authenticated)
    */
   isResumable: boolean;
+  /**
+   * True when extension has active lease and recent heartbeat.
+   * If false, pause/resume buttons should be disabled since there's nothing to pause.
+   */
+  isExtensionConnected: boolean;
 }
 
 export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPauseState> {
@@ -496,6 +501,7 @@ export interface CombinedStatusResponse {
     pausedAt: string | null;
     pausedBy: number | null;
     isResumable: boolean;
+    isExtensionConnected?: boolean;
   };
   extension: {
     hasActiveLease: boolean;

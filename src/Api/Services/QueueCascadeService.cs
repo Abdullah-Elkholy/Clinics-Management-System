@@ -1,4 +1,4 @@
-﻿/**
+﻿/*
  * Queue Cascade Service - Soft Delete Handler
  * File: src/Api/Services/QueueCascadeService.cs
  * 
@@ -21,12 +21,16 @@ public interface IQueueCascadeService
     /// <summary>
     /// Soft-delete a queue and all its related entities
     /// </summary>
+    /// <param name="queueId">The ID of the queue to soft-delete</param>
+    /// <param name="deletedByUserId">The ID of the user performing the deletion</param>
     /// <param name="useTransaction">If false, assumes caller manages transaction</param>
     Task<(bool Success, string ErrorMessage)> SoftDeleteQueueAsync(int queueId, int deletedByUserId, bool useTransaction = true);
 
     /// <summary>
     /// Restore a previously soft-deleted queue
     /// </summary>
+    /// <param name="queueId">The ID of the queue to restore</param>
+    /// <param name="restoredBy">The ID of the user restoring the queue</param>
     /// <param name="useTransaction">If false, assumes caller manages transaction</param>
     Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null, bool useTransaction = true);
 
@@ -54,7 +58,7 @@ public class QueueCascadeService : IQueueCascadeService
     private const int TTL_DAYS = 30;
 
     public QueueCascadeService(
-        ApplicationDbContext db, 
+        ApplicationDbContext db,
         ILogger<QueueCascadeService> logger,
         IMessageSessionCascadeService messageSessionCascadeService)
     {
@@ -101,77 +105,77 @@ public class QueueCascadeService : IQueueCascadeService
         // Unify datetime for this bulk operation
         var deletionTimestamp = DateTime.UtcNow;
 
-            var queue = await _db.Queues
-                .FirstOrDefaultAsync(q => q.Id == queueId && !q.IsDeleted);
+        var queue = await _db.Queues
+            .FirstOrDefaultAsync(q => q.Id == queueId && !q.IsDeleted);
 
-            if (queue == null)
+        if (queue == null)
+        {
+            return (false, "Queue not found");
+        }
+
+        // Mark queue as deleted
+        queue.IsDeleted = true;
+        queue.DeletedAt = deletionTimestamp;
+        queue.DeletedBy = deletedByUserId;
+
+        // Soft-delete all related MessageSessions (which will cascade to Messages)
+        var messageSessions = await _db.MessageSessions
+            .Where(s => s.QueueId == queueId && !s.IsDeleted)
+            .ToListAsync();
+
+        foreach (var session in messageSessions)
+        {
+            // Call MessageSessionCascadeService with useTransaction = false since we're already in a transaction
+            var (success, error) = await _messageSessionCascadeService.SoftDeleteMessageSessionAsync(
+                session.Id,
+                deletedByUserId,
+                useTransaction: false);
+
+            if (!success)
             {
-                return (false, "Queue not found");
+                _logger.LogError("Failed to soft-delete MessageSession {SessionId}: {Error}", session.Id, error);
+                return (false, $"فشل حذف جلسة الرسائل: {error}");
             }
+        }
 
-            // Mark queue as deleted
-            queue.IsDeleted = true;
-            queue.DeletedAt = deletionTimestamp;
-            queue.DeletedBy = deletedByUserId;
+        // Soft-delete all related patients
+        var patients = await _db.Patients
+            .Where(p => p.QueueId == queueId && !p.IsDeleted)
+            .ToListAsync();
+        foreach (var patient in patients)
+        {
+            patient.IsDeleted = true;
+            patient.DeletedAt = deletionTimestamp;
+            patient.DeletedBy = deletedByUserId;
+        }
 
-            // Soft-delete all related MessageSessions (which will cascade to Messages)
-            var messageSessions = await _db.MessageSessions
-                .Where(s => s.QueueId == queueId && !s.IsDeleted)
-                .ToListAsync();
+        // Soft-delete all related templates and their conditions (one-to-one relationship)
+        var templates = await _db.MessageTemplates
+            .Where(t => t.QueueId == queueId && !t.IsDeleted)
+            .Include(t => t.Condition)
+            .ToListAsync();
+        foreach (var template in templates)
+        {
+            template.IsDeleted = true;
+            template.DeletedAt = deletionTimestamp;
+            template.DeletedBy = deletedByUserId;
 
-            foreach (var session in messageSessions)
+            // Soft-delete the template's condition (one-to-one relationship)
+            if (template.Condition != null && !template.Condition.IsDeleted)
             {
-                // Call MessageSessionCascadeService with useTransaction = false since we're already in a transaction
-                var (success, error) = await _messageSessionCascadeService.SoftDeleteMessageSessionAsync(
-                    session.Id, 
-                    deletedByUserId, 
-                    useTransaction: false);
-                
-                if (!success)
-                {
-                    _logger.LogError("Failed to soft-delete MessageSession {SessionId}: {Error}", session.Id, error);
-                    return (false, $"فشل حذف جلسة الرسائل: {error}");
-                }
+                template.Condition.IsDeleted = true;
+                template.Condition.DeletedAt = deletionTimestamp;
+                template.Condition.DeletedBy = deletedByUserId;
             }
+        }
 
-            // Soft-delete all related patients
-            var patients = await _db.Patients
-                .Where(p => p.QueueId == queueId && !p.IsDeleted)
-                .ToListAsync();
-            foreach (var patient in patients)
-            {
-                patient.IsDeleted = true;
-                patient.DeletedAt = deletionTimestamp;
-                patient.DeletedBy = deletedByUserId;
-            }
+        await _db.SaveChangesAsync();
 
-            // Soft-delete all related templates and their conditions (one-to-one relationship)
-            var templates = await _db.MessageTemplates
-                .Where(t => t.QueueId == queueId && !t.IsDeleted)
-                .Include(t => t.Condition)
-                .ToListAsync();
-            foreach (var template in templates)
-            {
-                template.IsDeleted = true;
-                template.DeletedAt = deletionTimestamp;
-                template.DeletedBy = deletedByUserId;
+        _logger.LogInformation(
+            "Queue {QueueId} soft-deleted by user {UserId} at {Timestamp}",
+            queueId, deletedByUserId, deletionTimestamp);
 
-                // Soft-delete the template's condition (one-to-one relationship)
-                if (template.Condition != null && !template.Condition.IsDeleted)
-                {
-                    template.Condition.IsDeleted = true;
-                    template.Condition.DeletedAt = deletionTimestamp;
-                    template.Condition.DeletedBy = deletedByUserId;
-                }
-            }
-
-            await _db.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "Queue {QueueId} soft-deleted by user {UserId} at {Timestamp}",
-                queueId, deletedByUserId, deletionTimestamp);
-
-            return (true, "");
+        return (true, "");
     }
 
     public async Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(int queueId, int? restoredBy = null, bool useTransaction = true)
@@ -235,127 +239,127 @@ public class QueueCascadeService : IQueueCascadeService
 
         try
         {
-                // Check quota before restoring
-                // Queue quota is based on active (!IsDeleted) queues count
-                var activeQueuesCount = await _db.Queues
-                    .CountAsync(q => q.ModeratorId == queue.ModeratorId && !q.IsDeleted);
-                
-                var quota = await _db.Quotas
-                    .FirstOrDefaultAsync(q => q.ModeratorUserId == queue.ModeratorId);
-                
-                // If quota exists and restoring would exceed limit, block the restore
-                // Skip check if quota is unlimited (-1)
-                if (quota != null && quota.QueuesQuota != -1)
+            // Check quota before restoring
+            // Queue quota is based on active (!IsDeleted) queues count
+            var activeQueuesCount = await _db.Queues
+                .CountAsync(q => q.ModeratorId == queue.ModeratorId && !q.IsDeleted);
+
+            var quota = await _db.Quotas
+                .FirstOrDefaultAsync(q => q.ModeratorUserId == queue.ModeratorId);
+
+            // If quota exists and restoring would exceed limit, block the restore
+            // Skip check if quota is unlimited (-1)
+            if (quota != null && quota.QueuesQuota != -1)
+            {
+                // After restore, active count will be +1
+                if (activeQueuesCount + 1 > quota.QueuesQuota)
                 {
-                    // After restore, active count will be +1
-                    if (activeQueuesCount + 1 > quota.QueuesQuota)
-                    {
-                        _logger.LogWarning(
-                            "Restore blocked for queue {QueueId}: would exceed quota. Active: {Active}, Limit: {Limit}",
-                            queueId, activeQueuesCount, quota.QueuesQuota);
-                        return (false, "تم تجاوز الحصة");
-                    }
+                    _logger.LogWarning(
+                        "Restore blocked for queue {QueueId}: would exceed quota. Active: {Active}, Limit: {Limit}",
+                        queueId, activeQueuesCount, quota.QueuesQuota);
+                    return (false, "تم تجاوز الحصة");
                 }
+            }
 
-                // Use restoredBy parameter passed from controller
-                
-                // Restore queue with snapshot timestamp and audit fields
-                queue.IsDeleted = false;
-                queue.DeletedAt = null;
-                queue.DeletedBy = null;
-                queue.RestoredAt = operationTimestamp;
-                queue.RestoredBy = restoredBy;
-                queue.UpdatedAt = operationTimestamp;
-                queue.UpdatedBy = restoredBy;
+            // Use restoredBy parameter passed from controller
 
-                // Restore related MessageSessions (which will restore Messages)
-                var messageSessions = await _db.MessageSessions
-                    .Where(s => s.QueueId == queueId 
-                        && s.IsDeleted 
-                        && s.DeletedAt.HasValue 
-                        && s.DeletedAt >= deletedAtValue)
-                    .ToListAsync();
+            // Restore queue with snapshot timestamp and audit fields
+            queue.IsDeleted = false;
+            queue.DeletedAt = null;
+            queue.DeletedBy = null;
+            queue.RestoredAt = operationTimestamp;
+            queue.RestoredBy = restoredBy;
+            queue.UpdatedAt = operationTimestamp;
+            queue.UpdatedBy = restoredBy;
 
-                foreach (var session in messageSessions)
+            // Restore related MessageSessions (which will restore Messages)
+            var messageSessions = await _db.MessageSessions
+                .Where(s => s.QueueId == queueId
+                    && s.IsDeleted
+                    && s.DeletedAt.HasValue
+                    && s.DeletedAt >= deletedAtValue)
+                .ToListAsync();
+
+            foreach (var session in messageSessions)
+            {
+                // Call MessageSessionCascadeService with useTransaction = false since we're already in a transaction
+                var (success, error) = await _messageSessionCascadeService.RestoreMessageSessionAsync(
+                    session.Id,
+                    restoredBy,
+                    useTransaction: false);
+
+                if (!success)
                 {
-                    // Call MessageSessionCascadeService with useTransaction = false since we're already in a transaction
-                    var (success, error) = await _messageSessionCascadeService.RestoreMessageSessionAsync(
-                        session.Id, 
-                        restoredBy, 
-                        useTransaction: false);
-                    
-                    if (!success)
-                    {
-                        _logger.LogError("Failed to restore MessageSession {SessionId}: {Error}", session.Id, error);
-                        return (false, $"فشل استعادة جلسة الرسائل: {error}");
-                    }
+                    _logger.LogError("Failed to restore MessageSession {SessionId}: {Error}", session.Id, error);
+                    return (false, $"فشل استعادة جلسة الرسائل: {error}");
                 }
+            }
 
-                // Restore related patients
-                // Only restoring patients deleted during cascade window (DeletedAt >= parent deletion timestamp)
-                var patients = await _db.Patients
-                    .Where(p => p.QueueId == queueId && p.IsDeleted && p.DeletedAt.HasValue && p.DeletedAt >= deletedAtValue)
-                    .ToListAsync();
+            // Restore related patients
+            // Only restoring patients deleted during cascade window (DeletedAt >= parent deletion timestamp)
+            var patients = await _db.Patients
+                .Where(p => p.QueueId == queueId && p.IsDeleted && p.DeletedAt.HasValue && p.DeletedAt >= deletedAtValue)
+                .ToListAsync();
 
-                foreach (var patient in patients)
+            foreach (var patient in patients)
+            {
+                patient.IsDeleted = false;
+                patient.DeletedAt = null;
+                patient.DeletedBy = null;
+                patient.RestoredAt = operationTimestamp;
+                patient.RestoredBy = restoredBy;
+                patient.UpdatedAt = operationTimestamp;
+                patient.UpdatedBy = restoredBy;
+            }
+
+            var templates = await _db.MessageTemplates
+                .Where(t => t.QueueId == queueId && t.IsDeleted && t.DeletedAt.HasValue && t.DeletedAt >= deletedAtValue)
+                .ToListAsync();
+
+            // Optimize: preload all conditions for restored templates using MessageConditionId
+            var messageConditionIds = templates.Where(t => t.MessageConditionId > 0).Select(t => t.MessageConditionId).ToList();
+            var allConditions = messageConditionIds.Count > 0
+                ? await _db.Set<MessageCondition>()
+                    .Where(c => messageConditionIds.Contains(c.Id)
+                        && c.IsDeleted
+                        && c.DeletedAt.HasValue
+                        && c.DeletedAt >= deletedAtValue)
+                    .ToListAsync()
+                : new List<MessageCondition>();
+
+            // Create dictionary mapping MessageConditionId to condition
+            var conditionsByMessageConditionId = allConditions.ToDictionary(c => c.Id);
+
+            foreach (var template in templates)
+            {
+                template.IsDeleted = false;
+                template.DeletedAt = null;
+                template.DeletedBy = null;
+                template.RestoredAt = operationTimestamp;
+                template.RestoredBy = restoredBy;
+                template.UpdatedAt = operationTimestamp;
+                template.UpdatedBy = restoredBy;
+
+                // Restore related condition from preloaded data (one-to-one relationship)
+                if (template.MessageConditionId > 0 && conditionsByMessageConditionId.TryGetValue(template.MessageConditionId, out var condition))
                 {
-                    patient.IsDeleted = false;
-                    patient.DeletedAt = null;
-                    patient.DeletedBy = null;
-                    patient.RestoredAt = operationTimestamp;
-                    patient.RestoredBy = restoredBy;
-                    patient.UpdatedAt = operationTimestamp;
-                    patient.UpdatedBy = restoredBy;
+                    condition.IsDeleted = false;
+                    condition.DeletedAt = null;
+                    condition.DeletedBy = null;
+                    condition.RestoredAt = operationTimestamp;
+                    condition.RestoredBy = restoredBy;
+                    condition.UpdatedAt = operationTimestamp;
+                    condition.UpdatedBy = restoredBy;
                 }
+            }
 
-                var templates = await _db.MessageTemplates
-                    .Where(t => t.QueueId == queueId && t.IsDeleted && t.DeletedAt.HasValue && t.DeletedAt >= deletedAtValue)
-                    .ToListAsync();
+            await _db.SaveChangesAsync();
 
-                // Optimize: preload all conditions for restored templates using MessageConditionId
-                var messageConditionIds = templates.Where(t => t.MessageConditionId > 0).Select(t => t.MessageConditionId).ToList();
-                var allConditions = messageConditionIds.Count > 0
-                    ? await _db.Set<MessageCondition>()
-                        .Where(c => messageConditionIds.Contains(c.Id)
-                            && c.IsDeleted
-                            && c.DeletedAt.HasValue
-                            && c.DeletedAt >= deletedAtValue)
-                        .ToListAsync()
-                    : new List<MessageCondition>();
+            _logger.LogInformation(
+                "Queue {QueueId} restored at {Timestamp}",
+                queueId, operationTimestamp);
 
-                // Create dictionary mapping MessageConditionId to condition
-                var conditionsByMessageConditionId = allConditions.ToDictionary(c => c.Id);
-
-                foreach (var template in templates)
-                {
-                    template.IsDeleted = false;
-                    template.DeletedAt = null;
-                    template.DeletedBy = null;
-                    template.RestoredAt = operationTimestamp;
-                    template.RestoredBy = restoredBy;
-                    template.UpdatedAt = operationTimestamp;
-                    template.UpdatedBy = restoredBy;
-
-                    // Restore related condition from preloaded data (one-to-one relationship)
-                    if (template.MessageConditionId > 0 && conditionsByMessageConditionId.TryGetValue(template.MessageConditionId, out var condition))
-                    {
-                        condition.IsDeleted = false;
-                        condition.DeletedAt = null;
-                        condition.DeletedBy = null;
-                        condition.RestoredAt = operationTimestamp;
-                        condition.RestoredBy = restoredBy;
-                        condition.UpdatedAt = operationTimestamp;
-                        condition.UpdatedBy = restoredBy;
-                    }
-                }
-
-                await _db.SaveChangesAsync();
-
-                _logger.LogInformation(
-                    "Queue {QueueId} restored at {Timestamp}",
-                    queueId, operationTimestamp);
-
-                return (true, "");
+            return (true, "");
         }
         catch (Exception ex)
         {
@@ -420,7 +424,7 @@ public class QueueCascadeService : IQueueCascadeService
                     .Where(t => t.QueueId == queue.Id)
                     .Include(t => t.Condition)
                     .ToListAsync();
-                
+
                 foreach (var template in templates)
                 {
                     // Delete condition first (one-to-one relationship)
@@ -429,7 +433,7 @@ public class QueueCascadeService : IQueueCascadeService
                         _db.Set<MessageCondition>().Remove(template.Condition);
                     }
                 }
-                
+
                 _db.MessageTemplates.RemoveRange(templates);
 
                 _db.Queues.Remove(queue);
@@ -437,7 +441,7 @@ public class QueueCascadeService : IQueueCascadeService
 
             int deleted = await _db.SaveChangesAsync();
             await transaction.CommitAsync();
-            
+
             _logger.LogInformation("Permanently deleted {Count} archived queues at {Timestamp}", deleted, operationTimestamp);
             return deleted;
         }

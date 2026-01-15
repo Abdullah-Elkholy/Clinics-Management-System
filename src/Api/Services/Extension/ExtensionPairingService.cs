@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Clinics.Domain;
@@ -108,8 +109,8 @@ namespace Clinics.Api.Services.Extension
             // Check if this exact device already exists AND is active (non-revoked) for this moderator
             // Revoked devices are treated as historical records - always create a new device record
             var existingActiveDeviceSameId = await _db.ExtensionDevices
-                .FirstOrDefaultAsync(d => d.ModeratorUserId == pairingCode.ModeratorUserId 
-                    && d.DeviceId == deviceId 
+                .FirstOrDefaultAsync(d => d.ModeratorUserId == pairingCode.ModeratorUserId
+                    && d.DeviceId == deviceId
                     && d.RevokedAtUtc == null);
 
             // Generate new token
@@ -251,7 +252,7 @@ namespace Clinics.Api.Services.Extension
             var bytes = new byte[4];
             rng.GetBytes(bytes);
             var number = Math.Abs(BitConverter.ToInt32(bytes, 0)) % 100000000;
-            return number.ToString("D8");
+            return number.ToString("D8", CultureInfo.InvariantCulture);
         }
 
         private static string GenerateDeviceToken()

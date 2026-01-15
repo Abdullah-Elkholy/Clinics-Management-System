@@ -4,6 +4,7 @@
  * Integrates with backend quota endpoints
  */
 
+import { parseAsUtc } from '@/utils/dateTimeUtils';
 import { ModeratorQuota } from '@/types/user';
 import { messageApiClient, type MyQuotaDto, type QuotaDto } from '@/services/api/messageApiClient';
 
@@ -20,7 +21,7 @@ class ModeratorQuotaService {
   async getMyQuota(): Promise<QuotaServiceResponse<ModeratorQuota>> {
     try {
       const quotaDto = await messageApiClient.getMyQuota();
-      
+
       const quota: ModeratorQuota = {
         id: `quota-current`,
         moderatorId: 'current',
@@ -57,7 +58,7 @@ class ModeratorQuotaService {
   async getQuota(moderatorId: string): Promise<QuotaServiceResponse<ModeratorQuota>> {
     try {
       const quotaDto = await messageApiClient.getQuota(parseInt(moderatorId));
-      
+
       const quota: ModeratorQuota = {
         id: `quota-${moderatorId}`,
         moderatorId,
@@ -76,7 +77,7 @@ class ModeratorQuotaService {
           warningThreshold: 80,
         },
         createdAt: new Date(),
-        updatedAt: new Date(quotaDto.updatedAt),
+        updatedAt: parseAsUtc(quotaDto.updatedAt) || new Date(),
       };
 
       return { success: true, data: quota };
@@ -85,7 +86,7 @@ class ModeratorQuotaService {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // Extract statusCode from various error shapes
       const statusCode = error?.statusCode || error?.status || (error?.message?.includes('405') ? 405 : undefined) || (error?.message?.includes('403') ? 403 : undefined);
-      
+
       // If it's a 405 or 403, return default quota instead of error
       if (statusCode === 405 || statusCode === 403 || errorMessage?.includes('405') || errorMessage?.includes('403') || errorMessage?.includes('Method Not Allowed') || errorMessage?.includes('Forbidden')) {
         // Return default unlimited quota for non-admin users or when endpoint is not available
@@ -111,7 +112,7 @@ class ModeratorQuotaService {
         };
         return { success: true, data: defaultQuota };
       }
-      
+
       return {
         success: false,
         error: `فشل تحميل الحصة: ${errorMessage}`,
@@ -147,17 +148,17 @@ class ModeratorQuotaService {
             payload.queuesLimit = updates.queuesQuota.limit;
           }
         }
-        
+
         if (Object.keys(payload).length === 0) {
           return {
             success: false,
             error: 'يرجى تحديد حد صالح (1 أو أكثر) أو غير محدود (-1)',
           };
         }
-        
+
         await messageApiClient.updateQuota(parseInt(moderatorId), payload);
       }
-      
+
       return this.getQuota(moderatorId);
     } catch (error) {
       return {
@@ -240,7 +241,7 @@ class ModeratorQuotaService {
   async getAllQuotas(): Promise<QuotaServiceResponse<ModeratorQuota[]>> {
     try {
       const response = await messageApiClient.getAllQuotas();
-      
+
       if (response.items && response.items.length > 0) {
         const quotas: ModeratorQuota[] = response.items.map((dto: QuotaDto, idx: number) => ({
           id: `quota-${idx}`,
@@ -260,7 +261,7 @@ class ModeratorQuotaService {
             warningThreshold: 80,
           },
           createdAt: new Date(),
-          updatedAt: new Date(dto.updatedAt),
+          updatedAt: parseAsUtc(dto.updatedAt) || new Date(),
         }));
         return { success: true, data: quotas };
       }

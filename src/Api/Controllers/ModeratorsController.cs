@@ -777,6 +777,24 @@ namespace Clinics.Api.Controllers
                     .AsNoTracking()
                     .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId);
 
+                // Check if extension has active lease (for frontend to know if pause is meaningful)
+                var extensionLease = await _db.ExtensionSessionLeases
+                    .AsNoTracking()
+                    .Where(e => e.ModeratorUserId == moderatorId
+                        && e.RevokedAtUtc == null
+                        && e.ExpiresAtUtc > DateTime.UtcNow)
+                    .FirstOrDefaultAsync();
+
+                // Extension is connected if lease exists and heartbeat is recent (within 120 seconds to account for network delays)
+                var heartbeatAgeSeconds = extensionLease != null
+                    ? (DateTime.UtcNow - extensionLease.LastHeartbeatAtUtc).TotalSeconds
+                    : -1;
+                var isExtensionConnected = extensionLease != null && heartbeatAgeSeconds < 120;
+
+                _logger.LogInformation(
+                    "GetPauseState for moderator {ModeratorId}: LeaseExists={LeaseExists}, HeartbeatAge={HeartbeatAge}s, isExtensionConnected={IsConnected}",
+                    moderatorId, extensionLease != null, heartbeatAgeSeconds, isExtensionConnected);
+
                 // Return proper object structure even when session doesn't exist
                 if (whatsappSession == null)
                 {
@@ -786,7 +804,8 @@ namespace Clinics.Api.Controllers
                         pauseReason = (string?)null,
                         pausedAt = (DateTime?)null,
                         pausedBy = (int?)null,
-                        isResumable = false
+                        isResumable = false,
+                        isExtensionConnected = isExtensionConnected
                     });
                 }
 
@@ -796,7 +815,8 @@ namespace Clinics.Api.Controllers
                     pauseReason = whatsappSession.PauseReason,
                     pausedAt = whatsappSession.PausedAt,
                     pausedBy = whatsappSession.PausedBy,
-                    isResumable = whatsappSession.IsResumable  // Computed property for frontend
+                    isResumable = whatsappSession.IsResumable,  // Computed property for frontend
+                    isExtensionConnected = isExtensionConnected
                 });
             }
             catch (Exception ex)

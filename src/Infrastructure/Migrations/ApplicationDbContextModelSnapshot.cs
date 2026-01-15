@@ -143,7 +143,8 @@ namespace Infrastructure.Migrations
                     b.HasIndex("ModeratorUserId");
 
                     b.HasIndex("ModeratorUserId", "DeviceId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[RevokedAtUtc] IS NULL");
 
                     b.ToTable("ExtensionDevices");
                 });
@@ -885,6 +886,80 @@ namespace Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Sessions");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.SystemSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("SystemSettings");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Category = "RateLimit",
+                            CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "تفعيل تحديد معدل الإرسال بين الرسائل",
+                            Key = "RateLimitEnabled",
+                            Value = "true"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Category = "RateLimit",
+                            CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "الحد الأدنى للتأخير بين الرسائل (بالثواني)",
+                            Key = "RateLimitMinSeconds",
+                            Value = "3"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Category = "RateLimit",
+                            CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "الحد الأقصى للتأخير بين الرسائل (بالثواني)",
+                            Key = "RateLimitMaxSeconds",
+                            Value = "7"
+                        });
                 });
 
             modelBuilder.Entity("Clinics.Domain.User", b =>

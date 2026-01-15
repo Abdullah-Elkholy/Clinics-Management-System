@@ -1,6 +1,0 @@
-@ClnicsManagementService_HostAddress = http://localhost:5185
-
-GET {{ClnicsManagementService_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

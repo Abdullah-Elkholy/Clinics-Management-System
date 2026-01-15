@@ -112,19 +112,19 @@ export function getRestoreErrorMessage(error: RestoreError): string {
   switch (error.type) {
     case RestoreErrorType.RESTORE_WINDOW_EXPIRED:
       return 'تم حذف هذا العنصر منذ وقت طويل (أكثر من 30 يومًا) ولا يمكن استعادته بعد الآن. تم أرشفته بشكل دائم.';
-    
+
     case RestoreErrorType.QUOTA_INSUFFICIENT:
       return `لا يمكن الاستعادة: حصة غير كافية. تحتاج إلى ${error.metadata?.requiredQuota || '?'} أماكن ولكن لديك ${error.metadata?.availableQuota || '?'} متاحة فقط.`;
-    
+
     case RestoreErrorType.NOT_FOUND:
       return 'لم يتم العثور على هذا العنصر. قد يكون قد تم حذفه بشكل دائم.';
-    
+
     case RestoreErrorType.PERMISSION_DENIED:
       return 'ليس لديك صلاحية لاستعادة هذا العنصر.';
-    
+
     case RestoreErrorType.CONFLICT:
       return error.message || 'حدث تعارض أثناء الاستعادة. يرجى المحاولة مرة أخرى.';
-    
+
     default:
       return error.message || 'فشل استعادة العنصر. يرجى المحاولة مرة أخرى.';
   }
@@ -152,13 +152,8 @@ export function isRestorable(deletedAt: string, ttlDays: number = 30): boolean {
   return getDaysRemainingInTrash(deletedAt, ttlDays) > 0;
 }
 
-/**
- * Convert Western digits (0-9) to Arabic-Indic numerals (٠-٩)
- */
-function toArabicNumerals(str: string): string {
-  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-  return str.replace(/\d/g, (digit) => arabicNumerals[parseInt(digit)]);
-}
+// toArabicNumerals removed to enforce English numerals
+
 
 /**
  * Format deletion date for display (in Arabic)
@@ -166,17 +161,17 @@ function toArabicNumerals(str: string): string {
 export function formatDeletionDate(deletedAt: string): string {
   const date = new Date(deletedAt);
   const now = new Date();
-  
+
   const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-  
+
   if (daysDiff === 0) {
     return 'تم الحذف اليوم';
   } else if (daysDiff === 1) {
     return 'تم الحذف أمس';
   } else if (daysDiff < 7) {
-    return `تم الحذف منذ ${toArabicNumerals(String(daysDiff))} ${daysDiff === 1 ? 'يوم' : 'أيام'}`;
+    return `تم الحذف منذ ${daysDiff} ${daysDiff === 1 ? 'يوم' : 'أيام'}`;
   } else {
-    // Use formatLocalDate from dateTimeUtils for full Arabic formatting
+    // Use formatLocalDate from dateTimeUtils which now enforces English numerals
     const { formatLocalDate } = require('@/utils/dateTimeUtils');
     return formatLocalDate(date);
   }

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useSignalR } from './SignalRContext';
 import { useAuth } from './AuthContext';
 import { useUI } from './UIContext';
+import { useQueue } from './QueueContext';
 import messageApiClient from '@/services/api/messageApiClient';
 import logger from '@/utils/logger';
 
@@ -68,6 +69,8 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
   const { connection, isConnected, on, off, onReconnected, offReconnected } = useSignalR();
   const { user, isAuthenticated } = useAuth();
   const { addToast } = useUI();
+  // Get selectedModeratorId for Admin filtering (only show sessions for selected moderator)
+  const { selectedModeratorId } = useQueue();
   const isLoadingRef = useRef(false);
   const isMountedRef = useRef(true);
 
@@ -93,7 +96,8 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
       isLoadingRef.current = true;
       setIsLoading(true);
 
-      const response = await messageApiClient.getOngoingSessions();
+      // Pass selectedModeratorId for Admin filtering (null for Moderators = their own data)
+      const response = await messageApiClient.getOngoingSessions(selectedModeratorId ?? undefined);
 
       if (!isMountedRef.current) return;
 
@@ -105,7 +109,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
         // Calculate failed count from patients with status 'failed'
         const failedCount = session.patients?.filter(p => p.status === 'failed').length || 0;
         const ongoingCount = session.total - session.sent - failedCount;
-        
+
         return {
           sessionId: session.sessionId,
           queueId: session.queueId,
@@ -145,7 +149,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
         isLoadingRef.current = false;
       }
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, selectedModeratorId]);
 
   /**
    * Initial data load on mount
@@ -184,13 +188,13 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
               sessionId: payload.id,
               queueName: completedSession.queueName
             });
-            
+
             // Show completion notification
             addToast(
               `اكتملت عملية الإرسال لقائمة "${completedSession.queueName}" (${completedSession.sentMessages}/${completedSession.totalMessages} رسالة)`,
               'success'
             );
-            
+
             const updated = [...prev];
             updated.splice(index, 1);
             return updated;

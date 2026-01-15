@@ -91,7 +91,7 @@ namespace Clinics.Api.Controllers
             {
                 var userId = _userContext.GetUserId();
                 var quota = await _quotaService.GetQuotaForUserAsync(userId);
-                
+
                 if (quota == null)
                 {
                     return Ok(new MyQuotaDto
@@ -106,16 +106,18 @@ namespace Clinics.Api.Controllers
                 // Recalculate ConsumedMessages from actual "sent" messages to ensure accuracy
                 var moderatorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
                 await _quotaService.RecalculateMessageQuotaAsync(moderatorId);
-                
+
                 // Refetch quota after recalculation
                 quota = await _quotaService.GetQuotaForUserAsync(userId);
 
+                if (quota == null) return NotFound(new { message = "Quota not found after recalculation" });
+
                 return Ok(new MyQuotaDto
                 {
-                    Limit = QuotaHelper.ToApiMessagesQuota(quota.MessagesQuota),
-                    Used = (int)quota.ConsumedMessages, // Convert long to int for API - now calculated from actual "sent" messages
-                    QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota.QueuesQuota),
-                    QueuesUsed = quota.ConsumedQueues
+                    Limit = QuotaHelper.ToApiMessagesQuota(quota!.MessagesQuota),
+                    Used = (int)quota!.ConsumedMessages, // Convert long to int for API - now calculated from actual "sent" messages
+                    QueuesLimit = QuotaHelper.ToApiQueuesQuota(quota!.QueuesQuota),
+                    QueuesUsed = quota!.ConsumedQueues
                 });
             }
             catch (Exception ex)
@@ -137,7 +139,7 @@ namespace Clinics.Api.Controllers
             {
                 var currentUserId = _userContext.GetUserId();
                 var isAdmin = _userContext.IsAdmin();
-                
+
                 // If not admin, verify user is requesting their own moderator's quota
                 if (!isAdmin)
                 {
@@ -147,7 +149,7 @@ namespace Clinics.Api.Controllers
                         return Forbid(); // Can only view own moderator's quota
                     }
                 }
-                
+
                 var quota = await _db.Quotas
                     .FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
 
@@ -167,10 +169,12 @@ namespace Clinics.Api.Controllers
 
                 // Recalculate ConsumedMessages from actual "sent" messages to ensure accuracy
                 await _quotaService.RecalculateMessageQuotaAsync(moderatorId);
-                
+
                 // Refetch quota after recalculation
                 quota = await _db.Quotas
                     .FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
+
+                if (quota == null) return NotFound(new { message = "Quota not found after recalculation" });
 
                 return Ok(new QuotaDto
                 {
@@ -202,14 +206,14 @@ namespace Clinics.Api.Controllers
                     return BadRequest(new { message = "Limit and QueuesLimit must be greater than 0 or -1 for unlimited" });
 
                 var existing = await _db.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-                
+
                 if (existing != null)
                     return BadRequest(new { message = "Quota already exists for this moderator" });
 
                 // Cap values at int.MaxValue to prevent overflow when converting to API format
                 long messagesQuotaValue = request.Limit > int.MaxValue ? int.MaxValue : request.Limit;
                 int queuesQuotaValue = request.QueuesLimit > int.MaxValue ? int.MaxValue : request.QueuesLimit;
-                
+
                 var quota = new Quota
                 {
                     ModeratorUserId = moderatorId,
@@ -248,7 +252,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 var existing = await _db.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-                
+
                 if (existing == null)
                     return NotFound(new { message = "Quota not found for this moderator" });
 
@@ -262,7 +266,7 @@ namespace Clinics.Api.Controllers
                         existing.MessagesQuota = QuotaHelper.ToDbMessagesQuota(quotaValue);
                     }
                 }
-                
+
                 if (request.QueuesLimit.HasValue)
                 {
                     if (request.QueuesLimit.Value == -1 || request.QueuesLimit.Value > 0)
@@ -272,11 +276,11 @@ namespace Clinics.Api.Controllers
                         existing.QueuesQuota = QuotaHelper.ToDbQueuesQuota(quotaValue);
                     }
                 }
-                
+
                 existing.UpdatedAt = DateTime.UtcNow;
-                
+
                 await _db.SaveChangesAsync();
-                
+
                 return Ok(new MyQuotaDto
                 {
                     Limit = QuotaHelper.ToApiMessagesQuota(existing.MessagesQuota),

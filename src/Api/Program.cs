@@ -37,6 +37,7 @@ builder.Services.AddControllers().AddJsonOptions(opt =>
     opt.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     opt.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
+builder.Services.AddMemoryCache();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -75,6 +76,9 @@ builder.Services.AddScoped<Clinics.Api.Services.ITemplateCascadeService, Clinics
 builder.Services.AddScoped<Clinics.Api.Services.IPatientCascadeService, Clinics.Api.Services.PatientCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IUserCascadeService, Clinics.Api.Services.UserCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IModeratorCascadeService, Clinics.Api.Services.ModeratorCascadeService>();
+
+// Rate limiting service for message sending delays
+builder.Services.AddScoped<Clinics.Api.Services.IRateLimitSettingsService, Clinics.Api.Services.RateLimitSettingsService>();
 
 // JWT Auth
 builder.Services.AddAuthentication(options =>
@@ -223,16 +227,10 @@ if (!builder.Environment.IsEnvironment("Test"))
     builder.Services.AddHangfireServer();
 }
 
-// message sender and processor
-// Configure HttpClient with extended timeout for WhatsApp service operations
-// WhatsApp browser automation can take longer than default 100 seconds
-builder.Services.AddHttpClient<WhatsAppServiceSender>(client =>
-{
-    // Set timeout to 5 minutes (300 seconds) to accommodate slow WhatsApp operations
-    // This is especially important for browser automation that may wait for UI elements
-    client.Timeout = TimeSpan.FromSeconds(300);
-});
-builder.Services.AddScoped<IMessageSender, WhatsAppServiceSender>();
+// Register legacy sender (fallback)
+builder.Services.AddScoped<IMessageSender, SimulatedMessageSender>();
+
+// message processor (uses extension provider directly)
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
 builder.Services.AddScoped<ProcessQueuedMessagesJob>(); // Wrapper job with [DisableConcurrentExecution]
 

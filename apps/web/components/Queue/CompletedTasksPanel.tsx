@@ -4,11 +4,12 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import * as messageApiClient from '@/services/api/messageApiClient';
 // Mock data removed - using API data instead
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState } from '@/components/state';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
@@ -73,6 +74,7 @@ export default function CompletedTasksPanel() {
   const { user, isAuthenticated } = useAuth();
   const { addToast } = useUI();
   const router = useRouter();
+  const { selectedModeratorId } = useQueue();
 
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
@@ -118,7 +120,8 @@ export default function CompletedTasksPanel() {
       setIsLoading(true);
       setError(null);
 
-      const response = await messageApiClient.getCompletedSessions();
+      // Pass selectedModeratorId for Admin filtering (null for Moderators = their own data)
+      const response = await messageApiClient.getCompletedSessions(selectedModeratorId ?? undefined);
 
       if (response.success && response.data) {
         // Transform API response to Session format
@@ -173,7 +176,7 @@ export default function CompletedTasksPanel() {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [addToast]);
+  }, [addToast, selectedModeratorId]);
 
   /**
    * Load sessions on mount and when data updates
@@ -336,7 +339,7 @@ export default function CompletedTasksPanel() {
   return (
     <PanelWrapper>
       <PanelHeader
-        title={`المهام المكتملة ${sessions.length > 0 ? `- ${sessions[0].doctorName}` : ''}`}
+        title={`المهام المكتملة`}
         icon="fa-check-double"
         description={`عرض جميع المهام المكتملة والمرسلة بنجاح - ${sessions.length} جلسة`}
         stats={stats}
@@ -353,11 +356,10 @@ export default function CompletedTasksPanel() {
             >
               {/* Session Header - Fully Clickable */}
               <div
-                className={`px-6 py-4 border-b cursor-pointer transition-colors ${
-                  session.isFullyCompleted 
-                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100' 
-                    : 'bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100'
-                }`}
+                className={`px-6 py-4 border-b cursor-pointer transition-colors ${session.isFullyCompleted
+                  ? 'bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100'
+                  : 'bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100'
+                  }`}
                 onClick={() => toggleSessionExpand(session.id)}
               >
                 <div className="flex items-center gap-4 justify-between">
@@ -419,7 +421,7 @@ export default function CompletedTasksPanel() {
                       <div className="flex-1">
                         <h5 className="font-semibold text-blue-800 mb-1">رسائل متبقية</h5>
                         <p className="text-sm text-blue-700">
-                          هذه الجلسة لديها <strong>{session.queuedCount}</strong> رسالة متبقية. 
+                          هذه الجلسة لديها <strong>{session.queuedCount}</strong> رسالة متبقية.
                           القائمة أدناه تعرض الرسائل المرسلة بنجاح حتى الآن.
                         </p>
                       </div>

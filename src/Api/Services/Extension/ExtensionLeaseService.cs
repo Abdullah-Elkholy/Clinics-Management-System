@@ -371,29 +371,13 @@ namespace Clinics.Api.Services.Extension
                     // Clear pause state when connected
                     if (dbStatus == "connected")
                     {
-                        session.IsPaused = false;
-                        session.PauseReason = null;
-                        _logger.LogInformation("WhatsApp session unpaused for moderator {ModeratorId} - extension connected", moderatorUserId);
+                        // REMOVED AUTO-RESUME: Do NOT auto-unpause session when connected
+                        // User must explicitly click Resume button to resume sending
+                        // Only update status to reflect connected state
+                        _logger.LogInformation("WhatsApp session status is now 'connected' for moderator {ModeratorId}. User must manually resume if paused.", moderatorUserId);
 
-                        // CRITICAL: Also unpause any Messages that were paused due to PendingQR/PendingNET/BrowserClosure
-                        var pausedMessages = await _db.Messages
-                            .Where(m => m.ModeratorId == moderatorUserId
-                                && !m.IsDeleted
-                                && m.IsPaused
-                                && (m.PauseReason == "PendingQR" || m.PauseReason == "PendingNET" || m.PauseReason == "BrowserClosure")
-                                && (m.Status == "queued" || m.Status == "sending"))
-                            .ToListAsync();
-
-                        if (pausedMessages.Any())
-                        {
-                            foreach (var message in pausedMessages)
-                            {
-                                message.IsPaused = false;
-                                message.PauseReason = null;
-                            }
-                            _logger.LogInformation("Unpaused {Count} messages for moderator {ModeratorId} - extension connected",
-                                pausedMessages.Count, moderatorUserId);
-                        }
+                        // DO NOT auto-unpause individual messages here
+                        // User must resume via the Resume button
                     }
                     else
                     {

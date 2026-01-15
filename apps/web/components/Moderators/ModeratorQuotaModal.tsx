@@ -82,12 +82,12 @@ export default function ModeratorQuotaModal({
   const handleMessagesLimitChange = (value: string) => {
     const inputValue = value === '' ? -1 : parseInt(value, 10) || -1;
     const currentLimit = quota.messagesQuota.limit;
-    
+
     // Validation: Cannot add when currently unlimited
     if (messagesMode === 'add' && currentLimit === -1) {
       return;
     }
-    
+
     let newLimit = inputValue;
     if (messagesMode === 'add' && inputValue !== -1) {
       // In ADD mode, add to current limit (not used)
@@ -110,12 +110,12 @@ export default function ModeratorQuotaModal({
   const handleQueuesLimitChange = (value: string) => {
     const inputValue = value === '' ? -1 : parseInt(value, 10) || -1;
     const currentLimit = quota.queuesQuota.limit;
-    
+
     // Validation: Cannot add when currently unlimited
     if (queuesMode === 'add' && currentLimit === -1) {
       return;
     }
-    
+
     let newLimit = inputValue;
     if (queuesMode === 'add' && inputValue !== -1) {
       // In ADD mode, add to current limit (not used)
@@ -174,21 +174,21 @@ export default function ModeratorQuotaModal({
             <div>
               <div className={`${textColor} opacity-70 font-medium mb-0.5 text-xs`}>الإجمالي</div>
               <div className={`${textColor} font-bold text-xs`}>
-                {wasUnlimited ? 'غير محدود' : originalQuotaData.limit.toLocaleString('ar-SA')}
+                {wasUnlimited ? 'غير محدود' : originalQuotaData.limit.toLocaleString('ar-EG-u-nu-latn')}
               </div>
             </div>
             {/* Used */}
             <div>
               <div className={`${textColor} opacity-70 font-medium mb-0.5 text-xs`}>المستخدم</div>
               <div className={`${textColor} font-bold text-xs`}>
-                {originalQuotaData.used.toLocaleString('ar-SA')}
+                {originalQuotaData.used.toLocaleString('ar-EG-u-nu-latn')}
               </div>
             </div>
             {/* Remaining */}
             <div>
               <div className={`${textColor} opacity-70 font-medium mb-0.5 text-xs`}>المتبقي</div>
               <div className={`${textColor} font-bold text-xs`}>
-                {wasUnlimited ? 'غير محدود' : originalRemaining.toLocaleString('ar-SA')}
+                {wasUnlimited ? 'غير محدود' : originalRemaining.toLocaleString('ar-EG-u-nu-latn')}
               </div>
             </div>
           </div>
@@ -231,9 +231,9 @@ export default function ModeratorQuotaModal({
           </p>
         ) : (
           <p className="text-xs text-gray-600">
-            {mode === 'set' 
+            {mode === 'set'
               ? `سيتم تعيين القيمة المدخلة لتصبح هي نفسها الحد الإجمالي`
-              : `سيتم إضافة القيمة المدخلة على الحد الحالي (${originalQuotaData.limit === -1 ? 'غير محدود' : originalQuotaData.limit.toLocaleString('ar-SA')})`}
+              : `سيتم إضافة القيمة المدخلة على الحد الحالي (${originalQuotaData.limit === -1 ? 'غير محدود' : originalQuotaData.limit.toLocaleString('ar-EG-u-nu-latn')})`}
           </p>
         )}
 
@@ -246,21 +246,21 @@ export default function ModeratorQuotaModal({
               <div>
                 <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">الإجمالي</div>
                 <div className="text-green-900 font-bold text-xs">
-                  {isUnlimited ? 'غير محدود' : quotaData.limit.toLocaleString('ar-SA')}
+                  {isUnlimited ? 'غير محدود' : quotaData.limit.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
               {/* Used */}
               <div>
                 <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">المستخدم</div>
                 <div className="text-green-900 font-bold text-xs">
-                  {quotaData.used.toLocaleString('ar-SA')}
+                  {quotaData.used.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
               {/* Remaining */}
               <div>
                 <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">المتبقي</div>
                 <div className="text-green-900 font-bold text-xs">
-                  {isUnlimited ? 'غير محدود' : remaining.toLocaleString('ar-SA')}
+                  {isUnlimited ? 'غير محدود' : remaining.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
             </div>
@@ -314,7 +314,7 @@ export default function ModeratorQuotaModal({
                 <div className="col-span-2">
                   <span className="text-gray-600 font-medium text-xs">آخر دخول:</span>
                   <p className="text-gray-900 font-semibold text-xs">
-                    {moderatorData.lastLogin 
+                    {moderatorData.lastLogin
                       ? formatLocalDate(moderatorData.lastLogin)
                       : 'لم يدخل بعد'}
                   </p>

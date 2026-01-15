@@ -286,57 +286,130 @@ function waitForAnyElement(selectors, timeout = TIMEOUTS.defaultSelectorTimeout)
 }
 
 // Simulate typing in an input with proper newline handling for WhatsApp
+// Uses clipboard paste for reliability - this preserves newlines and is faster
 async function typeText(element, text) {
   element.focus();
-
-  // Clear existing content
-  element.innerHTML = '';
 
   // Log message text for debugging (check newline characters)
   console.log('[WhatsApp Runner] typeText received text length:', text.length);
   console.log('[WhatsApp Runner] typeText text has newlines:', text.includes('\n'));
   console.log('[WhatsApp Runner] typeText newline count:', (text.match(/\n/g) || []).length);
 
-  // WhatsApp Web uses Shift+Enter for newlines in contenteditable divs
-  // We need to insert text line by line with proper line breaks
-  const lines = text.split('\n');
-  console.log('[WhatsApp Runner] typeText split into', lines.length, 'lines');
+  // Method 2: Select All & Overwrite (Atomic Replacement)
+  console.log('[WhatsApp Runner] preparing atomic overwrite...');
+
+  // First, make sure field has focus
+  element.focus();
+  await new Promise(r => setTimeout(r, 100));
+
+  // Use Range API to robustly Select All content
+  // This ensures the first insertText will REPLACE everything
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  selection.removeAllRanges();
+  selection.addRange(range);
+
+  await new Promise(r => setTimeout(r, 50));
+
+  console.log('[WhatsApp Runner] Content selected for overwrite. Range count:', selection.rangeCount);
+
+  // Convert \n to actual newlines if needed (normalize)
+  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Split by newlines and insert each line with Shift+Enter between them
+  const lines = normalizedText.split('\n');
+  console.log('[WhatsApp Runner] Message has', lines.length, 'lines');
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
+    // If this is the second line (index 1) or later, we need to collapse selection to end
+    // because the first line replaced the selection, but subsequent lines should append
+    if (i > 0) {
+      selection.collapseToEnd();
+    }
+
     // Insert the line text
     if (line.length > 0) {
-      document.execCommand('insertText', false, line);
+      // For the first line (i===0), this REPLACES the 'Select All' selection
+      // For subsequent lines, this appends at cursor
+      const success = document.execCommand('insertText', false, line);
+
+      if (!success && i === 0) {
+        // Fallback if insertText fails on selection: delete then insert
+        console.log('[WhatsApp Runner] insertText failed on selection, trying delete then insert...');
+        document.execCommand('delete');
+        document.execCommand('insertText', false, line);
+      }
+
+      // Dispatch input event for this text
+      element.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: line
+      }));
+    } else if (i === 0 && lines.length > 1) {
+      // Special case: First line is empty but there are more lines (text starts with newline)
+      // We still need to clear the selection!
+      document.execCommand('delete');
     }
 
     // If not the last line, insert a line break
     if (i < lines.length - 1) {
-      // Method 1: Use insertLineBreak command (works in most browsers)
-      const insertResult = document.execCommand('insertLineBreak', false, null);
-      console.log('[WhatsApp Runner] insertLineBreak result:', insertResult);
+      console.log('[WhatsApp Runner] Inserting line break after line', i + 1);
 
-      // Method 2: If insertLineBreak didn't work, try inserting HTML directly
-      if (!insertResult) {
-        console.log('[WhatsApp Runner] insertLineBreak failed, trying insertHTML');
-        document.execCommand('insertHTML', false, '<br>');
+      // Method 1: Shift+Enter simulation with proper event sequence
+      const shiftEnterDown = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+        shiftKey: true
+      });
+      element.dispatchEvent(shiftEnterDown);
+
+      // Try insertLineBreak command
+      let breakInserted = document.execCommand('insertLineBreak', false, null);
+
+      // Fallback: insertHTML with <br>
+      if (!breakInserted) {
+        breakInserted = document.execCommand('insertHTML', false, '<br>');
       }
 
-      // Small delay between lines to let WhatsApp process
-      await new Promise(r => setTimeout(r, 30));
+      // Dispatch input event for line break
+      element.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertLineBreak'
+      }));
+
+      const shiftEnterUp = new KeyboardEvent('keyup', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+        shiftKey: true
+      });
+      element.dispatchEvent(shiftEnterUp);
+
+      // Small delay between lines
+      await new Promise(r => setTimeout(r, 50));
     }
   }
 
-  // Dispatch input event WITHOUT data to notify WhatsApp the content changed
-  // NOTE: Do NOT include 'data: text' - this would cause duplicate insertion!
-  element.dispatchEvent(new InputEvent('input', {
-    bubbles: true,
-    cancelable: true,
-    inputType: 'insertText'
-  }));
+  console.log('[WhatsApp Runner] Finished typing message');
 
-  // Small delay for WhatsApp to process
-  await new Promise(r => setTimeout(r, 100));
+  // Final delay to ensure WhatsApp processes everything
+  await new Promise(r => setTimeout(r, 200));
+
+  // Log final state
+  console.log('[WhatsApp Runner] Final innerHTML length:', element.innerHTML.length);
 }
 
 // Navigate to a chat by phone number

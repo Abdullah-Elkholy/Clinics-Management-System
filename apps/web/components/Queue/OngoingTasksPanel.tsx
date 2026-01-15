@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSignalR } from '@/contexts/SignalRContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createDeleteConfirmation, createActionConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
@@ -13,7 +14,7 @@ import { UserRole } from '@/types/roles';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState } from '@/components/state';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import { Patient } from '@/types';
@@ -21,7 +22,9 @@ import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
 import messageApiClient, { OngoingSessionDto, SessionPatientDto } from '@/services/api/messageApiClient';
 import { patientsApiClient } from '@/services/api/patientsApiClient';
+import { settingsApiClient, RateLimitSettings, formatTimeArabic, calculateEstimatedTime } from '@/services/api/settingsApiClient';
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { parseAsUtc } from '@/utils/dateTimeUtils';
 import { whatsappApiClient, GlobalPauseState } from '@/services/api/whatsappApiClient';
 import { debounce } from '@/utils/debounce';
 import { translatePauseReason } from '@/utils/pauseReasonTranslations';
@@ -58,6 +61,10 @@ const ONGOING_TASKS_GUIDE_ITEMS = [
     title: '',
     description: 'الجلسات الموقوفة تظهر بخلفية صفراء للدلالة على الحالة الموقوفة'
   },
+  {
+    title: 'حماية من الحظر',
+    description: 'يتم تطبيق تأخير عشوائي بين كل رسالة والأخرى لتجنب اكتشاف النمط المتكرر. هذا التأخير ضروري لحماية حسابك من الحظر.'
+  },
 ];
 
 export default function OngoingTasksPanel() {
@@ -66,6 +73,7 @@ export default function OngoingTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const router = useRouter();
+  const { selectedModeratorId } = useQueue();
 
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
@@ -80,6 +88,7 @@ export default function OngoingTasksPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [globalPauseState, setGlobalPauseState] = useState<GlobalPauseState | null>(null);
+  const [rateLimitSettings, setRateLimitSettings] = useState<RateLimitSettings | null>(null);
 
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {
@@ -115,7 +124,8 @@ export default function OngoingTasksPanel() {
       setIsLoading(true);
       setError(null);
 
-      const response = await messageApiClient.getOngoingSessions();
+      // Pass selectedModeratorId for Admin filtering (null for Moderators = their own data)
+      const response = await messageApiClient.getOngoingSessions(selectedModeratorId ?? undefined);
 
       if (response.success && response.data) {
         // Transform API response to Session format
@@ -175,7 +185,7 @@ export default function OngoingTasksPanel() {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [addToast]);
+  }, [addToast, selectedModeratorId]);
 
   /**
    * Load global pause state for moderator
@@ -183,24 +193,24 @@ export default function OngoingTasksPanel() {
   const loadGlobalPauseState = useCallback(async () => {
     const moderatorId = user?.role === 'moderator'
       ? Number(user.id)
-      : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+      : (user?.role === 'user' ? Number(user.assignedModerator) : selectedModeratorId);
 
     if (!moderatorId) {
       // Set default state if no moderator ID
-      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false });
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false });
       return;
     }
 
     try {
       const state = await whatsappApiClient.getGlobalPauseState(moderatorId);
       // Ensure we always have a valid state object
-      setGlobalPauseState(state || { isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false });
+      setGlobalPauseState(state || { isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false });
     } catch (err) {
       logger.error('Failed to load global pause state:', err);
       // Set default state on error
-      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false });
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false });
     }
-  }, [user]);
+  }, [user, selectedModeratorId]);
 
   /**
    * Handle global pause (pause all moderator tasks)
@@ -208,7 +218,7 @@ export default function OngoingTasksPanel() {
   const handleGlobalPause = useCallback(async () => {
     const moderatorId = user?.role === 'moderator'
       ? Number(user.id)
-      : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+      : (user?.role === 'user' ? Number(user.assignedModerator) : selectedModeratorId);
 
     if (!moderatorId) return;
 
@@ -243,7 +253,7 @@ export default function OngoingTasksPanel() {
   const handleGlobalResume = useCallback(async () => {
     const moderatorId = user?.role === 'moderator'
       ? Number(user.id)
-      : (user?.assignedModerator ? Number(user.assignedModerator) : undefined);
+      : (user?.role === 'user' ? Number(user.assignedModerator) : selectedModeratorId);
 
     if (!moderatorId) return;
 
@@ -269,6 +279,28 @@ export default function OngoingTasksPanel() {
       }
     }
   }, [user, addToast, loadGlobalPauseState, loadOngoingSessions, globalPauseState]);
+
+  // Load rate limit settings
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsApiClient.getRateLimitSettings();
+        setRateLimitSettings(settings);
+      } catch (err) {
+        // Use default settings as fallback (matches backend defaults)
+        logger.warn('Failed to load rate limit settings, using defaults');
+        setRateLimitSettings({
+          minSeconds: 3,
+          maxSeconds: 7,
+          enabled: true,
+          estimatedSecondsPerMessage: 9  // (3+7)/2 + 4s processing
+        });
+      }
+    };
+    if (isAuthenticated) {
+      loadSettings();
+    }
+  }, [isAuthenticated]);
 
   /**
    * Load sessions on mount and when data updates
@@ -650,7 +682,9 @@ export default function OngoingTasksPanel() {
       if (a.isPaused && !b.isPaused) return 1;
 
       // Priority 3: Within same pause state, oldest (earliest StartTime) first (FIFO)
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      const dateA = parseAsUtc(a.createdAt)?.getTime() || 0;
+      const dateB = parseAsUtc(b.createdAt)?.getTime() || 0;
+      return dateA - dateB;
     });
   }, [sessions]);
 
@@ -754,21 +788,19 @@ export default function OngoingTasksPanel() {
           onClick={() =>
             togglePatientPause(sessionId, patient.id)
           }
-          disabled={globalPauseState?.isPaused === true || sessionIsPaused}
-          className={`px-2 py-1 rounded text-sm ${globalPauseState?.isPaused === true || sessionIsPaused
+          disabled={sessionIsPaused}
+          className={`px-2 py-1 rounded text-sm ${sessionIsPaused
             ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
             : patient.isPaused
               ? 'bg-green-50 text-green-600 hover:bg-green-100'
               : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
             }`}
           title={
-            globalPauseState?.isPaused === true
-              ? 'تم إيقاف جميع المهام على مستوى المشرف'
-              : sessionIsPaused
-                ? 'تم إيقاف الجلسة'
-                : patient.isPaused
-                  ? 'استئناف'
-                  : 'إيقاف'
+            sessionIsPaused
+              ? 'تم إيقاف الجلسة'
+              : patient.isPaused
+                ? 'استئناف'
+                : 'إيقاف'
           }
         >
           <i className={`fas fa-${patient.isPaused ? 'play' : 'pause'}`}></i>
@@ -851,7 +883,7 @@ export default function OngoingTasksPanel() {
   return (
     <PanelWrapper>
       <PanelHeader
-        title={`المهام الجارية ${sessions.length > 0 ? `- ${sessions[0].doctorName}` : ''}`}
+        title={`المهام الجارية`}
         icon="fa-tasks"
         description={`مراقبة وإدارة جميع المهام الجارية حالياً - ${sessions.length} جلسة`}
         stats={stats}
@@ -909,18 +941,55 @@ export default function OngoingTasksPanel() {
                 )}
               </>
             ) : (
-              <button
-                onClick={handleGlobalPause}
-                className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 flex items-center gap-2 font-medium shadow-md hover:shadow-lg transition-all"
-              >
-                <i className="fas fa-pause"></i>
-                <span>إيقاف جميع مهام المشرف</span>
-              </button>
+              <>
+                <button
+                  onClick={handleGlobalPause}
+                  disabled={!globalPauseState?.isExtensionConnected}
+                  className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${globalPauseState?.isExtensionConnected
+                    ? 'bg-yellow-600 text-white hover:bg-yellow-700 hover:shadow-lg'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  title={!globalPauseState?.isExtensionConnected ? 'الإضافة غير متصلة - لا يوجد شيء للإيقاف' : 'إيقاف جميع مهام المشرف'}
+                >
+                  <i className="fas fa-pause"></i>
+                  <span>إيقاف جميع مهام المشرف</span>
+                </button>
+                {!globalPauseState?.isExtensionConnected && (
+                  <div className="text-sm text-orange-600 flex items-center gap-2 mt-2">
+                    <i className="fas fa-plug"></i>
+                    <span>الإضافة غير متصلة - افتح الإضافة واضغط &quot;بدء الجلسة&quot;</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       )}
 
+
+      {/* Rate Limit Info Banner */}
+      {rateLimitSettings && rateLimitSettings.enabled && sessions.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 bg-blue-100 rounded-full p-2">
+              <i className="fas fa-shield-alt text-blue-600 text-lg"></i>
+            </div>
+            <div className="flex-1">
+              <h4 className="text-blue-800 font-semibold text-sm mb-1 flex items-center gap-2">
+                <span>حماية من الحظر</span>
+                <span className="bg-blue-200 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold">
+                  {rateLimitSettings.minSeconds}-{rateLimitSettings.maxSeconds} ثانية
+                </span>
+              </h4>
+              <p className="text-blue-700 text-xs leading-relaxed">
+                يتم تطبيق تأخير عشوائي بين <strong>{rateLimitSettings.minSeconds}</strong> و <strong>{rateLimitSettings.maxSeconds}</strong> ثانية
+                بين كل رسالة والأخرى. هذا التأخير المتغير يمنع اكتشاف النمط المتكرر ويحمي حسابك من الحظر.
+                <span className="text-blue-600 font-medium"> يرجى الصبر - الإرسال البطيء أفضل من حظر الحساب!</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sessions List */}
       <div className="space-y-4">
@@ -936,12 +1005,12 @@ export default function OngoingTasksPanel() {
             <div
               key={session.id}
               className={`bg-white rounded-lg shadow overflow-hidden border-2 transition-all duration-500 ease-in-out transform hover:scale-[1.01] ${isCurrentlyActive
-                  ? 'animate-glow-sending border-blue-500 shadow-xl shadow-blue-200/50 order-0'
-                  : isNextInQueue
-                    ? 'border-green-400 shadow-lg shadow-green-100/50 order-1'
-                    : session.isPaused
-                      ? 'border-yellow-300 order-2'
-                      : 'border-gray-200 order-3'
+                ? 'animate-glow-sending border-blue-500 shadow-xl shadow-blue-200/50 order-0'
+                : isNextInQueue
+                  ? 'border-green-400 shadow-lg shadow-green-100/50 order-1'
+                  : session.isPaused
+                    ? 'border-yellow-300 order-2'
+                    : 'border-gray-200 order-3'
                 }`}
               style={{
                 animation: isCurrentlyActive ? 'slideToTop 0.5s ease-out' : 'none'
@@ -964,10 +1033,10 @@ export default function OngoingTasksPanel() {
               {/* Session Header - Fully Clickable */}
               <div
                 className={`px-6 py-4 border-b cursor-pointer transition-colors relative ${isCurrentlyActive
-                    ? 'bg-gradient-to-r from-blue-50 via-blue-100 to-purple-100'
-                    : session.isPaused
-                      ? 'bg-gradient-to-r from-yellow-100 to-orange-50'
-                      : 'bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100'
+                  ? 'bg-gradient-to-r from-blue-50 via-blue-100 to-purple-100'
+                  : session.isPaused
+                    ? 'bg-gradient-to-r from-yellow-100 to-orange-50'
+                    : 'bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100'
                   }`}
                 onClick={() => toggleSessionExpand(session.id)}
                 style={{ paddingTop: (isCurrentlyActive || isNextInQueue) ? '3rem' : '1rem' }}
@@ -1021,14 +1090,12 @@ export default function OngoingTasksPanel() {
                           e.stopPropagation();
                           toggleSessionPause(session.id);
                         }}
-                        disabled={globalPauseState?.isPaused === true}
-                        className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${globalPauseState?.isPaused === true
-                          ? 'bg-gray-400 text-white cursor-not-allowed opacity-50'
-                          : session.isPaused
-                            ? 'bg-green-500 text-white hover:bg-green-600'
-                            : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                        disabled={false}
+                        className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${session.isPaused
+                          ? 'bg-green-500 text-white hover:bg-green-600'
+                          : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
                           }`}
-                        title={globalPauseState?.isPaused === true ? 'تم إيقاف جميع المهام على مستوى المشرف' : (session.isPaused ? 'استئناف الجلسة' : 'إيقاف الجلسة')}
+                        title={session.isPaused ? 'استئناف الجلسة' : 'إيقاف الجلسة'}
                       >
                         <i className={`fas fa-${session.isPaused ? 'play' : 'pause'}`}></i>
                       </button>
@@ -1049,43 +1116,63 @@ export default function OngoingTasksPanel() {
               {/* Session Content (Expandable) */}
               {isExpanded && (
                 <div className="p-6 bg-gray-50">
-                  {/* Session Stats - 4 columns with actionable info */}
-                  <div className="grid grid-cols-4 gap-4 mb-6">
-                    <div className="bg-white rounded-lg p-4 border border-blue-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>
-                        قيد الإرسال
-                      </div>
-                      <div className="text-2xl font-bold text-blue-600">
-                        {session.patients.filter(p => p.status === 'sending').length}
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-green-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-check-circle text-green-500 text-xs"></i>
-                        تم الإرسال
-                      </div>
-                      <div className="text-2xl font-bold text-green-600">
-                        {session.patients.filter(p => p.status === 'sent').length}
-                      </div>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-red-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-times-circle text-red-500 text-xs"></i>
-                        فشل
-                      </div>
-                      <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-gray-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-clock text-gray-500 text-xs"></i>
-                        المتبقية
-                      </div>
-                      <div className="text-2xl font-bold text-gray-600">
-                        {session.patients.filter(p => p.status === 'queued' || p.status === 'pending').length}
-                      </div>
-                    </div>
-                  </div>
+                  {(() => {
+                    const remainingCount = session.patients.filter(p => p.status === 'queued' || p.status === 'pending').length;
+
+                    // Calculate estimated remaining time
+                    const estimatedTime = rateLimitSettings
+                      ? calculateEstimatedTime(remainingCount, rateLimitSettings.estimatedSecondsPerMessage)
+                      : remainingCount * 9; // Fallback estimate (9s per message)
+
+                    return (
+                      <>
+                        {/* Session Stats - 4 columns with actionable info */}
+                        <div className="grid grid-cols-4 gap-4 mb-6">
+                          <div className="bg-white rounded-lg p-4 border border-blue-200">
+                            <div className="text-sm text-gray-600 flex items-center gap-1">
+                              <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>
+                              قيد الإرسال
+                            </div>
+                            <div className="text-2xl font-bold text-blue-600">
+                              {session.patients.filter(p => p.status === 'sending').length}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 border border-green-200">
+                            <div className="text-sm text-gray-600 flex items-center gap-1">
+                              <i className="fas fa-check-circle text-green-500 text-xs"></i>
+                              تم الإرسال
+                            </div>
+                            <div className="text-2xl font-bold text-green-600">
+                              {session.patients.filter(p => p.status === 'sent').length}
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 border border-red-200">
+                            <div className="text-sm text-gray-600 flex items-center gap-1">
+                              <i className="fas fa-times-circle text-red-500 text-xs"></i>
+                              فشل
+                            </div>
+                            <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 border border-gray-200">
+                            <div className="text-sm text-gray-600 flex items-center gap-1">
+                              <i className="fas fa-clock text-gray-500 text-xs"></i>
+                              المتبقية
+                            </div>
+                            <div className="flex items-end gap-2">
+                              <div className="text-2xl font-bold text-gray-600">
+                                {remainingCount}
+                              </div>
+                              {remainingCount > 0 && (
+                                <div className="text-xs text-blue-600 mb-1 font-medium dir-ltr" title="الوقت المتبقي المتوقع">
+                                  ~{formatTimeArabic(estimatedTime)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {/* Patients Table */}
                   <div className="bg-white rounded-lg overflow-hidden border">

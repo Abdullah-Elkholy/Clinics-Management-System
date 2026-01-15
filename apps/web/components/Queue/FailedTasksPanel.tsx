@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createBulkDeleteConfirmation, createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
@@ -12,7 +13,7 @@ import { UserRole } from '@/types/roles';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState } from '@/components/state';
 import { Badge } from '@/components/Common/ResponsiveUI';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { Patient } from '@/types';
@@ -61,6 +62,7 @@ export default function FailedTasksPanel() {
   const { addToast } = useUI();
   const { confirm } = useConfirmDialog();
   const router = useRouter();
+  const { selectedModeratorId } = useQueue();
 
   // ALL hooks must be declared BEFORE any conditional returns
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set(['SES-15-JAN-001']));
@@ -116,7 +118,8 @@ export default function FailedTasksPanel() {
       logger.debug('[FailedTasksPanel] Set loading to true, cleared error');
 
       logger.debug('[FailedTasksPanel] Calling messageApiClient.getFailedSessions()...');
-      const response = await messageApiClient.getFailedSessions();
+      // Pass selectedModeratorId for Admin filtering (null for Moderators = their own data)
+      const response = await messageApiClient.getFailedSessions(selectedModeratorId ?? undefined);
       logger.debug('[FailedTasksPanel] Received response:', {
         success: response.success,
         hasData: !!response.data,
@@ -204,7 +207,7 @@ export default function FailedTasksPanel() {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [page, pageSize, user, addToast]);
+  }, [page, pageSize, user, addToast, selectedModeratorId]);
 
   /**
    * Load sessions on mount and when dependencies change
@@ -873,7 +876,7 @@ export default function FailedTasksPanel() {
   return (
     <PanelWrapper>
       <PanelHeader
-        title={`المهام الفاشلة ${sessions.length > 0 ? `- ${sessions[0].doctorName}` : ''}`}
+        title={`المهام الفاشلة`}
         icon="fa-exclamation-circle"
         description={`عرض وإدارة المهام التي فشلت وتحتاج إلى إعادة محاولة - ${sessions.length} جلسة`}
         stats={stats}

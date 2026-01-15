@@ -3,12 +3,14 @@
 import React from 'react';
 
 interface EmptyStateProps {
-  /** Icon or SVG element to display */
-  icon?: React.ReactNode;
+  /** Icon element to display (ReactNode or string for FA icon class) */
+  icon?: React.ReactNode | string;
   /** Main empty state title/heading */
   title: string;
   /** Descriptive text */
   description?: string;
+  /** @deprecated Use 'description' instead. Alias for backward compatibility. */
+  message?: string;
   /** Primary action button label */
   actionLabel?: string;
   /** Callback when action button is clicked */
@@ -43,6 +45,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   icon,
   title,
   description,
+  message, // Backward compatibility alias
   actionLabel,
   onAction,
   secondaryActionLabel,
@@ -50,6 +53,18 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   className = '',
   isLoading = false,
 }) => {
+  // Use description, fall back to message for backward compatibility
+  const displayDescription = description || message;
+
+  // Handle icon as string (FontAwesome class) or ReactNode
+  const renderIcon = () => {
+    if (!icon) return null;
+    if (typeof icon === 'string') {
+      return <i className={`fas ${icon} text-4xl text-gray-300`} />;
+    }
+    return icon;
+  };
+
   if (isLoading) {
     return (
       <div className={`flex flex-col items-center justify-center py-12 ${className}`}>
@@ -65,7 +80,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       {icon && (
         <div className="mb-4 flex justify-center">
           <div className="text-6xl opacity-40">
-            {icon}
+            {renderIcon()}
           </div>
         </div>
       )}
@@ -76,9 +91,9 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       </h3>
 
       {/* Description */}
-      {description && (
+      {displayDescription && (
         <p className="mb-6 max-w-sm text-center text-sm text-gray-600">
-          {description}
+          {displayDescription}
         </p>
       )}
 

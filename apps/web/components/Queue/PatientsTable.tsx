@@ -4,6 +4,7 @@ import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 
 import { useState } from 'react';
 import { useQueue } from '../../contexts/QueueContext';
+import { EmptyState } from '../state';
 
 export default function PatientsTable() {
   const {
@@ -49,10 +50,11 @@ export default function PatientsTable() {
 
       {/* Table */}
       {patients.length === 0 ? (
-        <div className="px-6 py-12 text-center">
-          <i className="fas fa-inbox text-4xl text-gray-300 mb-4 block"></i>
-          <p className="text-gray-600">لا توجد مرضى حالياً</p>
-        </div>
+        <EmptyState
+          title="لا توجد مرضى حالياً"
+          description="لم يتم إضافة أي مرضى بعد. يمكنك رفع ملف Excel أو إضافة مرضى يدوياً."
+          icon={<i className="fas fa-inbox text-4xl text-gray-300" />}
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">

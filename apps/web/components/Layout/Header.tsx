@@ -187,7 +187,7 @@ export default function Header() {
         <div className="flex items-center space-x-4 space-x-reverse">
           {/* WhatsApp Status - Hidden for admin, shown for moderator and user */}
           {user.role !== 'primary_admin' && user.role !== 'secondary_admin' && (
-            <div 
+            <div
               className="hidden sm:flex items-center gap-2 cursor-pointer group"
               onClick={handleWhatsAppStatusClick}
               title="اضغط لفتح إعدادات ربط واتساب"
@@ -196,10 +196,10 @@ export default function Header() {
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full group-hover:ring-2 group-hover:ring-blue-300 transition-all ${statusDisplay.bgColor}`}>
                 {/* Status icon */}
                 <i className={`fas fa-${statusDisplay.icon} ${statusDisplay.textColor} text-sm ${statusDisplay.icon === 'spinner' ? 'animate-spin' : ''}`}></i>
-                
+
                 {/* Status dot */}
                 <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
-                
+
                 {/* Status text */}
                 <div className="flex flex-col">
                   <span className={`text-sm font-medium ${statusDisplay.textColor}`}>

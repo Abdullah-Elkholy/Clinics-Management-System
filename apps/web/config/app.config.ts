@@ -7,7 +7,7 @@
 // FILE UPLOAD CONFIGURATION
 // ============================================================================
 export const FILE_UPLOAD_CONFIG = {
-  MAX_FILE_SIZE: 5 * 1024 * 1024, // 5 MB
+  MAX_FILE_SIZE: 10 * 1024 * 1024, // 10 MB
   ALLOWED_TYPES: [
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

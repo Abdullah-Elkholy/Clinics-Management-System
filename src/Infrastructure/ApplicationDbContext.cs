@@ -28,6 +28,9 @@ namespace Clinics.Infrastructure
         public DbSet<ExtensionSessionLease> ExtensionSessionLeases => Set<ExtensionSessionLease>();
         public DbSet<ExtensionCommand> ExtensionCommands => Set<ExtensionCommand>();
 
+        // System settings for rate limiting and other admin-configurable options
+        public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -298,6 +301,50 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<ExtensionCommand>()
                 .Property(c => c.CreatedAtUtc)
                 .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            #endregion
+
+            #region SystemSettings Configuration
+
+            // Unique index on Key for fast lookups
+            modelBuilder.Entity<SystemSettings>()
+                .HasIndex(s => s.Key)
+                .IsUnique();
+
+            modelBuilder.Entity<SystemSettings>()
+                .Property(s => s.CreatedAt)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // Seed default rate limit settings
+            modelBuilder.Entity<SystemSettings>().HasData(
+                new SystemSettings
+                {
+                    Id = 1,
+                    Key = SystemSettingKeys.RateLimitEnabled,
+                    Value = "true",
+                    Description = "تفعيل تحديد معدل الإرسال بين الرسائل",
+                    Category = "RateLimit",
+                    CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, DateTimeKind.Utc)
+                },
+                new SystemSettings
+                {
+                    Id = 2,
+                    Key = SystemSettingKeys.RateLimitMinSeconds,
+                    Value = "3",
+                    Description = "الحد الأدنى للتأخير بين الرسائل (بالثواني)",
+                    Category = "RateLimit",
+                    CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, DateTimeKind.Utc)
+                },
+                new SystemSettings
+                {
+                    Id = 3,
+                    Key = SystemSettingKeys.RateLimitMaxSeconds,
+                    Value = "7",
+                    Description = "الحد الأقصى للتأخير بين الرسائل (بالثواني)",
+                    Category = "RateLimit",
+                    CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, DateTimeKind.Utc)
+                }
+            );
 
             #endregion
         }

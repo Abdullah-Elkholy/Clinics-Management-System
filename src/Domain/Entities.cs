@@ -832,8 +832,10 @@ namespace Clinics.Domain
         ///              Exactly one per queue enforced by filtered unique index: WHERE Operator = 'DEFAULT'.
         ///   - UNCONDITIONED: No custom criteria; template selection is unconditioned ("بدون شرط").
         ///   - EQUAL/GREATER/LESS/RANGE: Active condition; template selected when patient field matches operator/values.
+        /// 
+        /// Note: [ForeignKey] attribute removed. Relationship is fully configured via Fluent API in ApplicationDbContext
+        /// to avoid EF Core warning about dual ForeignKey attributes creating two separate relationships.
         /// </summary>
-        [ForeignKey(nameof(TemplateId))]
         public MessageTemplate? Template { get; set; }
 
         /// <summary>
@@ -1343,5 +1345,60 @@ namespace Clinics.Domain
         public int? CheckedByUserId { get; set; }
 
         public int ValidationCount { get; set; }
+    }
+
+    /// <summary>
+    /// System-wide configuration settings.
+    /// Used for rate limiting, feature flags, and other admin-configurable options.
+    /// </summary>
+    [Table("SystemSettings")]
+    public class SystemSettings
+    {
+        [Key]
+        public int Id { get; set; }
+
+        /// <summary>
+        /// Unique key for the setting (e.g., "RateLimitMinSeconds", "RateLimitMaxSeconds")
+        /// </summary>
+        [Required]
+        [StringLength(50)]
+        public string Key { get; set; } = null!;
+
+        /// <summary>
+        /// Setting value as string (parsed based on context)
+        /// </summary>
+        [Required]
+        [StringLength(200)]
+        public string Value { get; set; } = null!;
+
+        /// <summary>
+        /// Description in Arabic for admin UI
+        /// </summary>
+        [StringLength(500)]
+        public string? Description { get; set; }
+
+        /// <summary>
+        /// Category for grouping settings (e.g., "RateLimit", "Features")
+        /// </summary>
+        [StringLength(50)]
+        public string? Category { get; set; }
+
+        // Audit fields
+        [Required]
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? UpdatedAt { get; set; }
+
+        public int? UpdatedBy { get; set; }
+    }
+
+    /// <summary>
+    /// Well-known keys for system settings
+    /// </summary>
+    public static class SystemSettingKeys
+    {
+        public const string RateLimitMinSeconds = "RateLimitMinSeconds";
+        public const string RateLimitMaxSeconds = "RateLimitMaxSeconds";
+        public const string RateLimitEnabled = "RateLimitEnabled";
     }
 }

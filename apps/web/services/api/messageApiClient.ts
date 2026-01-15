@@ -540,11 +540,17 @@ export async function updateCondition(id: number, data: UpdateConditionRequest):
     requestBody.operator = data.operator;
 
     // For UNCONDITIONED and DEFAULT operators, explicitly set null values
-    // This ensures the backend receives null instead of omitting the fields
     if (data.operator === 'UNCONDITIONED' || data.operator === 'DEFAULT') {
       requestBody.value = null;
       requestBody.minValue = null;
       requestBody.maxValue = null;
+    } else if (data.operator === 'RANGE') {
+      // For RANGE, explicitly set value to null (required by backend)
+      requestBody.value = null;
+
+      // Include min/max values
+      if (data.minValue !== undefined) requestBody.minValue = data.minValue;
+      if (data.maxValue !== undefined) requestBody.maxValue = data.maxValue;
     } else {
       // For other operators, include values if provided
       if (data.value !== undefined) {
@@ -816,24 +822,33 @@ export interface CompletedSessionDto {
 }
 
 /**
- * Get all ongoing sessions for current user's moderator
+ * Get all ongoing sessions for current user's moderator.
+ * For Admins: optionally filter by moderatorId.
  */
-export async function getOngoingSessions(): Promise<{ success: boolean; data: OngoingSessionDto[] }> {
-  return fetchAPI('/sessions/ongoing');
+export async function getOngoingSessions(moderatorId?: number): Promise<{ success: boolean; data: OngoingSessionDto[] }> {
+  const timestamp = Date.now();
+  const queryParams = [`_t=${timestamp}`];
+  if (moderatorId) queryParams.push(`moderatorId=${moderatorId}`);
+  const params = `?${queryParams.join('&')}`;
+  return fetchAPI(`/sessions/ongoing${params}`);
 }
 
 /**
- * Get all failed sessions for current user's moderator
+ * Get all failed sessions for current user's moderator.
+ * For Admins: optionally filter by moderatorId.
  */
-export async function getFailedSessions(): Promise<{ success: boolean; data: FailedSessionDto[] }> {
-  return fetchAPI('/sessions/failed');
+export async function getFailedSessions(moderatorId?: number): Promise<{ success: boolean; data: FailedSessionDto[] }> {
+  const params = moderatorId ? `?moderatorId=${moderatorId}` : '';
+  return fetchAPI(`/sessions/failed${params}`);
 }
 
 /**
- * Get all completed sessions for current user's moderator
+ * Get all completed sessions for current user's moderator.
+ * For Admins: optionally filter by moderatorId.
  */
-export async function getCompletedSessions(): Promise<{ success: boolean; data: CompletedSessionDto[] }> {
-  return fetchAPI('/sessions/completed');
+export async function getCompletedSessions(moderatorId?: number): Promise<{ success: boolean; data: CompletedSessionDto[] }> {
+  const params = moderatorId ? `?moderatorId=${moderatorId}` : '';
+  return fetchAPI(`/sessions/completed${params}`);
 }
 
 /**

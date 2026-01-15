@@ -59,10 +59,10 @@ namespace Clinics.Api.Services.Extension
             var whatsAppSession = await _db.WhatsAppSessions
                 .Where(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted)
                 .FirstOrDefaultAsync(cancellationToken);
-            
+
             if (whatsAppSession?.IsPaused == true)
             {
-                _logger.LogDebug("Global pause active for moderator {ModeratorId}, skipping message {MessageId}", 
+                _logger.LogDebug("Global pause active for moderator {ModeratorId}, skipping message {MessageId}",
                     moderatorId, message.Id);
                 return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. جلسة الواتساب متوقفة.");
             }
@@ -102,16 +102,16 @@ namespace Clinics.Api.Services.Extension
 
             // Check if there's already a pending/in-progress command for this message (prevent duplicates)
             var existingCommand = await _db.ExtensionCommands
-                .Where(c => c.MessageId == message.Id 
+                .Where(c => c.MessageId == message.Id
                     && (c.Status == ExtensionCommandStatuses.Pending || c.Status == ExtensionCommandStatuses.Sent || c.Status == ExtensionCommandStatuses.Acked)
                     && c.CreatedAtUtc > DateTime.UtcNow.AddMinutes(-5)) // Only consider recent commands
                 .FirstOrDefaultAsync(cancellationToken);
-            
+
             if (existingCommand != null)
             {
-                _logger.LogWarning("Duplicate command detected for message {MessageId}, existing command {CommandId} status {Status}. Waiting for existing command.", 
+                _logger.LogInformation("Duplicate command detected for message {MessageId}, existing command {CommandId} status {Status}. Waiting for existing command (de-duplication working).",
                     message.Id, existingCommand.Id, existingCommand.Status);
-                
+
                 // Wait for the existing command to complete instead of creating a new one
                 return await WaitForCommandResult(existingCommand.Id, cancellationToken);
             }
@@ -119,15 +119,15 @@ namespace Clinics.Api.Services.Extension
             // Also check for recently COMPLETED commands to prevent rapid re-sends after timeout
             // If a command completed successfully in the last 30 seconds, don't create another
             var recentCompletedCommand = await _db.ExtensionCommands
-                .Where(c => c.MessageId == message.Id 
+                .Where(c => c.MessageId == message.Id
                     && c.Status == ExtensionCommandStatuses.Completed
                     && c.ResultStatus == ExtensionResultStatuses.Success
                     && c.CompletedAtUtc > DateTime.UtcNow.AddSeconds(-30))
                 .FirstOrDefaultAsync(cancellationToken);
-            
+
             if (recentCompletedCommand != null)
             {
-                _logger.LogWarning("Message {MessageId} has a recently completed successful command {CommandId}. Skipping duplicate send.", 
+                _logger.LogWarning("Message {MessageId} has a recently completed successful command {CommandId}. Skipping duplicate send.",
                     message.Id, recentCompletedCommand.Id);
                 return WhatsAppSendResult.SuccessResult("RecentlyCompleted", "Message was recently sent successfully");
             }
@@ -135,12 +135,12 @@ namespace Clinics.Api.Services.Extension
             // Create command payload
             // Build full phone number with country code (removing leading 0 from local number)
             var fullPhoneNumber = $"{message.CountryCode?.TrimStart('+')}{message.PatientPhone?.TrimStart('0')}";
-            
+
             var payload = new SendMessageCommandPayload
             {
                 MessageId = message.Id,
                 PhoneNumber = fullPhoneNumber,
-                CountryCode = message.CountryCode,
+                CountryCode = message.CountryCode ?? "+20",
                 MessageText = message.Content,
                 SessionId = message.SessionId,
                 PatientName = message.FullName
@@ -149,7 +149,7 @@ namespace Clinics.Api.Services.Extension
             // Debug logging for newlines in message content
             var hasNewlines = message.Content?.Contains('\n') ?? false;
             var newlineCount = message.Content?.Count(c => c == '\n') ?? 0;
-            _logger.LogDebug("Message {MessageId} content: HasNewlines={HasNewlines}, NewlineCount={NewlineCount}, ContentLength={ContentLength}", 
+            _logger.LogDebug("Message {MessageId} content: HasNewlines={HasNewlines}, NewlineCount={NewlineCount}, ContentLength={ContentLength}",
                 message.Id, hasNewlines, newlineCount, message.Content?.Length ?? 0);
 
             // Create command
@@ -160,7 +160,7 @@ namespace Clinics.Api.Services.Extension
                 messageId: message.Id,
                 timeout: _commandTimeout);
 
-            _logger.LogInformation("Created SendMessage command {CommandId} for message {MessageId}", 
+            _logger.LogInformation("Created SendMessage command {CommandId} for message {MessageId}",
                 command.Id, message.Id);
 
             // Notify extension via SignalR
@@ -199,7 +199,7 @@ namespace Clinics.Api.Services.Extension
                 {
                     case ExtensionCommandStatuses.Completed:
                         return MapCommandResultToSendResult(updatedCommand);
-                    
+
                     case ExtensionCommandStatuses.Failed:
                     case ExtensionCommandStatuses.Expired:
                         var errorMsg = ExtractErrorMessage(updatedCommand.ResultJson);
@@ -217,7 +217,7 @@ namespace Clinics.Api.Services.Extension
                 "Command {CommandId} timed out after {Timeout}s for message {MessageId}. " +
                 "Command remains in status {Status}. Message should stay in 'sending' with InFlightCommandId set.",
                 command.Id, _commandTimeout.TotalSeconds, payload.MessageId, command.Status);
-            
+
             // P2.9: Return ExtensionTimeout result - distinct from failed for UI feedback
             // Message stays in 'sending' status, unique index prevents duplicate commands
             return WhatsAppSendResult.ExtensionTimeout("انتهت مهلة انتظار استجابة الامتداد - في انتظار الاكتمال", command.Id);
@@ -257,7 +257,7 @@ namespace Clinics.Api.Services.Extension
                 {
                     case ExtensionCommandStatuses.Completed:
                         return MapCommandResultToSendResult(command);
-                    
+
                     case ExtensionCommandStatuses.Failed:
                     case ExtensionCommandStatuses.Expired:
                         var errorMsg = ExtractErrorMessage(command.ResultJson);
@@ -283,16 +283,16 @@ namespace Clinics.Api.Services.Extension
                 ExtensionResultStatuses.Success => WhatsAppSendResult.SuccessResult(
                     providerId: "Extension",
                     providerResponse: command.ResultJson),
-                
+
                 ExtensionResultStatuses.PendingQR => WhatsAppSendResult.PendingQR(
                     ExtractErrorMessage(command.ResultJson) ?? "جلسة الواتساب تحتاج إلى المصادقة"),
-                
+
                 ExtensionResultStatuses.PendingNET => WhatsAppSendResult.PendingNET(
                     ExtractErrorMessage(command.ResultJson) ?? "فشل الاتصال بالإنترنت"),
-                
+
                 ExtensionResultStatuses.Waiting => WhatsAppSendResult.Waiting(
                     ExtractErrorMessage(command.ResultJson) ?? "في انتظار جاهزية واجهة الواتساب"),
-                
+
                 _ => WhatsAppSendResult.FailedResult(
                     ExtractErrorMessage(command.ResultJson) ?? "فشل في إرسال الرسالة")
             };

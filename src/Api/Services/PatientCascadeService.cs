@@ -1,4 +1,4 @@
-/**
+/*
  * Patient Cascade Service - Soft Delete Handler
  * File: src/Api/Services/PatientCascadeService.cs
  * 

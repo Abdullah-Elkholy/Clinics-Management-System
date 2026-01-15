@@ -225,7 +225,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
 
             await _context.SaveChangesAsync();
         }
-        catch (Exception ex)
+        catch
         {
             // Log error but don't throw - quota recalculation is not critical for system operation
             // This allows the system to continue functioning even if recalculation fails

@@ -1,4 +1,4 @@
-﻿/**
+﻿/*
  * User Cascade Service - Soft Delete Handler
  * File: src/Api/Services/UserCascadeService.cs
  * 
@@ -48,7 +48,7 @@ public class UserCascadeService : IUserCascadeService
     private const int TTL_DAYS = 30;
 
     public UserCascadeService(
-        ApplicationDbContext db, 
+        ApplicationDbContext db,
         ILogger<UserCascadeService> logger,
         IQueueCascadeService queueCascadeService)
     {
@@ -87,7 +87,7 @@ public class UserCascadeService : IUserCascadeService
                     // Call QueueCascadeService with useTransaction = false since we're already in a transaction
                     // Note: QueueCascadeService will call MessageSessionCascadeService which will cascade to Messages
                     var (success, error) = await _queueCascadeService.SoftDeleteQueueAsync(queue.Id, deletedByUserId, useTransaction: false);
-                    
+
                     if (!success)
                     {
                         await transaction.RollbackAsync();
@@ -99,14 +99,14 @@ public class UserCascadeService : IUserCascadeService
                 // Soft-delete WhatsAppSession
                 var whatsappSession = await _db.Set<WhatsAppSession>()
                     .FirstOrDefaultAsync(s => s.ModeratorUserId == userId && !s.IsDeleted);
-                
+
                 if (whatsappSession != null)
                 {
                     whatsappSession.IsDeleted = true;
                     whatsappSession.DeletedAt = operationTimestamp;
                     whatsappSession.DeletedBy = deletedByUserId;
                     whatsappSession.Status = "disconnected"; // Update status to disconnected
-                    
+
                     _logger.LogInformation(
                         "WhatsAppSession {SessionId} for moderator {UserId} soft-deleted at {Timestamp}",
                         whatsappSession.Id, userId, operationTimestamp);
@@ -174,9 +174,9 @@ public class UserCascadeService : IUserCascadeService
             if (user.Role == "moderator")
             {
                 var queues = await _db.Queues
-                    .Where(q => q.ModeratorId == userId 
-                        && q.IsDeleted 
-                        && q.DeletedAt.HasValue 
+                    .Where(q => q.ModeratorId == userId
+                        && q.IsDeleted
+                        && q.DeletedAt.HasValue
                         && q.DeletedAt >= originalDeletedAt)
                     .ToListAsync();
 
@@ -185,7 +185,7 @@ public class UserCascadeService : IUserCascadeService
                     // Call QueueCascadeService with useTransaction = false since we're already in a transaction
                     // Note: QueueCascadeService will call MessageSessionCascadeService which will restore Messages
                     var (success, error) = await _queueCascadeService.RestoreQueueAsync(queue.Id, restoredBy, useTransaction: false);
-                    
+
                     if (!success)
                     {
                         await transaction.RollbackAsync();
@@ -197,11 +197,11 @@ public class UserCascadeService : IUserCascadeService
                 // Restore WhatsAppSession (if deleted during same cascade)
                 var whatsappSession = await _db.Set<WhatsAppSession>()
                     .IgnoreQueryFilters() // Must bypass soft-delete filter to find deleted sessions
-                    .FirstOrDefaultAsync(s => s.ModeratorUserId == userId 
-                        && s.IsDeleted 
-                        && s.DeletedAt.HasValue 
+                    .FirstOrDefaultAsync(s => s.ModeratorUserId == userId
+                        && s.IsDeleted
+                        && s.DeletedAt.HasValue
                         && s.DeletedAt >= originalDeletedAt);
-                
+
                 if (whatsappSession != null)
                 {
                     whatsappSession.IsDeleted = false;
@@ -212,7 +212,7 @@ public class UserCascadeService : IUserCascadeService
                     whatsappSession.UpdatedAt = operationTimestamp;
                     whatsappSession.UpdatedBy = restoredBy;
                     // Note: Status remains "disconnected" - user must re-authenticate
-                    
+
                     _logger.LogInformation(
                         "WhatsAppSession {SessionId} for moderator {UserId} restored at {Timestamp}",
                         whatsappSession.Id, userId, operationTimestamp);

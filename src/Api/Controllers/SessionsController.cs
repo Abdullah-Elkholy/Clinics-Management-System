@@ -51,44 +51,70 @@ namespace Clinics.Api.Controllers
                 return (null, null, "المستخدم غير مصرح له");
             }
 
-            var effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
-            if (effectiveModeratorId <= 0)
+            // [FIX] For Admins, we don't enforce a moderator ID for VIEWING data
+            if (User.IsInRole("primary_admin") || User.IsInRole("secondary_admin"))
+            {
+                return (userId, null, null);
+            }
+
+            try
+            {
+                var effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+                if (effectiveModeratorId <= 0)
+                {
+                    return (userId, null, "لم يتم العثور على المشرف المرتبط");
+                }
+                return (userId, effectiveModeratorId, null);
+            }
+            catch (InvalidOperationException)
             {
                 return (userId, null, "لم يتم العثور على المشرف المرتبط");
             }
-
-            return (userId, effectiveModeratorId, null);
         }
 
         /// <summary>
         /// Get all ongoing sessions for the current user's moderator.
         /// Ongoing sessions have messages with Status = "queued" or "sending".
+        /// For Admins: optionally filter by moderatorId query parameter.
         /// </summary>
         [HttpGet("ongoing")]
-        public async Task<IActionResult> GetOngoingSessions()
+        public async Task<IActionResult> GetOngoingSessions([FromQuery] int? moderatorId = null)
         {
-            var (userId, moderatorId, error) = await GetUserAndModeratorId();
+            var (userId, effectiveModeratorId, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
             }
 
+            // For Admins: use provided moderatorId parameter if specified
+            // For non-Admins: always use their effective moderatorId (parameter ignored)
+            int? filterModeratorId = effectiveModeratorId ?? moderatorId;
+
             try
             {
-                _logger.LogInformation("[SessionsController] Getting ongoing sessions for moderator {ModeratorId}", moderatorId);
+                var userRole = User.IsInRole("primary_admin") ? "PrimaryAdmin" : User.IsInRole("secondary_admin") ? "SecondaryAdmin" : "Moderator";
+                var moderatorDisplay = filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All - Admin View)";
+                _logger.LogInformation("[SessionsController] Getting ongoing sessions for moderator {ModeratorId} (User: {UserId}, Role: {Role})", moderatorDisplay, userId, userRole);
 
                 // Get sessions that have ongoing messages (queued or sending)
                 // IMPORTANT: Don't filter by session.Status - a session might be marked "completed" 
                 // but still have queued/sending messages if processing was interrupted
-                var sessions = await _db.MessageSessions
+                var query = _db.MessageSessions
                     .AsNoTracking()
-                    .Where(s => s.ModeratorId == moderatorId
-                        && !s.IsDeleted
+                    .Where(s => !s.IsDeleted
                         && s.SessionType == "send" // Only message sending sessions, not check_whatsapp
                         && (s.OngoingMessages > 0 || _db.Messages.Any(m =>
                             m.SessionId == s.Id.ToString()
                             && !m.IsDeleted
-                            && (m.Status == "queued" || m.Status == "sending"))))
+                            && (m.Status == "queued" || m.Status == "sending"))));
+
+                // Filter by moderator if specified
+                if (filterModeratorId.HasValue)
+                {
+                    query = query.Where(s => s.ModeratorId == filterModeratorId.Value);
+                }
+
+                var sessions = await query
                     .Include(s => s.Queue)
                     .OrderBy(s => s.StartTime) // FIFO: oldest session first (will be processed in order)
                     .ToListAsync();
@@ -157,13 +183,13 @@ namespace Clinics.Api.Controllers
                 }
 
                 _logger.LogInformation("[SessionsController] Found {Count} ongoing sessions for moderator {ModeratorId}",
-                    result.Count, moderatorId);
+                    result.Count, filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All)");
 
                 return Ok(new { success = true, data = result });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[SessionsController] Error getting ongoing sessions for moderator {ModeratorId}", moderatorId);
+                _logger.LogError(ex, "[SessionsController] Error getting ongoing sessions for moderator {ModeratorId}", filterModeratorId);
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الجلسات الجارية" });
             }
         }
@@ -171,30 +197,43 @@ namespace Clinics.Api.Controllers
         /// <summary>
         /// Get all failed sessions for the current user's moderator.
         /// Failed sessions have messages with Status = "failed".
+        /// For Admins: optionally filter by moderatorId query parameter.
         /// </summary>
         [HttpGet("failed")]
-        public async Task<IActionResult> GetFailedSessions()
+        public async Task<IActionResult> GetFailedSessions([FromQuery] int? moderatorId = null)
         {
-            var (userId, moderatorId, error) = await GetUserAndModeratorId();
+            var (userId, effectiveModeratorId, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
             }
 
+            // For Admins: use provided moderatorId parameter if specified
+            int? filterModeratorId = effectiveModeratorId ?? moderatorId;
+
             try
             {
-                _logger.LogInformation("[SessionsController] Getting failed sessions for moderator {ModeratorId}", moderatorId);
+                var moderatorDisplay = filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All - Admin View)";
+                _logger.LogInformation("[SessionsController] Getting failed sessions for moderator {ModeratorId} (User: {UserId})", moderatorDisplay, userId);
 
                 // Get sessions that have failed messages
-                var sessions = await _db.MessageSessions
+                // Get sessions that have failed messages
+                var query = _db.MessageSessions
                     .AsNoTracking()
-                    .Where(s => s.ModeratorId == moderatorId
-                        && !s.IsDeleted
+                    .Where(s => !s.IsDeleted
                         && s.SessionType == "send"
                         && (s.FailedMessages > 0 || _db.Messages.Any(m =>
                             m.SessionId == s.Id.ToString()
                             && !m.IsDeleted
-                            && m.Status == "failed")))
+                            && m.Status == "failed")));
+
+                // Filter by moderator if specified
+                if (filterModeratorId.HasValue)
+                {
+                    query = query.Where(s => s.ModeratorId == filterModeratorId.Value);
+                }
+
+                var sessions = await query
                     .Include(s => s.Queue)
                     .OrderByDescending(s => s.StartTime)
                     .ToListAsync();
@@ -248,13 +287,13 @@ namespace Clinics.Api.Controllers
                 }
 
                 _logger.LogInformation("[SessionsController] Found {Count} failed sessions for moderator {ModeratorId}",
-                    result.Count, moderatorId);
+                    result.Count, filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All)");
 
                 return Ok(new { success = true, data = result });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[SessionsController] Error getting failed sessions for moderator {ModeratorId}", moderatorId);
+                _logger.LogError(ex, "[SessionsController] Error getting failed sessions for moderator {ModeratorId}", filterModeratorId);
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الجلسات الفاشلة" });
             }
         }
@@ -263,31 +302,43 @@ namespace Clinics.Api.Controllers
         /// Get all completed sessions for the current user's moderator.
         /// Shows sessions that have at least one sent message, even if still processing.
         /// This allows tracking sent messages while remaining messages are queued/processing.
+        /// For Admins: optionally filter by moderatorId query parameter.
         /// </summary>
         [HttpGet("completed")]
-        public async Task<IActionResult> GetCompletedSessions()
+        public async Task<IActionResult> GetCompletedSessions([FromQuery] int? moderatorId = null)
         {
-            var (userId, moderatorId, error) = await GetUserAndModeratorId();
+            var (userId, effectiveModeratorId, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
             }
 
+            // For Admins: use provided moderatorId parameter if specified
+            int? filterModeratorId = effectiveModeratorId ?? moderatorId;
+
             try
             {
-                _logger.LogInformation("[SessionsController] Getting completed sessions for moderator {ModeratorId}", moderatorId);
+                var moderatorDisplay = filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All - Admin View)";
+                _logger.LogInformation("[SessionsController] Getting completed sessions for moderator {ModeratorId} (User: {UserId})", moderatorDisplay, userId);
+
+                var query = _db.MessageSessions
+                    .AsNoTracking()
+                    .Where(s => !s.IsDeleted
+                        && s.SessionType == "send"
+                        && _db.Messages.Any(m =>
+                            m.SessionId == s.Id.ToString()
+                            && !m.IsDeleted
+                            && m.Status == "sent"));
+
+                // Filter by moderator if specified
+                if (filterModeratorId.HasValue)
+                {
+                    query = query.Where(s => s.ModeratorId == filterModeratorId.Value);
+                }
 
                 // Get sessions that have at least one sent message (regardless of session status)
                 // This allows tracking sent messages even while session is still processing
-                var sessions = await _db.MessageSessions
-                    .AsNoTracking()
-                    .Where(s => s.ModeratorId == moderatorId
-                        && !s.IsDeleted
-                        && s.SessionType == "send"
-                        && _db.Messages.Any(m => 
-                            m.SessionId == s.Id.ToString() 
-                            && !m.IsDeleted 
-                            && m.Status == "sent"))
+                var sessions = await query
                     .Include(s => s.Queue)
                     .OrderByDescending(s => s.EndTime ?? s.StartTime)
                     .Take(50) // Limit to last 50 sessions with sent messages
@@ -358,13 +409,13 @@ namespace Clinics.Api.Controllers
                 }
 
                 _logger.LogInformation("[SessionsController] Found {Count} sessions with sent messages for moderator {ModeratorId}",
-                    result.Count, moderatorId);
+                    result.Count, filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All)");
 
                 return Ok(new { success = true, data = result });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[SessionsController] Error getting completed sessions for moderator {ModeratorId}", moderatorId);
+                _logger.LogError(ex, "[SessionsController] Error getting completed sessions for moderator {ModeratorId}", filterModeratorId);
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الجلسات المكتملة" });
             }
         }
@@ -383,8 +434,15 @@ namespace Clinics.Api.Controllers
 
             try
             {
-                var session = await _db.MessageSessions
-                    .FirstOrDefaultAsync(s => s.Id == sessionId && s.ModeratorId == moderatorId && !s.IsDeleted);
+                var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
+
+                // Only filter by moderator if explicitly restricted (non-admin)
+                if (moderatorId.HasValue)
+                {
+                    query = query.Where(s => s.ModeratorId == moderatorId.Value);
+                }
+
+                var session = await query.FirstOrDefaultAsync();
 
                 if (session == null)
                 {
@@ -415,10 +473,10 @@ namespace Clinics.Api.Controllers
 
                 await _db.SaveChangesAsync();
 
-                _logger.LogInformation("[SessionsController] Paused session {SessionId}, {PausedCount} messages paused",
-                    sessionId, pausedCount);
+                _logger.LogInformation("[SessionsController] Paused session {SessionId} (MessageSession only)", sessionId);
+                _logger.LogInformation("[Business] تم إيقاف الجلسة {SessionId} مؤقتاً بواسطة {UserId}", sessionId, userId);
 
-                return Ok(new { success = true, pausedCount });
+                return Ok(new { success = true, pausedCount = 0 }); // pausedCount 0 because we don't pause messages
             }
             catch (Exception ex)
             {
@@ -428,7 +486,7 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// Resume a paused session and all its messages.
+        /// Resume a paused session (does NOT cascade to messages).
         /// </summary>
         [HttpPost("{sessionId}/resume")]
         public async Task<IActionResult> ResumeSession(Guid sessionId)
@@ -441,8 +499,15 @@ namespace Clinics.Api.Controllers
 
             try
             {
-                var session = await _db.MessageSessions
-                    .FirstOrDefaultAsync(s => s.Id == sessionId && s.ModeratorId == moderatorId && !s.IsDeleted);
+                var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
+
+                // Only filter by moderator if explicitly restricted (non-admin)
+                if (moderatorId.HasValue)
+                {
+                    query = query.Where(s => s.ModeratorId == moderatorId.Value);
+                }
+
+                var session = await query.FirstOrDefaultAsync();
 
                 if (session == null)
                 {
@@ -460,24 +525,15 @@ namespace Clinics.Api.Controllers
                 session.PauseReason = null;
                 session.LastUpdated = DateTime.UtcNow;
 
-                // Resume all messages in this session that were paused due to session pause
-                var resumedCount = await _db.Messages
-                    .Where(m => m.SessionId == sessionId.ToString()
-                        && !m.IsDeleted
-                        && m.IsPaused
-                        && m.PauseReason == "SESSION_PAUSED")
-                    .ExecuteUpdateAsync(m => m
-                        .SetProperty(x => x.IsPaused, false)
-                        .SetProperty(x => x.PausedAt, (DateTime?)null)
-                        .SetProperty(x => x.PausedBy, (int?)null)
-                        .SetProperty(x => x.PauseReason, (string?)null));
+                // DO NOT CASCADE RESUME to messages
+                // User requested strict scope separation. Session resume only affects MessageSession.
 
                 await _db.SaveChangesAsync();
 
-                _logger.LogInformation("[SessionsController] Resumed session {SessionId}, {ResumedCount} messages resumed",
-                    sessionId, resumedCount);
+                _logger.LogInformation("[SessionsController] Resumed session {SessionId} (MessageSession only)", sessionId);
+                _logger.LogInformation("[Business] تم استئناف الجلسة {SessionId} بواسطة {UserId}", sessionId, userId);
 
-                return Ok(new { success = true, resumedCount });
+                return Ok(new { success = true, resumedCount = 0 });
             }
             catch (Exception ex)
             {
@@ -500,8 +556,15 @@ namespace Clinics.Api.Controllers
 
             try
             {
-                var session = await _db.MessageSessions
-                    .FirstOrDefaultAsync(s => s.Id == sessionId && s.ModeratorId == moderatorId && !s.IsDeleted);
+                var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
+
+                // Only filter by moderator if explicitly restricted (non-admin)
+                if (moderatorId.HasValue)
+                {
+                    query = query.Where(s => s.ModeratorId == moderatorId.Value);
+                }
+
+                var session = await query.FirstOrDefaultAsync();
 
                 if (session == null)
                 {
@@ -558,6 +621,7 @@ namespace Clinics.Api.Controllers
 
                 _logger.LogInformation("[SessionsController] Retried session {SessionId}: {Requeued} requeued, {Skipped} skipped",
                     sessionId, requeued, skipped);
+                _logger.LogInformation("[Business] تمت إعادة محاولة الجلسة {SessionId} بواسطة {UserId} ({Requeued} رسالة)", sessionId, userId, requeued);
 
                 return Ok(new
                 {
@@ -589,8 +653,15 @@ namespace Clinics.Api.Controllers
 
             try
             {
-                var session = await _db.MessageSessions
-                    .FirstOrDefaultAsync(s => s.Id == sessionId && s.ModeratorId == moderatorId && !s.IsDeleted);
+                var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
+
+                // Only filter by moderator if explicitly restricted (non-admin)
+                if (moderatorId.HasValue)
+                {
+                    query = query.Where(s => s.ModeratorId == moderatorId.Value);
+                }
+
+                var session = await query.FirstOrDefaultAsync();
 
                 if (session == null)
                 {
@@ -616,6 +687,7 @@ namespace Clinics.Api.Controllers
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation("[SessionsController] Deleted session {SessionId}", sessionId);
+                _logger.LogInformation("[Business] تم حذف الجلسة {SessionId} بواسطة {UserId}", sessionId, userId);
 
                 return Ok(new { success = true });
             }

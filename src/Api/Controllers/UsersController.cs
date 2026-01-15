@@ -63,7 +63,7 @@ namespace Clinics.Api.Controllers
 
                 if (!int.TryParse(userIdClaim.Value, out var currentUserId))
                 {
-                    _logger.LogError($"Invalid user ID format: {userIdClaim.Value}");
+                    _logger.LogError("Invalid user ID format: {UserId}", userIdClaim.Value);
                     return BadRequest(new { error = "تنسيق معرف المستخدم غير صالح", message = "تنسيق معرف المستخدم غير صالح." });
                 }
 
@@ -72,7 +72,7 @@ namespace Clinics.Api.Controllers
                     .FirstOrDefaultAsync();
                 if (currentUser == null)
                 {
-                    _logger.LogWarning($"User not found in database: {currentUserId}");
+                    _logger.LogWarning("User not found in database: {UserId}", currentUserId);
                     return NotFound(new { error = "Current user not found" });
                 }
 
@@ -124,10 +124,10 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching users");
-                _logger.LogError($"Exception type: {ex.GetType().Name}");
-                _logger.LogError($"Exception message: {ex.Message}");
-                _logger.LogError($"Inner exception: {ex.InnerException?.Message}");
-                _logger.LogError($"Stack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Exception type: {ExceptionType}", ex.GetType().Name);
+                _logger.LogError(ex, "Exception message: {Message}", ex.Message);
+                _logger.LogError(ex, "Inner exception: {InnerMessage}", ex.InnerException?.Message);
+                _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب المستخدمين", message = "حدث خطأ أثناء جلب قائمة المستخدمين.", details = ex.Message, innerException = ex.InnerException?.Message });
             }
         }
@@ -402,13 +402,16 @@ namespace Clinics.Api.Controllers
                     if (!string.IsNullOrEmpty(req.CurrentPassword))
                     {
                         var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
-                        var verificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash, req.CurrentPassword);
+                        if (string.IsNullOrEmpty(targetUser.PasswordHash))
+                            return BadRequest(new { success = false, error = "User has no password set" });
+
+                        var verificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash!, req.CurrentPassword);
 
                         if (verificationResult == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed)
                             return BadRequest(new { success = false, error = "Current password is incorrect" });
 
                         // Validate that new password is different from current password
-                        var newPasswordVerificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash, req.Password);
+                        var newPasswordVerificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash!, req.Password);
                         if (newPasswordVerificationResult == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success)
                             return BadRequest(new { success = false, error = "New password must be different from current password" });
                     }
@@ -549,7 +552,7 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// GET /api/users/trash?page=1&pageSize=10
+        /// GET /api/users/trash?page=1&amp;pageSize=10
         /// Get soft-deleted users (trash). Admins see all; moderators see managed users.
         /// </summary>
         [HttpGet("trash")]
@@ -621,8 +624,8 @@ namespace Clinics.Api.Controllers
                     u.DeletedAt,
                     u.DaysRemainingInTrash,
                     u.DeletedBy,
-                    DeletedByUsername = u.DeletedBy.HasValue && deletedByUsernameMap.ContainsKey(u.DeletedBy.Value)
-                        ? deletedByUsernameMap[u.DeletedBy.Value]
+                    DeletedByUsername = u.DeletedBy.HasValue && deletedByUsernameMap.TryGetValue(u.DeletedBy.Value, out var username)
+                        ? username
                         : (string?)null
                 }).ToList();
 
@@ -636,7 +639,7 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// GET /api/users/archived?page=1&pageSize=10
+        /// GET /api/users/archived?page=1&amp;pageSize=10
         /// Admin-only endpoint to view archived users (soft-deleted 30+ days ago).
         /// </summary>
         [HttpGet("archived")]

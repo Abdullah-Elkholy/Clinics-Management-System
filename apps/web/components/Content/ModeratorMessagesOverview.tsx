@@ -13,7 +13,7 @@ import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { messageApiClient, type MyQuotaDto } from '@/services/api/messageApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState } from '@/components/state';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
 import logger from '@/utils/logger';
@@ -55,7 +55,7 @@ const USAGE_GUIDE_ITEMS = [
 
 export default function ModeratorMessagesOverview() {
   const { user } = useAuth();
-  const { moderators: queueBasedModerators, queues, messageTemplates, setMessageTemplates, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
+  const { moderators: queueBasedModerators, queues, messageTemplates, setMessageTemplates, messageConditions, selectedQueueId: _selectedQueueId, setSelectedQueueId: _setSelectedQueueId, refreshQueueData } = useQueue();
   const [userManagementState, userManagementActions] = useUserManagement();
   const { addToast, setCurrentPanel } = useUI();
   const { openModal } = useModal();
@@ -67,42 +67,47 @@ export default function ModeratorMessagesOverview() {
    * Returns username, not firstName/lastName
    */
   const getUserDisplayName = useCallback((userId: string | number | undefined): string => {
-    if (!userId) return 'غير معروف';
-    
+    if (!userId) return '-';
+
     const userIdStr = String(userId).trim();
-    if (!userIdStr) return 'غير معروف';
-    
+    if (!userIdStr) return '-';
+
+    // First check if it matches the current logged-in user (for admins who may not be in moderators/users list)
+    if (user && String(user.id) === userIdStr) {
+      return user.username || '-';
+    }
+
     const allUsers = [
       ...(userManagementState.moderators || []),
       ...(userManagementState.users || []),
     ];
-    
+
     // Try to find user by ID (both string and number comparison)
     const foundUser = allUsers.find(u => {
       const uIdStr = String(u.id).trim();
       const uIdNum = Number(u.id);
       const searchIdNum = Number(userIdStr);
-      
-      return uIdStr === userIdStr || 
-             (!isNaN(uIdNum) && !isNaN(searchIdNum) && uIdNum === searchIdNum);
+
+      return uIdStr === userIdStr ||
+        (!isNaN(uIdNum) && !isNaN(searchIdNum) && uIdNum === searchIdNum);
     });
-    
+
     // Return username, not firstName/lastName
     if (foundUser?.username) {
       return foundUser.username;
     }
-    
-    return 'غير معروف';
-  }, [userManagementState]);
+
+    return '-';
+  }, [userManagementState, user]);
 
   // Filter queues and templates based on user role
   const filteredQueues = useMemo(() => {
     if (!user) return queues;
-    
+
     const isAdmin = user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin;
     const isModerator = user.role === UserRole.Moderator;
     const isUser = user.role === UserRole.User;
-    
+
     if (isAdmin) {
       // Admins see all queues
       return queues;
@@ -122,14 +127,14 @@ export default function ModeratorMessagesOverview() {
         return qModId === moderatorId;
       });
     }
-    
+
     return queues;
   }, [queues, user]);
 
   // Filter templates based on filtered queues
   const filteredTemplates = useMemo(() => {
     if (!user) return messageTemplates;
-    
+
     const filteredQueueIds = new Set(filteredQueues.map(q => q.id.toString()));
     return messageTemplates.filter(t => {
       const templateQueueId = t.queueId?.toString();
@@ -153,12 +158,12 @@ export default function ModeratorMessagesOverview() {
       .map(q => String(q.id))
       .sort((a, b) => a.localeCompare(b));
     const idsString = sortedIds.join(',');
-    
+
     // Only return new value if IDs actually changed (value comparison, not reference)
     if (idsString !== filteredQueueIdsRef.current) {
       filteredQueueIdsRef.current = idsString;
     }
-    
+
     return filteredQueueIdsRef.current;
   }, [
     // Depend on length and a stable representation of the IDs
@@ -223,25 +228,25 @@ export default function ModeratorMessagesOverview() {
   // Load queue data for a specific queue (called on-demand)
   const loadQueueData = useCallback(async (queueId: string) => {
     if (!queueId || !refreshQueueDataRef.current) return;
-    
+
     // Prevent duplicate requests for the same queue
     if (loadingQueuesRef.current.has(queueId)) {
       logger.debug(`ModeratorMessagesOverview: Queue ${queueId} already loading, skipping`);
       return;
     }
-    
+
     // Check if recently loaded (within last 5 seconds)
     const lastRefreshTime = lastRefreshTimeRef.current.get(queueId) || 0;
     const now = Date.now();
     const MIN_REFRESH_INTERVAL_MS = 5000; // Increased from 2s to 5s
-    
+
     if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
       logger.debug(`ModeratorMessagesOverview: Queue ${queueId} was recently loaded, skipping`);
       return;
     }
-    
+
     loadingQueuesRef.current.add(queueId);
-    
+
     try {
       await refreshQueueDataRef.current(queueId);
       lastRefreshTimeRef.current.set(queueId, now);
@@ -259,7 +264,7 @@ export default function ModeratorMessagesOverview() {
    */
   useEffect(() => {
     if (expandedModerators.size === 0) return; // No moderators expanded, skip loading
-    
+
     const loadExpandedQueues = async () => {
       // Get all queues from expanded moderators
       const expandedModeratorIds = Array.from(expandedModerators);
@@ -267,14 +272,14 @@ export default function ModeratorMessagesOverview() {
         const qModId = q.moderatorId?.toString();
         return expandedModeratorIds.some(modId => String(modId) === qModId);
       });
-      
+
       if (queuesToLoad.length === 0) return;
-      
+
       const queueIdsToLoad = queuesToLoad.map(q => String(q.id));
-      
+
       // Process queues sequentially (one at a time) with delays to reduce server load
       const DELAY_BETWEEN_REQUESTS_MS = 300; // 300ms delay between each request
-      
+
       for (const queueId of queueIdsToLoad) {
         await loadQueueData(queueId);
         // Add delay between requests to prevent overwhelming the server
@@ -283,12 +288,12 @@ export default function ModeratorMessagesOverview() {
         }
       }
     };
-    
+
     // Debounce the loading to avoid rapid successive calls
     const debounceTimer = setTimeout(() => {
       loadExpandedQueues();
     }, 500); // 500ms debounce
-    
+
     return () => clearTimeout(debounceTimer);
   }, [expandedModerators, filteredQueues, loadQueueData]);
 
@@ -322,9 +327,13 @@ export default function ModeratorMessagesOverview() {
       }
 
       debounceTimer = setTimeout(async () => {
+        // Extract queueId from event detail if available (for targeted refresh)
+        const queueIdFromEvent = (event as CustomEvent)?.detail?.queueId;
+
         // Throttle: prevent execution if called too frequently
+        // BUT: skip throttle for targeted refreshes (user-initiated actions)
         const now = Date.now();
-        if (now - lastThrottleTime < THROTTLE_MS) {
+        if (!queueIdFromEvent && now - lastThrottleTime < THROTTLE_MS) {
           logger.debug('ModeratorMessagesOverview: Throttled refresh (too soon after last refresh)');
           return;
         }
@@ -339,8 +348,7 @@ export default function ModeratorMessagesOverview() {
         isRefreshingRef.current = true;
 
         try {
-          // Extract queueId from event detail if available (for targeted refresh)
-          const queueIdFromEvent = (event as CustomEvent)?.detail?.queueId;
+          // Use queueId from outer scope
           const currentFilteredQueues = filteredQueuesRef.current;
           const queueIdsArray = filteredQueueIds.split(',').filter(Boolean);
 
@@ -348,7 +356,7 @@ export default function ModeratorMessagesOverview() {
             // Targeted refresh: only refresh the specific queue that changed
             const queueId = String(queueIdFromEvent);
             const lastRefreshTime = lastRefreshTimeRef.current.get(queueId) || 0;
-            
+
             if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
               logger.debug(`ModeratorMessagesOverview: Skipping queue ${queueId} refresh (too soon after last refresh)`);
             } else {
@@ -366,16 +374,16 @@ export default function ModeratorMessagesOverview() {
             // This reduces server load significantly
             if (currentFilteredQueues.length > 0 && typeof refreshQueueDataRef.current === 'function') {
               const DELAY_BETWEEN_REQUESTS_MS = 400; // 400ms delay between each request
-              
+
               // Process queues sequentially with delays to reduce server load
               for (const queueId of queueIdsArray) {
                 const lastRefreshTime = lastRefreshTimeRef.current.get(queueId) || 0;
-                
+
                 if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
                   logger.debug(`ModeratorMessagesOverview: Skipping queue ${queueId} refresh (too soon)`);
                   continue;
                 }
-                
+
                 // Skip if already loading
                 if (loadingQueuesRef.current.has(queueId)) {
                   logger.debug(`ModeratorMessagesOverview: Queue ${queueId} already loading, skipping`);
@@ -387,7 +395,7 @@ export default function ModeratorMessagesOverview() {
                 } catch (err) {
                   logger.error(`ModeratorMessagesOverview: Failed to refresh queue ${queueId}:`, err);
                 }
-                
+
                 // Add delay between requests (except for the last one)
                 if (queueIdsArray.indexOf(queueId) < queueIdsArray.length - 1) {
                   await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_REQUESTS_MS));
@@ -537,7 +545,7 @@ export default function ModeratorMessagesOverview() {
     setExpandedQueues((prev) => {
       const newSet = new Set(prev);
       const isCurrentlyExpanded = newSet.has(queueId);
-      
+
       if (isCurrentlyExpanded) {
         // Collapsing - just remove from set
         newSet.delete(queueId);
@@ -615,9 +623,9 @@ export default function ModeratorMessagesOverview() {
   const conditionsOverlap = (cond1: MessageCondition, cond2: MessageCondition): boolean => {
     const range1 = getConditionRange(cond1);
     const range2 = getConditionRange(cond2);
-    
+
     if (!range1 || !range2) return false;
-    
+
     return !(range1.max < range2.min || range2.max < range1.min);
   };
 
@@ -626,6 +634,8 @@ export default function ModeratorMessagesOverview() {
    */
   const getConditionText = (cond: MessageCondition): string => {
     const operatorMap: Record<string, string> = {
+      'UNCONDITIONED': 'بدون شرط',
+      'DEFAULT': 'افتراضي',
       'EQUAL': 'يساوي',
       'GREATER': 'أكثر من',
       'LESS': 'أقل من',
@@ -633,6 +643,12 @@ export default function ModeratorMessagesOverview() {
     };
 
     const operatorText = operatorMap[cond.operator] || cond.operator;
+
+    // For UNCONDITIONED and DEFAULT, no value to show
+    if (cond.operator === 'UNCONDITIONED' || cond.operator === 'DEFAULT') {
+      return operatorText;
+    }
+
     const valueText =
       cond.operator === 'RANGE' ? `${cond.minValue}-${cond.maxValue}` : cond.value;
 
@@ -652,7 +668,7 @@ export default function ModeratorMessagesOverview() {
       [], // messageConditions - will be loaded separately if needed
       userManagementState.moderators
     );
-    
+
     // Create a map of queue-based moderators by ID
     const queueModeratorMap = new Map<string | number, typeof filteredQueueBasedModerators[0]>();
     filteredQueueBasedModerators.forEach(mod => {
@@ -662,11 +678,11 @@ export default function ModeratorMessagesOverview() {
         queueModeratorMap.set(String(mod.moderatorId), mod);
       }
     });
-    
+
     // Merge with all moderators from user management
     const mergedModerators: ModeratorWithStats[] = [];
     const processedIds = new Set<string>();
-    
+
     // Helper function to get moderator display name following priority:
     // 1. firstName + lastName (if both exist)
     // 2. firstName (if lastName is null/empty)
@@ -686,7 +702,7 @@ export default function ModeratorMessagesOverview() {
     // For admins: show all moderators
     const isAdmin = user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin);
     const isUser = user && user.role === UserRole.User;
-    
+
     // Filter moderators to show based on user role
     let moderatorsToProcess = userManagementState.moderators;
     if (isUser && user.assignedModerator) {
@@ -695,16 +711,16 @@ export default function ModeratorMessagesOverview() {
         (m) => String(m.id) === String(user.assignedModerator)
       );
     }
-    
+
     // First, add moderators from user management (filtered for users)
     moderatorsToProcess.forEach(userMod => {
       const modId = String(userMod.id || userMod.username);
       processedIds.add(modId);
-      
+
       // Check if this moderator has queues
-      const queueMod = queueModeratorMap.get(modId) || 
-                       (typeof userMod.id === 'number' ? queueModeratorMap.get(String(userMod.id)) : undefined);
-      
+      const queueMod = queueModeratorMap.get(modId) ||
+        (typeof userMod.id === 'number' ? queueModeratorMap.get(String(userMod.id)) : undefined);
+
       if (queueMod) {
         // Use queue-based data but update moderatorName from user data following priority
         const updatedQueueMod = {
@@ -715,7 +731,7 @@ export default function ModeratorMessagesOverview() {
       } else {
         // Moderator exists but has no queues
         const moderatorName = getModeratorDisplayName(userMod, modId);
-        
+
         mergedModerators.push({
           moderatorId: modId,
           moderatorName: moderatorName,
@@ -727,7 +743,7 @@ export default function ModeratorMessagesOverview() {
         });
       }
     });
-    
+
     // Also include any queue-based moderators that might not be in user management (edge case)
     filteredQueueBasedModerators.forEach(queueMod => {
       const normalizedId = String(queueMod.moderatorId);
@@ -736,7 +752,7 @@ export default function ModeratorMessagesOverview() {
         processedIds.add(normalizedId);
       }
     });
-    
+
     // Sort by moderator ID
     return mergedModerators.sort((a, b) => Number(a.moderatorId) - Number(b.moderatorId));
   }, [filteredQueues, filteredTemplates, userManagementState.moderators]);
@@ -746,7 +762,7 @@ export default function ModeratorMessagesOverview() {
    */
   const filteredModerators = useMemo(() => {
     if (!searchTerm) return moderators;
-    
+
     const searchLower = searchTerm.toLowerCase();
     return moderators.filter((mod) =>
       mod.moderatorName.toLowerCase().includes(searchLower) ||
@@ -769,10 +785,10 @@ export default function ModeratorMessagesOverview() {
   const getPanelStats = useMemo(() => {
     const isAdmin = user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin);
     const isUser = user && user.role === UserRole.User;
-    
+
     // Use API data if available, fallback to default values
     const quotaData = userQuota || { limit: 0, used: 0 };
-    
+
     const baseStats = {
       total: quotaData.limit,
       used: quotaData.used,
@@ -781,7 +797,7 @@ export default function ModeratorMessagesOverview() {
 
     // Format value for display: show "غير محدود" for -1
     const formatQuotaValue = (value: number): string => {
-      return value === -1 ? 'غير محدود' : value.toLocaleString('ar-SA');
+      return value === -1 ? 'غير محدود' : value.toLocaleString('ar-EG-u-nu-latn');
     };
 
     if (isAdmin) {
@@ -801,7 +817,7 @@ export default function ModeratorMessagesOverview() {
         },
         {
           label: 'الرسائل المستخدمة',
-          value: baseStats.used.toLocaleString('ar-SA'),
+          value: baseStats.used.toLocaleString('ar-EG-u-nu-latn'),
           color: 'yellow' as const,
           info: 'من المجموع الكلي للنظام'
         },
@@ -814,10 +830,10 @@ export default function ModeratorMessagesOverview() {
       ];
     } else if (isUser) {
       // User view: their assigned moderator's stats
-      const assignedModerator = moderators.find(m => 
+      const assignedModerator = moderators.find(m =>
         user.assignedModerator && String(m.moderatorId) === String(user.assignedModerator)
       );
-      
+
       return [
         {
           label: 'عدد العيادات',
@@ -839,7 +855,7 @@ export default function ModeratorMessagesOverview() {
         },
         {
           label: 'الرسائل المستخدمة',
-          value: baseStats.used.toLocaleString('ar-SA'),
+          value: baseStats.used.toLocaleString('ar-EG-u-nu-latn'),
           color: 'yellow' as const,
           info: 'من حصة المشرف'
         },
@@ -873,7 +889,7 @@ export default function ModeratorMessagesOverview() {
         },
         {
           label: 'الرسائل المستخدمة',
-          value: baseStats.used.toLocaleString('ar-SA'),
+          value: baseStats.used.toLocaleString('ar-EG-u-nu-latn'),
           color: 'yellow' as const,
           info: 'من حصتك'
         },
@@ -892,18 +908,18 @@ export default function ModeratorMessagesOverview() {
       <PanelHeader
         icon="fa-envelope"
         title={
-          user?.role === UserRole.User 
+          user?.role === UserRole.User
             ? `إدارة قوالب الرسائل - ${moderators.find(m => user.assignedModerator && String(m.moderatorId) === String(user.assignedModerator))?.moderatorName || 'المشرف الخاص بك'}`
             : user?.role === UserRole.Moderator
-            ? 'إدارة قوالب الرسائل'
-            : 'إدارة قوالب الرسائل - عرض المشرفين'
+              ? 'إدارة قوالب الرسائل'
+              : 'إدارة قوالب الرسائل - عرض المشرفين'
         }
         description={
           user?.role === UserRole.User
             ? 'إدارة قوالب الرسائل للمشرف الخاص بك'
             : user?.role === UserRole.Moderator
-            ? 'إدارة قوالب الرسائل الخاصة بك'
-            : 'إدارة قوالب الرسائل لكل مشرف بشكل شامل وسهل'
+              ? 'إدارة قوالب الرسائل الخاصة بك'
+              : 'إدارة قوالب الرسائل لكل مشرف بشكل شامل وسهل'
         }
         stats={getPanelStats}
         actions={[]}
@@ -991,9 +1007,8 @@ export default function ModeratorMessagesOverview() {
                       className="flex items-center gap-3 flex-1 text-right"
                     >
                       <i
-                        className={`fas fa-chevron-down text-gray-600 transition-transform ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
+                        className={`fas fa-chevron-down text-gray-600 transition-transform ${isExpanded ? 'rotate-180' : ''
+                          }`}
                       ></i>
                       <div className="text-right">
                         <h4 className="font-semibold text-gray-900">
@@ -1014,10 +1029,10 @@ export default function ModeratorMessagesOverview() {
                       <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
                         📧 {moderator.templatesCount} قالب
                       </span>
-                      
+
                       {/* Conflict Badge */}
                       {moderator.conflictCount > 0 && (
-                        <ConflictBadge 
+                        <ConflictBadge
                           conflictCount={moderator.conflictCount}
                           size="sm"
                           onClick={() => toggleModeratorExpanded(moderator.moderatorId)}
@@ -1106,9 +1121,8 @@ export default function ModeratorMessagesOverview() {
                                     className="flex items-center gap-2 flex-1 text-right bg-transparent border-0 p-0 hover:opacity-80 transition-opacity focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 rounded cursor-pointer"
                                   >
                                     <i
-                                      className={`fas fa-chevron-down text-gray-600 transition-transform ${
-                                        isQueueExpanded ? 'rotate-180' : ''
-                                      }`}
+                                      className={`fas fa-chevron-down text-gray-600 transition-transform ${isQueueExpanded ? 'rotate-180' : ''
+                                        }`}
                                     ></i>
                                     <div className="text-right">
                                       <h5 className="font-medium text-gray-900">
@@ -1120,7 +1134,7 @@ export default function ModeratorMessagesOverview() {
                                       </p>
                                     </div>
                                   </button>
-                                  
+
                                   {/* Quick Stats */}
                                   <div className="flex items-center gap-2 flex-shrink-0">
                                     {intersections.length > 0 && (
@@ -1175,7 +1189,7 @@ export default function ModeratorMessagesOverview() {
                                               <tr className="bg-gray-100 border-b border-gray-200">
                                                 <th className="px-3 py-1 text-right">العنوان</th>
                                                 <th className="px-3 py-1 text-right">الشرط المطبق</th>
-                                                <th className="px-3 py-1 text-right">انشئ بواسطة</th>
+                                                <th className="px-3 py-1 text-right">آخر تحديث بواسطة</th>
                                                 <th className="px-3 py-1 text-right">آخر تحديث</th>
                                                 <th className="px-3 py-1 text-right">الإجراءات</th>
                                               </tr>
@@ -1186,8 +1200,9 @@ export default function ModeratorMessagesOverview() {
                                                   return 0;
                                                 })
                                                 .map((template) => {
-                                                  // Resolve condition from embedded template.condition
-                                                  const condition = template.condition;
+                                                  // Resolve condition from messageConditions list (source of truth)
+                                                  // Fallback to embedded template.condition if not found in list
+                                                  const condition = messageConditions.find(c => c.templateId === template.id) || template.condition;
 
                                                   return (
                                                     <tr key={template.id} className="border-b border-gray-200 hover:bg-blue-50">
@@ -1228,11 +1243,11 @@ export default function ModeratorMessagesOverview() {
                                                         )}
                                                       </td>
                                                       <td className="px-3 py-1">
-                                                        <span className="text-xs text-gray-700">{getUserDisplayName(template.createdBy)}</span>
+                                                        <span className="text-xs text-gray-700">{getUserDisplayName(template.updatedBy || template.createdBy)}</span>
                                                       </td>
                                                       <td className="px-3 py-1">
                                                         <span className="text-xs text-gray-700">
-                                                          {template.updatedAt ? formatLocalDateTime(template.updatedAt instanceof Date ? template.updatedAt : new Date(template.updatedAt)) : '-'}
+                                                          {template.updatedAt ? formatLocalDateTime(template.updatedAt) : '-'}
                                                         </span>
                                                       </td>
                                                       <td className="px-3 py-1">
@@ -1250,12 +1265,12 @@ export default function ModeratorMessagesOverview() {
                                                             onClick={async (e) => {
                                                               e.preventDefault();
                                                               e.stopPropagation();
-                                                              
+
                                                               try {
                                                                 const confirmOptions = createDeleteConfirmation('القالب: ' + template.title);
                                                                 const confirmed = await confirm(confirmOptions);
                                                                 if (!confirmed) return;
-                                                                
+
                                                                 const templateIdNum = Number(template.id);
                                                                 if (isNaN(templateIdNum)) {
                                                                   addToast('معرّف القالب غير صالح', 'error');
@@ -1263,15 +1278,15 @@ export default function ModeratorMessagesOverview() {
                                                                 }
 
                                                                 await messageApiClient.deleteTemplate(templateIdNum);
-                                                                
+
                                                                 // Refetch queue data to reflect changes
                                                                 if (typeof refreshQueueData === 'function' && queue.id) {
                                                                   await refreshQueueData(String(queue.id));
                                                                 }
-                                                                
+
                                                                 // Notify other components
                                                                 window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-                                                                
+
                                                                 addToast('تم حذف القالب: ' + template.title, 'success');
                                                               } catch (error: any) {
                                                                 const errorMsg = error?.message || error?.error || 'فشل حذف القالب';
@@ -1315,7 +1330,7 @@ export default function ModeratorMessagesOverview() {
 
       {/* Usage Guide Section */}
       <div className="px-4 pb-4">
-        <UsageGuideSection 
+        <UsageGuideSection
           items={USAGE_GUIDE_ITEMS}
         />
       </div>

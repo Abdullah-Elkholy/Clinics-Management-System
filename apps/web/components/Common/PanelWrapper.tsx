@@ -13,6 +13,7 @@
  */
 
 import React from 'react';
+import { SkeletonList } from '@/components/state';
 
 interface PanelWrapperProps {
   children: React.ReactNode;
@@ -30,10 +31,8 @@ export function PanelWrapper({
   if (isLoading) {
     return (
       <div className={`min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8 ${className}`}>
-        <div className="max-w-7xl mx-auto space-y-4">
-          {Array.from({ length: loadingSkeletonLines }).map((_, i) => (
-            <div key={i} className="h-20 bg-white rounded-lg animate-pulse"></div>
-          ))}
+        <div className="max-w-7xl mx-auto">
+          <SkeletonList count={loadingSkeletonLines} variant="card" />
         </div>
       </div>
     );
@@ -47,9 +46,10 @@ export function PanelWrapper({
       ${className}
     `}
     >
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto animate-fadeIn">
         {children}
       </div>
     </div>
   );
 }
+

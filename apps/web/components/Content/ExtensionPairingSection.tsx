@@ -4,18 +4,21 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useUI } from '@/contexts/UIContext';
 import { useWhatsAppSession, ExtensionStatus, WhatsAppSessionData } from '@/contexts/WhatsAppSessionContext';
 import extensionApiClient from '@/services/api/extensionApiClient';
-import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { formatLocalDateTime, parseAsUtc } from '@/utils/dateTimeUtils';
 
 /**
  * Format time ago in Arabic (e.g., "منذ 30 ثانية", "منذ 5 دقائق")
  */
 function formatTimeAgo(date: string | Date | undefined): string {
   if (!date) return 'لا يوجد';
-  
+
   const now = Date.now();
-  const past = new Date(date).getTime();
+  const dateObj = parseAsUtc(date);
+  if (!dateObj) return 'تاريخ غير صالح';
+
+  const past = dateObj.getTime();
   const diffSeconds = Math.floor((now - past) / 1000);
-  
+
   if (diffSeconds < 60) {
     return `منذ ${diffSeconds} ثانية`;
   } else if (diffSeconds < 3600) {
@@ -79,7 +82,7 @@ export default function ExtensionPairingSection({
 }: ExtensionPairingSectionProps) {
   const { addToast } = useUI();
   const { refreshCombinedStatus } = useWhatsAppSession();
-  
+
   // State
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [codeExpiresAt, setCodeExpiresAt] = useState<Date | null>(null);
@@ -98,7 +101,7 @@ export default function ExtensionPairingSection({
     const interval = setInterval(() => {
       setCurrentTime(Date.now());
     }, 10000); // Update every 10 seconds
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -137,17 +140,17 @@ export default function ExtensionPairingSection({
   const loadData = useCallback(async () => {
     setIsLoadingDevices(true);
     setIsLoadingLease(true);
-    
+
     try {
       const [devicesResult, leaseResult] = await Promise.all([
         extensionApiClient.getDevices(),
         extensionApiClient.getLeaseStatus(),
       ]);
-      
+
       if (devicesResult.success && devicesResult.devices) {
         setDevices(devicesResult.devices);
       }
-      
+
       if (leaseResult.success) {
         setLeaseStatus({
           hasActiveLease: leaseResult.hasActiveLease ?? false,
@@ -166,7 +169,7 @@ export default function ExtensionPairingSection({
 
   useEffect(() => {
     loadData();
-    
+
     // Refresh lease status AND devices every 10 seconds (silently - no error toasts on heartbeat failures)
     // Faster polling to detect device revocations from extension quickly
     const interval = setInterval(() => {
@@ -183,16 +186,16 @@ export default function ExtensionPairingSection({
                 lastHeartbeat: result.lastHeartbeat,
               };
             }
-            
+
             // Deep comparison - only update if something changed
-            const hasChanged = 
+            const hasChanged =
               prev.hasActiveLease !== (result.hasActiveLease ?? false) ||
               prev.deviceName !== result.deviceName ||
               prev.whatsAppStatus !== result.whatsAppStatus ||
               // Only update lastHeartbeat if it changed by more than 5 seconds (reduce flicker)
-              (result.lastHeartbeat && prev.lastHeartbeat && 
+              (result.lastHeartbeat && prev.lastHeartbeat &&
                 Math.abs(new Date(result.lastHeartbeat).getTime() - new Date(prev.lastHeartbeat).getTime()) > 5000);
-            
+
             return hasChanged ? {
               hasActiveLease: result.hasActiveLease ?? false,
               deviceName: result.deviceName,
@@ -213,21 +216,21 @@ export default function ExtensionPairingSection({
             // Deep comparison: check if any device changed (including revocation status)
             const prevActiveIds = new Set(prev.filter(d => !d.revokedAt).map(d => d.id));
             const newActiveIds = new Set(result.devices.filter(d => !d.revokedAt).map(d => d.id));
-            
+
             // Check if active device IDs changed
-            const activeIdsChanged = 
+            const activeIdsChanged =
               prevActiveIds.size !== newActiveIds.size ||
               [...prevActiveIds].some(id => !newActiveIds.has(id)) ||
               [...newActiveIds].some(id => !prevActiveIds.has(id));
-            
+
             // Check if total device list changed
             const totalCountChanged = prev.length !== result.devices.length;
-            
+
             // Update if active devices changed OR if a device was revoked/added
             if (activeIdsChanged || totalCountChanged) {
               return result.devices;
             }
-            
+
             return prev;
           });
         }
@@ -235,7 +238,7 @@ export default function ExtensionPairingSection({
         // Silently handle connection errors
       });
     }, 10000); // Poll every 10 seconds to detect revocations quickly
-    
+
     return () => clearInterval(interval);
   }, [loadData]);
 
@@ -245,11 +248,11 @@ export default function ExtensionPairingSection({
       setCountdown(0);
       return;
     }
-    
+
     const updateCountdown = async () => {
       const remaining = Math.max(0, Math.floor((codeExpiresAt.getTime() - Date.now()) / 1000));
       setCountdown(remaining);
-      
+
       // Poll for device connection every 3 seconds
       if (remaining > 0 && remaining % 3 === 0) {
         try {
@@ -271,7 +274,7 @@ export default function ExtensionPairingSection({
               return;
             }
           }
-          
+
           // Also check for active lease (extension already connected)
           const leaseResult = await extensionApiClient.getLeaseStatus();
           if (leaseResult.success && leaseResult.hasActiveLease) {
@@ -295,16 +298,16 @@ export default function ExtensionPairingSection({
           // Error polling - silently handle
         }
       }
-      
+
       if (remaining === 0) {
         setPairingCode(null);
         setCodeExpiresAt(null);
       }
     };
-    
+
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
-    
+
     return () => clearInterval(interval);
   }, [codeExpiresAt, pairingSuccess, addToast, loadData, initialDeviceCount]);
 
@@ -318,9 +321,9 @@ export default function ExtensionPairingSection({
       if (devicesResult.success && devicesResult.devices) {
         setInitialDeviceCount(devicesResult.devices.length);
       }
-      
+
       const result = await extensionApiClient.startPairing();
-      
+
       if (result.success && result.code) {
         setPairingCode(result.code);
         // Use expiresInSeconds for more reliable countdown (avoids timezone issues)
@@ -349,10 +352,10 @@ export default function ExtensionPairingSection({
     if (!confirm(`هل تريد إلغاء إقران الجهاز "${deviceName || deviceId}"؟`)) {
       return;
     }
-    
+
     try {
       const result = await extensionApiClient.revokeDevice(deviceId);
-      
+
       if (result.success) {
         addToast('تم إلغاء إقران الجهاز', 'success');
         loadData();
@@ -371,10 +374,10 @@ export default function ExtensionPairingSection({
     if (!confirm('هل تريد فصل الإضافة المتصلة حالياً؟')) {
       return;
     }
-    
+
     try {
       const result = await extensionApiClient.forceReleaseLease();
-      
+
       if (result.success) {
         addToast('تم فصل الإضافة', 'success');
         loadData();
@@ -457,14 +460,13 @@ export default function ExtensionPairingSection({
               <i className="fas fa-puzzle-piece text-gray-400"></i>
               حالة الإضافة
             </p>
-            <p className={`text-sm font-medium ${
-              isBackendDisconnected ? 'text-red-600' :
-              parentExtensionStatus?.hasActiveLease && parentExtensionStatus?.isOnline ? 'text-green-600' : 
-              parentExtensionStatus?.hasActiveLease ? 'text-orange-600' : 'text-gray-500'
-            }`}>
+            <p className={`text-sm font-medium ${isBackendDisconnected ? 'text-red-600' :
+              parentExtensionStatus?.hasActiveLease && parentExtensionStatus?.isOnline ? 'text-green-600' :
+                parentExtensionStatus?.hasActiveLease ? 'text-orange-600' : 'text-gray-500'
+              }`}>
               {isBackendDisconnected ? 'تعذر التحقق' :
-               parentExtensionStatus?.hasActiveLease && parentExtensionStatus?.isOnline ? 'متصلة ونشطة' : 
-               parentExtensionStatus?.hasActiveLease ? 'مقترنة (غير نشطة)' : 'غير مقترنة'}
+                parentExtensionStatus?.hasActiveLease && parentExtensionStatus?.isOnline ? 'متصلة ونشطة' :
+                  parentExtensionStatus?.hasActiveLease ? 'مقترنة (غير نشطة)' : 'غير مقترنة'}
             </p>
           </div>
 
@@ -474,12 +476,11 @@ export default function ExtensionPairingSection({
               <i className="fab fa-whatsapp text-gray-400"></i>
               حالة واتساب
             </p>
-            <p className={`text-sm font-medium ${
-              isBackendDisconnected ? 'text-red-600' :
-              parentExtensionStatus?.whatsAppStatus === 'connected' ? 'text-green-600' : 
-              parentExtensionStatus?.whatsAppStatus === 'qr_pending' || parentExtensionStatus?.whatsAppStatus === 'pending_qr' ? 'text-yellow-600' : 
-              'text-gray-500'
-            }`}>
+            <p className={`text-sm font-medium ${isBackendDisconnected ? 'text-red-600' :
+              parentExtensionStatus?.whatsAppStatus === 'connected' ? 'text-green-600' :
+                parentExtensionStatus?.whatsAppStatus === 'qr_pending' || parentExtensionStatus?.whatsAppStatus === 'pending_qr' ? 'text-yellow-600' :
+                  'text-gray-500'
+              }`}>
               {isBackendDisconnected ? 'تعذر التحقق' : getWhatsAppStatusText(parentExtensionStatus?.whatsAppStatus)}
             </p>
           </div>
@@ -544,14 +545,14 @@ export default function ExtensionPairingSection({
                 </div>
               </div>
             </div>
-            
+
             <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
               <span className="text-sm text-gray-600">الجهاز:</span>
               <span className="text-sm font-medium text-gray-900">
                 {leaseStatus.deviceName || 'غير معروف'}
               </span>
             </div>
-            
+
             {leaseStatus.whatsAppStatus && (
               <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                 <span className="text-sm text-gray-600">حالة واتساب:</span>
@@ -560,7 +561,7 @@ export default function ExtensionPairingSection({
                 </span>
               </div>
             )}
-            
+
             {leaseLastHeartbeatDisplay && (
               <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                 <span className="text-sm text-gray-600">آخر نشاط:</span>
@@ -569,7 +570,7 @@ export default function ExtensionPairingSection({
                 </span>
               </div>
             )}
-            
+
             <button
               onClick={handleForceRelease}
               className="w-full px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
@@ -587,7 +588,7 @@ export default function ExtensionPairingSection({
           <i className="fas fa-qrcode"></i>
           إقران إضافة جديدة
         </h4>
-        
+
         {pairingCode ? (
           <div className="text-center">
             <p className="text-sm text-gray-600 mb-3">
@@ -677,7 +678,7 @@ export default function ExtensionPairingSection({
             </span>
           )}
         </h4>
-        
+
         {isLoadingDevices ? (
           <div className="text-center py-4 text-gray-500">
             <i className="fas fa-spinner fa-spin ml-2"></i>
@@ -707,7 +708,7 @@ export default function ExtensionPairingSection({
                     <p className="text-xs text-gray-500">
                       إصدار الإضافة: {device.extensionVersion || 'غير معروف'}
                       {device.lastSeenAt && (
-                        <> • آخر ظهور: {new Date(device.lastSeenAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</>
+                        <> • آخر ظهور: {parseAsUtc(device.lastSeenAt)?.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</>
                       )}
                     </p>
                   </div>

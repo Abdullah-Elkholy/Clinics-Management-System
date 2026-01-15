@@ -115,6 +115,13 @@ namespace Clinics.Infrastructure.Services
                 return "تم حظر الحساب من إرسال الرسائل. يرجى التواصل مع الدعم الفني";
             }
 
+            // HTTP request timeout detection (more specific patterns first)
+            if (response.Contains("request timeout") || response.Contains("request timed out") || 
+                response.Contains("operation timed out") || response.Contains("connection timed out"))
+            {
+                return "انتهت مهلة الطلب. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى";
+            }
+
             if (response.Contains("timeout") || response.Contains("timed out"))
             {
                 return GetSendTimeoutMessage();
@@ -277,9 +284,25 @@ namespace Clinics.Infrastructure.Services
                 return "خطأ في البيانات المطلوبة - قيمة مفقودة";
             }
 
-            // Task cancelled
-            if (exception is OperationCanceledException || 
-                exception is TaskCanceledException)
+            // Timeout exceptions (explicit TimeoutException or timeout-related TaskCanceledException)
+            if (exception is TimeoutException)
+            {
+                return "انتهت مهلة الطلب. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى";
+            }
+
+            // Task cancelled - distinguish between timeout and manual cancellation
+            if (exception is TaskCanceledException taskCanceledException)
+            {
+                // Check if it's a timeout-related cancellation
+                if (taskCanceledException.CancellationToken.IsCancellationRequested == false ||
+                    message.Contains("timeout") || message.Contains("timed out"))
+                {
+                    return "انتهت مهلة الطلب. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى";
+                }
+                return "تم إلغاء العملية";
+            }
+
+            if (exception is OperationCanceledException)
             {
                 return "تم إلغاء العملية";
             }

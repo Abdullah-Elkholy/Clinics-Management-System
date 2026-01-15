@@ -15,7 +15,7 @@ import queuesApiClient from '@/services/api/queuesApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState, DataStateWrapper } from '@/components/state';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
@@ -1126,7 +1126,8 @@ export default function QueueDashboard() {
             }
 
             // Check WhatsApp connection status
-            if (detailedStatus !== 'connected_idle' && detailedStatus !== 'connected_sending') {
+            // Allow connected_paused since the session is authenticated - it's just temporarily paused
+            if (detailedStatus !== 'connected_idle' && detailedStatus !== 'connected_sending' && detailedStatus !== 'connected_paused') {
               addToast('جلسة الواتساب غير متصلة أو غير جاهزة للإرسال. يرجى التحقق من اتصال الإضافة وحالة الواتساب أولاً.', 'error');
               return;
             }
@@ -1225,289 +1226,299 @@ export default function QueueDashboard() {
           <>
             <div className="border-t-2 border-blue-200"></div>
             <div className="px-6 py-4 space-y-6">
-              {/* Check if default template exists */}
-              {(() => {
-                // Find default template using TemplateId foreign key directly
-                const defaultCondition = messageConditions.find(
-                  (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT' && c.templateId
-                );
-
-                // Use TemplateId FK directly - no fallback needed since backend always returns templateId
-                const defaultTemplate = defaultCondition?.templateId
-                  ? messageTemplates.find((t) => t.id === defaultCondition.templateId)
-                  : undefined;
-
-                const hasDefaultTemplate = !!defaultTemplate;
-
-                if (!hasDefaultTemplate) {
-                  return (
-                    <div className="flex flex-col gap-4">
-                      <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
-                        <div className="flex items-start gap-3">
-                          <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0 text-lg"></i>
-                          <div className="flex-1">
-                            <h4 className="font-bold text-amber-900 mb-1">لم يتم تحديد رسالة افتراضية</h4>
-                            <p className="text-sm text-amber-800 mb-2">
-                              يجب إنشاء قالب رسالة بشرط افتراضي (DEFAULT) قبل تفعيل الرسائل الآلية
-                            </p>
-                            <p className="text-xs text-amber-700">
-                              توجه إلى قسم <span className="font-semibold">الرسائل</span> في الشريط الجانبي لإنشاء قالب افتراضي
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+              <DataStateWrapper
+                isLoading={queuesLoading}
+                data={messageConditions || []}
+                isEmpty={() => false}
+              >
+                {/* Check if default template exists */}
+                {(() => {
+                  // Find default template using TemplateId foreign key directly
+                  const defaultCondition = messageConditions.find(
+                    (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT' && c.templateId
                   );
-                }
 
-                // Filter active conditions for this queue (exclude DEFAULT and UNCONDITIONED, exclude deleted)
-                const activeConditions = messageConditions.filter(
-                  (c) =>
-                    c.queueId === selectedQueueId &&
-                    c.operator !== 'DEFAULT' &&
-                    c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from display
-                    ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
-                    c.templateId &&
-                    !c.isDeleted // Exclude deleted conditions
-                );
+                  // Use TemplateId FK directly - no fallback needed since backend always returns templateId
+                  const defaultTemplate = defaultCondition?.templateId
+                    ? messageTemplates.find((t) => t.id === defaultCondition.templateId)
+                    : undefined;
 
-                const hasActiveConditions = activeConditions.length > 0;
+                  const hasDefaultTemplate = !!defaultTemplate;
 
-                // Get the actual default template text from messageTemplates
-                const defaultTemplateText = defaultTemplate?.content || '';
-
-                // Find template name for each condition
-                const getTemplateNameForCondition = (condition: typeof activeConditions[0]) => {
-                  if (!condition.templateId) return 'شرط بدون عنوان';
-                  const template = messageTemplates.find((t) => t.id === condition.templateId);
-                  return template?.title || 'شرط بدون عنوان';
-                };
-
-                return (
-                  <div className="flex flex-col gap-6">
-                    <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
-                      <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                        <i className="fas fa-message text-blue-600"></i>
-                        الرسالة الافتراضية:
-                      </h4>
-                      {defaultTemplateText ? (
-                        <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
-                          <p className="text-gray-800 text-sm leading-relaxed font-medium whitespace-pre-wrap">
-                            {defaultTemplateText}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-3 border-t border-blue-200 pt-3">
-                            <i className="fas fa-info-circle text-blue-500 ml-1"></i>
-                            المتغيرات المتاحة: {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
-                          </p>
-                        </div>
-                      ) : (
+                  if (!hasDefaultTemplate) {
+                    return (
+                      <div className="flex flex-col gap-4">
                         <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
                           <div className="flex items-start gap-3">
-                            <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0"></i>
+                            <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0 text-lg"></i>
                             <div className="flex-1">
-                              <p className="text-sm text-amber-800 font-semibold">
-                                لم يتم تحميل نص الرسالة الافتراضية
+                              <h4 className="font-bold text-amber-900 mb-1">لم يتم تحديد رسالة افتراضية</h4>
+                              <p className="text-sm text-amber-800 mb-2">
+                                يجب إنشاء قالب رسالة بشرط افتراضي (DEFAULT) قبل تفعيل الرسائل الآلية
                               </p>
-                              <p className="text-xs text-amber-700 mt-1">
-                                يرجى التحقق من إعدادات الشروط أو إعادة تحميل الصفحة
+                              <p className="text-xs text-amber-700">
+                                توجه إلى قسم <span className="font-semibold">الرسائل</span> في الشريط الجانبي لإنشاء قالب افتراضي
                               </p>
                             </div>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    );
+                  }
 
-                    {hasActiveConditions && (() => {
-                      // Detect conflicts
-                      const overlappingConditions = detectQueueConflicts();
-                      const conflictingIds = new Set<string>();
-                      overlappingConditions.forEach(overlap => {
-                        // Each overlap is an object with id1 and id2 properties
-                        if (overlap.id1) conflictingIds.add(overlap.id1);
-                        if (overlap.id2) conflictingIds.add(overlap.id2);
-                      });
+                  // Filter active conditions for this queue (exclude DEFAULT and UNCONDITIONED, exclude deleted)
+                  const activeConditions = messageConditions.filter(
+                    (c) =>
+                      c.queueId === selectedQueueId &&
+                      c.operator !== 'DEFAULT' &&
+                      c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from display
+                      ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
+                      c.templateId &&
+                      !c.isDeleted // Exclude deleted conditions
+                  );
 
-                      // activeConditions already excludes DEFAULT and UNCONDITIONED, so no sorting needed
-                      // Just use activeConditions directly
-                      return (
-                        <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
-                          <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                            <i className="fas fa-filter text-green-600"></i>
-                            الشروط المطبقة ({activeConditions.length}):
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
-                              {activeConditions.length}
-                            </span>
-                          </h4>
-                          <div className="space-y-2">
-                            {activeConditions.map((condition, idx) => {
-                              const templateName = getTemplateNameForCondition(condition);
-                              const isInConflict = condition.id && conflictingIds.has(condition.id);
-                              const conditionText =
-                                condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
-                                  condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
-                                    condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
-                                      condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
-                                        condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
-                                          '';
+                  const hasActiveConditions = activeConditions.length > 0;
 
-                              return (
-                                <div
-                                  key={condition.id || idx}
-                                  className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${isInConflict
-                                    ? 'bg-red-100 border-red-400 hover:bg-red-150'
-                                    : 'bg-green-50 border-green-100 hover:border-green-300 hover:bg-green-100'
-                                    }`}
-                                >
-                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${isInConflict
-                                    ? 'bg-red-300 text-red-900'
-                                    : 'bg-green-300 text-green-900'
-                                    }`}>
-                                    {idx + 1}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between">
-                                      <p className={`text-sm font-semibold ${isInConflict ? 'text-red-900' : 'text-gray-900'
-                                        }`}>
-                                        {templateName}
-                                      </p>
-                                      {isInConflict && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
-                                          <i className="fas fa-exclamation-triangle"></i>
-                                          تضارب!
-                                        </span>
+                  // Get the actual default template text from messageTemplates
+                  const defaultTemplateText = defaultTemplate?.content || '';
+
+                  // Find template name for each condition
+                  const getTemplateNameForCondition = (condition: typeof activeConditions[0]) => {
+                    if (!condition.templateId) return 'شرط بدون عنوان';
+                    const template = messageTemplates.find((t) => t.id === condition.templateId);
+                    return template?.title || 'شرط بدون عنوان';
+                  };
+
+                  return (
+                    <div className="flex flex-col gap-6">
+                      <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
+                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                          <i className="fas fa-message text-blue-600"></i>
+                          الرسالة الافتراضية:
+                        </h4>
+                        {defaultTemplateText ? (
+                          <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                            <p className="text-gray-800 text-sm leading-relaxed font-medium whitespace-pre-wrap">
+                              {defaultTemplateText}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-3 border-t border-blue-200 pt-3">
+                              <i className="fas fa-info-circle text-blue-500 ml-1"></i>
+                              المتغيرات المتاحة: {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
+                            <div className="flex items-start gap-3">
+                              <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0"></i>
+                              <div className="flex-1">
+                                <p className="text-sm text-amber-800 font-semibold">
+                                  لم يتم تحميل نص الرسالة الافتراضية
+                                </p>
+                                <p className="text-xs text-amber-700 mt-1">
+                                  يرجى التحقق من إعدادات الشروط أو إعادة تحميل الصفحة
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {hasActiveConditions && (() => {
+                        // Detect conflicts
+                        const overlappingConditions = detectQueueConflicts();
+                        const conflictingIds = new Set<string>();
+                        overlappingConditions.forEach(overlap => {
+                          // Each overlap is an object with id1 and id2 properties
+                          if (overlap.id1) conflictingIds.add(overlap.id1);
+                          if (overlap.id2) conflictingIds.add(overlap.id2);
+                        });
+
+                        // activeConditions already excludes DEFAULT and UNCONDITIONED, so no sorting needed
+                        // Just use activeConditions directly
+                        return (
+                          <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
+                            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                              <i className="fas fa-filter text-green-600"></i>
+                              الشروط المطبقة ({activeConditions.length}):
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
+                                {activeConditions.length}
+                              </span>
+                            </h4>
+                            <div className="space-y-2">
+                              {activeConditions.map((condition, idx) => {
+                                const templateName = getTemplateNameForCondition(condition);
+                                const isInConflict = condition.id && conflictingIds.has(condition.id);
+                                const conditionText =
+                                  condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
+                                    condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
+                                      condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
+                                        condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
+                                          condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
+                                            '';
+
+                                return (
+                                  <div
+                                    key={condition.id || idx}
+                                    className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${isInConflict
+                                      ? 'bg-red-100 border-red-400 hover:bg-red-150'
+                                      : 'bg-green-50 border-green-100 hover:border-green-300 hover:bg-green-100'
+                                      }`}
+                                  >
+                                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${isInConflict
+                                      ? 'bg-red-300 text-red-900'
+                                      : 'bg-green-300 text-green-900'
+                                      }`}>
+                                      {idx + 1}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between">
+                                        <p className={`text-sm font-semibold ${isInConflict ? 'text-red-900' : 'text-gray-900'
+                                          }`}>
+                                          {templateName}
+                                        </p>
+                                        {isInConflict && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
+                                            <i className="fas fa-exclamation-triangle"></i>
+                                            تضارب!
+                                          </span>
+                                        )}
+                                      </div>
+                                      {conditionText && (
+                                        <p className={`text-xs mt-1 ${isInConflict ? 'text-red-700' : 'text-gray-700'
+                                          }`}>
+                                          {conditionText}
+                                        </p>
                                       )}
                                     </div>
-                                    {conditionText && (
-                                      <p className={`text-xs mt-1 ${isInConflict ? 'text-red-700' : 'text-gray-700'
-                                        }`}>
-                                        {conditionText}
-                                      </p>
-                                    )}
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
+                        );
+                      })()}
 
-                    {!hasActiveConditions && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
-                        <p className="text-sm text-gray-600 text-center">
-                          <i className="fas fa-info-circle text-gray-400 ml-1"></i>
-                          لا توجد شروط نشطة. سيتم استخدام الرسالة الافتراضية لجميع المرضى.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                      {!hasActiveConditions && (
+                        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                          <p className="text-sm text-gray-600 text-center">
+                            <i className="fas fa-info-circle text-gray-400 ml-1"></i>
+                            لا توجد شروط نشطة. سيتم استخدام الرسالة الافتراضية لجميع المرضى.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </DataStateWrapper>
             </div>
           </>
         )}
       </div>
 
       {/* Conflict Warning Section */}
-      {(() => {
-        const conflicts = detectQueueConflicts();
-        return conflicts.length > 0 ? (
-          <div className="mb-6">
-            <ConflictWarning
-              overlappingConditions={conflicts}
-              hasDefaultConflict={false}
-            />
-          </div>
-        ) : null;
-      })()}
+      {
+        (() => {
+          const conflicts = detectQueueConflicts();
+          return conflicts.length > 0 ? (
+            <div className="mb-6">
+              <ConflictWarning
+                overlappingConditions={conflicts}
+                hasDefaultConflict={false}
+              />
+            </div>
+          ) : null;
+        })()
+      }
 
 
       {/* Patients Table */}
-      {patients.length === 0 ? (
-        <EmptyState
-          icon="fa-users"
-          title="لا يوجد مرضى"
-          message="لم يتم إضافة أي مريض بعد. ابدأ بإضافة مريض جديد"
-          actionLabel="إضافة مريض"
-          onAction={() => openModal('addPatient')}
-        />
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div
-                onClick={toggleAllPatients}
-                className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
-                style={{
-                  borderColor: selectedPatients.length === 0 ? '#d1d5db' : selectedPatients.length === patients.length ? '#3b82f6' : '#f59e0b',
-                  backgroundColor: selectedPatients.length === 0 ? 'white' : selectedPatients.length === patients.length ? '#3b82f6' : '#fef3c7',
-                }}
-                title={selectedPatients.length === 0 ? 'تحديد الكل' : selectedPatients.length === patients.length ? 'إلغاء التحديد' : 'تحديد الكل'}
-              >
-                {selectedPatients.length > 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <i
-                      className={`fas text-white text-xs ${selectedPatients.length === patients.length ? 'fa-check' : 'fa-minus'
-                        }`}
-                    ></i>
-                  </div>
-                )}
+      {
+        patients.length === 0 ? (
+          <EmptyState
+            icon="fa-users"
+            title="لا يوجد مرضى"
+            message="لم يتم إضافة أي مريض بعد. ابدأ بإضافة مريض جديد"
+            actionLabel="إضافة مريض"
+            onAction={() => openModal('addPatient')}
+          />
+        ) : (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div
+                  onClick={toggleAllPatients}
+                  className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
+                  style={{
+                    borderColor: selectedPatients.length === 0 ? '#d1d5db' : selectedPatients.length === patients.length ? '#3b82f6' : '#f59e0b',
+                    backgroundColor: selectedPatients.length === 0 ? 'white' : selectedPatients.length === patients.length ? '#3b82f6' : '#fef3c7',
+                  }}
+                  title={selectedPatients.length === 0 ? 'تحديد الكل' : selectedPatients.length === patients.length ? 'إلغاء التحديد' : 'تحديد الكل'}
+                >
+                  {selectedPatients.length > 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <i
+                        className={`fas text-white text-xs ${selectedPatients.length === patients.length ? 'fa-check' : 'fa-minus'
+                          }`}
+                      ></i>
+                    </div>
+                  )}
+                </div>
+                <h3 className="font-bold text-gray-800">قائمة المرضى</h3>
+                <span className="text-sm text-gray-600">
+                  {selectedPatients.length} من {patients.length} محدد
+                </span>
               </div>
-              <h3 className="font-bold text-gray-800">قائمة المرضى</h3>
-              <span className="text-sm text-gray-600">
-                {selectedPatients.length} من {patients.length} محدد
-              </span>
+              {selectedPatients.length > 0 && (
+                <button
+                  onClick={() => setSelectedPatients([])}
+                  className="text-sm text-red-600 hover:text-red-800"
+                >
+                  إلغاء التحديد
+                </button>
+              )}
             </div>
-            {selectedPatients.length > 0 && (
-              <button
-                onClick={() => setSelectedPatients([])}
-                className="text-sm text-red-600 hover:text-red-800"
-              >
-                إلغاء التحديد
-              </button>
-            )}
-          </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  {tableColumns.map((col) => (
-                    <th
-                      key={col.key}
-                      style={{ width: col.width }}
-                      className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tableRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`border-b hover:bg-gray-50 transition-colors ${selectedPatients.includes(row.id) ? 'bg-blue-50' : ''
-                      }`}
-                  >
-                    <td className="px-6 py-3 text-sm">{row.checkbox}</td>
-                    <td className="px-6 py-3 text-sm">{row.queue}</td>
-                    <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
-                    <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
-                    <td className="px-6 py-3 text-sm">{row.actions}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    {tableColumns.map((col) => (
+                      <th
+                        key={col.key}
+                        style={{ width: col.width }}
+                        className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                      >
+                        {col.label}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {tableRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={`border-b hover:bg-gray-50 transition-colors ${selectedPatients.includes(row.id) ? 'bg-blue-50' : ''
+                        }`}
+                    >
+                      <td className="px-6 py-3 text-sm">{row.checkbox}</td>
+                      <td className="px-6 py-3 text-sm">{row.queue}</td>
+                      <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                      <td className="px-6 py-3 text-sm">{row.actions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Info Box */}
       <UsageGuideSection
         items={guideItems}
       />
-    </PanelWrapper>
+    </PanelWrapper >
   );
 }
 

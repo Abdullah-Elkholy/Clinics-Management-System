@@ -1,4 +1,4 @@
-/**
+/*
  * MessageSession Cascade Service - Soft Delete and Restore Handler
  * File: src/Api/Services/MessageSessionCascadeService.cs
  * 
@@ -37,8 +37,8 @@ public class MessageSessionCascadeService : IMessageSessionCascadeService
     }
 
     public async Task<(bool Success, string ErrorMessage)> SoftDeleteMessageSessionAsync(
-        Guid sessionId, 
-        int deletedByUserId, 
+        Guid sessionId,
+        int deletedByUserId,
         bool useTransaction = true)
     {
         if (useTransaction)
@@ -73,7 +73,7 @@ public class MessageSessionCascadeService : IMessageSessionCascadeService
     }
 
     private async Task<(bool Success, string ErrorMessage)> SoftDeleteMessageSessionInternalAsync(
-        Guid sessionId, 
+        Guid sessionId,
         int deletedByUserId)
     {
         // Unify datetime for this bulk operation
@@ -120,7 +120,7 @@ public class MessageSessionCascadeService : IMessageSessionCascadeService
     }
 
     public async Task<(bool Success, string ErrorMessage)> RestoreMessageSessionAsync(
-        Guid sessionId, 
+        Guid sessionId,
         int? restoredBy = null,
         bool useTransaction = true)
     {
@@ -156,7 +156,7 @@ public class MessageSessionCascadeService : IMessageSessionCascadeService
     }
 
     private async Task<(bool Success, string ErrorMessage)> RestoreMessageSessionInternalAsync(
-        Guid sessionId, 
+        Guid sessionId,
         int? restoredBy)
     {
         var session = await _db.MessageSessions
@@ -193,9 +193,9 @@ public class MessageSessionCascadeService : IMessageSessionCascadeService
         // Restore all related Messages that were deleted in the same cascade operation
         var sessionIdStr = sessionId.ToString();
         var messages = await _db.Messages
-            .Where(m => m.SessionId == sessionIdStr 
-                && m.IsDeleted 
-                && m.DeletedAt.HasValue 
+            .Where(m => m.SessionId == sessionIdStr
+                && m.IsDeleted
+                && m.DeletedAt.HasValue
                 && m.DeletedAt >= deletedAtValue)
             .ToListAsync();
 

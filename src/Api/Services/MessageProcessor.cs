@@ -28,6 +28,7 @@ namespace Clinics.Api.Services
         private readonly IHubContext<DataUpdateHub> _hubContext;
         private readonly IExtensionCommandService _commandService;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IRateLimitSettingsService _rateLimitService;
 
         public MessageProcessor(
             ApplicationDbContext db,
@@ -38,7 +39,8 @@ namespace Clinics.Api.Services
             ILogger<MessageProcessor> logger,
             IHubContext<DataUpdateHub> hubContext,
             IExtensionCommandService commandService,
-            IServiceScopeFactory scopeFactory)
+            IServiceScopeFactory scopeFactory,
+            IRateLimitSettingsService rateLimitService)
         {
             _db = db;
             _providerFactory = providerFactory;
@@ -49,6 +51,7 @@ namespace Clinics.Api.Services
             _hubContext = hubContext;
             _commandService = commandService;
             _scopeFactory = scopeFactory;
+            _rateLimitService = rateLimitService;
         }
 
         public async Task ProcessQueuedMessagesAsync(int maxBatch = 50)
@@ -62,6 +65,7 @@ namespace Clinics.Api.Services
             });
 
             _logger.LogInformation("ProcessorRun started: {ProcessorRunId}", processorRunId);
+            _logger.LogInformation("[Business] بدأ تشغيل معالج الرسائل: {ProcessorRunId}", processorRunId);
 
             // Priority order:
             // 1. Global WhatsAppSession.IsPaused (highest priority) - skip entire moderator
@@ -359,11 +363,10 @@ namespace Clinics.Api.Services
                         _logger.LogWarning("Circuit breaker open for moderator {ModeratorId}: {Message}",
                             m.ModeratorId, cbEx.Message);
 
-                        // Pause this message until circuit recovers
+                        // Reset this message to queued with NextAttemptAt set to retry after circuit recovers
+                        // DO NOT pause individual messages - circuit breaker is a global state
                         m.Status = "queued";
-                        m.IsPaused = true;
-                        m.PausedAt = DateTime.UtcNow;
-                        m.PauseReason = "CircuitBreakerOpen";
+                        m.NextAttemptAt = DateTime.UtcNow.Add(cbEx.RetryAfter);
                         m.ErrorMessage = $"Circuit breaker open. Retry after {cbEx.RetryAfter.TotalSeconds:F0}s";
                         m.Attempts -= 1; // Don't count circuit breaker trips as attempts
                         m.InFlightCommandId = null;
@@ -376,61 +379,26 @@ namespace Clinics.Api.Services
                         continue;
                     }
 
-                    // Check for PendingQR response - automatically pause ALL messages for this moderator
+                    // Check for PendingQR response - DO NOT pause individual messages
+                    // The global WhatsAppSession.IsPaused is set by ExtensionLeaseService when status changes
+                    // Individual messages should NOT be paused for system reasons
                     if (result.providerResponse != null && result.providerResponse.Contains("PendingQR", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Pause this message (not failed, just paused)
+                        // Reset this message to queued (NOT paused) - it will be picked up again after global resume
                         m.Status = "queued";
-                        m.IsPaused = true;
-                        m.PausedAt = DateTime.UtcNow;
-                        m.PauseReason = "PendingQR";
                         m.Attempts -= 1; // Don't count this as a failed attempt
+                        m.InFlightCommandId = null;
+                        m.ErrorMessage = "جلسة الواتساب تحتاج إلى المصادقة";
                         await _db.SaveChangesAsync();
 
-                        // Pause ALL queued messages for this moderator (unified WhatsApp session per moderator)
-                        if (m.ModeratorId.HasValue)
-                        {
-                            var moderatorId = m.ModeratorId.Value;
-                            var allQueuedMessages = await _db.Messages
-                                .Where(msg => msg.ModeratorId == moderatorId
-                                    && msg.Status == "queued"
-                                    && !msg.IsPaused
-                                    && msg.Id != m.Id) // Exclude the current message (already paused)
-                                .ToListAsync();
+                        // DO NOT pause individual messages or sessions here
+                        // The global WhatsAppSession.IsPaused will prevent processing
+                        // until user manually resumes after authentication
 
-                            foreach (var msg in allQueuedMessages)
-                            {
-                                msg.IsPaused = true;
-                                msg.PausedAt = DateTime.UtcNow;
-                                msg.PauseReason = "PendingQR";
-                            }
+                        _logger.LogWarning("PendingQR detected for moderator {ModeratorId}. Message {MessageId} reset to queued. Global pause will block further processing.",
+                            m.ModeratorId, m.Id);
 
-                            if (allQueuedMessages.Any())
-                            {
-                                await _db.SaveChangesAsync();
-                            }
-
-                            // Also pause any active sessions for this moderator
-                            var activeSessions = await _db.MessageSessions
-                                .Where(s => s.ModeratorId == moderatorId && s.Status == "active" && !s.IsPaused)
-                                .ToListAsync();
-
-                            foreach (var session in activeSessions)
-                            {
-                                session.IsPaused = true;
-                                session.Status = "paused";
-                                session.PausedAt = DateTime.UtcNow;
-                                session.PauseReason = "PendingQR";
-                                session.LastUpdated = DateTime.UtcNow;
-                            }
-
-                            if (activeSessions.Any())
-                            {
-                                await _db.SaveChangesAsync();
-                            }
-                        }
-
-                        throw new InvalidOperationException("WhatsApp session requires authentication. All messages for this moderator have been paused. Please authenticate and resume.");
+                        throw new InvalidOperationException("WhatsApp session requires authentication. Please authenticate and the system will resume automatically.");
                     }
 
                     if (result.success)
@@ -454,7 +422,7 @@ namespace Clinics.Api.Services
                         catch (DbUpdateConcurrencyException ex)
                         {
                             // Concurrency conflict - reload and check current state
-                            _logger.LogWarning(ex, "Concurrency conflict saving message {MessageId} as sent. Reloading to check state.", m.Id);
+                            _logger.LogDebug(ex, "Concurrency conflict saving message {MessageId} as sent. Reloading to check state (expected behavior).", m.Id);
                             await _db.Entry(m).ReloadAsync();
 
                             // If message was paused by user, respect that decision
@@ -494,6 +462,9 @@ namespace Clinics.Api.Services
                                 await NotifySessionUpdate(session, "updated");
                             }
                         }
+
+                        // Arabic business log
+                        _logger.LogInformation("[Business] تم إرسال الرسالة بنجاح (ID: {MessageId}) إلى {Recipient}", m.Id, m.PatientPhone);
 
                         // Notify via SignalR for real-time UI updates
                         await NotifyMessageUpdate(m, "sent");
@@ -568,6 +539,27 @@ namespace Clinics.Api.Services
                     }
                     await _db.SaveChangesAsync();
                     processedCount++;
+
+                    // RATE LIMITING: Apply random delay between messages to avoid WhatsApp rate limits
+                    // Only applies after successful sends, not after failures (which have exponential backoff)
+                    if (result.success)
+                    {
+                        var rateLimitDelay = await _rateLimitService.GetRandomDelayAsync();
+                        if (rateLimitDelay > TimeSpan.Zero)
+                        {
+                            _logger.LogDebug("RateLimit: Waiting {DelaySeconds:F1}s before next message", rateLimitDelay.TotalSeconds);
+
+                            // Use the sendCts token so pause can interrupt the delay
+                            try
+                            {
+                                await Task.Delay(rateLimitDelay);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                _logger.LogInformation("Rate limit delay interrupted by pause");
+                            }
+                        }
+                    }
                 }
                 catch (InvalidOperationException ex) when (
                     ex.Message.StartsWith("PendingQR:", StringComparison.OrdinalIgnoreCase) ||
@@ -841,6 +833,10 @@ namespace Clinics.Api.Services
                 {
                     _logger.LogDebug("Atomically claimed message {MessageId} with command {CommandId}",
                         trackedMessage.Id, commandId);
+
+                    // CRITICAL: Notify UI immediately that message is now "sending"
+                    // This prevents the "Pending" delay in UI while message is actually being processed
+                    await NotifyMessageUpdate(trackedMessage, "sending");
                 }
 
                 return trackedMessage;

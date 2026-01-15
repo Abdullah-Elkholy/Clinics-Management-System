@@ -140,7 +140,7 @@ export default function AddTemplateModal() {
 
   const validateField = (fieldName: string, value: string) => {
     let error: string | null = null;
-    
+
     switch (fieldName) {
       case 'title':
         error = validateName(value, 'عنوان القالب');
@@ -151,7 +151,7 @@ export default function AddTemplateModal() {
       default:
         break;
     }
-    
+
     if (error) {
       setErrors((prev) => ({ ...prev, [fieldName]: error }));
     } else {
@@ -190,14 +190,14 @@ export default function AddTemplateModal() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    
+
     // Validate all fields
     const newErrors: ValidationError = {};
-    
+
     if (validateName(title, 'عنوان القالب')) {
       newErrors.title = validateName(title, 'عنوان القالب') || '';
     }
-    
+
     if (validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH)) {
       newErrors.content = validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH) || '';
     }
@@ -224,27 +224,27 @@ export default function AddTemplateModal() {
         }
       }
     }
-    
+
     setErrors(newErrors);
-    
+
     if (Object.keys(newErrors).length > 0) {
       // Don't set isLoading to true if validation fails
       return;
     }
-    
+
     // Validate queue ID before setting isLoading
     if (!queueId) {
       addToast('يجب تحديد عيادة', 'error');
       return;
     }
-    
+
     // Validate queue ID is a valid number
     const queueIdNum = Number(queueId);
     if (isNaN(queueIdNum)) {
       addToast('معرّف العيادة غير صالح', 'error');
       return;
     }
-    
+
     // Check for duplicate template title in same queue
     const existingTemplate = messageTemplates.find(
       (t) => t.queueId === String(queueIdNum) && t.title.toLowerCase() === title.toLowerCase()
@@ -256,13 +256,13 @@ export default function AddTemplateModal() {
 
     // Determine the operator: if no operator selected, use UNCONDITIONED
     const conditionOperator = selectedOperator || 'UNCONDITIONED';
-    
+
     // Check for conflicts with existing conditions (only for non-UNCONDITIONED and non-DEFAULT operators)
     if (conditionOperator !== 'UNCONDITIONED' && conditionOperator !== 'DEFAULT') {
       const newCondition = {
         operator: conditionOperator,
-        value: (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS') 
-          ? selectedValue 
+        value: (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS')
+          ? selectedValue
           : undefined,
         minValue: conditionOperator === 'RANGE' ? selectedMinValue : undefined,
         maxValue: conditionOperator === 'RANGE' ? selectedMaxValue : undefined,
@@ -274,16 +274,16 @@ export default function AddTemplateModal() {
           // Only check conditions in the same queue
           const conditionQueueId = c.queueId?.toString();
           if (conditionQueueId !== String(queueIdNum)) return false;
-          
+
           // Skip UNCONDITIONED and DEFAULT conditions (they don't conflict)
           if (c.operator === 'UNCONDITIONED' || c.operator === 'DEFAULT') return false;
-          
+
           // Check if conditions overlap
           const newRange = getConditionRange(newCondition);
           const existingRange = getConditionRange(c);
-          
+
           if (!newRange || !existingRange) return false;
-          
+
           return conditionsOverlap(newCondition, c);
         })
         .map(c => {
@@ -299,7 +299,7 @@ export default function AddTemplateModal() {
         const conflictDetails = conflictingConditions
           .map(c => `- ${c.templateTitle} (${c.condition.operator} ${c.condition.value || `${c.condition.minValue}-${c.condition.maxValue}`})`)
           .join('\n');
-        
+
         const shouldProceed = await confirm({
           title: 'تعارض في الشروط',
           message: `هناك تعارض مع الشروط التالية:\n\n${conflictDetails}\n\nهل تريد المتابعة على أي حال؟`,
@@ -315,23 +315,25 @@ export default function AddTemplateModal() {
 
     try {
       setIsLoading(true);
-      
+
       // Prepare request payload
       const requestPayload = {
         title,
         content,
         queueId: queueIdNum,
         conditionOperator: conditionOperator,
-        conditionValue: (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS') 
-          ? selectedValue 
-          : undefined,
+        conditionValue: (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS')
+          ? selectedValue
+          : conditionOperator === 'RANGE' || conditionOperator === 'UNCONDITIONED'
+            ? null
+            : undefined,
         conditionMinValue: conditionOperator === 'RANGE' ? selectedMinValue : undefined,
         conditionMaxValue: conditionOperator === 'RANGE' ? selectedMaxValue : undefined,
       };
-      
+
       // Debug: log the request payload
       logger.debug('CreateTemplate Request Payload:', requestPayload);
-      
+
       // Create the template with condition in one call (backend handles one-to-one relationship)
       let createdTemplate;
       try {
@@ -391,10 +393,11 @@ export default function AddTemplateModal() {
       } else {
         addToast('تم إضافة قالب الرسالة والشرط بنجاح', 'success');
       }
-      
-      // Dispatch event immediately (refreshQueueData has completed)
-      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-      
+
+      // Dispatch events with queueId for targeted refresh in MessagesPanel
+      window.dispatchEvent(new CustomEvent('templateDataUpdated', { detail: { queueId } }));
+      window.dispatchEvent(new CustomEvent('conditionDataUpdated', { detail: { queueId } }));
+
       // Clear form fields after successful creation
       setTitle('');
       setContent('');
@@ -403,7 +406,7 @@ export default function AddTemplateModal() {
       setSelectedValue(undefined);
       setSelectedMinValue(undefined);
       setSelectedMaxValue(undefined);
-      
+
       closeModal('addTemplate');
     } catch (error) {
       // Attempt to extract structured validation errors (problem+json)
@@ -450,7 +453,7 @@ export default function AddTemplateModal() {
   useFormKeyboardNavigation({
     formRef,
     onEnterSubmit: () => {
-      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      const fakeEvent = { preventDefault: () => { } } as FormEvent<HTMLFormElement>;
       handleSubmit(fakeEvent);
     },
     enableEnterSubmit: true,
@@ -504,11 +507,10 @@ export default function AddTemplateModal() {
             onBlur={() => handleFieldBlur('title')}
             placeholder="أدخل عنوان القالب"
             disabled={isLoading}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-              errors.title
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 focus:ring-blue-500'
-            }`}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${errors.title
+              ? 'border-red-500 focus:ring-red-500'
+              : 'border-gray-300 focus:ring-blue-500'
+              }`}
           />
           {errors.title && (
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
@@ -531,11 +533,10 @@ export default function AddTemplateModal() {
             rows={4}
             placeholder="أدخل محتوى الرسالة"
             disabled={isLoading}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all resize-none ${
-              errors.content
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 focus:ring-blue-500'
-            }`}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all resize-none ${errors.content
+              ? 'border-red-500 focus:ring-red-500'
+              : 'border-gray-300 focus:ring-blue-500'
+              }`}
           />
           <div className="flex items-center justify-between mt-1">
             {errors.content && (
@@ -544,11 +545,10 @@ export default function AddTemplateModal() {
                 {errors.content}
               </p>
             )}
-            <p className={`text-xs ml-auto ${
-              content.length > MAX_CONTENT_LENGTH * 0.9
-                ? 'text-orange-600'
-                : 'text-gray-500'
-            }`}>
+            <p className={`text-xs ml-auto ${content.length > MAX_CONTENT_LENGTH * 0.9
+              ? 'text-orange-600'
+              : 'text-gray-500'
+              }`}>
               {content.length} / {MAX_CONTENT_LENGTH}
             </p>
           </div>

@@ -706,11 +706,9 @@ async function executeSimpleCommand(tab, command) {
   try {
     await chrome.tabs.sendMessage(tab.id, { type: 'PING' });
   } catch (pingError) {
-    console.log('[Extension] Content script not ready, injecting...');
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content.js']
-    });
+    console.log('[Extension] Content script not ready yet, waiting...');
+    // Don't inject manually, rely on manifest. Just wait a bit.
+    await new Promise(r => setTimeout(r, 1000));
     await new Promise(r => setTimeout(r, 1000));
   }
 
@@ -785,12 +783,8 @@ async function handleCheckNumber(tab, command, authPayload) {
     await new Promise(r => setTimeout(r, 2000));
   }
 
-  // Inject content script
-  console.log('[Extension] Injecting content script after navigation...');
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ['content.js']
-  });
+  // Content script is loaded by manifest.json, so we don't need to inject it again manually
+  console.log('[Extension] Waiting for content script to be ready (loaded by manifest)...');
 
   // Wait for content script to initialize
   await new Promise(r => setTimeout(r, 1000));
@@ -865,12 +859,9 @@ async function handleSendMessage(tab, command, authPayload) {
   // Wait additional time for WhatsApp to initialize
   await new Promise(r => setTimeout(r, 2000));
 
-  // Inject content script (fresh injection after navigation)
-  console.log('[Extension] Injecting content script after navigation...');
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ['content.js']
-  });
+  // Content script is loaded by manifest.json, so we don't need to inject it again manually
+  // This prevents double-loading which causes duplicate message listeners
+  console.log('[Extension] Waiting for content script to be ready (loaded by manifest)...');
 
   // Wait for content script to initialize
   await new Promise(r => setTimeout(r, 1000));
@@ -1123,3 +1114,50 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // Content script will report status
   }
 });
+
+// CRITICAL: Listen for tab removal to detect when WhatsApp tab is closed
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+  // Check if any WhatsApp tabs remain after this removal
+  try {
+    const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+    if (tabs.length === 0) {
+      console.log('[Extension] Last WhatsApp tab closed, resetting status to unknown');
+      state.whatsAppStatus = 'unknown';
+      state.currentUrl = null;
+      broadcastState();
+
+      // Send heartbeat to update server about the status change
+      if (state.isConnected && state.leaseId && state.leaseToken) {
+        sendHeartbeat().catch(console.error);
+      }
+    }
+  } catch (error) {
+    console.error('[Extension] Error checking WhatsApp tabs after removal:', error);
+  }
+});
+
+// Periodic check for WhatsApp tab presence (catches edge cases like browser restart)
+// Runs every 10 seconds when there's an active session
+setInterval(async () => {
+  // Only check if we have an active session and status is 'connected'
+  if (!state.isConnected || state.whatsAppStatus !== 'connected') {
+    return;
+  }
+
+  try {
+    const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+    if (tabs.length === 0) {
+      console.log('[Extension] No WhatsApp tab found during periodic check, resetting status');
+      state.whatsAppStatus = 'unknown';
+      state.currentUrl = null;
+      broadcastState();
+
+      // Send heartbeat to update server
+      if (state.leaseId && state.leaseToken) {
+        sendHeartbeat().catch(console.error);
+      }
+    }
+  } catch (error) {
+    console.error('[Extension] Error during periodic WhatsApp tab check:', error);
+  }
+}, 10000); // Check every 10 seconds

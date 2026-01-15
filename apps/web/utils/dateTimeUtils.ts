@@ -7,9 +7,36 @@
 /**
  * Convert Western digits (0-9) to Arabic-Indic numerals (٠-٩)
  */
+/**
+ * Convert Western digits (0-9) to Arabic-Indic numerals (٠-٩)
+ * @deprecated This function is now a pass-through to enforce English numerals
+ */
 function toArabicNumerals(str: string): string {
-  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-  return str.replace(/\d/g, (digit) => arabicNumerals[parseInt(digit)]);
+  // Return string as is to enforce English numerals
+  return str;
+}
+
+/**
+ * Parse a date string that might be in UTC but missing 'Z' suffix
+ * This fixes issues where .NET/JSON dates are interpreted as local time
+ */
+export function parseAsUtc(dateString: string | Date | undefined | null): Date | undefined {
+  if (!dateString) return undefined;
+
+  // If it's already a Date object, return it (cloned)
+  if ((dateString as any) instanceof Date) return new Date(dateString as any);
+
+  let stringToParse = dateString;
+
+  // If it looks like ISO standard format (T separator) but ends in digits (no Z/offset)
+  // e.g. "2023-11-15T10:30:05.123" or "2023-11-15T10:30:05"
+  if (typeof stringToParse === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(stringToParse)) {
+    stringToParse += 'Z';
+  }
+
+  const date = new Date(stringToParse);
+  if (isNaN(date.getTime())) return undefined;
+  return date;
 }
 
 /**
@@ -18,15 +45,8 @@ function toArabicNumerals(str: string): string {
  * @returns Date object in local timezone
  */
 export function toLocalDate(utcDateString: string | Date | undefined | null): Date | null {
-  if (!utcDateString) return null;
-  
-  try {
-    const date = typeof utcDateString === 'string' ? new Date(utcDateString) : utcDateString;
-    if (isNaN(date.getTime())) return null;
-    return date;
-  } catch {
-    return null;
-  }
+  const date = parseAsUtc(utcDateString as any);
+  return date || null;
 }
 
 /**
@@ -37,33 +57,19 @@ export function toLocalDate(utcDateString: string | Date | undefined | null): Da
 export function formatLocalDate(date: string | Date | undefined | null): string {
   const localDate = toLocalDate(date);
   if (!localDate) return 'لم يحدد';
-  
-  // Use en-US locale with Gregorian calendar, then translate to Arabic
-  const formatter = new Intl.DateTimeFormat('en-US', {
+
+  // Use ar-EG with Latin numbering system
+  const formatter = new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
     calendar: 'gregory',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
-  
-  const parts = formatter.formatToParts(localDate);
-  const monthNames: { [key: string]: string } = {
-    'January': 'يناير', 'February': 'فبراير', 'March': 'مارس', 'April': 'أبريل',
-    'May': 'مايو', 'June': 'يونيو', 'July': 'يوليو', 'August': 'أغسطس',
-    'September': 'سبتمبر', 'October': 'أكتوبر', 'November': 'نوفمبر', 'December': 'ديسمبر'
-  };
-  
-  let result = '';
-  for (const part of parts) {
-    if (part.type === 'month') {
-      result += monthNames[part.value] || part.value;
-    } else {
-      result += part.value;
-    }
-  }
-  // Convert all Western numerals to Arabic-Indic numerals
-  return toArabicNumerals(result);
+
+  return formatter.format(localDate);
+  // No longer converting to Arabic-Indic numerals
+  // return toArabicNumerals(result);
 }
 
 /**
@@ -74,9 +80,9 @@ export function formatLocalDate(date: string | Date | undefined | null): string 
 export function formatLocalDateTime(date: string | Date | undefined | null): string {
   const localDate = toLocalDate(date);
   if (!localDate) return 'لم يحدد';
-  
-  // Use en-US locale with Gregorian calendar, then translate to Arabic
-  const formatter = new Intl.DateTimeFormat('en-US', {
+
+  // Use ar-EG with Latin numbering system
+  const formatter = new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -87,35 +93,15 @@ export function formatLocalDateTime(date: string | Date | undefined | null): str
     calendar: 'gregory',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
-  
-  const parts = formatter.formatToParts(localDate);
-  const monthNames: { [key: string]: string } = {
-    'January': 'يناير', 'February': 'فبراير', 'March': 'مارس', 'April': 'أبريل',
-    'May': 'مايو', 'June': 'يونيو', 'July': 'يوليو', 'August': 'أغسطس',
-    'September': 'سبتمبر', 'October': 'أكتوبر', 'November': 'نوفمبر', 'December': 'ديسمبر'
-  };
-  
-  let result = '';
-  for (const part of parts) {
-    if (part.type === 'month') {
-      result += monthNames[part.value] || part.value;
-    } else if (part.type === 'dayPeriod') {
-      // Replace AM/PM with Arabic equivalents
-      result += part.value === 'AM' ? 'ص' : 'م';
-    } else if (part.type === 'literal' && part.value.toLowerCase().includes('at')) {
-      // Replace "at" with Arabic "في"
-      result += ' في ';
-    } else {
-      result += part.value;
-    }
-  }
-  // Convert all Western numerals to Arabic-Indic numerals
-  // Also replace any remaining "at", "AM", "PM" that might be in the formatted string
-  let formatted = toArabicNumerals(result);
-  formatted = formatted.replace(/\bat\b/gi, 'في');
-  formatted = formatted.replace(/\bAM\b/g, 'ص');
-  formatted = formatted.replace(/\bPM\b/g, 'م');
-  return formatted;
+
+  const formatted = formatter.format(localDate);
+  // Ensure AM/PM are Arabic
+  return formatted
+    .replace(/\bAM\b/g, 'ص')
+    .replace(/\bPM\b/g, 'م')
+    .replace(/\bam\b/g, 'ص')
+    .replace(/\bpm\b/g, 'م');
+  // return formatted;
 }
 
 /**
@@ -126,19 +112,19 @@ export function formatLocalDateTime(date: string | Date | undefined | null): str
 export function formatLocalTime(date: string | Date | undefined | null): string {
   const localDate = toLocalDate(date);
   if (!localDate) return 'لم يحدد';
-  
-  const formatter = new Intl.DateTimeFormat('ar-EG', {
+
+  const formatter = new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: true,
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
-  
+
   const formatted = formatter.format(localDate).replace(/ص/g, 'ص').replace(/م/g, 'م');
-  
-  // Convert all Western numerals to Arabic-Indic numerals
-  return toArabicNumerals(formatted);
+
+  // No longer converting to Arabic-Indic numerals
+  return formatted;
 }
 
 /**
@@ -149,7 +135,7 @@ export function formatLocalTime(date: string | Date | undefined | null): string 
 export function formatShortDate(date: string | Date | undefined | null): string {
   const localDate = toLocalDate(date);
   if (!localDate) return 'لم يحدد';
-  
+
   const formatted = localDate.toLocaleDateString('en-US', {
     year: 'numeric',
     month: '2-digit',
@@ -157,9 +143,9 @@ export function formatShortDate(date: string | Date | undefined | null): string 
     calendar: 'gregory',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
-  
-  // Convert all Western numerals to Arabic-Indic numerals
-  return toArabicNumerals(formatted);
+
+  // No longer converting to Arabic-Indic numerals
+  return formatted;
 }
 
 /**
@@ -170,14 +156,14 @@ export function formatShortDate(date: string | Date | undefined | null): string 
 export function formatRelativeTime(date: string | Date | undefined | null): string {
   const localDate = toLocalDate(date);
   if (!localDate) return 'لم يحدد';
-  
+
   const now = new Date();
   const diffMs = now.getTime() - localDate.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
   const diffMinutes = Math.floor(diffSeconds / 60);
   const diffHours = Math.floor(diffMinutes / 60);
   const diffDays = Math.floor(diffHours / 24);
-  
+
   if (diffSeconds < 60) {
     return 'الآن';
   } else if (diffMinutes < 60) {
@@ -191,3 +177,14 @@ export function formatRelativeTime(date: string | Date | undefined | null): stri
   }
 }
 
+/**
+ * Get current date as UTC string (YYYY-MM-DD)
+ * Useful for default values in date pickers when filtering backend data stored in UTC
+ */
+export function getUtcDateString(): string {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

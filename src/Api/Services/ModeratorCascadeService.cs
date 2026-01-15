@@ -1,4 +1,4 @@
-/**
+/*
  * Moderator Cascade Service - Soft Delete/Restore Handler
  * File: src/Api/Services/ModeratorCascadeService.cs
  * 

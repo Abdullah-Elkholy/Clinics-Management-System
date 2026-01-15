@@ -13,6 +13,8 @@ import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createRestoreConfirmation } from '@/utils/confirmationHelpers';
 import { formatArabicNumber } from '@/utils/numberUtils';
+import { LoadingSpinner, ErrorState, EmptyState } from '@/components/state';
+
 
 type TrashItemPrimitive = string | number | boolean | null | undefined | Date;
 
@@ -79,8 +81,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
           { key: 'moderatorUsername', label: 'اسم المشرف' },
           { key: 'deletedByUsername', label: 'حذف بواسطة' },
           { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
-          { 
-            key: 'countdown', 
+          {
+            key: 'countdown',
             label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
@@ -88,8 +90,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
       case 'template':
         return [
           { key: 'title', label: 'اسم القالب' },
-          { 
-            key: 'doctorName', 
+          {
+            key: 'doctorName',
             label: 'اسم الطبيب',
             render: (item) => {
               // Look up doctor name from queueId
@@ -103,8 +105,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
           { key: 'moderatorUsername', label: 'اسم المشرف' },
           { key: 'deletedByUsername', label: 'حذف بواسطة' },
           { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
-          { 
-            key: 'countdown', 
+          {
+            key: 'countdown',
             label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
@@ -114,8 +116,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
           { key: 'name', label: 'اسم المريض' },
           { key: 'phone', label: 'رقم الهاتف' },
           { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
-          { 
-            key: 'countdown', 
+          {
+            key: 'countdown',
             label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
@@ -127,8 +129,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
           { key: 'role', label: 'الدور' },
           { key: 'deletedByUsername', label: 'حذف بواسطة' },
           { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
-          { 
-            key: 'countdown', 
+          {
+            key: 'countdown',
             label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
@@ -138,8 +140,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
           { key: 'name', label: 'اسم الشرط' },
           { key: 'operator', label: 'العامل' },
           { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatDeletionDate(item.deletedAt) },
-          { 
-            key: 'countdown', 
+          {
+            key: 'countdown',
             label: 'الوقت المتبقي',
             render: (item) => <TrashCountdownBadge deletedAt={item.deletedAt} compact />
           },
@@ -163,7 +165,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
       return formatLocalDateTime(value);
     }
 
-    // Format numbers with Arabic-Indic numerals
+    // Format numbers with English numerals (using Arabic locale for grouping)
     if (typeof value === 'number' || (typeof value === 'string' && !isNaN(Number(value)) && value.trim() !== '')) {
       return formatArabicNumber(value);
     }
@@ -174,10 +176,10 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   const handleRestore = async (id: string | number) => {
     const item = items.find((i) => i.id === id);
     const itemName = item?.name || item?.title || `${entityType} #${id}`;
-    
+
     const confirmed = await confirm(createRestoreConfirmation(itemName));
     if (!confirmed) return;
-    
+
     setRestoring((prev) => new Set([...prev, id]));
     setRestoreErrors((prev) => {
       const newErrors = new Map(prev);
@@ -212,11 +214,8 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   // Loading state
   if (isLoading) {
     return (
-      <div className="p-6 text-center">
-        <div className="inline-block">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        </div>
-        <p className="mt-2 text-gray-600">جاري التحميل...</p>
+      <div className="p-6">
+        <LoadingSpinner size="lg" label="جاري التحميل..." />
       </div>
     );
   }
@@ -224,9 +223,12 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   // Error state
   if (isError) {
     return (
-      <div className="p-6 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-800 font-medium">فشل تحميل العناصر المحذوفة</p>
-        {errorMessage && <p className="text-red-700 text-sm mt-1">{errorMessage}</p>}
+      <div className="p-6">
+        <ErrorState
+          title="فشل تحميل العناصر المحذوفة"
+          message={errorMessage || 'حدث خطأ أثناء تحميل البيانات'}
+          compact
+        />
       </div>
     );
   }
@@ -234,23 +236,11 @@ export const TrashTab: React.FC<TrashTabProps> = ({
   // Empty state
   if (items.length === 0) {
     return (
-      <div className="p-12 text-center text-gray-500">
-        <svg
-          className="mx-auto h-12 w-12 text-gray-400 mb-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-          />
-        </svg>
-        <p className="text-lg font-medium">المهملات فارغة</p>
-        <p className="text-sm text-gray-400 mt-1">ستظهر العناصر المحذوفة هنا لمدة 30 يومًا قبل الحذف الدائم.</p>
-      </div>
+      <EmptyState
+        icon={<i className="fas fa-inbox text-4xl text-gray-300" />}
+        title="المهملات فارغة"
+        description="ستظهر العناصر المحذوفة هنا لمدة 30 يومًا قبل الحذف الدائم."
+      />
     );
   }
 
@@ -317,13 +307,12 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                         <button
                           onClick={() => handleRestore(item.id)}
                           disabled={isRestoring || !canRestore}
-                          className={`px-3 py-1 rounded text-sm font-medium transition flex items-center gap-2 ${
-                            isRestoring
-                              ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                              : canRestore
+                          className={`px-3 py-1 rounded text-sm font-medium transition flex items-center gap-2 ${isRestoring
+                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
+                            : canRestore
                               ? 'bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer'
                               : 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                          }`}
+                            }`}
                           title={canRestore ? 'استعادة هذا العنصر' : 'لم يعد من الممكن استعادة هذا العنصر (منتهي الصلاحية)'}
                         >
                           {isRestoring ? (
