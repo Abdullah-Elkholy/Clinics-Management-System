@@ -115,17 +115,17 @@ namespace Clinics.Api.Services.Extension
                 ? JsonSerializer.Serialize(resultData, _jsonOptions) 
                 : null;
 
-            // CRITICAL FIX: If this command was for a message send and it succeeded,
-            // update the message status to "sent" even if it was paused due to timeout/retry
+            // CRITICAL: If extension reports successful send, ALWAYS mark message as "sent"
+            // This is the ground truth - the message was physically delivered to WhatsApp.
+            // Pause enforcement must happen BEFORE sending, not after.
+            // If a message slipped through during a race condition, we must still reflect
+            // the actual state (sent) to prevent data inconsistency and duplicate sends.
             if (command.MessageId.HasValue && resultStatus == ExtensionResultStatuses.Success)
             {
                 var message = await _db.Messages.FindAsync(command.MessageId.Value);
                 if (message != null)
                 {
-                    // If message is paused due to backoff/timeout but extension reports success,
-                    // it means the message WAS actually sent successfully (just took longer than expected)
-                    if (message.Status != "sent" && 
-                        (message.IsPaused || message.Status == "queued" || message.Status == "sending"))
+                    if (message.Status != "sent")
                     {
                         _logger.LogInformation("Message {MessageId} marked as sent (was {Status}, IsPaused={IsPaused}, PauseReason={PauseReason}) - extension confirmed successful send after command {CommandId} completion",
                             message.Id, message.Status, message.IsPaused, message.PauseReason, commandId);
@@ -137,6 +137,24 @@ namespace Clinics.Api.Services.Extension
                         message.PausedAt = null;
                         message.ErrorMessage = null;
                     }
+                }
+            }
+            // CRITICAL FIX: If extension reports failure, mark message as FAILED permanently
+            // DO NOT retry automatically - user must manually retry failed messages
+            // This prevents duplicate sends when extension times out but message was actually sent
+            else if (command.MessageId.HasValue && resultStatus == ExtensionResultStatuses.Failed)
+            {
+                var message = await _db.Messages.FindAsync(command.MessageId.Value);
+                if (message != null && message.Status == "sending")
+                {
+                    _logger.LogError("Message {MessageId} command failed, marking as PERMANENTLY FAILED (no automatic retry). Command {CommandId}, Error: {Error}",
+                        message.Id, commandId, command.ResultJson);
+                    
+                    // Mark as permanently failed - NO automatic retry
+                    message.Status = "failed";
+                    message.InFlightCommandId = null;
+                    message.ErrorMessage = $"Extension timeout: {command.ResultJson}";
+                    message.NextAttemptAt = null; // Clear any retry scheduling
                 }
             }
 

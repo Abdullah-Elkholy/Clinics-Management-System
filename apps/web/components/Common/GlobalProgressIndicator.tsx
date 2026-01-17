@@ -158,9 +158,20 @@ export const GlobalProgressIndicator: React.FC = () => {
   // Check if any operations are paused
   const hasPausedOperations = operations.some(op => op.isPaused);
 
-  // Count messages with 'sending' status
+  // Check if any session is actively processing (backend-calculated isProcessing flag)
+  // OR has non-paused sessions with ongoing messages
+  const hasActiveProcessing = operations.some(op => 
+    op.isProcessing || (!op.isPaused && op.ongoingMessages > 0)
+  );
+
+  // Count messages with 'sending' status (for badge display)
   const sendingCount = operations.reduce((sum, op) =>
     sum + (op.messages?.filter((m: any) => m.status === 'sending').length || 0), 0);
+
+  // Determine current state: prioritize processing over paused
+  // Show processing if: 1) any session isProcessing (backend), OR 2) any non-paused sessions have ongoing messages
+  const isCurrentlyProcessing = hasActiveProcessing;
+  const shouldShowPausedState = !isCurrentlyProcessing && hasPausedOperations;
 
   // Minimized view - small floating button with connection status
   if (isMinimized) {
@@ -178,7 +189,7 @@ export const GlobalProgressIndicator: React.FC = () => {
         {/* Main floating button */}
         <button
           onClick={() => setIsMinimized(false)}
-          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 ${hasPausedOperations
+          className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 ${shouldShowPausedState
             ? 'bg-yellow-500 hover:bg-yellow-600'
             : 'bg-blue-500 hover:bg-blue-600'
             }`}
@@ -188,12 +199,12 @@ export const GlobalProgressIndicator: React.FC = () => {
           <div className="relative">
             {/* Send icon or pause icon */}
             <svg
-              className={`w-6 h-6 text-white ${!hasPausedOperations ? 'animate-pulse' : ''}`}
+              className={`w-6 h-6 text-white ${!shouldShowPausedState ? 'animate-pulse' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              {hasPausedOperations ? (
+              {shouldShowPausedState ? (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               ) : (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

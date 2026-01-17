@@ -89,6 +89,7 @@ export default function OngoingTasksPanel() {
   const [error, setError] = useState<string | null>(null);
   const [globalPauseState, setGlobalPauseState] = useState<GlobalPauseState | null>(null);
   const [rateLimitSettings, setRateLimitSettings] = useState<RateLimitSettings | null>(null);
+  const [quotaUsed, setQuotaUsed] = useState<number>(0);
 
   // Authentication guard - ensure user has token and valid role
   useEffect(() => {
@@ -188,6 +189,32 @@ export default function OngoingTasksPanel() {
   }, [addToast, selectedModeratorId]);
 
   /**
+   * Load quota data for moderator to get lifetime sent messages count
+   */
+  const loadQuotaData = useCallback(async () => {
+    const moderatorId = user?.role === 'moderator'
+      ? Number(user.id)
+      : (user?.role === 'user' ? Number(user.assignedModerator) : selectedModeratorId);
+
+    if (!moderatorId) {
+      setQuotaUsed(0);
+      return;
+    }
+
+    try {
+      // For moderators, use getMyQuota; for admins viewing a moderator, use getQuota
+      const quotaData = user?.role === 'moderator'
+        ? await messageApiClient.getMyQuota()
+        : await messageApiClient.getQuota(moderatorId);
+      
+      setQuotaUsed(quotaData.used);
+    } catch (err) {
+      logger.error('Failed to load quota data:', err);
+      setQuotaUsed(0);
+    }
+  }, [user, selectedModeratorId]);
+
+  /**
    * Load global pause state for moderator
    */
   const loadGlobalPauseState = useCallback(async () => {
@@ -197,18 +224,18 @@ export default function OngoingTasksPanel() {
 
     if (!moderatorId) {
       // Set default state if no moderator ID
-      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false });
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false, status: null });
       return;
     }
 
     try {
       const state = await whatsappApiClient.getGlobalPauseState(moderatorId);
       // Ensure we always have a valid state object
-      setGlobalPauseState(state || { isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false });
+      setGlobalPauseState(state || { isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false, status: null });
     } catch (err) {
       logger.error('Failed to load global pause state:', err);
       // Set default state on error
-      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false });
+      setGlobalPauseState({ isPaused: false, pauseReason: null, pausedAt: null, pausedBy: null, isResumable: false, isExtensionConnected: false, status: null });
     }
   }, [user, selectedModeratorId]);
 
@@ -279,6 +306,13 @@ export default function OngoingTasksPanel() {
       }
     }
   }, [user, addToast, loadGlobalPauseState, loadOngoingSessions, globalPauseState]);
+
+  // Load quota data on mount and when selectedModeratorId changes
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadQuotaData();
+    }
+  }, [isAuthenticated, loadQuotaData]);
 
   // Load rate limit settings
   useEffect(() => {
@@ -698,16 +732,16 @@ export default function OngoingTasksPanel() {
       icon: 'fa-tasks',
     },
     {
-      label: 'الرسائل المرسلة',
-      value: sessions.reduce((sum, s) => sum + s.sentCount, 0).toString(),
-      icon: 'fa-check-circle',
-    },
-    {
-      label: 'المرضى المتبقيين',
+      label: 'إجمالي الرسائل المتبقية',
       value: sessions.reduce((sum, s) => sum + (s.totalPatients - s.sentCount), 0).toString(),
       icon: 'fa-users',
     },
-  ], [sessions]);
+    {
+      label: 'إجمالي الرسائل المرسلة',
+      value: quotaUsed.toString(),
+      icon: 'fa-check-circle',
+    },
+  ], [sessions, quotaUsed]);
 
   /**
    * Memoize computed flags
@@ -944,12 +978,18 @@ export default function OngoingTasksPanel() {
               <>
                 <button
                   onClick={handleGlobalPause}
-                  disabled={!globalPauseState?.isExtensionConnected}
-                  className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${globalPauseState?.isExtensionConnected
+                  disabled={!globalPauseState?.isExtensionConnected || globalPauseState?.status !== 'connected'}
+                  className={`px-6 py-3 rounded-lg flex items-center gap-2 font-medium shadow-md transition-all ${globalPauseState?.isExtensionConnected && globalPauseState?.status === 'connected'
                     ? 'bg-yellow-600 text-white hover:bg-yellow-700 hover:shadow-lg'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
-                  title={!globalPauseState?.isExtensionConnected ? 'الإضافة غير متصلة - لا يوجد شيء للإيقاف' : 'إيقاف جميع مهام المشرف'}
+                  title={
+                    !globalPauseState?.isExtensionConnected 
+                      ? 'الإضافة غير متصلة - لا يوجد شيء للإيقاف'
+                      : globalPauseState?.status !== 'connected'
+                        ? 'الجلسة غير مصادق عليها - يجب المصادقة أولاً'
+                        : 'إيقاف جميع مهام المشرف'
+                  }
                 >
                   <i className="fas fa-pause"></i>
                   <span>إيقاف جميع مهام المشرف</span>
@@ -958,6 +998,12 @@ export default function OngoingTasksPanel() {
                   <div className="text-sm text-orange-600 flex items-center gap-2 mt-2">
                     <i className="fas fa-plug"></i>
                     <span>الإضافة غير متصلة - افتح الإضافة واضغط &quot;بدء الجلسة&quot;</span>
+                  </div>
+                )}
+                {globalPauseState?.isExtensionConnected && globalPauseState?.status !== 'connected' && (
+                  <div className="text-sm text-yellow-600 flex items-center gap-2 mt-2">
+                    <i className="fas fa-exclamation-triangle"></i>
+                    <span>الجلسة غير مصادق عليها - يجب مسح رمز QR أولاً قبل إمكانية الإيقاف</span>
                   </div>
                 )}
               </>

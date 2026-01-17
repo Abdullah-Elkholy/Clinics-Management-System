@@ -343,13 +343,9 @@ async function typeText(element, text) {
         document.execCommand('insertText', false, line);
       }
 
-      // Dispatch input event for this text
-      element.dispatchEvent(new InputEvent('input', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertText',
-        data: line
-      }));
+      // NOTE: Do NOT manually dispatch InputEvent with data - execCommand already triggers
+      // the necessary events, and dispatching another InputEvent with data causes WhatsApp
+      // to insert the text TWICE (once from execCommand, once from React handling the event data)
     } else if (i === 0 && lines.length > 1) {
       // Special case: First line is empty but there are more lines (text starts with newline)
       // We still need to clear the selection!
@@ -380,12 +376,7 @@ async function typeText(element, text) {
         breakInserted = document.execCommand('insertHTML', false, '<br>');
       }
 
-      // Dispatch input event for line break
-      element.dispatchEvent(new InputEvent('input', {
-        bubbles: true,
-        cancelable: true,
-        inputType: 'insertLineBreak'
-      }));
+      // NOTE: execCommand already triggers native input events, no need for manual dispatch
 
       const shiftEnterUp = new KeyboardEvent('keyup', {
         key: 'Enter',

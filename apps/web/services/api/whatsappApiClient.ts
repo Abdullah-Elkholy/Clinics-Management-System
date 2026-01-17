@@ -462,6 +462,11 @@ export interface GlobalPauseState {
    * If false, pause/resume buttons should be disabled since there's nothing to pause.
    */
   isExtensionConnected: boolean;
+  /**
+   * WhatsApp session authentication status.
+   * 'connected' = authenticated, 'pending' = not authenticated, 'disconnected' = no session
+   */
+  status: string | null;
 }
 
 export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPauseState> {

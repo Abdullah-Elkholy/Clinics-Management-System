@@ -35,6 +35,7 @@ interface OngoingOperation {
   failedMessages: number;
   ongoingMessages: number;
   isPaused: boolean;
+  isProcessing: boolean; // Backend-calculated: has messages with 'sending' status
   pauseReason?: string;
   startedAt: Date;
   status: string;
@@ -119,6 +120,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
           failedMessages: failedCount,
           ongoingMessages: ongoingCount,
           isPaused: session.status === 'paused',
+          isProcessing: session.isProcessing ?? false, // Backend-calculated: has 'sending' messages
           pauseReason: undefined, // Will be populated from backend if needed
           startedAt: new Date(session.startTime),
           status: session.status || 'active',
@@ -218,6 +220,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
             failedMessages: payload.failedMessages || 0,
             ongoingMessages: payload.ongoingMessages || 0,
             isPaused: payload.isPaused || false,
+            isProcessing: payload.isProcessing ?? false, // Backend-calculated
             pauseReason: payload.pauseReason,
             startedAt: new Date(),
             status: payload.status || 'active',
@@ -233,6 +236,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
           failedMessages: payload.failedMessages ?? updated[index].failedMessages,
           ongoingMessages: payload.ongoingMessages ?? updated[index].ongoingMessages,
           isPaused: payload.isPaused ?? updated[index].isPaused,
+          isProcessing: payload.isProcessing ?? updated[index].isProcessing, // Backend-calculated
           pauseReason: payload.pauseReason ?? updated[index].pauseReason,
           status: payload.status ?? updated[index].status,
           messages: updated[index].messages // Preserve existing messages array

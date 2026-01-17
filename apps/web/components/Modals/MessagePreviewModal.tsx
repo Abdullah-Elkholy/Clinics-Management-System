@@ -1057,80 +1057,77 @@ export default function MessagePreviewModal() {
       return;
     }
 
-    try {
-      setIsValidating(true);
-      // Progress counter only includes patients that actually need API validation
-      setValidationProgress({ current: 0, total: patientsNeedingApiValidation.length });
+    setIsValidating(true);
+    // Progress counter only includes patients that actually need API validation
+    setValidationProgress({ current: 0, total: patientsNeedingApiValidation.length });
 
-      // Only call check-whatsapp endpoint for patients where database value is null
-      for (let i = 0; i < patientsNeedingApiValidation.length; i++) {
-        // Check if modal is still open and abort flags at start of each iteration
+    // Only call check-whatsapp endpoint for patients where database value is null
+    for (let i = 0; i < patientsNeedingApiValidation.length; i++) {
+      // Check if modal is still open and abort flags at start of each iteration
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setIsValidating(false);
+        return;
+      }
+
+      const patientFromArray = patientsNeedingApiValidation[i];
+      const patientId = String(patientFromArray.id);
+
+      // CRITICAL: Fresh lookup from sortedPatients to get latest database value
+      // Don't rely on patientFromArray which might have stale data
+      const freshPatient = sortedPatients.find(p => String(p.id) === patientId);
+
+      // Double-check: only validate if database value is still null
+      // (in case it was updated by another process or between iterations)
+      if (freshPatient && (freshPatient.isValidWhatsAppNumber === true || freshPatient.isValidWhatsAppNumber === false)) {
+        // Check if modal is still open before updating state
         if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+          setIsValidating(false);
           return;
         }
-
-        const patientFromArray = patientsNeedingApiValidation[i];
-        const patientId = String(patientFromArray.id);
-
-        // CRITICAL: Fresh lookup from sortedPatients to get latest database value
-        // Don't rely on patientFromArray which might have stale data
-        const freshPatient = sortedPatients.find(p => String(p.id) === patientId);
-
-        // Double-check: only validate if database value is still null
-        // (in case it was updated by another process or between iterations)
-        if (freshPatient && (freshPatient.isValidWhatsAppNumber === true || freshPatient.isValidWhatsAppNumber === false)) {
-          // Check if modal is still open before updating state
-          if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
-            return;
+        // Database value exists now - use it instead of API call
+        setValidationStatus(prev => ({
+          ...prev,
+          [patientId]: {
+            isValid: freshPatient.isValidWhatsAppNumber === true,
+            isChecking: false,
+            attempts: 0,
           }
-          // Database value exists now - use it instead of API call
-          setValidationStatus(prev => ({
-            ...prev,
-            [patientId]: {
-              isValid: freshPatient.isValidWhatsAppNumber === true,
-              isChecking: false,
-              attempts: 0,
-            }
-          }));
-          setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
-          continue;
-        }
-
-        // Check if modal is still open and abort flags before API call
-        if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
-          return;
-        }
-
-        // Build full phone number with country code (E.164 format for WhatsApp API)
-        // Use freshPatient if available, otherwise fallback to patientFromArray
-        const patientToUse = freshPatient || patientFromArray;
-        const countryCode = patientToUse.countryCode || '+20';
-        // Combine country code and phone number: +20 1018542431 -> +201018542431
-        const phoneNumber = `${countryCode}${patientToUse.phone}`;
-
-        // checkPhoneNumber will also check database value before calling API
-        // It uses abortControllerRef.current?.signal internally
-        await checkPhoneNumber(patientId, phoneNumber, 0);
-
-        // Check if modal is still open and abort flags after API call
-        if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
-          return;
-        }
-
-        setValidationProgress(prev => ({ ...prev, current: i + 1 }));
+        }));
+        setValidationProgress({ current: i + 1, total: patientsNeedingApiValidation.length });
+        continue;
       }
-    } catch (error) {
-      console.error('[MessagePreview] validateAllPatients error:', error);
-    } finally {
-      setIsValidating(false);
 
-      // After batch validation completes (or errors/aborts), process any queued manual validation requests
-      // Only process queue if modal is still open and NOT aborted
-      if (isOpenRef.current && !abortValidationRef.current && !abortControllerRef.current?.signal.aborted) {
-        if (processManualValidationQueueRef.current) {
-          await processManualValidationQueueRef.current();
-        }
+      // Check if modal is still open and abort flags before API call
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setIsValidating(false);
+        return;
       }
+
+      // Build full phone number with country code (E.164 format for WhatsApp API)
+      // Use freshPatient if available, otherwise fallback to patientFromArray
+      const patientToUse = freshPatient || patientFromArray;
+      const countryCode = patientToUse.countryCode || '+20';
+      // Combine country code and phone number: +20 1018542431 -> +201018542431
+      const phoneNumber = `${countryCode}${patientToUse.phone}`;
+
+      // checkPhoneNumber will also check database value before calling API
+      // It uses abortControllerRef.current?.signal internally
+      await checkPhoneNumber(patientId, phoneNumber, 0);
+
+      // Check if modal is still open and abort flags after API call
+      if (!isOpenRef.current || abortValidationRef.current || abortControllerRef.current?.signal.aborted) {
+        setIsValidating(false);
+        return;
+      }
+
+      setValidationProgress(prev => ({ ...prev, current: i + 1 }));
+    }
+
+    setIsValidating(false);
+
+    // After batch validation completes, process any queued manual validation requests
+    if (processManualValidationQueueRef.current) {
+      await processManualValidationQueueRef.current();
     }
   }, [isOpen, sortedPatients, selectedPatientIds, removedPatients, checkPhoneNumber]);
 

@@ -805,7 +805,8 @@ namespace Clinics.Api.Controllers
                         pausedAt = (DateTime?)null,
                         pausedBy = (int?)null,
                         isResumable = false,
-                        isExtensionConnected = isExtensionConnected
+                        isExtensionConnected = isExtensionConnected,
+                        status = (string?)null  // No session = no status
                     });
                 }
 
@@ -816,7 +817,8 @@ namespace Clinics.Api.Controllers
                     pausedAt = whatsappSession.PausedAt,
                     pausedBy = whatsappSession.PausedBy,
                     isResumable = whatsappSession.IsResumable,  // Computed property for frontend
-                    isExtensionConnected = isExtensionConnected
+                    isExtensionConnected = isExtensionConnected,
+                    status = whatsappSession.Status  // Include session status for frontend to check authentication
                 });
             }
             catch (Exception ex)

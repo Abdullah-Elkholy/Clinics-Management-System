@@ -100,6 +100,10 @@ namespace Clinics.Api.Controllers
                 var whatsappSessionCheck = await _db.WhatsAppSessions
                     .FirstOrDefaultAsync(w => w.ModeratorUserId == effectiveModeratorId && !w.IsDeleted);
 
+                // Track if session is user-paused (manual pause) - messages will be created but paused
+                bool isUserPaused = false;
+                string? userPauseReason = null;
+
                 if (whatsappSessionCheck != null && whatsappSessionCheck.IsPaused)
                 {
                     // CRITICAL FIX: Check if there are any active messages/sessions - if not, auto-unpause
@@ -149,10 +153,12 @@ namespace Clinics.Api.Controllers
                     }
                     else
                     {
-                        // Active tasks exist - check pause reason and block sending
-                        string errorCode;
-                        string code;
-                        string errorMessage;
+                        // Active tasks exist - check pause reason
+                        // ONLY block for SYSTEM pauses (PendingQR, PendingNET, BrowserClosure)
+                        // User manual pauses ("User paused") should ALLOW message creation (they just won't be sent until resumed)
+                        string? errorCode = null;
+                        string? code = null;
+                        string? errorMessage = null;
 
                         if (whatsappSessionCheck.PauseReason?.Contains("PendingQR") == true)
                         {
@@ -172,24 +178,29 @@ namespace Clinics.Api.Controllers
                             code = "BROWSER_CLOSED";
                             errorMessage = "تم إغلاق المتصفح. تم إيقاف جميع المهام الجارية. يرجى إعادة فتح المتصفح والمحاولة مرة أخرى.";
                         }
-                        else
+                        // NOTE: "User paused" (manual pause) is NOT blocked - messages can be created
+                        // The hierarchical pause check in FilterPausedMessagesAsync will prevent processing
+                        // by checking MessageSession.IsPaused - no need to update individual message rows
+
+                        // Only block for system-initiated pauses (PendingQR, PendingNET, BrowserClosure)
+                        if (errorCode != null)
                         {
-                            // Generic pause (fallback) - provide clearer guidance
-                            errorCode = "SessionPaused";
-                            code = "SESSION_PAUSED";
-                            errorMessage = "تم إيقاف جلسة الواتساب. يوجد مهام جارية يجب إيقافها أو استئنافها أولاً. يمكنك حذف جميع المهام الجارية من لوحة المهام، أو استئناف الجلسة من إعدادات الواتساب.";
+                            _logger.LogWarning("User {UserId} attempted to send messages but WhatsApp session is paused: {PauseReason}. Active messages: {ActiveMessages}, Active sessions: {ActiveSessions}",
+                                userId, whatsappSessionCheck.PauseReason, hasActiveMessages, hasActiveSessions);
+                            return BadRequest(new
+                            {
+                                success = false,
+                                error = errorCode,
+                                code = code,
+                                message = errorMessage,
+                                warning = true
+                            });
                         }
 
-                        _logger.LogWarning("User {UserId} attempted to send messages but WhatsApp session is paused: {PauseReason}. Active messages: {ActiveMessages}, Active sessions: {ActiveSessions}",
-                            userId, whatsappSessionCheck.PauseReason, hasActiveMessages, hasActiveSessions);
-                        return BadRequest(new
-                        {
-                            success = false,
-                            error = errorCode,
-                            code = code,
-                            message = errorMessage,
-                            warning = true
-                        });
+                        // User manual pause - allow message creation
+                        // MessageSession.IsPaused will be checked hierarchically by FilterPausedMessagesAsync
+                        _logger.LogInformation("User {UserId} creating messages while session is user-paused. Messages will be queued and hierarchically paused (not sent until session resumed). PauseReason: {PauseReason}",
+                            userId, whatsappSessionCheck.PauseReason);
                     }
                 }
 
@@ -367,8 +378,9 @@ namespace Clinics.Api.Controllers
                         QueueId = queueId,
                         ModeratorId = effectiveModeratorId,
                         UserId = userId,
+                        // Status remains "active" - hierarchical check will look at WhatsAppSession.IsPaused if needed
                         Status = "active",
-                        IsPaused = false,
+                        IsPaused = false, // MessageSession-level pause is only set via /pause endpoint
                         TotalMessages = patients.Count,
                         SentMessages = 0,
                         FailedMessages = 0,
@@ -457,7 +469,7 @@ namespace Clinics.Api.Controllers
                             CreatedAt = creationTimestamp,
                             SessionId = sessionId.ToString(),  // Link to MessageSession
                             CorrelationId = correlationId,  // Propagate correlation ID for distributed tracing
-                            IsPaused = false
+                            // No IsPaused flag - hierarchical check in FilterPausedMessagesAsync checks MessageSession.IsPaused
                         };
                         messages.Add(msg);
                     }
@@ -484,7 +496,7 @@ namespace Clinics.Api.Controllers
                         // NOTE: Quota is now consumed on successful send (in MessageProcessor), not on queueing
                         // This ensures quota is only consumed for messages that are actually sent
 
-                        _logger.LogInformation("User {UserId} queued {Count} messages in session {SessionId} with correlation ID {CorrelationId} (quota will be consumed on successful send)",
+                        _logger.LogInformation("User {UserId} queued {Count} messages in session {SessionId} with correlation ID {CorrelationId}. If session is paused, messages won't be sent until resumed (quota consumed on send only)",
                             userId, messages.Count, sessionId, correlationId);
 
                         // Cache response for idempotency

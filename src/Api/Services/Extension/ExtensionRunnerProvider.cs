@@ -55,16 +55,41 @@ namespace Clinics.Api.Services.Extension
 
             var moderatorId = message.ModeratorId.Value;
 
-            // Check for global pause - WhatsAppSession.IsPaused
+            // 3-LEVEL PAUSE HIERARCHY CHECK BEFORE SENDING
+
+            // Level 1: Check global pause - WhatsAppSession.IsPaused (highest priority)
             var whatsAppSession = await _db.WhatsAppSessions
                 .Where(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted)
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (whatsAppSession?.IsPaused == true)
             {
-                _logger.LogDebug("Global pause active for moderator {ModeratorId}, skipping message {MessageId}",
+                _logger.LogDebug("Level 1 pause: Global pause active for moderator {ModeratorId}, skipping message {MessageId}",
                     moderatorId, message.Id);
                 return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. جلسة الواتساب متوقفة.");
+            }
+
+            // Level 2: Check session pause - MessageSession.IsPaused (medium priority)
+            if (!string.IsNullOrEmpty(message.SessionId) && Guid.TryParse(message.SessionId, out var sessionGuid))
+            {
+                var messageSession = await _db.MessageSessions
+                    .Where(s => s.Id == sessionGuid && !s.IsDeleted)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (messageSession?.IsPaused == true)
+                {
+                    _logger.LogDebug("Level 2 pause: Session pause active for session {SessionId}, skipping message {MessageId}",
+                        sessionGuid, message.Id);
+                    return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. الجلسة متوقفة.");
+                }
+            }
+
+            // Level 3: Check message-level pause - Message.IsPaused (lowest priority)
+            if (message.IsPaused)
+            {
+                _logger.LogDebug("Level 3 pause: Message-level pause active for message {MessageId}",
+                    message.Id);
+                return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. الرسالة متوقفة.");
             }
 
             // Check if extension has active lease
@@ -130,6 +155,50 @@ namespace Clinics.Api.Services.Extension
                 _logger.LogWarning("Message {MessageId} has a recently completed successful command {CommandId}. Skipping duplicate send.",
                     message.Id, recentCompletedCommand.Id);
                 return WhatsAppSendResult.SuccessResult("RecentlyCompleted", "Message was recently sent successfully");
+            }
+
+            // CRITICAL: Final 3-level pause check RIGHT BEFORE creating command to minimize race window
+            // This is the last line of defense against commands being created during pause activation
+            
+            // Level 1: Global pause
+            var whatsAppSessionFinalCheck = await _db.WhatsAppSessions
+                .AsNoTracking()
+                .Where(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (whatsAppSessionFinalCheck?.IsPaused == true)
+            {
+                _logger.LogWarning("Final check - Level 1 pause: Global pause active for moderator {ModeratorId}, NOT creating command for message {MessageId}",
+                    moderatorId, message.Id);
+                return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. جلسة الواتساب متوقفة.");
+            }
+
+            // Level 2: Session pause
+            if (!string.IsNullOrEmpty(message.SessionId) && Guid.TryParse(message.SessionId, out var finalSessionGuid))
+            {
+                var messageSessionFinalCheck = await _db.MessageSessions
+                    .AsNoTracking()
+                    .Where(s => s.Id == finalSessionGuid && !s.IsDeleted)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (messageSessionFinalCheck?.IsPaused == true)
+                {
+                    _logger.LogWarning("Final check - Level 2 pause: Session pause active for session {SessionId}, NOT creating command for message {MessageId}",
+                        finalSessionGuid, message.Id);
+                    return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. الجلسة متوقفة.");
+                }
+            }
+
+            // Level 3: Message pause (re-check in case it was paused after initial check)
+            var messageFinalCheck = await _db.Messages
+                .AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == message.Id, cancellationToken);
+
+            if (messageFinalCheck?.IsPaused == true)
+            {
+                _logger.LogWarning("Final check - Level 3 pause: Message-level pause active for message {MessageId}, NOT creating command",
+                    message.Id);
+                return WhatsAppSendResult.FailedResult("تم إيقاف الإرسال مؤقتاً. الرسالة متوقفة.");
             }
 
             // Create command payload

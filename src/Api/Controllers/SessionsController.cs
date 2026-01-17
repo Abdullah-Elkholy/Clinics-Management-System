@@ -421,7 +421,8 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// Pause a session and all its messages.
+        /// Pause a session (hierarchical - messages won't be sent but aren't updated in DB).
+        /// FilterPausedMessagesAsync checks MessageSession.IsPaused to prevent processing.
         /// </summary>
         [HttpPost("{sessionId}/pause")]
         public async Task<IActionResult> PauseSession(Guid sessionId)
@@ -460,23 +461,15 @@ namespace Clinics.Api.Controllers
                 session.PauseReason = "USER_INITIATED";
                 session.LastUpdated = DateTime.UtcNow;
 
-                // Pause all messages in this session
-                var pausedCount = await _db.Messages
-                    .Where(m => m.SessionId == sessionId.ToString()
-                        && !m.IsDeleted
-                        && (m.Status == "queued" || m.Status == "sending"))
-                    .ExecuteUpdateAsync(m => m
-                        .SetProperty(x => x.IsPaused, true)
-                        .SetProperty(x => x.PausedAt, DateTime.UtcNow)
-                        .SetProperty(x => x.PausedBy, userId)
-                        .SetProperty(x => x.PauseReason, "SESSION_PAUSED"));
+                // Do NOT update individual messages - hierarchical pause check in FilterPausedMessagesAsync
+                // will prevent them from being processed without needing to update thousands of rows
 
                 await _db.SaveChangesAsync();
 
-                _logger.LogInformation("[SessionsController] Paused session {SessionId} (MessageSession only)", sessionId);
+                _logger.LogInformation("[SessionsController] Paused session {SessionId} hierarchically (no message rows updated)", sessionId);
                 _logger.LogInformation("[Business] تم إيقاف الجلسة {SessionId} مؤقتاً بواسطة {UserId}", sessionId, userId);
 
-                return Ok(new { success = true, pausedCount = 0 }); // pausedCount 0 because we don't pause messages
+                return Ok(new { success = true, message = "تم إيقاف الجلسة (سيتم منع إرسال الرسائل تلقائياً)" });
             }
             catch (Exception ex)
             {
@@ -525,15 +518,15 @@ namespace Clinics.Api.Controllers
                 session.PauseReason = null;
                 session.LastUpdated = DateTime.UtcNow;
 
-                // DO NOT CASCADE RESUME to messages
-                // User requested strict scope separation. Session resume only affects MessageSession.
+                // Hierarchical resume - no need to update individual message rows
+                // FilterPausedMessagesAsync will allow messages to be processed when MessageSession.IsPaused = false
 
                 await _db.SaveChangesAsync();
 
-                _logger.LogInformation("[SessionsController] Resumed session {SessionId} (MessageSession only)", sessionId);
+                _logger.LogInformation("[SessionsController] Resumed session {SessionId} hierarchically (no message rows updated)", sessionId);
                 _logger.LogInformation("[Business] تم استئناف الجلسة {SessionId} بواسطة {UserId}", sessionId, userId);
 
-                return Ok(new { success = true, resumedCount = 0 });
+                return Ok(new { success = true, message = "تم استئناف الجلسة (ستستأنف معالجة الرسائل تلقائياً)" });
             }
             catch (Exception ex)
             {
