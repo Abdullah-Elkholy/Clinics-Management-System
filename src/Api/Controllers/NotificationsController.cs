@@ -59,7 +59,7 @@ public class NotificationsController : ControllerBase
                 return NotFound(new { success = false, error = "WhatsAppSession not found" });
             }
 
-            // Prepare payload for SignalR
+            // Prepare payload for SignalR (deprecated SessionName, LastSyncAt, ProviderSessionId removed)
             var payload = new
             {
                 id = whatsappSession.Id,
@@ -69,9 +69,7 @@ public class NotificationsController : ControllerBase
                 pauseReason = whatsappSession.PauseReason,
                 pausedAt = whatsappSession.PausedAt,
                 pausedBy = whatsappSession.PausedBy,
-                lastSyncAt = whatsappSession.LastSyncAt,
-                sessionName = whatsappSession.SessionName,
-                providerSessionId = whatsappSession.ProviderSessionId,
+                isResumable = whatsappSession.IsResumable,  // Computed property for frontend
                 eventType = "updated",
                 timestamp = DateTime.UtcNow
             };

@@ -1,5 +1,6 @@
 using Clinics.Domain;
 using System;
+using System.Globalization;
 
 namespace Clinics.Infrastructure.Services
 {
@@ -48,8 +49,8 @@ namespace Clinics.Infrastructure.Services
             }
 
             // {PN} - Patient Name
-            var patientName = !string.IsNullOrWhiteSpace(patient.FullName) 
-                ? patient.FullName 
+            var patientName = !string.IsNullOrWhiteSpace(patient.FullName)
+                ? patient.FullName
                 : $"Patient ID: {patient.Id}";
 
             // {PQP} - Patient Queue Position (absolute)
@@ -59,8 +60,8 @@ namespace Clinics.Infrastructure.Services
             var currentQueuePosition = queue.CurrentPosition;
 
             // {ETR} - Estimated Time Remaining
-            var estimatedTimePerSession = queue.EstimatedWaitMinutes > 0 
-                ? queue.EstimatedWaitMinutes 
+            var estimatedTimePerSession = queue.EstimatedWaitMinutes > 0
+                ? queue.EstimatedWaitMinutes
                 : 15; // Default 15 minutes if not set or invalid
 
             var etrMinutes = calculatedPosition * estimatedTimePerSession;
@@ -72,8 +73,8 @@ namespace Clinics.Infrastructure.Services
             // Replace all variables
             var resolvedContent = templateContent
                 .Replace("{PN}", patientName)
-                .Replace("{PQP}", patientQueuePosition.ToString())
-                .Replace("{CQP}", currentQueuePosition.ToString())
+                .Replace("{PQP}", patientQueuePosition.ToString(CultureInfo.InvariantCulture))
+                .Replace("{CQP}", currentQueuePosition.ToString(CultureInfo.InvariantCulture))
                 .Replace("{ETR}", etrDisplay)
                 .Replace("{DN}", doctorName);
 
@@ -102,7 +103,7 @@ namespace Clinics.Infrastructure.Services
 
             if (minutes <= 60)
             {
-                return $"{minutes} دقيقة";
+                return $"{minutes.ToString(CultureInfo.InvariantCulture)} دقيقة";
             }
 
             if (minutes <= 120)
@@ -115,10 +116,10 @@ namespace Clinics.Infrastructure.Services
 
             if (remainingMinutes == 0)
             {
-                return $"{hours} ساعات";
+                return $"{hours.ToString(CultureInfo.InvariantCulture)} ساعات";
             }
 
-            return $"{hours} ساعات و {remainingMinutes} دقيقة";
+            return $"{hours.ToString(CultureInfo.InvariantCulture)} ساعات و {remainingMinutes.ToString(CultureInfo.InvariantCulture)} دقيقة";
         }
     }
 }

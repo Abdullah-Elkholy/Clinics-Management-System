@@ -124,7 +124,7 @@ namespace Clinics.Infrastructure.Services
             {
                 var sessions = await _unitOfWork.WhatsAppSessions
                     .FindAsync(ws => moderatorIds.Contains(ws.ModeratorUserId));
-                
+
                 whatsappSessions = sessions.ToDictionary(
                     ws => ws.ModeratorUserId,
                     ws => ws.IsPaused
@@ -144,7 +144,7 @@ namespace Clinics.Infrastructure.Services
             {
                 var sessions = await _unitOfWork.MessageSessions
                     .FindAsync(s => sessionIds.Contains(s.Id));
-                
+
                 messageSessions = sessions.ToDictionary(
                     s => s.Id,
                     s => s.IsPaused
@@ -251,14 +251,14 @@ namespace Clinics.Infrastructure.Services
                     message.PausedBy = message.SenderUserId;
                     message.PauseReason = "PendingQR - Authentication required";
                     await _unitOfWork.Messages.UpdateAsync(message);
-                    
+
                     // Set global moderator pause if moderatorId exists
                     if (message.ModeratorId.HasValue)
                     {
                         var whatsappSession = await _unitOfWork.WhatsAppSessions
                             .FindAsync(ws => ws.ModeratorUserId == message.ModeratorId.Value)
                             .ContinueWith(t => t.Result.FirstOrDefault());
-                        
+
                         if (whatsappSession != null)
                         {
                             whatsappSession.IsPaused = true;
@@ -269,14 +269,14 @@ namespace Clinics.Infrastructure.Services
                             await _unitOfWork.WhatsAppSessions.UpdateAsync(whatsappSession);
                         }
                     }
-                    
+
                     // Throw exception to trigger transaction rollback and stop processing batch
                     throw new InvalidOperationException("WhatsApp session requires authentication. All tasks including this one have been paused.");
                 }
 
                 // Check for PendingNET response - pause all operations if network failure
                 // RESUMABLE: PendingNET pause can be manually resumed from OngoingTasksPanel
-                if (providerResponse != null && (providerResponse.Contains("PendingNET", StringComparison.OrdinalIgnoreCase) || 
+                if (providerResponse != null && (providerResponse.Contains("PendingNET", StringComparison.OrdinalIgnoreCase) ||
                     providerResponse.Contains("Internet connection unavailable", StringComparison.OrdinalIgnoreCase) ||
                     providerResponse.Contains("ERR_INTERNET_DISCONNECTED", StringComparison.OrdinalIgnoreCase)))
                 {
@@ -288,14 +288,14 @@ namespace Clinics.Infrastructure.Services
                     message.PausedBy = message.SenderUserId;
                     message.PauseReason = "PendingNET - Network failure";
                     await _unitOfWork.Messages.UpdateAsync(message);
-                    
+
                     // Set global moderator pause
                     if (message.ModeratorId.HasValue)
                     {
                         var whatsappSession = await _unitOfWork.WhatsAppSessions
                             .FindAsync(ws => ws.ModeratorUserId == message.ModeratorId.Value)
                             .ContinueWith(t => t.Result.FirstOrDefault());
-                        
+
                         if (whatsappSession != null)
                         {
                             whatsappSession.IsPaused = true;
@@ -305,7 +305,7 @@ namespace Clinics.Infrastructure.Services
                             await _unitOfWork.WhatsAppSessions.UpdateAsync(whatsappSession);
                         }
                     }
-                    
+
                     throw new InvalidOperationException("Network failure detected. All tasks including this one have been paused.");
                 }
 
@@ -314,9 +314,8 @@ namespace Clinics.Infrastructure.Services
                     message.Status = "sent";
                     message.SentAt = DateTime.UtcNow;
                     message.ErrorMessage = null; // ✅ Clear error message on success
-                    message.ProviderMessageId = providerId;
                     _logger.LogInformation($"Message {message.Id} sent successfully");
-                    
+
                     // Consume quota on successful send (moved from queueing phase for fair billing)
                     if (message.SenderUserId.HasValue)
                     {
@@ -335,17 +334,7 @@ namespace Clinics.Infrastructure.Services
                 {
                     message.Status = "failed";
                     message.ErrorMessage = _errorMessageService.TranslateProviderError(providerResponse);
-                    var failedTask = new FailedTask
-                    {
-                        MessageId = message.Id,
-                        PatientId = message.PatientId,
-                        QueueId = message.QueueId,
-                        Reason = "provider_failure",
-                        ProviderResponse = providerResponse,
-                        CreatedAt = DateTime.UtcNow,
-                        RetryCount = 0
-                    };
-                    await _unitOfWork.FailedTasks.AddAsync(failedTask);
+                    // FailedTask entity REMOVED - failures tracked via Message.Status
                     _logger.LogWarning($"Message {message.Id} failed: {providerResponse}");
                 }
 
@@ -365,14 +354,14 @@ namespace Clinics.Infrastructure.Services
                     message.PausedBy = message.SenderUserId;
                     message.PauseReason = "BrowserClosure - Browser closed intentionally";
                     await _unitOfWork.Messages.UpdateAsync(message);
-                    
+
                     // Set global moderator pause
                     if (message.ModeratorId.HasValue)
                     {
                         var whatsappSession = await _unitOfWork.WhatsAppSessions
                             .FindAsync(ws => ws.ModeratorUserId == message.ModeratorId.Value)
                             .ContinueWith(t => t.Result.FirstOrDefault());
-                        
+
                         if (whatsappSession != null)
                         {
                             whatsappSession.IsPaused = true;
@@ -382,36 +371,26 @@ namespace Clinics.Infrastructure.Services
                             await _unitOfWork.WhatsAppSessions.UpdateAsync(whatsappSession);
                         }
                     }
-                    
+
                     throw new InvalidOperationException("Browser was closed. All tasks including this one have been paused.");
                 }
-                
+
                 // If PendingQR exception, re-throw to trigger transaction rollback and stop processing
                 if (ex.Message.Contains("WhatsApp session requires authentication", StringComparison.OrdinalIgnoreCase))
                 {
                     throw; // Stop processing batch, message already in "queued" status, will be rolled back by transaction
                 }
-                
+
                 // If PendingNET exception, re-throw to trigger transaction rollback
                 if (ex.Message.Contains("Network failure detected", StringComparison.OrdinalIgnoreCase))
                 {
                     throw; // Stop processing batch, message already in "queued" status
                 }
-                
+
                 // For other exceptions, mark as failed
                 message.Status = "failed";
                 message.ErrorMessage = _errorMessageService.TranslateException(ex);
-                var failedTask = new FailedTask
-                {
-                    MessageId = message.Id,
-                    PatientId = message.PatientId,
-                    QueueId = message.QueueId,
-                    Reason = "exception",
-                    ProviderResponse = ex.Message,
-                    CreatedAt = DateTime.UtcNow,
-                    RetryCount = message.Attempts
-                };
-                await _unitOfWork.FailedTasks.AddAsync(failedTask);
+                // FailedTask entity REMOVED - failures tracked via Message.Status
                 await _unitOfWork.Messages.UpdateAsync(message);
                 _logger.LogError($"Exception processing message {message.Id}: {ex.Message}");
             }
@@ -423,7 +402,7 @@ namespace Clinics.Infrastructure.Services
         private bool IsBrowserClosedException(Exception ex)
         {
             if (ex == null) return false;
-            
+
             var message = ex.Message?.ToLowerInvariant() ?? string.Empty;
             return message.Contains("target page, context or browser has been closed") ||
                    message.Contains("browser has been disconnected") ||

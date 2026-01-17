@@ -20,15 +20,14 @@ using Hangfire.Dashboard;
 using Hangfire.MemoryStorage;
 using System.Security.Claims;
 
-// Configure Serilog early so startup logs are captured
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
+
+// Configure Serilog to log to the same global folder as the service API
+// This ensures all logs are in one place for easier monitoring.
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Debug()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-    .Enrich.FromLogContext()
-    .WriteTo.File("logs/clinics-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14)
+    .ReadFrom.Configuration(builder.Configuration)
     .CreateLogger();
 
-var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
 builder.Host.UseSerilog();
 
 // Add services
@@ -38,6 +37,7 @@ builder.Services.AddControllers().AddJsonOptions(opt =>
     opt.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     opt.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
+builder.Services.AddMemoryCache();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -68,15 +68,17 @@ builder.Services.AddSingleton<IdempotencyService>();  // Idempotency service for
 builder.Services.AddSingleton<CircuitBreakerService>();  // Circuit breaker for WhatsApp service resilience
 // Cascade services for soft-delete operations
 builder.Services.AddScoped<IGenericUnitOfWork, GenericUnitOfWork>();
-builder.Services.AddScoped<IAuditService, AuditService>();
+// IAuditService and AuditService REMOVED - deprecated
 builder.Services.AddScoped<Clinics.Api.Services.IMessageSessionCascadeService, Clinics.Api.Services.MessageSessionCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IQueueCascadeService, Clinics.Api.Services.QueueCascadeService>();
-// Also register the Infrastructure QueueCascadeService for QuotaService which depends on it
-builder.Services.AddScoped<Clinics.Infrastructure.Services.IQueueCascadeService, Clinics.Infrastructure.Services.QueueCascadeService>();
+// Infrastructure.Services.IQueueCascadeService REMOVED - consolidated to Api.Services
 builder.Services.AddScoped<Clinics.Api.Services.ITemplateCascadeService, Clinics.Api.Services.TemplateCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IPatientCascadeService, Clinics.Api.Services.PatientCascadeService>();
 builder.Services.AddScoped<Clinics.Api.Services.IUserCascadeService, Clinics.Api.Services.UserCascadeService>();
-builder.Services.AddScoped<IModeratorCascadeService, ModeratorCascadeService>();
+builder.Services.AddScoped<Clinics.Api.Services.IModeratorCascadeService, Clinics.Api.Services.ModeratorCascadeService>();
+
+// Rate limiting service for message sending delays
+builder.Services.AddScoped<Clinics.Api.Services.IRateLimitSettingsService, Clinics.Api.Services.RateLimitSettingsService>();
 
 // JWT Auth
 builder.Services.AddAuthentication(options =>
@@ -87,10 +89,10 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false;
     options.SaveToken = true;
-    
+
     var useTestKey = builder.Configuration["USE_TEST_KEY"] == "true";
-    var baseKey = useTestKey 
-        ? "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456" 
+    var baseKey = useTestKey
+        ? "TestKey_ThisIsALongerKeyForHmacSha256_ReplaceInProduction_123456"
         : (builder.Configuration["Jwt:Key"] ?? "ReplaceWithStrongKey_UseEnvOrConfig_ChangeThisToASecureValue!");
 
     byte[] signingKeyBytes;
@@ -115,17 +117,17 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var dbContext = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
-            
+
             // Extract user ID from claims
-            var userIdClaim = context.Principal?.Claims.FirstOrDefault(c => 
-                c.Type == System.Security.Claims.ClaimTypes.NameIdentifier || 
-                c.Type == "sub" || 
+            var userIdClaim = context.Principal?.Claims.FirstOrDefault(c =>
+                c.Type == System.Security.Claims.ClaimTypes.NameIdentifier ||
+                c.Type == "sub" ||
                 c.Type == "userId");
-            
+
             if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
             {
                 var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId);
-                
+
                 // Reject token if user is deleted or doesn't exist
                 if (user == null || user.IsDeleted)
                 {
@@ -152,6 +154,18 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials(); // Required for HttpOnly cookies and SignalR
+    });
+
+    // Separate policy for browser extensions (they don't need credentials for pairing)
+    options.AddPolicy("ExtensionPolicy", policy =>
+    {
+        policy.SetIsOriginAllowed(origin =>
+                origin.StartsWith("chrome-extension://") ||
+                origin.StartsWith("moz-extension://") ||
+                origin.StartsWith("http://localhost") ||
+                origin.StartsWith("https://localhost"))
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
@@ -213,17 +227,22 @@ if (!builder.Environment.IsEnvironment("Test"))
     builder.Services.AddHangfireServer();
 }
 
-// message sender and processor
-// Configure HttpClient with extended timeout for WhatsApp service operations
-// WhatsApp browser automation can take longer than default 100 seconds
-builder.Services.AddHttpClient<WhatsAppServiceSender>(client =>
-{
-    // Set timeout to 5 minutes (300 seconds) to accommodate slow WhatsApp operations
-    // This is especially important for browser automation that may wait for UI elements
-    client.Timeout = TimeSpan.FromSeconds(300);
-});
-builder.Services.AddScoped<IMessageSender, WhatsAppServiceSender>();
+// Register legacy sender (fallback)
+builder.Services.AddScoped<IMessageSender, SimulatedMessageSender>();
+
+// message processor (uses extension provider directly)
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
+builder.Services.AddScoped<ProcessQueuedMessagesJob>(); // Wrapper job with [DisableConcurrentExecution]
+
+// Extension Runner services for browser extension-based WhatsApp automation
+builder.Services.Configure<Clinics.Api.Services.Extension.WhatsAppProviderOptions>(
+    builder.Configuration.GetSection(Clinics.Api.Services.Extension.WhatsAppProviderOptions.SectionName));
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionPairingService, Clinics.Api.Services.Extension.ExtensionPairingService>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionLeaseService, Clinics.Api.Services.Extension.ExtensionLeaseService>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionCommandService, Clinics.Api.Services.Extension.ExtensionCommandService>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProvider, Clinics.Api.Services.Extension.ExtensionRunnerProvider>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProviderFactory, Clinics.Api.Services.Extension.WhatsAppProviderFactory>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.ICheckWhatsAppService, Clinics.Api.Services.Extension.CheckWhatsAppService>();
 
 // Authorization policies
 builder.Services.AddAuthorization(options =>
@@ -261,6 +280,9 @@ app.MapControllers();
 // Map SignalR hub endpoint
 app.MapHub<Clinics.Api.Hubs.DataUpdateHub>("/dataUpdateHub");
 
+// Map Extension SignalR hub endpoint for browser extension communication
+app.MapHub<Clinics.Api.Hubs.ExtensionHub>("/extensionHub");
+
 // Lightweight health endpoint for CI/CD readiness and Playwright waits
 // Returns 200 OK when the application has started routing/middleware.
 // Does not require authentication.
@@ -273,7 +295,7 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        
+
         // Apply any pending migrations (including seeded data in migration)
         db.Database.Migrate();
     }
@@ -285,9 +307,11 @@ catch (Exception ex)
 
 
 // schedule hangfire recurring job every 15 seconds (demo)
+// P0.1: Using ProcessQueuedMessagesJob wrapper with [DisableConcurrentExecution] attribute
+// This ensures only one processor runs at a time, preventing duplicate message sends
 try
 {
-    RecurringJob.AddOrUpdate<IMessageProcessor>("process-queued-messages", proc => proc.ProcessQueuedMessagesAsync(50), "*/15 * * * * *");
+    RecurringJob.AddOrUpdate<ProcessQueuedMessagesJob>("process-queued-messages", job => job.ExecuteAsync(), "*/15 * * * * *");
 }
 catch { }
 

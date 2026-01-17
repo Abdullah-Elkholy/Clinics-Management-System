@@ -22,103 +22,234 @@ namespace Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("Clinics.Domain.AuditLog", b =>
+            modelBuilder.Entity("Clinics.Domain.ExtensionCommand", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("uniqueidentifier");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                    b.Property<DateTime?>("AckedAtUtc")
+                        .HasColumnType("datetime2");
 
-                    b.Property<int>("Action")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ActorUserId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Changes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
-
-                    b.Property<int>("EntityId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("EntityType")
+                    b.Property<string>("CommandType")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<string>("Metadata")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
 
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Action");
-
-                    b.HasIndex("ActorUserId");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("EntityType", "EntityId");
-
-                    b.ToTable("AuditLogs");
-                });
-
-            modelBuilder.Entity("Clinics.Domain.FailedTask", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTime>("CreatedAtUtc")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
-                    b.Property<DateTime?>("LastRetryAt")
+                    b.Property<DateTime>("ExpiresAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<Guid?>("MessageId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int?>("PatientId")
+                    b.Property<int>("ModeratorUserId")
                         .HasColumnType("int");
 
-                    b.Property<string>("ProviderResponse")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("QueueId")
+                    b.Property<int>("Priority")
                         .HasColumnType("int");
 
-                    b.Property<string>("Reason")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResultStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<int>("RetryCount")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("MessageId");
 
-                    b.HasIndex("PatientId");
+                    b.HasIndex("Status", "ExpiresAtUtc");
 
-                    b.HasIndex("QueueId");
+                    b.HasIndex("ModeratorUserId", "Status", "Priority", "CreatedAtUtc");
 
-                    b.HasIndex("RetryCount");
+                    b.ToTable("ExtensionCommands");
+                });
 
-                    b.ToTable("FailedTasks");
+            modelBuilder.Entity("Clinics.Domain.ExtensionDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("DeviceName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ExtensionVersion")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("LastSeenAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ModeratorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("TokenExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModeratorUserId");
+
+                    b.HasIndex("ModeratorUserId", "DeviceId")
+                        .IsUnique()
+                        .HasFilter("[RevokedAtUtc] IS NULL");
+
+                    b.ToTable("ExtensionDevices");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.ExtensionPairingCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ModeratorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UsedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("UsedByDeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code");
+
+                    b.HasIndex("ModeratorUserId");
+
+                    b.HasIndex("UsedByDeviceId")
+                        .IsUnique()
+                        .HasFilter("[UsedByDeviceId] IS NOT NULL");
+
+                    b.ToTable("ExtensionPairingCodes");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.ExtensionSessionLease", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("AcquiredAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CurrentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime>("LastHeartbeatAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("LeaseTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("ModeratorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("WhatsAppStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("ModeratorUserId")
+                        .IsUnique()
+                        .HasFilter("[RevokedAtUtc] IS NULL");
+
+                    b.HasIndex("ModeratorUserId", "RevokedAtUtc");
+
+                    b.ToTable("ExtensionSessionLeases");
                 });
 
             modelBuilder.Entity("Clinics.Domain.Message", b =>
@@ -132,11 +263,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<int>("CalculatedPosition")
                         .HasColumnType("int");
-
-                    b.Property<string>("Channel")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
 
                     b.Property<string>("Content")
                         .IsRequired()
@@ -174,6 +300,9 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<Guid?>("InFlightCommandId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -185,6 +314,9 @@ namespace Infrastructure.Migrations
 
                     b.Property<int?>("ModeratorId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<int?>("PatientId")
                         .HasColumnType("int");
@@ -207,12 +339,13 @@ namespace Infrastructure.Migrations
                     b.Property<int>("Position")
                         .HasColumnType("int");
 
-                    b.Property<string>("ProviderMessageId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<int?>("QueueId")
                         .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<int?>("SenderUserId")
                         .HasColumnType("int");
@@ -257,6 +390,8 @@ namespace Infrastructure.Migrations
                     b.HasIndex("SessionId", "Status", "IsPaused", "IsDeleted");
 
                     b.ToTable("Messages");
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("Clinics.Domain.MessageCondition", b =>
@@ -374,8 +509,18 @@ namespace Infrastructure.Migrations
                     b.Property<int>("QueueId")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<int>("SentMessages")
                         .HasColumnType("int");
+
+                    b.Property<string>("SessionType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("StartTime")
                         .ValueGeneratedOnAdd()
@@ -474,42 +619,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("MessageTemplates");
                 });
 
-            modelBuilder.Entity("Clinics.Domain.ModeratorSettings", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("ModeratorUserId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
-
-                    b.Property<string>("WhatsAppPhoneNumber")
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ModeratorUserId")
-                        .IsUnique();
-
-                    b.ToTable("ModeratorSettings");
-                });
-
             modelBuilder.Entity("Clinics.Domain.Patient", b =>
                 {
                     b.Property<int>("Id")
@@ -565,6 +674,11 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("RestoredBy")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -581,6 +695,44 @@ namespace Infrastructure.Migrations
                     b.HasIndex("QueueId", "Position");
 
                     b.ToTable("Patients");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.PhoneWhatsAppRegistry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CheckedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("HasWhatsApp")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("ValidationCount")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique();
+
+                    b.ToTable("PhoneWhatsAppRegistry");
                 });
 
             modelBuilder.Entity("Clinics.Domain.Queue", b =>
@@ -736,6 +888,80 @@ namespace Infrastructure.Migrations
                     b.ToTable("Sessions");
                 });
 
+            modelBuilder.Entity("Clinics.Domain.SystemSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("SystemSettings");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Category = "RateLimit",
+                            CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "تفعيل تحديد معدل الإرسال بين الرسائل",
+                            Key = "RateLimitEnabled",
+                            Value = "true"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Category = "RateLimit",
+                            CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "الحد الأدنى للتأخير بين الرسائل (بالثواني)",
+                            Key = "RateLimitMinSeconds",
+                            Value = "3"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Category = "RateLimit",
+                            CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Description = "الحد الأقصى للتأخير بين الرسائل (بالثواني)",
+                            Key = "RateLimitMaxSeconds",
+                            Value = "7"
+                        });
+                });
+
             modelBuilder.Entity("Clinics.Domain.User", b =>
                 {
                     b.Property<int>("Id")
@@ -841,9 +1067,6 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("LastActivityUserId")
                         .HasColumnType("int");
 
-                    b.Property<DateTime?>("LastSyncAt")
-                        .HasColumnType("datetime2");
-
                     b.Property<int>("ModeratorUserId")
                         .HasColumnType("int");
 
@@ -857,19 +1080,11 @@ namespace Infrastructure.Migrations
                     b.Property<int?>("PausedBy")
                         .HasColumnType("int");
 
-                    b.Property<string>("ProviderSessionId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
                     b.Property<DateTime?>("RestoredAt")
                         .HasColumnType("datetime2");
 
                     b.Property<int?>("RestoredBy")
                         .HasColumnType("int");
-
-                    b.Property<string>("SessionName")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Status")
                         .HasMaxLength(20)
@@ -889,36 +1104,70 @@ namespace Infrastructure.Migrations
                     b.ToTable("WhatsAppSessions");
                 });
 
-            modelBuilder.Entity("Clinics.Domain.AuditLog", b =>
-                {
-                    b.HasOne("Clinics.Domain.User", "Actor")
-                        .WithMany()
-                        .HasForeignKey("ActorUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Actor");
-                });
-
-            modelBuilder.Entity("Clinics.Domain.FailedTask", b =>
+            modelBuilder.Entity("Clinics.Domain.ExtensionCommand", b =>
                 {
                     b.HasOne("Clinics.Domain.Message", "Message")
                         .WithMany()
-                        .HasForeignKey("MessageId");
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("Clinics.Domain.Patient", "Patient")
+                    b.HasOne("Clinics.Domain.User", "Moderator")
                         .WithMany()
-                        .HasForeignKey("PatientId");
-
-                    b.HasOne("Clinics.Domain.Queue", "Queue")
-                        .WithMany()
-                        .HasForeignKey("QueueId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .HasForeignKey("ModeratorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Message");
 
-                    b.Navigation("Patient");
+                    b.Navigation("Moderator");
+                });
 
-                    b.Navigation("Queue");
+            modelBuilder.Entity("Clinics.Domain.ExtensionDevice", b =>
+                {
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Moderator");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.ExtensionPairingCode", b =>
+                {
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clinics.Domain.ExtensionDevice", "UsedByDevice")
+                        .WithOne("PairingCode")
+                        .HasForeignKey("Clinics.Domain.ExtensionPairingCode", "UsedByDeviceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Moderator");
+
+                    b.Navigation("UsedByDevice");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.ExtensionSessionLease", b =>
+                {
+                    b.HasOne("Clinics.Domain.ExtensionDevice", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clinics.Domain.User", "Moderator")
+                        .WithMany()
+                        .HasForeignKey("ModeratorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Device");
+
+                    b.Navigation("Moderator");
                 });
 
             modelBuilder.Entity("Clinics.Domain.Message", b =>
@@ -1006,17 +1255,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("Queue");
                 });
 
-            modelBuilder.Entity("Clinics.Domain.ModeratorSettings", b =>
-                {
-                    b.HasOne("Clinics.Domain.User", "Moderator")
-                        .WithMany()
-                        .HasForeignKey("ModeratorUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Moderator");
-                });
-
             modelBuilder.Entity("Clinics.Domain.Patient", b =>
                 {
                     b.HasOne("Clinics.Domain.Queue", "Queue")
@@ -1058,6 +1296,11 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Moderator");
+                });
+
+            modelBuilder.Entity("Clinics.Domain.ExtensionDevice", b =>
+                {
+                    b.Navigation("PairingCode");
                 });
 
             modelBuilder.Entity("Clinics.Domain.MessageCondition", b =>

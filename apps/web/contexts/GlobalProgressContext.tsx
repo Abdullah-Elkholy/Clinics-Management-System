@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useSignalR } from './SignalRContext';
 import { useAuth } from './AuthContext';
 import { useUI } from './UIContext';
+import { useQueue } from './QueueContext';
 import messageApiClient from '@/services/api/messageApiClient';
 import logger from '@/utils/logger';
 
@@ -34,6 +35,7 @@ interface OngoingOperation {
   failedMessages: number;
   ongoingMessages: number;
   isPaused: boolean;
+  isProcessing: boolean; // Backend-calculated: has messages with 'sending' status
   pauseReason?: string;
   startedAt: Date;
   status: string;
@@ -68,6 +70,8 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
   const { connection, isConnected, on, off, onReconnected, offReconnected } = useSignalR();
   const { user, isAuthenticated } = useAuth();
   const { addToast } = useUI();
+  // Get selectedModeratorId for Admin filtering (only show sessions for selected moderator)
+  const { selectedModeratorId } = useQueue();
   const isLoadingRef = useRef(false);
   const isMountedRef = useRef(true);
 
@@ -93,7 +97,8 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
       isLoadingRef.current = true;
       setIsLoading(true);
 
-      const response = await messageApiClient.getOngoingSessions();
+      // Pass selectedModeratorId for Admin filtering (null for Moderators = their own data)
+      const response = await messageApiClient.getOngoingSessions(selectedModeratorId ?? undefined);
 
       if (!isMountedRef.current) return;
 
@@ -105,7 +110,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
         // Calculate failed count from patients with status 'failed'
         const failedCount = session.patients?.filter(p => p.status === 'failed').length || 0;
         const ongoingCount = session.total - session.sent - failedCount;
-        
+
         return {
           sessionId: session.sessionId,
           queueId: session.queueId,
@@ -115,6 +120,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
           failedMessages: failedCount,
           ongoingMessages: ongoingCount,
           isPaused: session.status === 'paused',
+          isProcessing: session.isProcessing ?? false, // Backend-calculated: has 'sending' messages
           pauseReason: undefined, // Will be populated from backend if needed
           startedAt: new Date(session.startTime),
           status: session.status || 'active',
@@ -145,7 +151,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
         isLoadingRef.current = false;
       }
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, selectedModeratorId]);
 
   /**
    * Initial data load on mount
@@ -184,13 +190,13 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
               sessionId: payload.id,
               queueName: completedSession.queueName
             });
-            
+
             // Show completion notification
             addToast(
               `اكتملت عملية الإرسال لقائمة "${completedSession.queueName}" (${completedSession.sentMessages}/${completedSession.totalMessages} رسالة)`,
               'success'
             );
-            
+
             const updated = [...prev];
             updated.splice(index, 1);
             return updated;
@@ -214,6 +220,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
             failedMessages: payload.failedMessages || 0,
             ongoingMessages: payload.ongoingMessages || 0,
             isPaused: payload.isPaused || false,
+            isProcessing: payload.isProcessing ?? false, // Backend-calculated
             pauseReason: payload.pauseReason,
             startedAt: new Date(),
             status: payload.status || 'active',
@@ -229,6 +236,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
           failedMessages: payload.failedMessages ?? updated[index].failedMessages,
           ongoingMessages: payload.ongoingMessages ?? updated[index].ongoingMessages,
           isPaused: payload.isPaused ?? updated[index].isPaused,
+          isProcessing: payload.isProcessing ?? updated[index].isProcessing, // Backend-calculated
           pauseReason: payload.pauseReason ?? updated[index].pauseReason,
           status: payload.status ?? updated[index].status,
           messages: updated[index].messages // Preserve existing messages array

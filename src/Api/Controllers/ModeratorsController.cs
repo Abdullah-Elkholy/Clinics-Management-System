@@ -69,10 +69,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
@@ -175,22 +175,8 @@ namespace Clinics.Api.Controllers
                 _db.Users.Add(moderator);
                 await _db.SaveChangesAsync();
 
-                // Create moderator settings
-                // Handle spaces in WhatsApp phone number (remove them for consistency)
-                var whatsappPhoneCleaned = !string.IsNullOrWhiteSpace(req.WhatsAppPhoneNumber)
-                    ? req.WhatsAppPhoneNumber.Replace(" ", "")
-                    : req.WhatsAppPhoneNumber;
-                
-                var settings = new ModeratorSettings
-                {
-                    ModeratorUserId = moderator.Id,
-                    WhatsAppPhoneNumber = whatsappPhoneCleaned,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                _db.ModeratorSettings.Add(settings);
+                // ModeratorSettings creation REMOVED - entity deprecated
+                // WhatsAppPhoneNumber stored in request but not persisted
 
                 // Create default quota (unlimited messages and queues: -1 = unlimited)
                 var quota = new Quota
@@ -212,7 +198,6 @@ namespace Clinics.Api.Controllers
                     Username = moderator.Username,
                     FirstName = moderator.FirstName,
                     LastName = moderator.LastName,
-                    WhatsAppPhoneNumber = whatsappPhoneCleaned,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -249,24 +234,7 @@ namespace Clinics.Api.Controllers
                 if (!string.IsNullOrEmpty(req.LastName))
                     moderator.LastName = req.LastName;
 
-                // Update moderator settings
-                var settings = await _db.ModeratorSettings
-                    .Where(m => m.ModeratorUserId == id)
-                    .FirstOrDefaultAsync();
-
-                if (settings != null)
-                {
-                    if (!string.IsNullOrEmpty(req.WhatsAppPhoneNumber))
-                    {
-                        // Handle spaces in WhatsApp phone number (remove them for consistency)
-                        settings.WhatsAppPhoneNumber = req.WhatsAppPhoneNumber.Replace(" ", "");
-                    }
-
-                    if (req.IsActive.HasValue)
-                        settings.IsActive = req.IsActive.Value;
-
-                    settings.UpdatedAt = DateTime.UtcNow;
-                }
+                // ModeratorSettings update REMOVED - entity deprecated
 
                 await _db.SaveChangesAsync();
 
@@ -276,8 +244,7 @@ namespace Clinics.Api.Controllers
                     Username = moderator.Username,
                     FirstName = moderator.FirstName,
                     LastName = moderator.LastName,
-                    WhatsAppPhoneNumber = settings?.WhatsAppPhoneNumber,
-                    IsActive = settings?.IsActive ?? true,
+                    IsActive = true, // Default active
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -315,13 +282,7 @@ namespace Clinics.Api.Controllers
                 if (hasManagedUsers)
                     return BadRequest(new { success = false, error = "Cannot delete moderator with managed users" });
 
-                // Delete related data
-                var settings = await _db.ModeratorSettings
-                    .Where(m => m.ModeratorUserId == id)
-                    .FirstOrDefaultAsync();
-
-                if (settings != null)
-                    _db.ModeratorSettings.Remove(settings);
+                // ModeratorSettings deletion REMOVED - entity deprecated
 
                 // Delete associated quota
                 var quota = await _db.Quotas
@@ -458,38 +419,38 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(dbEx, "Database error adding user to moderator");
                 var innerMessage = dbEx.InnerException?.Message ?? dbEx.Message;
-                
+
                 // Check for unique constraint violation on Username
                 if (innerMessage.Contains("IX_Users_Username", StringComparison.OrdinalIgnoreCase) ||
-                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) && 
+                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) &&
                     (innerMessage.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
                      innerMessage.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
                      innerMessage.Contains("unique constraint", StringComparison.OrdinalIgnoreCase)))
                 {
-                    return BadRequest(new 
-                    { 
-                        success = false, 
+                    return BadRequest(new
+                    {
+                        success = false,
                         error = "اسم المستخدم موجود بالفعل",
                         message = $"اسم المستخدم '{req.Username}' موجود بالفعل. يرجى اختيار اسم مستخدم آخر."
                     });
                 }
-                
+
                 // Other database constraint violations
-                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) || 
+                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) ||
                     innerMessage.Contains("constraint", StringComparison.OrdinalIgnoreCase))
                 {
-                    return BadRequest(new 
-                    { 
-                        success = false, 
+                    return BadRequest(new
+                    {
+                        success = false,
                         error = "تعذر إنشاء المستخدم",
                         message = "تعذر إنشاء المستخدم بسبب بيانات غير صالحة أو انتهاك قيد قاعدة البيانات."
                     });
                 }
-                
+
                 // Generic database error
-                return StatusCode(500, new 
-                { 
-                    success = false, 
+                return StatusCode(500, new
+                {
+                    success = false,
                     error = "حدث خطأ أثناء إضافة المستخدم",
                     message = "حدث خطأ أثناء إضافة المستخدم. يرجى المحاولة مرة أخرى."
                 });
@@ -497,9 +458,9 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding user to moderator");
-                return StatusCode(500, new 
-                { 
-                    success = false, 
+                return StatusCode(500, new
+                {
+                    success = false,
                     error = "حدث خطأ غير متوقع أثناء إضافة المستخدم",
                     message = "حدث خطأ غير متوقع أثناء إضافة المستخدم. يرجى المحاولة مرة أخرى."
                 });
@@ -517,10 +478,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
@@ -530,7 +491,7 @@ namespace Clinics.Api.Controllers
                 // - Moderators can only view their own session
                 // - Users can only view their assigned moderator's session
                 var isAdmin = currentUser?.Role == "primary_admin" || currentUser?.Role == "secondary_admin";
-                
+
                 if (!isAdmin)
                 {
                     if (currentUser?.Role == "user" && currentUser.ModeratorId != id)
@@ -551,11 +512,9 @@ namespace Clinics.Api.Controllers
                 {
                     Id = session.Id,
                     ModeratorUserId = session.ModeratorUserId,
-                    SessionName = session.SessionName,
+                    // SessionName, LastSyncAt, ProviderSessionId REMOVED - deprecated
                     Status = session.Status,
-                    LastSyncAt = session.LastSyncAt,
                     CreatedAt = session.CreatedAt,
-                    ProviderSessionId = session.ProviderSessionId,
                     CreatedByUserId = session.CreatedByUserId,
                     LastActivityUserId = session.LastActivityUserId,
                     LastActivityAt = session.LastActivityAt
@@ -590,7 +549,7 @@ namespace Clinics.Api.Controllers
 
                 // Verify user has permission to pause this moderator's tasks
                 var currentUser = await _db.Users.FindAsync(userId);
-                if (currentUser == null) 
+                if (currentUser == null)
                     return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
@@ -659,8 +618,8 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Resume all tasks for a moderator (sets WhatsAppSession.IsPaused = false)
-        /// IMPORTANT: PendingQR pauses are UNRESUMABLE manually - they can only be resumed when WhatsApp connection state changes to "connected"
-        /// BrowserClosure and PendingNET pauses are RESUMABLE manually from OngoingTasksPanel
+        /// IMPORTANT: PendingQR pauses can ONLY be resumed when WhatsAppSession.Status is "connected"
+        /// BrowserClosure and PendingNET pauses are always RESUMABLE manually from OngoingTasksPanel
         /// </summary>
         [HttpPost("{moderatorId}/resume-all")]
         [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
@@ -679,7 +638,7 @@ namespace Clinics.Api.Controllers
 
                 // Verify permissions (same as pause - users can manage)
                 var currentUser = await _db.Users.FindAsync(userId);
-                if (currentUser == null) 
+                if (currentUser == null)
                     return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
@@ -709,16 +668,36 @@ namespace Clinics.Api.Controllers
                     return Ok(new { success = true, message = "لا توجد مهام موقوفة" });
                 }
 
-                // CRITICAL: Prevent manual resume for PendingQR (unresumable until connection state is "connected")
-                // BrowserClosure and PendingNET are resumable manually
+                // CRITICAL: PendingQR pauses can ONLY be resumed if WhatsApp is now connected
+                // If Status is NOT "connected" AND pauseReason is PendingQR, block the resume
+                // But if Status IS "connected" (authentication succeeded), allow the resume
                 if (whatsappSession.PauseReason?.Contains("PendingQR", StringComparison.OrdinalIgnoreCase) == true)
                 {
-                    _logger.LogWarning("Attempted to manually resume PendingQR pause for moderator {ModeratorId}. PendingQR is unresumable until authentication.", moderatorId);
+                    if (whatsappSession.Status != "connected")
+                    {
+                        _logger.LogWarning("Attempted to manually resume PendingQR pause for moderator {ModeratorId}, but Status is not 'connected'. Current Status: {Status}",
+                            moderatorId, whatsappSession.Status);
+                        return BadRequest(new
+                        {
+                            success = false,
+                            error = "PendingQR",
+                            message = "لا يمكن استئناف المهام حتى تتم المصادقة على جلسة الواتساب. يرجى الذهاب إلى لوحة مصادقة الواتساب."
+                        });
+                    }
+                    _logger.LogInformation("Allowing PendingQR resume for moderator {ModeratorId} because Status is 'connected'", moderatorId);
+                }
+
+                // CRITICAL: Only allow resume if session status is "connected"
+                // This prevents resuming when session is disconnected/pending
+                if (whatsappSession.Status != "connected")
+                {
+                    _logger.LogWarning("Cannot resume moderator {ModeratorId} tasks: Session status is '{Status}', must be 'connected'",
+                        moderatorId, whatsappSession.Status);
                     return BadRequest(new
                     {
                         success = false,
-                        error = "PendingQR",
-                        message = "لا يمكن استئناف المهام حتى تتم المصادقة على جلسة الواتساب. يرجى الذهاب إلى لوحة مصادقة الواتساب."
+                        error = "SessionNotConnected",
+                        message = $"لا يمكن استئناف المهام: جلسة الواتساب غير متصلة (الحالة: {whatsappSession.Status}). يرجى التأكد من الاتصال أولاً."
                     });
                 }
 
@@ -773,7 +752,7 @@ namespace Clinics.Api.Controllers
                 }
 
                 var currentUser = await _db.Users.FindAsync(userId);
-                if (currentUser == null) 
+                if (currentUser == null)
                     return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
 
                 var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
@@ -798,6 +777,24 @@ namespace Clinics.Api.Controllers
                     .AsNoTracking()
                     .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId);
 
+                // Check if extension has active lease (for frontend to know if pause is meaningful)
+                var extensionLease = await _db.ExtensionSessionLeases
+                    .AsNoTracking()
+                    .Where(e => e.ModeratorUserId == moderatorId
+                        && e.RevokedAtUtc == null
+                        && e.ExpiresAtUtc > DateTime.UtcNow)
+                    .FirstOrDefaultAsync();
+
+                // Extension is connected if lease exists and heartbeat is recent (within 120 seconds to account for network delays)
+                var heartbeatAgeSeconds = extensionLease != null
+                    ? (DateTime.UtcNow - extensionLease.LastHeartbeatAtUtc).TotalSeconds
+                    : -1;
+                var isExtensionConnected = extensionLease != null && heartbeatAgeSeconds < 120;
+
+                _logger.LogInformation(
+                    "GetPauseState for moderator {ModeratorId}: LeaseExists={LeaseExists}, HeartbeatAge={HeartbeatAge}s, isExtensionConnected={IsConnected}",
+                    moderatorId, extensionLease != null, heartbeatAgeSeconds, isExtensionConnected);
+
                 // Return proper object structure even when session doesn't exist
                 if (whatsappSession == null)
                 {
@@ -805,7 +802,11 @@ namespace Clinics.Api.Controllers
                     {
                         isPaused = false,
                         pauseReason = (string?)null,
-                        pausedAt = (DateTime?)null
+                        pausedAt = (DateTime?)null,
+                        pausedBy = (int?)null,
+                        isResumable = false,
+                        isExtensionConnected = isExtensionConnected,
+                        status = (string?)null  // No session = no status
                     });
                 }
 
@@ -813,13 +814,122 @@ namespace Clinics.Api.Controllers
                 {
                     isPaused = whatsappSession.IsPaused,
                     pauseReason = whatsappSession.PauseReason,
-                    pausedAt = whatsappSession.PausedAt
+                    pausedAt = whatsappSession.PausedAt,
+                    pausedBy = whatsappSession.PausedBy,
+                    isResumable = whatsappSession.IsResumable,  // Computed property for frontend
+                    isExtensionConnected = isExtensionConnected,
+                    status = whatsappSession.Status  // Include session status for frontend to check authentication
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching pause state");
                 return StatusCode(500, new { success = false, error = "فشل جلب حالة الإيقاف" });
+            }
+        }
+
+        /// <summary>
+        /// Get combined status for a moderator (session, extension, pause state in one call)
+        /// This reduces 4 API calls to 1 for the frontend polling
+        /// </summary>
+        [HttpGet("{moderatorId}/combined-status")]
+        [Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
+        public async Task<IActionResult> GetCombinedStatus(int moderatorId)
+        {
+            try
+            {
+                // Verify permissions
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value
+                    ?? User.FindFirst("userId")?.Value;
+
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
+                }
+
+                var currentUser = await _db.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
+
+                if (currentUser == null)
+                    return Unauthorized(new { success = false, error = "المستخدم غير موجود" });
+
+                var isAdmin = currentUser.Role == "primary_admin" || currentUser.Role == "secondary_admin";
+                var isModerator = currentUser.Role == "moderator";
+                var isUser = currentUser.Role == "user";
+
+                // Verify access
+                if (!isAdmin)
+                {
+                    if (isModerator && currentUser.Id != moderatorId)
+                        return Forbid();
+
+                    if (isUser && (!currentUser.ModeratorId.HasValue || currentUser.ModeratorId.Value != moderatorId))
+                        return Forbid();
+                }
+
+                // Fetch data sequentially (DbContext is not thread-safe for parallel queries)
+                var session = await _db.WhatsAppSessions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted);
+
+                var extensionLease = await _db.ExtensionSessionLeases
+                    .AsNoTracking()
+                    .Include(e => e.Device)
+                    .Where(e => e.ModeratorUserId == moderatorId
+                        && e.RevokedAtUtc == null
+                        && e.ExpiresAtUtc > DateTime.UtcNow)
+                    .FirstOrDefaultAsync();
+
+                // Calculate extension online status (heartbeat within 60 seconds)
+                var isExtensionOnline = extensionLease != null
+                    && (DateTime.UtcNow - extensionLease.LastHeartbeatAtUtc).TotalSeconds < 60;
+
+                return Ok(new
+                {
+                    success = true,
+                    timestamp = DateTime.UtcNow,
+
+                    // Session data (deprecated SessionName, LastSyncAt, ProviderSessionId removed)
+                    session = session == null ? null : new
+                    {
+                        id = session.Id,
+                        moderatorUserId = session.ModeratorUserId,
+                        status = session.Status,
+                        createdAt = session.CreatedAt,
+                        lastActivityAt = session.LastActivityAt
+                    },
+
+                    // Pause state
+                    pauseState = new
+                    {
+                        isPaused = session?.IsPaused ?? false,
+                        pauseReason = session?.PauseReason,
+                        pausedAt = session?.PausedAt,
+                        pausedBy = session?.PausedBy,
+                        isResumable = session?.IsResumable ?? false
+                    },
+
+                    // Extension status
+                    extension = new
+                    {
+                        hasActiveLease = extensionLease != null,
+                        leaseId = extensionLease?.Id,
+                        deviceId = extensionLease?.DeviceId,
+                        deviceName = extensionLease?.Device?.DeviceName,
+                        whatsAppStatus = extensionLease?.WhatsAppStatus,
+                        currentUrl = extensionLease?.CurrentUrl,
+                        lastHeartbeat = extensionLease?.LastHeartbeatAtUtc,
+                        expiresAt = extensionLease?.ExpiresAtUtc,
+                        isOnline = isExtensionOnline
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching combined status for moderator {ModeratorId}", moderatorId);
+                return StatusCode(500, new { success = false, error = "فشل جلب الحالة المجمعة" });
             }
         }
     }

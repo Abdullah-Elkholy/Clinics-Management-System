@@ -1,4 +1,4 @@
-/**
+﻿/**
  * QueueListItem Component
  * 
  * Reusable queue item for sidebar with collapse support
@@ -53,7 +53,7 @@ export function QueueListItem({
         key={id}
         onClick={onClick}
         title={isCollapsed ? doctorName : undefined}
-        aria-label={`الطابور: ${doctorName}`}
+        aria-label={`العيادة: ${doctorName}`}
         className={`
           transition-all duration-200 ease-out rounded-lg group overflow-hidden min-w-0
           ${isCollapsed
@@ -79,7 +79,7 @@ export function QueueListItem({
               <div className="truncate flex-1 min-w-0">
                 <p className="font-medium text-xs sm:text-sm truncate">{doctorName}</p>
                 {isSelected && (
-                  <p className="text-xs text-gray-500 mt-0.5 truncate">طابور نشط</p>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">عيادة نشطة</p>
                 )}
               </div>
             </div>
@@ -96,8 +96,8 @@ export function QueueListItem({
               <button
                 onClick={handleEdit}
                 className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors duration-200"
-                title="تحرير الطابور"
-                aria-label="تحرير الطابور"
+                title="تحرير العيادة"
+                aria-label="تحرير العيادة"
               >
                 <i className="fas fa-edit text-sm"></i>
               </button>
@@ -106,8 +106,8 @@ export function QueueListItem({
               <button
                 onClick={handleDelete}
                 className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors duration-200"
-                title="حذف الطابور"
-                aria-label="حذف الطابور"
+                title="حذف العيادة"
+                aria-label="حذف العيادة"
               >
                 <i className="fas fa-trash text-sm"></i>
               </button>
@@ -120,8 +120,8 @@ export function QueueListItem({
               <button
                 onClick={handleEdit}
                 className="w-7 h-7 rounded-full bg-white text-gray-600 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center border border-gray-200"
-                title="تحرير الطابور"
-                aria-label="تحرير الطابور"
+                title="تحرير العيادة"
+                aria-label="تحرير العيادة"
               >
                 <i className="fas fa-edit text-xs"></i>
               </button>
@@ -130,8 +130,8 @@ export function QueueListItem({
               <button
                 onClick={handleDelete}
                 className="w-7 h-7 rounded-full bg-white text-gray-600 hover:text-red-600 hover:bg-red-50 flex items-center justify-center border border-gray-200"
-                title="حذف الطابور"
-                aria-label="حذف الطابور"
+                title="حذف العيادة"
+                aria-label="حذف العيادة"
               >
                 <i className="fas fa-trash text-xs"></i>
               </button>
@@ -142,3 +142,5 @@ export function QueueListItem({
     </div>
   );
 }
+
+

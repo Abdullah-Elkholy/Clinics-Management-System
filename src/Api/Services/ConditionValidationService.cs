@@ -94,15 +94,15 @@ namespace Clinics.Api.Services
 
             // Fetch all active (non-sentinel) conditions for this queue
             var conditions = await _context.Set<MessageCondition>()
-                .Where(c => c.QueueId == queueId 
+                .Where(c => c.QueueId == queueId
                     && c.Id != (excludeConditionId ?? -1)
-                    && c.Operator != "DEFAULT" 
+                    && c.Operator != "DEFAULT"
                     && c.Operator != "UNCONDITIONED")
                 .ToListAsync();
 
             foreach (var existingCondition in conditions)
             {
-                if (ConditionsOverlap(operatorName ?? "", value, minValue, maxValue, 
+                if (ConditionsOverlap(operatorName ?? "", value, minValue, maxValue,
                     existingCondition.Operator, existingCondition.Value, existingCondition.MinValue, existingCondition.MaxValue))
                 {
                     return true;
@@ -118,7 +118,7 @@ namespace Clinics.Api.Services
             var template = await _context.Set<MessageTemplate>()
                 .FirstOrDefaultAsync(t => t.Id == templateId);
             if (template == null) return false;
-            
+
             // Load condition and check if it exists
             await _context.Entry(template).Reference(t => t.Condition).LoadAsync();
             return template.Condition != null;
@@ -127,8 +127,8 @@ namespace Clinics.Api.Services
         public async Task<bool> IsDefaultAlreadyUsedAsync(int queueId, int? excludeConditionId = null)
         {
             return await _context.Set<MessageCondition>()
-                .AnyAsync(c => c.QueueId == queueId 
-                    && c.Operator == "DEFAULT" 
+                .AnyAsync(c => c.QueueId == queueId
+                    && c.Operator == "DEFAULT"
                     && c.Id != (excludeConditionId ?? -1));
         }
 
@@ -202,7 +202,7 @@ namespace Clinics.Api.Services
         }
 
         /// <summary>
-        /// RANGE: MinValue and MaxValue required; Value must be null; MinValue <= MaxValue
+        /// RANGE: MinValue and MaxValue required; Value must be null; MinValue less than or equal to MaxValue
         /// </summary>
         private ValidationResult ValidateRangeCondition(int? value, int? minValue, int? maxValue)
         {

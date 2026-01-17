@@ -46,12 +46,12 @@ export const isOtherCountryCode = (countryCode: string): boolean => {
  */
 export const formatPhoneForDisplay = (phone: string, countryCode?: string): string => {
   if (!phone) return '';
-  
+
   // If country code provided, format as "+CC PHONE"
   if (countryCode) {
     return `${countryCode} ${phone}`;
   }
-  
+
   return phone;
 };
 
@@ -234,7 +234,7 @@ export const isEmptyObject = (obj: Record<string, any>): boolean => {
  * @returns Formatted currency string
  */
 export const formatCurrency = (value: number): string => {
-  return new Intl.NumberFormat('ar-EG', {
+  return new Intl.NumberFormat('ar-EG-u-nu-latn', {
     style: 'currency',
     currency: 'EGP',
   }).format(value);
@@ -246,7 +246,7 @@ export const formatCurrency = (value: number): string => {
  * @returns Formatted number string
  */
 export const formatNumber = (value: number): string => {
-  return value.toLocaleString('ar-EG');
+  return value.toLocaleString('ar-EG-u-nu-latn');
 };
 
 // ============================================================================
@@ -259,7 +259,7 @@ export const formatNumber = (value: number): string => {
  * @returns Formatted date string
  */
 export const formatDateArabic = (date: Date): string => {
-  return new Intl.DateTimeFormat('ar-EG', {
+  return new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -272,7 +272,7 @@ export const formatDateArabic = (date: Date): string => {
  * @returns Formatted time string
  */
 export const formatTime = (date: Date): string => {
-  return new Intl.DateTimeFormat('ar-EG', {
+  return new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

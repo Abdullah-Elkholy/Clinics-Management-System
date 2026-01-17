@@ -3,7 +3,6 @@ using Clinics.Infrastructure;
 using Clinics.Domain;
 using Clinics.Api.Services;
 using Clinics.Infrastructure.Repositories;
-using Clinics.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Clinics.Api.DTOs;
@@ -52,10 +51,10 @@ namespace Clinics.Api.Controllers
             try
             {
                 // Extract user ID from JWT claims - try multiple claim types
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) 
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null)
                 {
                     _logger.LogError("No user ID claim found in JWT");
@@ -64,7 +63,7 @@ namespace Clinics.Api.Controllers
 
                 if (!int.TryParse(userIdClaim.Value, out var currentUserId))
                 {
-                    _logger.LogError($"Invalid user ID format: {userIdClaim.Value}");
+                    _logger.LogError("Invalid user ID format: {UserId}", userIdClaim.Value);
                     return BadRequest(new { error = "تنسيق معرف المستخدم غير صالح", message = "تنسيق معرف المستخدم غير صالح." });
                 }
 
@@ -73,7 +72,7 @@ namespace Clinics.Api.Controllers
                     .FirstOrDefaultAsync();
                 if (currentUser == null)
                 {
-                    _logger.LogWarning($"User not found in database: {currentUserId}");
+                    _logger.LogWarning("User not found in database: {UserId}", currentUserId);
                     return NotFound(new { error = "Current user not found" });
                 }
 
@@ -99,9 +98,9 @@ namespace Clinics.Api.Controllers
                 }
 
                 var users = await query.ToListAsync();
-                
+
                 // Convert to DTO to avoid circular reference serialization issues
-                var userDtos = users.Select(u => new 
+                var userDtos = users.Select(u => new
                 {
                     u.Id,
                     u.Username,
@@ -113,8 +112,9 @@ namespace Clinics.Api.Controllers
                     u.UpdatedAt,
                     u.LastLogin
                 }).ToList();
-                
-                return Ok(new { 
+
+                return Ok(new
+                {
                     items = userDtos,
                     totalCount = userDtos.Count,
                     pageNumber = 1,
@@ -124,10 +124,10 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching users");
-                _logger.LogError($"Exception type: {ex.GetType().Name}");
-                _logger.LogError($"Exception message: {ex.Message}");
-                _logger.LogError($"Inner exception: {ex.InnerException?.Message}");
-                _logger.LogError($"Stack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Exception type: {ExceptionType}", ex.GetType().Name);
+                _logger.LogError(ex, "Exception message: {Message}", ex.Message);
+                _logger.LogError(ex, "Inner exception: {InnerMessage}", ex.InnerException?.Message);
+                _logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
                 return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب المستخدمين", message = "حدث خطأ أثناء جلب قائمة المستخدمين.", details = ex.Message, innerException = ex.InnerException?.Message });
             }
         }
@@ -143,10 +143,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
@@ -212,7 +212,7 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
 
@@ -277,38 +277,38 @@ namespace Clinics.Api.Controllers
             {
                 _logger.LogError(dbEx, "Database error creating user");
                 var innerMessage = dbEx.InnerException?.Message ?? dbEx.Message;
-                
+
                 // Check for unique constraint violation on Username
                 if (innerMessage.Contains("IX_Users_Username", StringComparison.OrdinalIgnoreCase) ||
-                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) && 
+                    innerMessage.Contains("Username", StringComparison.OrdinalIgnoreCase) &&
                     (innerMessage.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
                      innerMessage.Contains("duplicate", StringComparison.OrdinalIgnoreCase) ||
                      innerMessage.Contains("unique constraint", StringComparison.OrdinalIgnoreCase)))
                 {
-                    return BadRequest(new 
-                    { 
-                        success = false, 
+                    return BadRequest(new
+                    {
+                        success = false,
                         error = "اسم المستخدم موجود بالفعل",
                         message = $"اسم المستخدم '{req.Username}' موجود بالفعل. يرجى اختيار اسم مستخدم آخر."
                     });
                 }
-                
+
                 // Other database constraint violations
-                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) || 
+                if (innerMessage.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) ||
                     innerMessage.Contains("constraint", StringComparison.OrdinalIgnoreCase))
                 {
-                    return BadRequest(new 
-                    { 
-                        success = false, 
+                    return BadRequest(new
+                    {
+                        success = false,
                         error = "تعذر إنشاء المستخدم",
                         message = "تعذر إنشاء المستخدم بسبب بيانات غير صالحة أو انتهاك قيد قاعدة البيانات."
                     });
                 }
-                
+
                 // Generic database error
-                return StatusCode(500, new 
-                { 
-                    success = false, 
+                return StatusCode(500, new
+                {
+                    success = false,
                     error = "حدث خطأ أثناء إنشاء المستخدم",
                     message = "حدث خطأ أثناء إنشاء المستخدم. يرجى المحاولة مرة أخرى.",
                     details = _env?.IsDevelopment() == true ? innerMessage : null
@@ -317,9 +317,9 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating user");
-                return StatusCode(500, new 
-                { 
-                    success = false, 
+                return StatusCode(500, new
+                {
+                    success = false,
                     error = "حدث خطأ غير متوقع أثناء إنشاء المستخدم",
                     message = "حدث خطأ غير متوقع أثناء إنشاء المستخدم. يرجى المحاولة مرة أخرى.",
                     details = _env?.IsDevelopment() == true ? ex.Message : null
@@ -339,10 +339,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
@@ -350,7 +350,7 @@ namespace Clinics.Api.Controllers
                 var targetUser = await _db.Users
                     .Where(u => u.Id == id && !u.IsDeleted)
                     .FirstOrDefaultAsync();
-                    
+
                 if (targetUser == null)
                     return NotFound(new { success = false, error = "User not found" });
 
@@ -386,12 +386,12 @@ namespace Clinics.Api.Controllers
                 if (!string.IsNullOrEmpty(req.Username))
                 {
                     var trimmedUsername = req.Username.Trim();
-                    
+
                     // Check if username is already taken (by a different user)
                     var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.Username == trimmedUsername && u.Id != id);
                     if (existingUser != null)
                         return BadRequest(new { success = false, error = "اسم المستخدم موجود بالفعل", message = "اسم المستخدم موجود بالفعل. يرجى اختيار اسم مستخدم آخر." });
-                    
+
                     targetUser.Username = trimmedUsername;
                 }
 
@@ -402,17 +402,20 @@ namespace Clinics.Api.Controllers
                     if (!string.IsNullOrEmpty(req.CurrentPassword))
                     {
                         var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
-                        var verificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash, req.CurrentPassword);
-                        
+                        if (string.IsNullOrEmpty(targetUser.PasswordHash))
+                            return BadRequest(new { success = false, error = "User has no password set" });
+
+                        var verificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash!, req.CurrentPassword);
+
                         if (verificationResult == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed)
                             return BadRequest(new { success = false, error = "Current password is incorrect" });
-                        
+
                         // Validate that new password is different from current password
-                        var newPasswordVerificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash, req.Password);
+                        var newPasswordVerificationResult = hasher.VerifyHashedPassword(targetUser, targetUser.PasswordHash!, req.Password);
                         if (newPasswordVerificationResult == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success)
                             return BadRequest(new { success = false, error = "New password must be different from current password" });
                     }
-                    
+
                     var newHasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
                     targetUser.PasswordHash = newHasher.HashPassword(targetUser, req.Password);
                 }
@@ -443,10 +446,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users
                     .Where(u => u.Id == currentUserId && !u.IsDeleted)
                     .FirstOrDefaultAsync();
@@ -454,7 +457,7 @@ namespace Clinics.Api.Controllers
                 var targetUser = await _db.Users
                     .Where(u => u.Id == id && !u.IsDeleted)
                     .FirstOrDefaultAsync();
-                    
+
                 if (targetUser == null)
                     return NotFound(new { success = false, error = "User not found" });
 
@@ -488,7 +491,7 @@ namespace Clinics.Api.Controllers
 
                 // Soft-delete user
                 var (success, errorMessage) = await _userCascadeService.SoftDeleteUserAsync(id, currentUserId);
-                
+
                 if (!success)
                 {
                     return BadRequest(new { success = false, error = errorMessage });
@@ -518,10 +521,10 @@ namespace Clinics.Api.Controllers
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)
                     ?? User.FindFirst("sub")
                     ?? User.FindFirst("userId");
-                
+
                 if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
                     return BadRequest(new { success = false, error = "Invalid or missing user ID in token" });
-                
+
                 var currentUser = await _db.Users.FindAsync(currentUserId);
 
                 var targetUser = await _db.Users.FindAsync(id);
@@ -549,7 +552,7 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// GET /api/users/trash?page=1&pageSize=10
+        /// GET /api/users/trash?page=1&amp;pageSize=10
         /// Get soft-deleted users (trash). Admins see all; moderators see managed users.
         /// </summary>
         [HttpGet("trash")]
@@ -569,11 +572,11 @@ namespace Clinics.Api.Controllers
                 // We exclude users where their moderator is also deleted (regardless of timestamp)
                 // This ensures only the moderator appears in trash, not its managed users
                 // Also, only show users with UserRole = "User" (not moderators, admins, etc.)
-                query = query.Where(u => 
+                query = query.Where(u =>
                     u.Role == "User" &&
-                    (u.ModeratorId == null || 
-                    !_db.Users.IgnoreQueryFilters().Any(m => 
-                        m.Id == u.ModeratorId.Value && 
+                    (u.ModeratorId == null ||
+                    !_db.Users.IgnoreQueryFilters().Any(m =>
+                        m.Id == u.ModeratorId.Value &&
                         m.Role == "moderator" &&
                         m.IsDeleted)));
 
@@ -621,8 +624,8 @@ namespace Clinics.Api.Controllers
                     u.DeletedAt,
                     u.DaysRemainingInTrash,
                     u.DeletedBy,
-                    DeletedByUsername = u.DeletedBy.HasValue && deletedByUsernameMap.ContainsKey(u.DeletedBy.Value)
-                        ? deletedByUsernameMap[u.DeletedBy.Value]
+                    DeletedByUsername = u.DeletedBy.HasValue && deletedByUsernameMap.TryGetValue(u.DeletedBy.Value, out var username)
+                        ? username
                         : (string?)null
                 }).ToList();
 
@@ -636,7 +639,7 @@ namespace Clinics.Api.Controllers
         }
 
         /// <summary>
-        /// GET /api/users/archived?page=1&pageSize=10
+        /// GET /api/users/archived?page=1&amp;pageSize=10
         /// Admin-only endpoint to view archived users (soft-deleted 30+ days ago).
         /// </summary>
         [HttpGet("archived")]

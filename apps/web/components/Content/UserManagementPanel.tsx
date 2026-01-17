@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/rules-of-hooks */
+﻿/* eslint-disable react-hooks/rules-of-hooks */
 /* NOTE: This component has early returns before hooks which violates Rules of Hooks.
    This needs major refactoring to move all hooks before conditional returns.
    Temporarily disabled the lint rule to allow build to proceed. */
@@ -32,8 +32,11 @@ import TrashTab from '@/components/TrashTab';
 import { usersApiClient } from '@/services/api/usersApiClient';
 import queuesApiClient from '@/services/api/queuesApiClient';
 import { messageApiClient } from '@/services/api/messageApiClient';
-import { formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { formatLocalDateTime, getUtcDateString } from '@/utils/dateTimeUtils';
 import { formatArabicPercentage } from '@/utils/numberUtils';
+
+import { logsApiClient, LogEntry, getLevelColor, getLevelIcon } from '@/services/api/logsApiClient';
+import { settingsApiClient, RateLimitSettings, UpdateRateLimitRequest } from '@/services/api/settingsApiClient';
 import logger from '@/utils/logger';
 
 const TRASH_PAGE_SIZE = 10;
@@ -45,7 +48,7 @@ const TRASH_PAGE_SIZE = 10;
 function QuotaTabContent({ currentUser }: { currentUser: User }) {
   // Determine which moderator ID to use for quota fetching
   let moderatorIdForQuota: string | null = null;
-  
+
   if (currentUser.role === UserRole.Moderator) {
     // Moderators use their own ID
     moderatorIdForQuota = currentUser.id;
@@ -59,24 +62,24 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
       moderatorIdForQuota = null;
     }
   }
-  
+
   // Fetch quota using the hook (only if we have a valid moderator ID)
   const { quota, loading: quotaLoading, error: quotaError, refresh } = useModeratorQuota(
     moderatorIdForQuota || '0' // Pass '0' as placeholder if no moderator ID (hook will handle gracefully)
   );
-  
+
   // Listen for quota updates and refresh
   useEffect(() => {
     const handleQuotaUpdate = () => {
       refresh();
     };
-    
+
     window.addEventListener('quotaDataUpdated', handleQuotaUpdate);
     return () => {
       window.removeEventListener('quotaDataUpdated', handleQuotaUpdate);
     };
   }, [refresh]);
-  
+
   // Calculate stats for display
   const messagesQuota = quota?.messagesQuota || {
     limit: -1,
@@ -85,7 +88,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
     isLow: false,
     warningThreshold: 80,
   };
-  
+
   const queuesQuota = quota?.queuesQuota || {
     limit: -1,
     used: 0,
@@ -93,10 +96,10 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
     isLow: false,
     warningThreshold: 80,
   };
-  
+
   const messagesRemaining = messagesQuota.limit === -1 ? -1 : messagesQuota.limit - messagesQuota.used;
   const queuesRemaining = queuesQuota.limit === -1 ? -1 : queuesQuota.limit - queuesQuota.used;
-  
+
   const messagesPercentage = messagesQuota.limit === -1 ? 0 : Math.min(100, messagesQuota.percentage);
   const queuesPercentage = queuesQuota.limit === -1 ? 0 : Math.min(100, queuesQuota.percentage);
 
@@ -148,7 +151,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
                   <div>
                     <p className="text-sm text-gray-600">حصة الرسائل</p>
                     <p className="text-2xl font-bold text-gray-900">
-                      {messagesQuota.limit === -1 ? 'غير محدود' : messagesQuota.limit.toLocaleString('ar-SA')}
+                      {messagesQuota.limit === -1 ? 'غير محدود' : messagesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                     </p>
                   </div>
                 </div>
@@ -156,33 +159,31 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
               {messagesQuota.limit !== -1 && (
                 <>
                   <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                    <div 
-                      className={`h-2 rounded-full transition-all ${
-                        messagesPercentage >= 100 
-                          ? 'bg-red-600' 
-                          : messagesPercentage >= 80 
-                          ? 'bg-yellow-500' 
+                    <div
+                      className={`h-2 rounded-full transition-all ${messagesPercentage >= 100
+                        ? 'bg-red-600'
+                        : messagesPercentage >= 80
+                          ? 'bg-yellow-500'
                           : 'bg-blue-600'
-                      }`}
+                        }`}
                       style={{ width: `${messagesPercentage}%` }}
                     ></div>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-600">
-                      مستخدم: {messagesQuota.used.toLocaleString('ar-SA')} / {messagesQuota.limit.toLocaleString('ar-SA')}
+                      مستخدم: {messagesQuota.used.toLocaleString('ar-EG-u-nu-latn')} / {messagesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                     </span>
-                    <span className={`font-medium ${
-                      messagesPercentage >= 100 
-                        ? 'text-red-600' 
-                        : messagesPercentage >= 80 
-                        ? 'text-yellow-600' 
+                    <span className={`font-medium ${messagesPercentage >= 100
+                      ? 'text-red-600'
+                      : messagesPercentage >= 80
+                        ? 'text-yellow-600'
                         : 'text-gray-600'
-                    }`}>
+                      }`}>
                       {formatArabicPercentage(messagesPercentage, 1)}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    متبقي: {messagesRemaining === -1 ? 'غير محدود' : messagesRemaining.toLocaleString('ar-SA')}
+                    متبقي: {messagesRemaining === -1 ? 'غير محدود' : messagesRemaining.toLocaleString('ar-EG-u-nu-latn')}
                   </p>
                 </>
               )}
@@ -200,7 +201,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
                   <div>
                     <p className="text-sm text-gray-600">حصة قوائم الانتظار</p>
                     <p className="text-2xl font-bold text-gray-900">
-                      {queuesQuota.limit === -1 ? 'غير محدود' : queuesQuota.limit.toLocaleString('ar-SA')}
+                      {queuesQuota.limit === -1 ? 'غير محدود' : queuesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                     </p>
                   </div>
                 </div>
@@ -208,33 +209,31 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
               {queuesQuota.limit !== -1 && (
                 <>
                   <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                    <div 
-                      className={`h-2 rounded-full transition-all ${
-                        queuesPercentage >= 100 
-                          ? 'bg-red-600' 
-                          : queuesPercentage >= 80 
-                          ? 'bg-yellow-500' 
+                    <div
+                      className={`h-2 rounded-full transition-all ${queuesPercentage >= 100
+                        ? 'bg-red-600'
+                        : queuesPercentage >= 80
+                          ? 'bg-yellow-500'
                           : 'bg-purple-600'
-                      }`}
+                        }`}
                       style={{ width: `${queuesPercentage}%` }}
                     ></div>
                   </div>
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-600">
-                      مستخدم: {queuesQuota.used.toLocaleString('ar-SA')} / {queuesQuota.limit.toLocaleString('ar-SA')}
+                      مستخدم: {queuesQuota.used.toLocaleString('ar-EG-u-nu-latn')} / {queuesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                     </span>
-                    <span className={`font-medium ${
-                      queuesPercentage >= 100 
-                        ? 'text-red-600' 
-                        : queuesPercentage >= 80 
-                        ? 'text-yellow-600' 
+                    <span className={`font-medium ${queuesPercentage >= 100
+                      ? 'text-red-600'
+                      : queuesPercentage >= 80
+                        ? 'text-yellow-600'
                         : 'text-gray-600'
-                    }`}>
+                      }`}>
                       {formatArabicPercentage(queuesPercentage, 1)}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    متبقي: {queuesRemaining === -1 ? 'غير محدود' : queuesRemaining.toLocaleString('ar-SA')}
+                    متبقي: {queuesRemaining === -1 ? 'غير محدود' : queuesRemaining.toLocaleString('ar-EG-u-nu-latn')}
                   </p>
                 </>
               )}
@@ -303,7 +302,7 @@ export default function UserManagementPanel() {
 
   // All useState hooks MUST be declared before any conditional returns
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash'>('moderators');
+  const [activeTab, setActiveTab] = useState<'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash' | 'systemSettings'>('moderators');
   const [expandedModerators, setExpandedModerators] = useState<Set<string>>(new Set());
   const [expandedSecondaryAdmins, setExpandedSecondaryAdmins] = useState<Set<string>>(new Set());
   const [selectedLog, setSelectedLog] = useState<Record<string, unknown> | null>(null);
@@ -313,6 +312,26 @@ export default function UserManagementPanel() {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [selectedModerator, setSelectedModerator] = useState<string | null>(null);
   const [expandedTrashSections, setExpandedTrashSections] = useState<Set<string>>(new Set(['users', 'queues', 'templates'])); // Default all expanded
+
+  // Rate limit settings state (for admin system settings)
+  const [rateLimitSettings, setRateLimitSettings] = useState<RateLimitSettings | null>(null);
+  const [rateLimitLoading, setRateLimitLoading] = useState(false);
+  const [rateLimitSaving, setRateLimitSaving] = useState(false);
+  const [tempMinSeconds, setTempMinSeconds] = useState<number>(3);
+  const [tempMaxSeconds, setTempMaxSeconds] = useState<number>(7);
+  const [tempEnabled, setTempEnabled] = useState<boolean>(true);
+
+  // Logs tab state for inline logs section (non-primary admin)
+  const [inlineLogs, setInlineLogs] = useState<LogEntry[]>([]);
+  const [inlineLogsLoading, setInlineLogsLoading] = useState(false);
+  const [inlineLogsError, setInlineLogsError] = useState<string | null>(null);
+  const [inlineLogLevelFilter, setInlineLogLevelFilter] = useState('All');
+  const [inlineLogSearchQuery, setInlineLogSearchQuery] = useState('');
+  const [inlineLogDateFilter, setInlineLogDateFilter] = useState(() => {
+    // Default to today's date in UTC (Server Time) to match backend log files
+    return getUtcDateString();
+  });
+  const [inlineLogsTotalCount, setInlineLogsTotalCount] = useState(0);
 
   // Authentication guard
   useEffect(() => {
@@ -333,7 +352,7 @@ export default function UserManagementPanel() {
       </div>
     );
   }
-  
+
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
   // 2. firstName (if lastName is null/empty)
@@ -350,11 +369,29 @@ export default function UserManagementPanel() {
   };
 
   // Helper function to change tab and persist to sessionStorage
-  const handleTabChange = (tab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash') => {
+  const handleTabChange = (tab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash' | 'systemSettings') => {
     setActiveTab(tab);
     sessionStorage.setItem('userManagementActiveTab', tab);
   };
-  
+
+  // Allow other UI (e.g. Header) to force-switch the active tab without leaving the panel.
+  useEffect(() => {
+    const onExternalTabChange = (event: Event) => {
+      const requestedTab = (event as CustomEvent<string>).detail;
+      if (!requestedTab) return;
+
+      const allowedTabs = ['moderators', 'myUsers', 'secondaryAdmins', 'whatsappAuth', 'quota', 'accountSettings', 'logs', 'trash', 'systemSettings'];
+      if (!allowedTabs.includes(requestedTab)) return;
+
+      handleTabChange(requestedTab as any);
+    };
+
+    window.addEventListener('userManagementActiveTabChange', onExternalTabChange as EventListener);
+    return () => {
+      window.removeEventListener('userManagementActiveTabChange', onExternalTabChange as EventListener);
+    };
+  }, []);
+
   // Sync when selectedRole changes (no console logging)
   useEffect(() => {
     // placeholder effect for any side-effects if needed later
@@ -369,7 +406,7 @@ export default function UserManagementPanel() {
       setActiveTab(savedTab as any);
       return;
     }
-    
+
     if (currentUser) {
       // Default to 'accountSettings' for all roles
       const defaultTab: 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash' = 'accountSettings';
@@ -392,20 +429,20 @@ export default function UserManagementPanel() {
   const [trashError, setTrashError] = useState<string>('');
   const [trashPageNumber, setTrashPageNumber] = useState(1);
   const [trashTotalCount, setTrashTotalCount] = useState(0);
-  
+
   // Trash state for queues, templates, and patients
   const [trashQueues, setTrashQueues] = useState<any[]>([]);
   const [isLoadingTrashQueues, setIsLoadingTrashQueues] = useState(false);
   const [trashQueuesError, setTrashQueuesError] = useState<string>('');
   const [trashQueuesPageNumber, setTrashQueuesPageNumber] = useState(1);
   const [trashQueuesTotalCount, setTrashQueuesTotalCount] = useState(0);
-  
+
   const [trashTemplates, setTrashTemplates] = useState<any[]>([]);
   const [isLoadingTrashTemplates, setIsLoadingTrashTemplates] = useState(false);
   const [trashTemplatesError, setTrashTemplatesError] = useState<string>('');
   const [trashTemplatesPageNumber, setTrashTemplatesPageNumber] = useState(1);
   const [trashTemplatesTotalCount, setTrashTemplatesTotalCount] = useState(0);
-  
+
   const [trashPatients, setTrashPatients] = useState<any[]>([]);
   const [isLoadingTrashPatients, setIsLoadingTrashPatients] = useState(false);
   const [trashPatientsError, setTrashPatientsError] = useState<string>('');
@@ -448,7 +485,7 @@ export default function UserManagementPanel() {
       setTrashQueuesTotalCount(response.totalCount);
       setTrashQueuesPageNumber(page);
     } catch (error: any) {
-      setTrashQueuesError(error?.message || 'فشل تحميل الطوابير المحذوفة');
+      setTrashQueuesError(error?.message || 'فشل تحميل العيادات المحذوفة');
       logger.error('Error loading trash queues:', error);
     } finally {
       setIsLoadingTrashQueues(false);
@@ -499,7 +536,7 @@ export default function UserManagementPanel() {
       } catch (error) {
         logger.error('Failed to refetch users after update:', error);
       }
-      
+
       // Refresh user data in AuthContext when user data is updated (for accountSettings tab)
       if (activeTab === 'accountSettings') {
         await refreshUser();
@@ -508,7 +545,7 @@ export default function UserManagementPanel() {
 
     // Listen for custom event from EditAccountModal, AddUserModal, EditUserModal
     window.addEventListener('userDataUpdated', handleUserDataUpdate);
-    
+
     // Also check sessionStorage for editAccountWasOpen flag
     const checkForEdit = async () => {
       const editAccountWasOpen = sessionStorage.getItem('editAccountWasOpen');
@@ -517,10 +554,10 @@ export default function UserManagementPanel() {
         sessionStorage.removeItem('editAccountWasOpen');
       }
     };
-    
+
     // Check immediately
     checkForEdit();
-    
+
     // Poll for changes (since storage events don't fire in same window)
     // Reduced frequency from 500ms to 2 seconds to reduce CPU usage
     const interval = setInterval(() => {
@@ -537,7 +574,7 @@ export default function UserManagementPanel() {
       }
     };
     window.addEventListener('quotaDataUpdated', handleQuotaUpdate);
-    
+
     // Listen for trash updates
     const handleTrashUpdate = async () => {
       if (activeTab === 'trash') {
@@ -575,6 +612,38 @@ export default function UserManagementPanel() {
     loadTrashPatients,
   ]);
 
+  // Load rate limit settings when System Settings tab is active
+  useEffect(() => {
+    const loadRateLimitSettings = async () => {
+      if (activeTab !== 'systemSettings') return;
+      if (currentUser?.role !== UserRole.PrimaryAdmin && currentUser?.role !== UserRole.SecondaryAdmin) return;
+
+      setRateLimitLoading(true);
+      try {
+        const settings = await settingsApiClient.getRateLimitSettings();
+        setRateLimitSettings(settings);
+        setTempMinSeconds(settings.minSeconds);
+        setTempMaxSeconds(settings.maxSeconds);
+        setTempEnabled(settings.enabled);
+      } catch (err) {
+        logger.error('Failed to load rate limit settings:', err);
+        // Use defaults
+        setRateLimitSettings({
+          minSeconds: 3,
+          maxSeconds: 7,
+          enabled: true,
+          estimatedSecondsPerMessage: 9
+        });
+        setTempMinSeconds(3);
+        setTempMaxSeconds(7);
+        setTempEnabled(true);
+      } finally {
+        setRateLimitLoading(false);
+      }
+    };
+    loadRateLimitSettings();
+  }, [activeTab, currentUser?.role]);
+
   // Listen for trash updates (after state declarations)
   useEffect(() => {
     const handleTrashUpdate = async () => {
@@ -585,7 +654,7 @@ export default function UserManagementPanel() {
         await loadTrashPatients(trashPatientsPageNumber);
       }
     };
-    
+
     window.addEventListener('userDataUpdated', handleTrashUpdate);
     window.addEventListener('queueDataUpdated', handleTrashUpdate);
     window.addEventListener('templateDataUpdated', handleTrashUpdate);
@@ -608,6 +677,51 @@ export default function UserManagementPanel() {
     loadTrashTemplates,
     loadTrashPatients,
   ]);
+
+  // Fetch inline logs when logs tab is active - using server-side pagination
+  const fetchInlineLogs = useCallback(async () => {
+    if (activeTab !== 'logs') return;
+
+    setInlineLogsLoading(true);
+    setInlineLogsError(null);
+
+    try {
+      // Convert date from YYYY-MM-DD to YYYYMMDD for API
+      const dateForApi = inlineLogDateFilter ? inlineLogDateFilter.replace(/-/g, '') : undefined;
+
+      // Use server-side pagination
+      // Use server-side pagination and search
+      const response = await logsApiClient.getLogs(
+        dateForApi,
+        currentPage,
+        logsPerPage,
+        inlineLogLevelFilter,
+        inlineLogSearchQuery.trim() // Pass search query to API
+      );
+
+      // Store the actual total count from API
+      setInlineLogsTotalCount(response.totalCount);
+
+      setInlineLogs(response.logs);
+    } catch (err: any) {
+      logger.error('Failed to fetch inline logs:', err);
+      setInlineLogsError(err.message || 'فشل تحميل السجلات');
+    } finally {
+      setInlineLogsLoading(false);
+    }
+  }, [activeTab, inlineLogDateFilter, currentPage, logsPerPage, inlineLogLevelFilter, inlineLogSearchQuery]);
+
+  // Fetch inline logs when tab becomes active or filters change
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      fetchInlineLogs();
+    }
+  }, [activeTab, fetchInlineLogs]);
+
+  // Reset pagination to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [inlineLogLevelFilter, inlineLogDateFilter, inlineLogSearchQuery]);
 
   // Export logs to CSV
   const handleExportLogs = async () => {
@@ -633,7 +747,9 @@ export default function UserManagementPanel() {
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute('download', `logs-${new Date().toISOString().split('T')[0]}.csv`);
+      // Use local date for filename
+      const dateStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+      link.setAttribute('download', `logs-${dateStr}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -651,7 +767,7 @@ export default function UserManagementPanel() {
   useEffect(() => {
     // Only fetch if we have a current user and they're not a regular user
     if (currentUser && currentUser.role !== UserRole.User) {
-    actions.fetchUsers();
+      actions.fetchUsers();
     }
   }, [currentUser?.id, currentUser?.role]); // Only depend on user ID and role, not the entire actions object
 
@@ -677,7 +793,7 @@ export default function UserManagementPanel() {
   const getRoleInfo = (role: UserRole | string) => {
     // Normalize role value for comparison
     const normalizedRole = String(role).toLowerCase().trim();
-    
+
     switch (normalizedRole) {
       case 'primary_admin':
       case UserRole.PrimaryAdmin:
@@ -766,7 +882,7 @@ export default function UserManagementPanel() {
   // Handle opening messages quota editor
   const handleEditMessagesQuota = async (moderator: User, quota: ModeratorQuota) => {
     setSelectedModeratorForQuota(moderator);
-    
+
     // Fetch fresh quota data from API
     try {
       const quotaResult = await moderatorQuotaService.getQuota(moderator.id);
@@ -780,14 +896,14 @@ export default function UserManagementPanel() {
       // Fallback to provided quota on error
       setSelectedQuota(quota);
     }
-    
+
     setShowMessagesQuotaModal(true);
   };
 
   // Handle opening queues quota editor
   const handleEditQueuesQuota = async (moderator: User, quota: ModeratorQuota) => {
     setSelectedModeratorForQuota(moderator);
-    
+
     // Fetch fresh quota data from API
     try {
       const quotaResult = await moderatorQuotaService.getQuota(moderator.id);
@@ -801,7 +917,7 @@ export default function UserManagementPanel() {
       // Fallback to provided quota on error
       setSelectedQuota(quota);
     }
-    
+
     setShowQueuesQuotaModal(true);
   };
 
@@ -813,10 +929,10 @@ export default function UserManagementPanel() {
     try {
       // Extract mode from quota object (passed by modals)
       const mode = (updatedQuota as any)._mode || 'set';
-      
+
       // Remove mode from quota object before passing to service
       const { _mode, ...quotaWithoutMode } = updatedQuota as any;
-      
+
       const result = await moderatorQuotaService.updateQuota(
         selectedModeratorForQuota.id,
         quotaWithoutMode as ModeratorQuota,
@@ -825,16 +941,16 @@ export default function UserManagementPanel() {
       if (result.success && result.data) {
         const fullName = getUserDisplayName(selectedModeratorForQuota);
         addToast(`تم تحديث حصة ${fullName} بنجاح`, 'success');
-        
+
         // Update selectedQuota with fresh data from API before closing modal
         setSelectedQuota(result.data);
-        
+
         // Refresh users to get updated quota data in the list (this updates the moderators tab)
         await actions.fetchUsers();
-        
+
         // Trigger event to notify other components (including ModeratorQuotaDisplay in moderators tab)
         window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
-        
+
         // Close modals after a brief delay to allow state update
         setTimeout(() => {
           setShowQuotaModal(false);
@@ -874,7 +990,7 @@ export default function UserManagementPanel() {
   const handleRestoreQueue = async (queueId: string | number) => {
     try {
       await queuesApiClient.restoreQueue(Number(queueId));
-      addToast('تم استعادة الطابور بنجاح', 'success');
+      addToast('تم استعادة العيادة بنجاح', 'success');
       await loadTrashQueues(trashQueuesPageNumber);
       // Refresh sidebar queues
       if (refreshQueues) {
@@ -884,7 +1000,7 @@ export default function UserManagementPanel() {
       window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
       window.dispatchEvent(new CustomEvent('queueDataUpdated'));
     } catch (error: any) {
-      addToast(error?.message || 'فشل استعادة الطابور', 'error');
+      addToast(error?.message || 'فشل استعادة العيادة', 'error');
     }
   };
 
@@ -921,9 +1037,9 @@ export default function UserManagementPanel() {
     return formatLocalDateTime(dateObj);
   };
 
-  // Pagination calculations
-  const totalLogs = 1247;
-  const totalPages = Math.ceil(totalLogs / logsPerPage);
+  // Pagination calculations for inline logs - use actual total from API (server-side pagination)
+  const totalLogs = inlineLogsTotalCount;
+  const totalPages = Math.max(1, Math.ceil(inlineLogsTotalCount / logsPerPage));
 
   // Generate page numbers with ellipsis
   const getPaginationPages = () => {
@@ -983,9 +1099,8 @@ export default function UserManagementPanel() {
           {/* Account Settings Tab - Show for all (First Tab) */}
           <button
             onClick={() => handleTabChange('accountSettings')}
-            className={`${TAB_BASE} ${
-              activeTab === 'accountSettings' ? TAB_ACTIVE.blue : TAB_INACTIVE
-            }`}
+            className={`${TAB_BASE} ${activeTab === 'accountSettings' ? TAB_ACTIVE.blue : TAB_INACTIVE
+              }`}
           >
             <i className="fas fa-user-cog"></i>
             معلومات الحساب
@@ -995,9 +1110,8 @@ export default function UserManagementPanel() {
           {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
             <button
               onClick={() => handleTabChange('moderators')}
-              className={`${TAB_BASE} ${
-                activeTab === 'moderators' ? TAB_ACTIVE.green : TAB_INACTIVE
-              }`}
+              className={`${TAB_BASE} ${activeTab === 'moderators' ? TAB_ACTIVE.green : TAB_INACTIVE
+                }`}
             >
               <i className="fas fa-user-shield"></i>
               المشرفون ({moderators.length})
@@ -1008,9 +1122,8 @@ export default function UserManagementPanel() {
           {currentUser && currentUser.role === UserRole.Moderator && (
             <button
               onClick={() => handleTabChange('myUsers')}
-              className={`${TAB_BASE} ${
-                activeTab === 'myUsers' ? TAB_ACTIVE.green : TAB_INACTIVE
-              }`}
+              className={`${TAB_BASE} ${activeTab === 'myUsers' ? TAB_ACTIVE.green : TAB_INACTIVE
+                }`}
             >
               <i className="fas fa-users"></i>
               المستخدمون ({myManagedUsers.length})
@@ -1021,22 +1134,22 @@ export default function UserManagementPanel() {
           {currentUser && currentUser.role === UserRole.PrimaryAdmin && (
             <button
               onClick={() => handleTabChange('secondaryAdmins')}
-              className={`${TAB_BASE} ${
-                activeTab === 'secondaryAdmins' ? TAB_ACTIVE.orange : TAB_INACTIVE
-              }`}
+              className={`${TAB_BASE} ${activeTab === 'secondaryAdmins' ? TAB_ACTIVE.orange : TAB_INACTIVE
+                }`}
             >
               <i className="fas fa-user-tie"></i>
               المديرون الثانويون ({secondaryAdmins.length})
             </button>
           )}
 
+          {/* System Logs Tab - Show for Primary Admin only */}
+
           {/* WhatsApp Auth Tab - Show for Moderators and Users */}
           {currentUser && (currentUser.role === UserRole.Moderator || currentUser.role === UserRole.User) && (
             <button
               onClick={() => handleTabChange('whatsappAuth')}
-              className={`${TAB_BASE} ${
-                activeTab === 'whatsappAuth' ? TAB_ACTIVE.emerald : TAB_INACTIVE
-              }`}
+              className={`${TAB_BASE} ${activeTab === 'whatsappAuth' ? TAB_ACTIVE.emerald : TAB_INACTIVE
+                }`}
             >
               <i className="fab fa-whatsapp"></i>
               مصادقة واتساب
@@ -1047,9 +1160,8 @@ export default function UserManagementPanel() {
           {currentUser && (currentUser.role === UserRole.Moderator || currentUser.role === UserRole.User) && (
             <button
               onClick={() => handleTabChange('quota')}
-              className={`${TAB_BASE} ${
-                activeTab === 'quota' ? TAB_ACTIVE.indigo : TAB_INACTIVE
-              }`}
+              className={`${TAB_BASE} ${activeTab === 'quota' ? TAB_ACTIVE.indigo : TAB_INACTIVE
+                }`}
             >
               <i className="fas fa-chart-pie"></i>
               الحصة
@@ -1060,9 +1172,8 @@ export default function UserManagementPanel() {
           {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
             <button
               onClick={() => handleTabChange('logs')}
-              className={`${TAB_BASE} ${
-                activeTab === 'logs' ? TAB_ACTIVE.purple : TAB_INACTIVE
-              }`}
+              className={`${TAB_BASE} ${activeTab === 'logs' ? TAB_ACTIVE.purple : TAB_INACTIVE
+                }`}
             >
               <i className="fas fa-history"></i>
               السجلات
@@ -1073,12 +1184,23 @@ export default function UserManagementPanel() {
           {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
             <button
               onClick={() => handleTabChange('trash')}
-              className={`${TAB_BASE} ${
-                activeTab === 'trash' ? TAB_ACTIVE.red : TAB_INACTIVE
-              }`}
+              className={`${TAB_BASE} ${activeTab === 'trash' ? TAB_ACTIVE.red : TAB_INACTIVE
+                }`}
             >
               <i className="fas fa-trash"></i>
               المهملات {trashTotalCount > 0 && `(${trashTotalCount})`}
+            </button>
+          )}
+
+          {/* System Settings Tab - Show for Primary and Secondary Admin only */}
+          {currentUser && (currentUser.role === UserRole.PrimaryAdmin || currentUser.role === UserRole.SecondaryAdmin) && (
+            <button
+              onClick={() => handleTabChange('systemSettings')}
+              className={`${TAB_BASE} ${activeTab === 'systemSettings' ? TAB_ACTIVE.blue : TAB_INACTIVE
+                }`}
+            >
+              <i className="fas fa-cog"></i>
+              إعدادات النظام
             </button>
           )}
         </div>
@@ -1132,207 +1254,206 @@ export default function UserManagementPanel() {
 
             {moderators.length > 0 && (
               <div className="space-y-4">
-            {moderators.map((moderator) => {
-              const managedUsers = getUsersByModerator(moderator.id);
-              const isExpanded = expandedModerators.has(moderator.id);
-              const roleInfo = getRoleInfo(moderator.role);
+                {moderators.map((moderator) => {
+                  const managedUsers = getUsersByModerator(moderator.id);
+                  const isExpanded = expandedModerators.has(moderator.id);
+                  const roleInfo = getRoleInfo(moderator.role);
 
-              return (
-                <div
-                  key={moderator.id}
-                  className="border border-gray-200 rounded-lg overflow-hidden"
-                >
-                  {/* Moderator Header */}
-                  <div
-                    onClick={() => toggleModerator(moderator.id)}
-                    className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between text-right cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3 flex-1">
-                      <i
-                        className={`fas fa-chevron-down text-gray-600 transition-transform ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
-                      ></i>
-                      <span className="text-xs font-medium text-gray-600 bg-white px-2.5 py-1 rounded-full border border-gray-200">
-                        {managedUsers.length} مستخدم
-                      </span>
-                      <div className="text-right">
-                        <h3 className="font-semibold text-gray-900">
-                          {getUserDisplayName(moderator)}
-                        </h3>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${roleInfo.color}`}>
-                        {roleInfo.label}
-                      </span>
-                      {/* Edit Moderator - Only PrimaryAdmin and SecondaryAdmin */}
-                      {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditModerator(moderator);
-                        }}
-                        title="تعديل المشرف"
-                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                  return (
+                    <div
+                      key={moderator.id}
+                      className="border border-gray-200 rounded-lg overflow-hidden"
+                    >
+                      {/* Moderator Header */}
+                      <div
+                        onClick={() => toggleModerator(moderator.id)}
+                        className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between text-right cursor-pointer"
                       >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                      )}
-                      {/* Delete Moderator - Only PrimaryAdmin */}
-                      {currentUser?.role === UserRole.PrimaryAdmin && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteModerator(moderator);
-                        }}
-                        title="حذف المشرف"
-                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-                      >
-                        <i className="fas fa-trash"></i>
-                      </button>
+                        <div className="flex items-center gap-3 flex-1">
+                          <i
+                            className={`fas fa-chevron-down text-gray-600 transition-transform ${isExpanded ? 'rotate-180' : ''
+                              }`}
+                          ></i>
+                          <span className="text-xs font-medium text-gray-600 bg-white px-2.5 py-1 rounded-full border border-gray-200">
+                            {managedUsers.length} مستخدم
+                          </span>
+                          <div className="text-right">
+                            <h3 className="font-semibold text-gray-900">
+                              {getUserDisplayName(moderator)}
+                            </h3>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${roleInfo.color}`}>
+                            {roleInfo.label}
+                          </span>
+                          {/* Edit Moderator - Only PrimaryAdmin and SecondaryAdmin */}
+                          {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditModerator(moderator);
+                              }}
+                              title="تعديل المشرف"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                            >
+                              <i className="fas fa-edit"></i>
+                            </button>
+                          )}
+                          {/* Delete Moderator - Only PrimaryAdmin */}
+                          {currentUser?.role === UserRole.PrimaryAdmin && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteModerator(moderator);
+                              }}
+                              title="حذف المشرف"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Managed Users Table */}
+                      {isExpanded && (
+                        <div className="bg-white border-t border-gray-200">
+                          {/* Moderator Details Section */}
+                          <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                              <div>
+                                <span className="text-gray-600 font-medium text-xs block mb-1">اسم المستخدم</span>
+                                <p className="text-gray-900 font-semibold text-xs">@{moderator.username}</p>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 font-medium text-xs block mb-1">تاريخ الإنشاء</span>
+                                <p className="text-gray-900 font-semibold text-xs">
+                                  {(() => {
+                                    if (!moderator.createdAt) return 'لم يحدد';
+                                    const date = moderator.createdAt instanceof Date ? moderator.createdAt : new Date(moderator.createdAt);
+                                    if (isNaN(date.getTime())) return 'لم يحدد';
+                                    return formatLocalDateTime(date);
+                                  })()}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 font-medium text-xs block mb-1">آخر دخول</span>
+                                <p className="text-gray-900 font-semibold text-xs">
+                                  {(() => {
+                                    if (!moderator.lastLogin) return 'لم يدخل بعد';
+                                    const date = moderator.lastLogin instanceof Date ? moderator.lastLogin : new Date(moderator.lastLogin);
+                                    if (isNaN(date.getTime())) return 'لم يدخل بعد';
+                                    return formatLocalDateTime(date);
+                                  })()}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Quota Display Section */}
+                          <div className="px-6 py-4 border-b border-gray-200">
+                            <ModeratorQuotaDisplay
+                              moderatorId={moderator.id}
+                              quota={(() => {
+                                // Try to get quota from moderator object
+                                if (moderator.role === 'moderator' && 'quota' in moderator) {
+                                  return (moderator as any).quota as ModeratorQuota;
+                                }
+                                // If quota not found, return undefined - ModeratorQuotaDisplay will use defaults
+                                // The quota should be loaded via useModeratorQuota hook or fetched separately
+                                return undefined;
+                              })()}
+                              onEditMessages={(quota) => handleEditMessagesQuota(moderator, quota)}
+                              onEditQueues={(quota) => handleEditQueuesQuota(moderator, quota)}
+                            />
+                          </div>
+
+                          {/* Add User Button for this Moderator - Only for admins and moderators (NOT regular users) */}
+                          {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
+                            <div className="px-6 py-4 border-b border-gray-200">
+                              <button
+                                onClick={() => handleAddUser(UserRole.User, moderator.id)}
+                                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                              >
+                                <i className="fas fa-plus"></i>
+                                <span>إضافة مستخدم جديد</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {managedUsers.length > 0 ? (
+                            <div className="overflow-hidden rounded-lg border border-gray-200 m-4">
+                              <table className="w-full">
+                                <thead>
+                                  <tr className="bg-gradient-to-r from-blue-50 to-blue-100 border-b-2 border-blue-200">
+                                    <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                      الاسم
+                                    </th>
+                                    <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                      اسم المستخدم
+                                    </th>
+                                    <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                      آخر دخول
+                                    </th>
+                                    <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
+                                      الإجراءات
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                  {managedUsers.map((user, idx) => (
+                                    <tr
+                                      key={user.id}
+                                      className={`hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
+                                    >
+                                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                                        {getUserDisplayName(user)}
+                                      </td>
+                                      <td className="px-6 py-4 text-sm text-gray-600">
+                                        @{user.username}
+                                      </td>
+                                      <td className="px-6 py-4 text-sm text-gray-600">
+                                        {formatDate(user.lastLogin)}
+                                      </td>
+                                      <td className="px-6 py-4 text-sm">
+                                        {/* Edit/Delete buttons - Only for admins and moderators (NOT regular users) */}
+                                        {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
+                                          <div className="flex gap-2">
+                                            <button
+                                              onClick={() => handleEditUser(user)}
+                                              title="تعديل"
+                                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-100 transition-colors"
+                                            >
+                                              <i className="fas fa-edit"></i>
+                                            </button>
+                                            <button
+                                              onClick={() => handleDeleteUser(user)}
+                                              title="حذف"
+                                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-100 transition-colors"
+                                            >
+                                              <i className="fas fa-trash"></i>
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="px-6 py-8 text-center">
+                              <p className="text-sm text-gray-600">
+                                لا يوجد مستخدمون تابعون لهذا المشرف
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-
-                  {/* Managed Users Table */}
-                  {isExpanded && (
-                    <div className="bg-white border-t border-gray-200">
-                      {/* Moderator Details Section */}
-                      <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50">
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <span className="text-gray-600 font-medium text-xs block mb-1">اسم المستخدم</span>
-                            <p className="text-gray-900 font-semibold text-xs">@{moderator.username}</p>
-                          </div>
-                          <div>
-                            <span className="text-gray-600 font-medium text-xs block mb-1">تاريخ الإنشاء</span>
-                            <p className="text-gray-900 font-semibold text-xs">
-                              {(() => {
-                                if (!moderator.createdAt) return 'لم يحدد';
-                                const date = moderator.createdAt instanceof Date ? moderator.createdAt : new Date(moderator.createdAt);
-                                if (isNaN(date.getTime())) return 'لم يحدد';
-                                return formatLocalDateTime(date);
-                              })()}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="text-gray-600 font-medium text-xs block mb-1">آخر دخول</span>
-                            <p className="text-gray-900 font-semibold text-xs">
-                              {(() => {
-                                if (!moderator.lastLogin) return 'لم يدخل بعد';
-                                const date = moderator.lastLogin instanceof Date ? moderator.lastLogin : new Date(moderator.lastLogin);
-                                if (isNaN(date.getTime())) return 'لم يدخل بعد';
-                                return formatLocalDateTime(date);
-                              })()}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Quota Display Section */}
-                      <div className="px-6 py-4 border-b border-gray-200">
-                        <ModeratorQuotaDisplay
-                          moderatorId={moderator.id}
-                          quota={(() => {
-                            // Try to get quota from moderator object
-                            if (moderator.role === 'moderator' && 'quota' in moderator) {
-                              return (moderator as any).quota as ModeratorQuota;
-                            }
-                            // If quota not found, return undefined - ModeratorQuotaDisplay will use defaults
-                            // The quota should be loaded via useModeratorQuota hook or fetched separately
-                            return undefined;
-                          })()}
-                          onEditMessages={(quota) => handleEditMessagesQuota(moderator, quota)}
-                          onEditQueues={(quota) => handleEditQueuesQuota(moderator, quota)}
-                        />
-                      </div>
-
-                      {/* Add User Button for this Moderator - Only for admins and moderators (NOT regular users) */}
-                      {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
-                      <div className="px-6 py-4 border-b border-gray-200">
-                        <button
-                          onClick={() => handleAddUser(UserRole.User, moderator.id)}
-                          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                        >
-                          <i className="fas fa-plus"></i>
-                          <span>إضافة مستخدم جديد</span>
-                        </button>
-                      </div>
-                      )}
-
-                      {managedUsers.length > 0 ? (
-                        <div className="overflow-hidden rounded-lg border border-gray-200 m-4">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="bg-gradient-to-r from-blue-50 to-blue-100 border-b-2 border-blue-200">
-                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
-                                  الاسم
-                                </th>
-                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
-                                  اسم المستخدم
-                                </th>
-                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
-                                  آخر دخول
-                                </th>
-                                <th className="px-6 py-4 text-right text-sm font-semibold text-blue-900">
-                                  الإجراءات
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-200">
-                              {managedUsers.map((user, idx) => (
-                                <tr
-                                  key={user.id}
-                                  className={`hover:bg-blue-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
-                                >
-                                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                                    {getUserDisplayName(user)}
-                                  </td>
-                                  <td className="px-6 py-4 text-sm text-gray-600">
-                                    @{user.username}
-                                  </td>
-                                  <td className="px-6 py-4 text-sm text-gray-600">
-                                    {formatDate(user.lastLogin)}
-                                  </td>
-                                  <td className="px-6 py-4 text-sm">
-                                    {/* Edit/Delete buttons - Only for admins and moderators (NOT regular users) */}
-                                    {(currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
-                                    <div className="flex gap-2">
-                                      <button
-                                        onClick={() => handleEditUser(user)}
-                                        title="تعديل"
-                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-100 transition-colors"
-                                      >
-                                        <i className="fas fa-edit"></i>
-                                      </button>
-                                      <button
-                                        onClick={() => handleDeleteUser(user)}
-                                        title="حذف"
-                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-100 transition-colors"
-                                      >
-                                        <i className="fas fa-trash"></i>
-                                      </button>
-                                    </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="px-6 py-8 text-center">
-                          <p className="text-sm text-gray-600">
-                            لا يوجد مستخدمون تابعون لهذا المشرف
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1377,91 +1498,90 @@ export default function UserManagementPanel() {
                   </button>
                 </div>
                 {secondaryAdmins.length > 0 && (
-                <div className="space-y-4">
-              {secondaryAdmins.map((admin) => {
-                const isExpanded = expandedSecondaryAdmins.has(admin.id);
-                const roleInfo = getRoleInfo(admin.role);
+                  <div className="space-y-4">
+                    {secondaryAdmins.map((admin) => {
+                      const isExpanded = expandedSecondaryAdmins.has(admin.id);
+                      const roleInfo = getRoleInfo(admin.role);
 
-                return (
-                  <div
-                    key={admin.id}
-                    className="border border-gray-200 rounded-lg overflow-hidden"
-                  >
-                    {/* Secondary Admin Header */}
-                    <div
-                      onClick={() => toggleSecondaryAdmin(admin.id)}
-                      className="w-full px-6 py-4 bg-orange-50 hover:bg-orange-100 transition-colors flex items-center justify-between text-right cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3 flex-1">
-                        <i
-                          className={`fas fa-chevron-down text-orange-600 transition-transform ${
-                            isExpanded ? 'rotate-180' : ''
-                          }`}
-                        ></i>
-                        <div className="text-right">
-                          <h3 className="font-semibold text-gray-900">
-                            {getUserDisplayName(admin)}
-                          </h3>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${roleInfo.color}`}>
-                          {roleInfo.label}
-                        </span>
-                        {/* Edit/Delete Secondary Admin - Only PrimaryAdmin */}
-                        {currentUser?.role === UserRole.PrimaryAdmin && (
-                          <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditModerator(admin);
-                          }}
-                          title="تعديل المدير الثانوي"
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                      return (
+                        <div
+                          key={admin.id}
+                          className="border border-gray-200 rounded-lg overflow-hidden"
                         >
-                          <i className="fas fa-edit"></i>
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteModerator(admin);
-                          }}
-                          title="حذف المدير الثانوي"
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-                        >
-                          <i className="fas fa-trash"></i>
-                        </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
+                          {/* Secondary Admin Header */}
+                          <div
+                            onClick={() => toggleSecondaryAdmin(admin.id)}
+                            className="w-full px-6 py-4 bg-orange-50 hover:bg-orange-100 transition-colors flex items-center justify-between text-right cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3 flex-1">
+                              <i
+                                className={`fas fa-chevron-down text-orange-600 transition-transform ${isExpanded ? 'rotate-180' : ''
+                                  }`}
+                              ></i>
+                              <div className="text-right">
+                                <h3 className="font-semibold text-gray-900">
+                                  {getUserDisplayName(admin)}
+                                </h3>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                              <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${roleInfo.color}`}>
+                                {roleInfo.label}
+                              </span>
+                              {/* Edit/Delete Secondary Admin - Only PrimaryAdmin */}
+                              {currentUser?.role === UserRole.PrimaryAdmin && (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditModerator(admin);
+                                    }}
+                                    title="تعديل المدير الثانوي"
+                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                                  >
+                                    <i className="fas fa-edit"></i>
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteModerator(admin);
+                                    }}
+                                    title="حذف المدير الثانوي"
+                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                                  >
+                                    <i className="fas fa-trash"></i>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
 
-                    {/* Secondary Admin Details */}
-                    {isExpanded && (
-                      <div className="bg-white border-t border-gray-200 px-6 py-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">تاريخ الإنشاء:</span>
-                            <span className="text-sm text-gray-900 font-medium">{formatDate(admin.createdAt)}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">آخر تحديث:</span>
-                            <span className="text-sm text-gray-900 font-medium">{formatDate(admin.updatedAt)}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600">الحالة:</span>
-                            <span className={`inline-flex items-center gap-2 ${!(admin.isDeleted ?? false) ? 'text-green-600' : 'text-red-600'}`}>
-                              <i className={`fas ${!(admin.isDeleted ?? false) ? 'fa-check-circle' : 'fa-times-circle'}`}></i>
-                              {!(admin.isDeleted ?? false) ? 'نشط' : 'غير نشط'}
-                            </span>
-                          </div>
+                          {/* Secondary Admin Details */}
+                          {isExpanded && (
+                            <div className="bg-white border-t border-gray-200 px-6 py-4">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-gray-600">تاريخ الإنشاء:</span>
+                                  <span className="text-sm text-gray-900 font-medium">{formatDate(admin.createdAt)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-gray-600">آخر تحديث:</span>
+                                  <span className="text-sm text-gray-900 font-medium">{formatDate(admin.updatedAt)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm text-gray-600">الحالة:</span>
+                                  <span className={`inline-flex items-center gap-2 ${!(admin.isDeleted ?? false) ? 'text-green-600' : 'text-red-600'}`}>
+                                    <i className={`fas ${!(admin.isDeleted ?? false) ? 'fa-check-circle' : 'fa-times-circle'}`}></i>
+                                    {!(admin.isDeleted ?? false) ? 'نشط' : 'غير نشط'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
-                </div>
                 )}
               </>
             )}
@@ -1564,7 +1684,7 @@ export default function UserManagementPanel() {
           </div>
         )}
 
-        {/* Logs Section */}
+        {/* Logs Section - Purple themed with API-driven table for all users */}
         {activeTab === 'logs' && (
           <div className="space-y-6">
             {/* Logs Header */}
@@ -1581,7 +1701,7 @@ export default function UserManagementPanel() {
             </div>
 
             {/* Logs Filter Bar */}
-            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
               <div className="flex gap-4 flex-wrap items-end">
                 {/* Search Filter */}
                 <div className="flex-1 min-w-48">
@@ -1592,24 +1712,27 @@ export default function UserManagementPanel() {
                   <input
                     type="text"
                     placeholder="ابحث في السجلات..."
+                    value={inlineLogSearchQuery}
+                    onChange={(e) => setInlineLogSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                   />
                 </div>
-                
+
                 {/* Log Level Filter */}
                 <div className="min-w-40">
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     <i className="fas fa-layer-group ml-1"></i>
                     مستوى السجل
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm">
-                    <option value="">جميع المستويات</option>
-                    <option value="verbose">Verbose - مفصل</option>
-                    <option value="debug">Debug - تصحيح</option>
-                    <option value="information">Information - معلومات</option>
-                    <option value="warning">Warning - تحذير</option>
-                    <option value="error">Error - خطأ</option>
-                    <option value="fatal">Fatal - حرج</option>
+                  <select
+                    value={inlineLogLevelFilter}
+                    onChange={(e) => setInlineLogLevelFilter(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                  >
+                    <option value="All">جميع المستويات</option>
+                    <option value="INF">معلومات</option>
+                    <option value="WRN">تحذيرات</option>
+                    <option value="ERR">أخطاء</option>
                   </select>
                 </div>
 
@@ -1621,6 +1744,8 @@ export default function UserManagementPanel() {
                   </label>
                   <input
                     type="date"
+                    value={inlineLogDateFilter}
+                    onChange={(e) => setInlineLogDateFilter(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                   />
                 </div>
@@ -1631,8 +1756,8 @@ export default function UserManagementPanel() {
                     <i className="fas fa-list ml-1"></i>
                     عدد السجلات
                   </label>
-                  <select 
-                    value={logsPerPage} 
+                  <select
+                    value={logsPerPage}
                     onChange={(e) => setLogsPerPage(Number(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                   >
@@ -1643,282 +1768,117 @@ export default function UserManagementPanel() {
                   </select>
                 </div>
 
-                {/* Export Button */}
-                <button 
-                  onClick={handleExportLogs}
-                  disabled={isExporting}
+                {/* Refresh Button */}
+                <button
+                  onClick={fetchInlineLogs}
+                  disabled={inlineLogsLoading}
                   className="h-9 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed transition-colors text-sm font-medium whitespace-nowrap inline-flex items-center gap-2"
                 >
-                  {isExporting ? (
+                  {inlineLogsLoading ? (
                     <>
                       <i className="fas fa-spinner animate-spin"></i>
-                      جاري التصدير...
+                      جاري التحديث...
                     </>
                   ) : (
                     <>
-                      <i className="fas fa-download"></i>
-                      تصدير
+                      <i className="fas fa-sync-alt"></i>
+                      تحديث
                     </>
                   )}
                 </button>
-              </div>
-              <div className="flex gap-2">
-                <span className="inline-block px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">
-                  <i className="fas fa-info-circle ml-1"></i>
-                  إجمالي السجلات: 1,247
-                </span>
-                <span className="inline-block px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium">
-                  <i className="fas fa-exclamation-triangle ml-1"></i>
-                  أخطاء: 23
-                </span>
               </div>
             </div>
 
             {/* Logs Table */}
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-purple-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase">الوقت</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase">المستوى</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase">الرسالة</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase">المصدر</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase">التفاصيل</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {/* Information Log */}
-                    <tr className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">2025-11-04 14:30:22.156</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          <i className="fas fa-info-circle"></i>
-                          Information
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">User authenticated successfully</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">AuthService.cs:45</td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => setSelectedLog({
-                          timestamp: '2025-11-04 14:30:22.156',
-                          level: 'Information',
-                          message: 'User authenticated successfully',
-                          source: 'AuthService.cs:45',
-                          userId: 'user_001',
-                          userName: 'أحمد علي',
-                          exception: null,
-                          stackTrace: null,
-                          properties: {
-                            'UserId': 'user_001',
-                            'Username': 'ahmad.ali',
-                            'IpAddress': '192.168.1.100',
-                            'UserAgent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-                          }
-                        })} className="text-purple-600 hover:text-purple-700 font-medium text-xs cursor-pointer">عرض</button>
-                      </td>
-                    </tr>
-
-                    {/* Debug Log */}
-                    <tr className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">2025-11-04 14:29:45.892</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          <i className="fas fa-bug"></i>
-                          Debug
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">Database query executed: SELECT * FROM Users</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">UserRepository.cs:123</td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => setSelectedLog({
-                          timestamp: '2025-11-04 14:29:45.892',
-                          level: 'Debug',
-                          message: 'Database query executed: SELECT * FROM Users',
-                          source: 'UserRepository.cs:123',
-                          userId: 'user_002',
-                          userName: 'فاطمة محمود',
-                          exception: null,
-                          stackTrace: null,
-                          properties: {
-                            'Query': 'SELECT * FROM Users WHERE IsActive = 1',
-                            'ExecutionTime': '156ms',
-                            'RowsReturned': '42',
-                            'ConnectionString': 'Server=db.clinic.local;Database=ClinicDB'
-                          }
-                        })} className="text-purple-600 hover:text-purple-700 font-medium text-xs cursor-pointer">عرض</button>
-                      </td>
-                    </tr>
-
-                    {/* Warning Log */}
-                    <tr className="hover:bg-yellow-50 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">2025-11-04 14:28:10.445</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                          <i className="fas fa-exclamation"></i>
-                          Warning
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">Slow query detected: execution time 2500ms</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">QueryExecutor.cs:78</td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => setSelectedLog({
-                          timestamp: '2025-11-04 14:28:10.445',
-                          level: 'Warning',
-                          message: 'Slow query detected: execution time 2500ms',
-                          source: 'QueryExecutor.cs:78',
-                          userId: 'user_003',
-                          userName: 'عمر حسن',
-                          exception: null,
-                          stackTrace: null,
-                          properties: {
-                            'QueryId': 'q_12345',
-                            'ExecutionTime': '2500ms',
-                            'Threshold': '1000ms',
-                            'AffectedRecords': '5000',
-                            'QueryHash': 'a1b2c3d4e5f6'
-                          }
-                        })} className="text-purple-600 hover:text-purple-700 font-medium text-xs cursor-pointer">عرض</button>
-                      </td>
-                    </tr>
-
-                    {/* Error Log */}
-                    <tr className="hover:bg-red-50 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">2025-11-04 14:25:33.712</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          <i className="fas fa-times-circle"></i>
-                          Error
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">Connection timeout: Failed to connect to database</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">DbContext.cs:56</td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => setSelectedLog({
-                          timestamp: '2025-11-04 14:25:33.712',
-                          level: 'Error',
-                          message: 'Connection timeout: Failed to connect to database',
-                          source: 'DbContext.cs:56',
-                          userId: 'system',
-                          userName: 'النظام',
-                          exception: 'SqlException: Timeout expired.',
-                          stackTrace: 'at System.Data.SqlClient.SqlInternalConnection.OpenLoginEnlist(...)\n   at System.Data.SqlClient.SqlConnection.Open()',
-                          properties: {
-                            'ConnectionString': 'Server=db.clinic.local',
-                            'Timeout': '30000ms',
-                            'RetryCount': '3',
-                            'LastAttempt': '2025-11-04 14:25:32.500'
-                          }
-                        })} className="text-purple-600 hover:text-purple-700 font-medium text-xs cursor-pointer">عرض</button>
-                      </td>
-                    </tr>
-
-                    {/* Verbose Log */}
-                    <tr className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">2025-11-04 14:22:15.334</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          <i className="fas fa-comment"></i>
-                          Verbose
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">Cache hit for key: patient_123</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">CacheService.cs:92</td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => setSelectedLog({
-                          timestamp: '2025-11-04 14:22:15.334',
-                          level: 'Verbose',
-                          message: 'Cache hit for key: patient_123',
-                          source: 'CacheService.cs:92',
-                          userId: 'cache_engine',
-                          userName: 'محرك التخزين المؤقت',
-                          exception: null,
-                          stackTrace: null,
-                          properties: {
-                            'CacheKey': 'patient_123',
-                            'CacheDuration': '3600s',
-                            'HitRate': '92.5%',
-                            'EntrySize': '2.3KB',
-                            'Provider': 'Redis'
-                          }
-                        })} className="text-purple-600 hover:text-purple-700 font-medium text-xs cursor-pointer">عرض</button>
-                      </td>
-                    </tr>
-
-                    {/* Fatal Log */}
-                    <tr className="hover:bg-red-100 transition-colors">
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">2025-11-04 14:15:02.101</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-200 text-red-900">
-                          <i className="fas fa-skull"></i>
-                          Fatal
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700 font-semibold">Application crash: Unhandled exception</td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">Program.cs:1</td>
-                      <td className="px-4 py-3">
-                        <button onClick={() => setSelectedLog({
-                          timestamp: '2025-11-04 14:15:02.101',
-                          level: 'Fatal',
-                          message: 'Application crash: Unhandled exception',
-                          source: 'Program.cs:1',
-                          userId: 'system',
-                          userName: 'النظام',
-                          exception: 'NullReferenceException: Object reference not set to an instance of an object.',
-                          stackTrace: 'at ClinicApp.Services.PatientService.GetPatient(String id) in PatientService.cs:line 45\n   at ClinicApp.Controllers.PatientsController.Get(String id) in PatientsController.cs:line 23',
-                          properties: {
-                            'ApplicationVersion': '1.0.0',
-                            'EnvironmentName': 'Production',
-                            'ProcessId': '5432',
-                            'MemoryUsage': '512MB',
-                            'CrashTime': '2025-11-04 14:15:01.999'
-                          }
-                        })} className="text-purple-600 hover:text-purple-700 font-medium text-xs cursor-pointer">عرض</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Log Details Modal Info */}
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                <i className="fas fa-code"></i>
-                معلومات مستويات السجلات
-              </h4>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span><span className="font-medium">Verbose:</span> معلومات تفصيلية جداً</span>
+              {/* Loading State */}
+              {inlineLogsLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <i className="fas fa-spinner animate-spin text-2xl text-purple-600 mb-2"></i>
+                    <p className="text-gray-600">جاري تحميل السجلات...</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 bg-gray-500 rounded-full"></span>
-                  <span><span className="font-medium">Debug:</span> معلومات التصحيح</span>
+              )}
+
+              {/* Error State */}
+              {!inlineLogsLoading && inlineLogsError && (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <i className="fas fa-exclamation-triangle text-2xl text-red-500 mb-2"></i>
+                    <p className="text-red-600">{inlineLogsError}</p>
+                    <button
+                      onClick={fetchInlineLogs}
+                      className="mt-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                    >
+                      إعادة المحاولة
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
-                  <span><span className="font-medium">Information:</span> معلومات عامة</span>
+              )}
+
+              {/* Empty State */}
+              {!inlineLogsLoading && !inlineLogsError && inlineLogs.length === 0 && (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <i className="fas fa-file-alt text-4xl text-gray-300 mb-2"></i>
+                    <p className="text-gray-600">لا توجد سجلات</p>
+                    <p className="text-sm text-gray-500">لم يتم العثور على أي سجلات للتاريخ المحدد</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 bg-yellow-500 rounded-full"></span>
-                  <span><span className="font-medium">Warning:</span> تحذيرات</span>
+              )}
+
+              {/* Logs Table */}
+              {!inlineLogsLoading && !inlineLogsError && inlineLogs.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-purple-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase w-24">الوقت</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase w-28">التاريخ</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-purple-900 uppercase w-24">النوع</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-purple-900 uppercase">الرسالة</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {inlineLogs.map((log, index) => (
+                        <tr key={`${log.lineNumber}-${index}`} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3 text-gray-900 font-mono text-xs whitespace-nowrap">
+                            {new Date(log.timestamp).toLocaleTimeString('ar-EG-u-nu-latn', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit',
+                              hour12: false
+                            })}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                            {new Date(log.timestamp).toLocaleDateString('ar-EG-u-nu-latn', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getLevelColor(log.level)}`}>
+                              <i className={`fas ${getLevelIcon(log.level)} text-xs`}></i>
+                              {log.levelArabic}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700 font-mono text-xs" dir="ltr">
+                            {log.message}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 bg-red-500 rounded-full"></span>
-                  <span><span className="font-medium">Error:</span> أخطاء</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block w-2 h-2 bg-red-700 rounded-full"></span>
-                  <span><span className="font-medium">Fatal:</span> أخطاء حرجة</span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Pagination */}
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-600">
-                عرض {Math.min((currentPage - 1) * logsPerPage + 1, totalLogs)} إلى {Math.min(currentPage * logsPerPage, totalLogs)} من {totalLogs} سجل
+                عرض ({Math.min((currentPage - 1) * logsPerPage + 1, totalLogs)} - {Math.min(currentPage * logsPerPage, totalLogs)}) من أصل {totalLogs} سجل
               </p>
               <div className="flex gap-2 items-center">
                 <button
@@ -1938,13 +1898,12 @@ export default function UserManagementPanel() {
                       }
                     }}
                     disabled={page === '...'}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      currentPage === page
-                        ? 'bg-purple-600 text-white hover:bg-purple-700'
-                        : page === '...'
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${currentPage === page
+                      ? 'bg-purple-600 text-white hover:bg-purple-700'
+                      : page === '...'
                         ? 'border border-gray-300 text-gray-600 cursor-default'
                         : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
+                      }`}
                   >
                     {page}
                   </button>
@@ -1978,15 +1937,15 @@ export default function UserManagementPanel() {
 
             {/* Add User Button - Only for Moderators (NOT regular users) */}
             {currentUser?.role === UserRole.Moderator && (
-            <div>
-              <button
-                onClick={() => handleAddUser(UserRole.User, currentUser.id)}
-                className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-              >
-                <i className="fas fa-plus"></i>
-                <span>إضافة مستخدم جديد</span>
-              </button>
-            </div>
+              <div>
+                <button
+                  onClick={() => handleAddUser(UserRole.User, currentUser.id)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                >
+                  <i className="fas fa-plus"></i>
+                  <span>إضافة مستخدم جديد</span>
+                </button>
+              </div>
             )}
 
             {/* Users List */}
@@ -2038,22 +1997,22 @@ export default function UserManagementPanel() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             {/* Edit/Delete buttons - Only for Moderators (NOT regular users) */}
                             {currentUser?.role === UserRole.Moderator && (
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleEditUser(user)}
-                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
-                                title="تعديل المستخدم"
-                              >
-                                <i className="fas fa-edit"></i>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteUser(user)}
-                                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-                                title="حذف المستخدم"
-                              >
-                                <i className="fas fa-trash"></i>
-                              </button>
-                            </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleEditUser(user)}
+                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                                  title="تعديل المستخدم"
+                                >
+                                  <i className="fas fa-edit"></i>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUser(user)}
+                                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                                  title="حذف المستخدم"
+                                >
+                                  <i className="fas fa-trash"></i>
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -2177,39 +2136,41 @@ export default function UserManagementPanel() {
         </div>
       )}
 
-        {/* Trash Tab */}
-        {activeTab === 'trash' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
-          <div className="space-y-6 p-4 sm:p-6">
-            {/* Trash Header */}
-            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-red-900 flex items-center gap-2">
-                <i className="fas fa-trash"></i>
-                المهملات
-              </h3>
-              <p className="text-sm text-red-700 mt-2">
-                يمكنك استعادة العناصر المحذوفة خلال 30 يوم من تاريخ الحذف. المهملات تحتوي على المستخدمين والطوابير والقوالب والمرضى المحذوفين.
-              </p>
-            </div>
 
-            {/* Trash Tab Content - Users */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <button
-                onClick={() => {
-                  setExpandedTrashSections(prev => {
-                    const next = new Set(prev);
-                    if (next.has('users')) next.delete('users'); else next.add('users');
-                    return next;
-                  });
-                }}
-                className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
-              >
-                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                  <i className="fas fa-users text-blue-600"></i>
-                  المستخدمون المحذوفون
-                </h4>
-                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('users') ? 'rotate-180' : ''}`}></i>
-              </button>
-              {expandedTrashSections.has('users') && (
+
+      {/* Trash Tab */}
+      {activeTab === 'trash' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
+        <div className="space-y-6">
+          {/* Trash Header */}
+          <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-red-900 flex items-center gap-2">
+              <i className="fas fa-trash"></i>
+              المهملات
+            </h3>
+            <p className="text-sm text-red-700 mt-2">
+              يمكنك استعادة العناصر المحذوفة خلال 30 يوم من تاريخ الحذف. المهملات تحتوي على المستخدمين والعيادات والقوالب والمرضى المحذوفين.
+            </p>
+          </div>
+
+          {/* Trash Tab Content - Users */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <button
+              onClick={() => {
+                setExpandedTrashSections(prev => {
+                  const next = new Set(prev);
+                  if (next.has('users')) next.delete('users'); else next.add('users');
+                  return next;
+                });
+              }}
+              className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+            >
+              <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                <i className="fas fa-users text-blue-600"></i>
+                المستخدمون المحذوفون
+              </h4>
+              <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('users') ? 'rotate-180' : ''}`}></i>
+            </button>
+            {expandedTrashSections.has('users') && (
               <TrashTab
                 entityType="user"
                 items={trashItems}
@@ -2224,28 +2185,28 @@ export default function UserManagementPanel() {
                 adminOnly={false}
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
               />
-              )}
-            </div>
+            )}
+          </div>
 
-            {/* Trash Tab Content - Queues */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <button
-                onClick={() => {
-                  setExpandedTrashSections(prev => {
-                    const next = new Set(prev);
-                    if (next.has('queues')) next.delete('queues'); else next.add('queues');
-                    return next;
-                  });
-                }}
-                className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
-              >
-                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                  <i className="fas fa-layer-group text-purple-600"></i>
-                  الطوابير المحذوفة
-                </h4>
-                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('queues') ? 'rotate-180' : ''}`}></i>
-              </button>
-              {expandedTrashSections.has('queues') && (
+          {/* Trash Tab Content - Queues */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <button
+              onClick={() => {
+                setExpandedTrashSections(prev => {
+                  const next = new Set(prev);
+                  if (next.has('queues')) next.delete('queues'); else next.add('queues');
+                  return next;
+                });
+              }}
+              className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+            >
+              <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                <i className="fas fa-layer-group text-purple-600"></i>
+                العيادات المحذوفة
+              </h4>
+              <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('queues') ? 'rotate-180' : ''}`}></i>
+            </button>
+            {expandedTrashSections.has('queues') && (
               <TrashTab
                 entityType="queue"
                 items={trashQueues.map(q => ({ ...q, name: q.doctorName, id: q.id }))}
@@ -2260,28 +2221,28 @@ export default function UserManagementPanel() {
                 adminOnly={false}
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
               />
-              )}
-            </div>
+            )}
+          </div>
 
-            {/* Trash Tab Content - Templates */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <button
-                onClick={() => {
-                  setExpandedTrashSections(prev => {
-                    const next = new Set(prev);
-                    if (next.has('templates')) next.delete('templates'); else next.add('templates');
-                    return next;
-                  });
-                }}
-                className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
-              >
-                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                  <i className="fas fa-file-alt text-green-600"></i>
-                  القوالب المحذوفة
-                </h4>
-                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('templates') ? 'rotate-180' : ''}`}></i>
-              </button>
-              {expandedTrashSections.has('templates') && (
+          {/* Trash Tab Content - Templates */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <button
+              onClick={() => {
+                setExpandedTrashSections(prev => {
+                  const next = new Set(prev);
+                  if (next.has('templates')) next.delete('templates'); else next.add('templates');
+                  return next;
+                });
+              }}
+              className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+            >
+              <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                <i className="fas fa-file-alt text-green-600"></i>
+                القوالب المحذوفة
+              </h4>
+              <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('templates') ? 'rotate-180' : ''}`}></i>
+            </button>
+            {expandedTrashSections.has('templates') && (
               <TrashTab
                 entityType="template"
                 items={trashTemplates.map(t => ({ ...t, name: t.title, id: t.id }))}
@@ -2297,39 +2258,231 @@ export default function UserManagementPanel() {
                 isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
                 queues={queues}
               />
-              )}
-            </div>
-
-            {/* Trash Tab Content - Patients */}
-            {trashPatientsTotalCount > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
-                <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <i className="fas fa-user-injured text-orange-600"></i>
-                  المرضى المحذوفون
-                </h4>
-                <TrashTab
-                  entityType="patient"
-                  items={trashPatients.map(p => ({ ...p, name: p.fullName || p.name, id: p.id }))}
-                  isLoading={isLoadingTrashPatients}
-                  isError={!!trashPatientsError}
-                  errorMessage={trashPatientsError}
-                  pageNumber={trashPatientsPageNumber}
-                  pageSize={TRASH_PAGE_SIZE}
-                  totalCount={trashPatientsTotalCount}
-                  onPageChange={loadTrashPatients}
-                  onRestore={async (id) => {
-                    // Placeholder - implement when patient restore endpoint is available
-                    addToast('استعادة المرضى قيد التطوير', 'info');
-                  }}
-                  adminOnly={false}
-                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-                />
-              </div>
             )}
           </div>
-        )}
 
-        {/* Modals */}
+          {/* Trash Tab Content - Patients */}
+          {trashPatientsTotalCount > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <i className="fas fa-user-injured text-orange-600"></i>
+                المرضى المحذوفون
+              </h4>
+              <TrashTab
+                entityType="patient"
+                items={trashPatients.map(p => ({ ...p, name: p.fullName || p.name, id: p.id }))}
+                isLoading={isLoadingTrashPatients}
+                isError={!!trashPatientsError}
+                errorMessage={trashPatientsError}
+                pageNumber={trashPatientsPageNumber}
+                pageSize={TRASH_PAGE_SIZE}
+                totalCount={trashPatientsTotalCount}
+                onPageChange={loadTrashPatients}
+                onRestore={async (id) => {
+                  // Placeholder - implement when patient restore endpoint is available
+                  addToast('استعادة المرضى قيد التطوير', 'info');
+                }}
+                adminOnly={false}
+                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* System Settings Section (Admin Only) */}
+      {activeTab === 'systemSettings' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
+        <div className="space-y-6">
+          {/* Header Banner - Same style as Logs/Trash tabs */}
+          <div className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg p-4 text-center">
+            <h3 className="text-xl font-bold text-white flex items-center justify-center gap-2">
+              <i className="fas fa-cog"></i>
+              إعدادات النظام
+            </h3>
+            <p className="text-purple-100 text-sm mt-1">
+              إدارة إعدادات النظام العامة
+            </p>
+          </div>
+
+          {/* Rate Limit Settings Card */}
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-purple-50 border-b border-purple-100 p-4">
+              <h4 className="text-lg font-semibold text-purple-900 flex items-center gap-2">
+                <i className="fas fa-shield-alt text-purple-600"></i>
+                إعدادات حماية الحساب (Rate Limiting)
+              </h4>
+              <p className="text-purple-700 text-sm mt-1">
+                تحكم في التأخير العشوائي بين الرسائل لحماية الحساب من اكتشاف النمط المتكرر
+              </p>
+            </div>
+
+            <div className="p-6">
+              {/* Current Settings Display */}
+              {rateLimitSettings && (
+                <div className="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
+                  <h4 className="text-blue-800 font-semibold mb-2 flex items-center gap-2">
+                    <i className="fas fa-info-circle"></i>
+                    الإعدادات الحالية
+                  </h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                      <div className="text-2xl font-bold text-blue-600">{rateLimitSettings.minSeconds}</div>
+                      <div className="text-gray-600">الحد الأدنى (ثانية)</div>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                      <div className="text-2xl font-bold text-indigo-600">{rateLimitSettings.maxSeconds}</div>
+                      <div className="text-gray-600">الحد الأقصى (ثانية)</div>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                      <div className={`text-2xl font-bold ${rateLimitSettings.enabled ? 'text-green-600' : 'text-red-600'}`}>
+                        {rateLimitSettings.enabled ? 'مفعّل' : 'معطّل'}
+                      </div>
+                      <div className="text-gray-600">الحالة</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Form */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      الحد الأدنى للتأخير (ثانية)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="60"
+                      value={tempMinSeconds}
+                      onChange={(e) => setTempMinSeconds(parseInt(e.target.value) || 0)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="3"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">قيمة بين 0 و 60 ثانية</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      الحد الأقصى للتأخير (ثانية)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={tempMaxSeconds}
+                      onChange={(e) => setTempMaxSeconds(parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="7"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">قيمة بين 1 و 120 ثانية</p>
+                  </div>
+                </div>
+
+                {/* Enable/Disable Toggle */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <h4 className="font-medium text-gray-900">تفعيل حماية الحساب</h4>
+                    <p className="text-sm text-gray-500">عند التعطيل، سيتم إرسال الرسائل بدون تأخير (غير موصى به)</p>
+                  </div>
+                  <button
+                    onClick={() => setTempEnabled(!tempEnabled)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${tempEnabled ? 'bg-green-500' : 'bg-gray-300'
+                      }`}
+                    role="switch"
+                    aria-checked={tempEnabled}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${tempEnabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Validation Warning */}
+                {tempMaxSeconds < tempMinSeconds && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm flex items-center gap-2">
+                    <i className="fas fa-exclamation-triangle"></i>
+                    الحد الأقصى يجب أن يكون أكبر من أو يساوي الحد الأدنى
+                  </div>
+                )}
+
+                {/* Save Button */}
+                <div className="flex justify-end gap-3 pt-4 border-t">
+                  <button
+                    onClick={async () => {
+                      if (rateLimitSettings) {
+                        setTempMinSeconds(rateLimitSettings.minSeconds);
+                        setTempMaxSeconds(rateLimitSettings.maxSeconds);
+                        setTempEnabled(rateLimitSettings.enabled);
+                      }
+                    }}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <i className="fas fa-undo ml-1"></i>
+                    إعادة تعيين
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (tempMaxSeconds < tempMinSeconds) {
+                        addToast('الحد الأقصى يجب أن يكون أكبر من أو يساوي الحد الأدنى', 'error');
+                        return;
+                      }
+                      setRateLimitSaving(true);
+                      try {
+                        const updated = await settingsApiClient.updateRateLimitSettings({
+                          minSeconds: tempMinSeconds,
+                          maxSeconds: tempMaxSeconds,
+                          enabled: tempEnabled
+                        });
+                        setRateLimitSettings(updated);
+                        addToast('تم حفظ إعدادات حماية الحساب بنجاح', 'success');
+                      } catch (err) {
+                        logger.error('Failed to save rate limit settings:', err);
+                        addToast('فشل حفظ الإعدادات', 'error');
+                      } finally {
+                        setRateLimitSaving(false);
+                      }
+                    }}
+                    disabled={rateLimitSaving || tempMaxSeconds < tempMinSeconds}
+                    className={`px-6 py-2 rounded-lg font-medium text-white flex items-center gap-2 transition-colors ${rateLimitSaving || tempMaxSeconds < tempMinSeconds
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
+                  >
+                    {rateLimitSaving ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin"></i>
+                        جارٍ الحفظ...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-save"></i>
+                        حفظ الإعدادات
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Box */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <h4 className="text-amber-800 font-semibold mb-2 flex items-center gap-2">
+              <i className="fas fa-lightbulb"></i>
+              ملاحظات مهمة
+            </h4>
+            <ul className="text-amber-700 text-sm space-y-2 list-disc list-inside">
+              <li>يتم توليد تأخير عشوائي بين الحد الأدنى والأقصى قبل كل رسالة</li>
+              <li>التأخير العشوائي يمنع واتساب من اكتشاف نمط الإرسال الآلي</li>
+              <li>القيم الافتراضية (3-7 ثانية) توفر توازناً جيداً بين السرعة والأمان</li>
+              <li>تعطيل الحماية قد يؤدي لحظر الحساب - استخدم بحذر!</li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
       <EditUserModal selectedUser={null} />
       <EditAccountModal selectedUser={null} />
       {/* AddUserModal is rendered in MainApp.tsx to avoid duplicate IDs */}
@@ -2384,7 +2537,7 @@ export default function UserManagementPanel() {
             try {
               // Refresh users list to update quota in moderators tab
               await actions.fetchUsers();
-              
+
               // Trigger event to notify ModeratorQuotaDisplay components and QuotaTabContent
               window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
             } catch (error) {
@@ -2416,7 +2569,7 @@ export default function UserManagementPanel() {
             try {
               // Refresh users list to update quota in moderators tab
               await actions.fetchUsers();
-              
+
               // Trigger event to notify ModeratorQuotaDisplay components and QuotaTabContent
               window.dispatchEvent(new CustomEvent('quotaDataUpdated'));
             } catch (error) {
@@ -2432,3 +2585,4 @@ export default function UserManagementPanel() {
     </>
   );
 }
+

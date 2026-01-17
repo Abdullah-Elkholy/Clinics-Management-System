@@ -7,6 +7,7 @@ import logger from '@/utils/logger';
 import { UserRole } from '@/types/roles';
 import type { User } from '@/types/user';
 import { translateNetworkError } from '@/utils/errorUtils';
+import { parseAsUtc } from '@/utils/dateTimeUtils';
 
 export interface UserDto {
   id: number;
@@ -63,7 +64,7 @@ const extractErrorMessage = (payload: unknown, fallback = DEFAULT_ERROR_MESSAGE)
         return error;
       }
     }
-    
+
     // Check for 'message' field (alternative response format)
     if ('message' in payload) {
       const message = (payload as { message?: unknown }).message;
@@ -153,7 +154,7 @@ async function fetchAPI<T>(
       // This is already an ApiError, re-throw it
       throw error;
     }
-    
+
     // This is a network/fetch error, translate it
     const translatedMessage = translateNetworkError(error);
     logger.error('❌ Network Error:', {
@@ -161,7 +162,7 @@ async function fetchAPI<T>(
       originalError: error,
       translatedMessage,
     });
-    
+
     throw {
       message: translatedMessage,
       statusCode: 0, // Network errors don't have status codes
@@ -297,8 +298,8 @@ export async function updateUser(
 
     return result;
   } catch (error) {
-    const errorMessage = error instanceof Error 
-      ? error.message 
+    const errorMessage = error instanceof Error
+      ? error.message
       : (error && typeof error === 'object' && 'message' in error)
         ? String((error as { message?: unknown }).message || 'Unknown error')
         : 'Unknown error';
@@ -392,8 +393,8 @@ const mapRoleToEnum = (role: UserDto['role']): UserRole => {
 };
 
 export function userDtoToModel(dto: UserDto): User {
-  const createdAt = dto.createdAt ? new Date(dto.createdAt) : new Date();
-  const updatedAt = dto.updatedAt ? new Date(dto.updatedAt) : createdAt;
+  const createdAt = parseAsUtc(dto.createdAt) || new Date();
+  const updatedAt = parseAsUtc(dto.updatedAt) || createdAt;
 
   return {
     id: dto.id.toString(),
@@ -405,7 +406,7 @@ export function userDtoToModel(dto: UserDto): User {
     assignedModerator: dto.moderatorId ? dto.moderatorId.toString() : undefined,
     createdAt,
     updatedAt,
-    lastLogin: dto.lastLogin ? new Date(dto.lastLogin) : undefined,
+    lastLogin: parseAsUtc(dto.lastLogin),
   };
 }
 

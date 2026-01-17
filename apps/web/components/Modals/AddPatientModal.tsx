@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
@@ -205,7 +205,7 @@ export default function AddPatientModal() {
       
       // Validate that we have a queue ID
       if (!queueId) {
-        addToast('يجب تحديد طابور', 'error');
+        addToast('يجب تحديد عيادة', 'error');
         return;
       }
 
@@ -609,6 +609,7 @@ export default function AddPatientModal() {
     </Modal>
   );
 }
+
 
 
 

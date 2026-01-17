@@ -1,6 +1,5 @@
 using Clinics.Domain;
 using Clinics.Infrastructure;
-using Clinics.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Clinics.Api.Services;
@@ -12,12 +11,17 @@ namespace Clinics.Api.Services;
 public class QuotaService : Clinics.Application.Interfaces.IQuotaService
 {
     private readonly ApplicationDbContext _context;
-    private readonly Clinics.Infrastructure.Services.IQueueCascadeService _queueCascadeService;
+    private readonly IQueueCascadeService _queueCascadeService;
+    private readonly IUserContext? _userContext;
 
-    public QuotaService(ApplicationDbContext context, Clinics.Infrastructure.Services.IQueueCascadeService queueCascadeService)
+    public QuotaService(
+        ApplicationDbContext context,
+        IQueueCascadeService queueCascadeService,
+        IUserContext? userContext = null)
     {
         _context = context;
         _queueCascadeService = queueCascadeService;
+        _userContext = userContext;
     }
 
     /// <summary>
@@ -40,7 +44,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         // This ensures moderators always use their own ID, even if ModeratorId is incorrectly set
         if (user.Role == "moderator")
             return user.Id;
-        
+
         // CRITICAL FIX: Admins CANNOT send WhatsApp messages using their own ID
         // Admin users (primary_admin, secondary_admin) do NOT have WhatsApp sessions
         // Only moderators (role = "moderator", ID > 1) can have WhatsApp sessions
@@ -48,7 +52,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         // 1. Use the "x-moderator-id" header to specify which moderator's session to use
         // 2. OR have a ModeratorId assigned in the database (for non-admin users)
         // Removing the admin bypass ensures admins cannot create messages with ModeratorId=1
-        
+
         // If user has ModeratorId set, use that (users share moderator's quota)
         if (user.ModeratorId.HasValue)
             return user.ModeratorId.Value;
@@ -57,18 +61,21 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         // This prevents creating messages with ModeratorId=1 (admin) which would be rejected by WhatsApp service
         throw new InvalidOperationException($"User (ID={userId}, Role={user.Role}) is not associated with any moderator. Admins must specify a moderator ID to send WhatsApp messages.");
     }    /// <summary>
-    /// Get or create quota for the effective moderator.
-    /// If quota exists, returns it. If missing, creates one with unlimited values.
-    /// Quota is always tied to a moderator—never created standalone.
-    /// </summary>
+         /// Get or create quota for the effective moderator.
+         /// If quota exists, returns it. If missing, creates one with unlimited values.
+         /// Quota is always tied to a moderator—never created standalone.
+         /// </summary>
     public async Task<Quota> GetOrCreateQuotaForModeratorAsync(int moderatorId)
     {
         var existingQuota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-        
+
         if (existingQuota != null)
             return existingQuota;
 
         // Create new unlimited quota for this moderator (-1 = unlimited)
+        int? currentUserId = null;
+        try { currentUserId = _userContext?.GetUserId(); } catch { }
+        DateTime currentDateTime = DateTime.UtcNow;
         var newQuota = new Quota
         {
             ModeratorUserId = moderatorId,
@@ -76,7 +83,10 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
             ConsumedMessages = 0,
             QueuesQuota = -1, // -1 = unlimited
             ConsumedQueues = 0,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = currentDateTime,
+            CreatedBy = currentUserId,
+            UpdatedAt = currentDateTime,
+            UpdatedBy = currentUserId
         };
 
         _context.Quotas.Add(newQuota);
@@ -109,10 +119,10 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
     {
         var quota = await GetQuotaForUserAsync(userId);
         if (quota == null) return true; // No quota restriction (admins)
-        
+
         // Unlimited quota (-1) always has enough
         if (quota.MessagesQuota == -1) return true;
-        
+
         return quota.RemainingMessages >= count;
     }
 
@@ -124,10 +134,10 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
     {
         var quota = await GetQuotaForUserAsync(userId);
         if (quota == null) return true; // No quota restriction (admins)
-        
+
         // Unlimited quota (-1) always has enough
         if (quota.QueuesQuota == -1) return true;
-        
+
         return quota.RemainingQueues > 0;
     }
 
@@ -143,7 +153,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         {
             var moderatorId = await GetEffectiveModeratorIdAsync(userId);
             var quota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-            
+
             if (quota == null)
             {
                 // Create default quota if doesn't exist
@@ -166,7 +176,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
             quota.ConsumedMessages += count;
             quota.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
-            
+
             return true;
         }
         catch
@@ -191,7 +201,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
                 .CountAsync();
 
             var quota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-            
+
             if (quota == null)
             {
                 // Create quota if doesn't exist
@@ -215,12 +225,16 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
 
             await _context.SaveChangesAsync();
         }
-        catch (Exception ex)
+        catch
         {
             // Log error but don't throw - quota recalculation is not critical for system operation
             // This allows the system to continue functioning even if recalculation fails
         }
     }
+
+    // NOTE: RefundMessageQuotaAsync was removed as redundant.
+    // ConsumedMessages is calculated from actual "sent" status messages via RecalculateMessageQuotaAsync.
+    // Failed messages never consume quota, so no refund is needed.
 
     /// <summary>
     /// Consume queue quota for user/moderator
@@ -231,7 +245,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         {
             var moderatorId = await GetEffectiveModeratorIdAsync(userId);
             var quota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-            
+
             if (quota == null)
             {
                 // Create default quota
@@ -254,7 +268,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
             quota.ConsumedQueues++;
             quota.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
-            
+
             return true;
         }
         catch
@@ -265,7 +279,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
     }
 
     // IQuotaService interface implementation wrappers
-    
+
     /// <summary>
     /// Check if user can send messages (IQuotaService interface)
     /// </summary>
@@ -274,7 +288,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         var hasQuota = await HasMessagesQuotaAsync(userId, count);
         if (hasQuota)
             return (true, "Quota available");
-        
+
         return (false, $"Insufficient message quota. Need {count} messages.");
     }
 
@@ -286,7 +300,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         var hasQuota = await HasQueuesQuotaAsync(userId);
         if (hasQuota)
             return (true, "Quota available");
-        
+
         return (false, "Insufficient queue quota.");
     }
 
@@ -334,7 +348,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
         {
             var moderatorId = await GetEffectiveModeratorIdAsync(userId);
             var quota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-            
+
             if (quota != null && quota.ConsumedQueues > 0)
             {
                 quota.ConsumedQueues--;
@@ -355,7 +369,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
     public async Task AddQuotaAsync(int moderatorId, int addMessages, int addQueues)
     {
         var quota = await _context.Quotas.FirstOrDefaultAsync(q => q.ModeratorUserId == moderatorId);
-        
+
         if (quota == null)
         {
             quota = new Quota
@@ -388,7 +402,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
                     quota.MessagesQuota = newMessagesQuota;
                 }
             }
-            
+
             if (quota.QueuesQuota != -1)
             {
                 // Check for overflow: if adding would exceed int.MaxValue, cap at int.MaxValue
@@ -403,10 +417,10 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
                     quota.QueuesQuota = (int)newQueuesQuota;
                 }
             }
-            
+
             quota.UpdatedAt = DateTime.UtcNow;
         }
-        
+
         await _context.SaveChangesAsync();
     }
 
@@ -430,7 +444,7 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
 
         if (user == null)
             throw new InvalidOperationException("User not found");
-        
+
         if (moderator == null || moderator.Role != "moderator")
             throw new InvalidOperationException("Invalid moderator");
 
@@ -440,10 +454,10 @@ public class QuotaService : Clinics.Application.Interfaces.IQuotaService
 
     /// <summary>
     /// Restore a soft-deleted queue via the cascade service.
-    /// Delegates to QueueCascadeService for TTL and business rule enforcement.
+    /// Delegates to QueueCascadeService for business rule enforcement.
     /// </summary>
-    public async Task<RestoreResult> RestoreQueueAsync(Queue queue, int? restoredBy = null)
+    public async Task<(bool Success, string ErrorMessage)> RestoreQueueAsync(Queue queue, int? restoredBy = null)
     {
-        return await _queueCascadeService.RestoreQueueAsync(queue, restoredBy, ttlDays: 30);
+        return await _queueCascadeService.RestoreQueueAsync(queue.Id, restoredBy, useTransaction: true);
     }
 }

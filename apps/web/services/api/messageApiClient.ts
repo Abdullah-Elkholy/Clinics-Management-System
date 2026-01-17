@@ -148,12 +148,12 @@ const extractErrorMessage = (payload: unknown, fallback = DEFAULT_ERROR_MESSAGE)
 
   if (payload && typeof payload === 'object') {
     const obj = payload as Record<string, unknown>;
-    
+
     // Prioritize 'message' field (used by backend for detailed error messages, including Arabic)
     if ('message' in obj && typeof obj.message === 'string' && obj.message.trim()) {
       return obj.message;
     }
-    
+
     // Fallback to 'error' field (used by backend for BadRequest responses)
     if ('error' in obj && typeof obj.error === 'string' && obj.error.trim()) {
       return obj.error;
@@ -247,7 +247,7 @@ export async function fetchAPI<T>(
       const errorCode = errorData?.error as string | undefined;
       const code = errorData?.code as string | undefined;
       const warning = errorData?.warning as boolean | undefined;
-      
+
       const apiError = {
         message: errorMessage,
         statusCode: response.status,
@@ -274,7 +274,7 @@ export async function fetchAPI<T>(
       // This is already an ApiError, re-throw it
       throw error;
     }
-    
+
     // This is a network/fetch error, translate it
     const translatedMessage = translateNetworkError(error);
     throw {
@@ -333,7 +333,7 @@ async function withRetry<T>(
       ]);
     } catch (error) {
       lastError = error as Error | ApiError;
-      
+
       // Don't retry on client errors (4xx) or validation errors
       if (
         error &&
@@ -372,7 +372,7 @@ export async function getTemplates(queueId?: number): Promise<ListResponse<Templ
     logger.error('Invalid queueId provided to getTemplates:', queueId);
     return { items: [], totalCount: 0, pageNumber: 0, pageSize: 0 };
   }
-  
+
   const params = new URLSearchParams();
   if (queueId !== undefined) {
     params.append('queueId', queueId.toString());
@@ -505,7 +505,7 @@ export async function getConditions(queueId?: number): Promise<ListResponse<Cond
     logger.error('Invalid queueId provided to getConditions:', queueId);
     return { items: [], totalCount: 0, pageNumber: 0, pageSize: 0 };
   }
-  
+
   return fetchAPI(`/conditions?queueId=${queueId}`);
 }
 
@@ -535,16 +535,22 @@ export async function updateCondition(id: number, data: UpdateConditionRequest):
   // Build request body, explicitly including null values when provided
   // This ensures UNCONDITIONED operator gets value: null, minValue: null, maxValue: null
   const requestBody: any = {};
-  
+
   if (data.operator !== undefined) {
     requestBody.operator = data.operator;
-    
+
     // For UNCONDITIONED and DEFAULT operators, explicitly set null values
-    // This ensures the backend receives null instead of omitting the fields
     if (data.operator === 'UNCONDITIONED' || data.operator === 'DEFAULT') {
       requestBody.value = null;
       requestBody.minValue = null;
       requestBody.maxValue = null;
+    } else if (data.operator === 'RANGE') {
+      // For RANGE, explicitly set value to null (required by backend)
+      requestBody.value = null;
+
+      // Include min/max values
+      if (data.minValue !== undefined) requestBody.minValue = data.minValue;
+      if (data.maxValue !== undefined) requestBody.maxValue = data.maxValue;
     } else {
       // For other operators, include values if provided
       if (data.value !== undefined) {
@@ -569,7 +575,7 @@ export async function updateCondition(id: number, data: UpdateConditionRequest):
       requestBody.maxValue = data.maxValue;
     }
   }
-  
+
   return withRetry(() =>
     fetchAPI(`/conditions/${id}`, {
       method: 'PUT',
@@ -660,12 +666,14 @@ export async function sendMessage(data: {
 
 /**
  * Send messages to multiple patients (bulk)
+ * @param correlationId - Optional unique ID for idempotency. If provided, prevents duplicate message creation on retries.
  */
 export async function sendMessages(data: {
   templateId: number;
   patientIds: number[];
   channel?: string;
   overrideContent?: string;
+  correlationId?: string;
 }): Promise<{ success: boolean; queued: number }> {
   return fetchAPI('/messages/send', {
     method: 'POST',
@@ -757,6 +765,7 @@ export interface OngoingSessionDto {
   total: number;
   sent: number;
   status: string; // active, paused
+  isProcessing?: boolean; // Indicates if session is currently being processed (has 'sending' messages)
   patients: SessionPatientDto[];
 }
 
@@ -770,6 +779,7 @@ export interface SessionPatientDto {
   isPaused: boolean;
   attempts?: number;
   failedReason?: string;
+  messageContent?: string; // Resolved message content (variables replaced)
 }
 
 export interface FailedSessionDto {
@@ -802,30 +812,43 @@ export interface CompletedSessionDto {
   completedAt?: string;
   total: number;
   sent: number;
-  failed: number;  // New field
-  hasFailedMessages: boolean;  // New field
-  sentMessages: SentMessageDto[];  // Changed from patients
+  failed: number;
+  queued: number;  // Number of queued/pending messages
+  hasFailedMessages: boolean;
+  hasOngoingMessages: boolean;  // True if session still has queued/sending messages
+  isFullyCompleted: boolean;  // True if all messages are sent or failed
+  sessionStatus: 'in_progress' | 'completed';  // Current session status
+  sentMessages: SentMessageDto[];
 }
 
 /**
- * Get all ongoing sessions for current user's moderator
+ * Get all ongoing sessions for current user's moderator.
+ * For Admins: optionally filter by moderatorId.
  */
-export async function getOngoingSessions(): Promise<{ success: boolean; data: OngoingSessionDto[] }> {
-  return fetchAPI('/sessions/ongoing');
+export async function getOngoingSessions(moderatorId?: number): Promise<{ success: boolean; data: OngoingSessionDto[] }> {
+  const timestamp = Date.now();
+  const queryParams = [`_t=${timestamp}`];
+  if (moderatorId) queryParams.push(`moderatorId=${moderatorId}`);
+  const params = `?${queryParams.join('&')}`;
+  return fetchAPI(`/sessions/ongoing${params}`);
 }
 
 /**
- * Get all failed sessions for current user's moderator
+ * Get all failed sessions for current user's moderator.
+ * For Admins: optionally filter by moderatorId.
  */
-export async function getFailedSessions(): Promise<{ success: boolean; data: FailedSessionDto[] }> {
-  return fetchAPI('/sessions/failed');
+export async function getFailedSessions(moderatorId?: number): Promise<{ success: boolean; data: FailedSessionDto[] }> {
+  const params = moderatorId ? `?moderatorId=${moderatorId}` : '';
+  return fetchAPI(`/sessions/failed${params}`);
 }
 
 /**
- * Get all completed sessions for current user's moderator
+ * Get all completed sessions for current user's moderator.
+ * For Admins: optionally filter by moderatorId.
  */
-export async function getCompletedSessions(): Promise<{ success: boolean; data: CompletedSessionDto[] }> {
-  return fetchAPI('/sessions/completed');
+export async function getCompletedSessions(moderatorId?: number): Promise<{ success: boolean; data: CompletedSessionDto[] }> {
+  const params = moderatorId ? `?moderatorId=${moderatorId}` : '';
+  return fetchAPI(`/sessions/completed${params}`);
 }
 
 /**
@@ -850,10 +873,10 @@ export async function resumeSession(sessionId: string): Promise<{ success: boole
  * Retry all failed messages in a session
  * IMPORTANT: Validates WhatsApp numbers before retrying
  */
-export async function retrySession(sessionId: string): Promise<{ 
-  success: boolean; 
-  requeued: number; 
-  skipped: number; 
+export async function retrySession(sessionId: string): Promise<{
+  success: boolean;
+  requeued: number;
+  skipped: number;
   message?: string;
   invalidPatients?: string[];
 }> {
@@ -873,10 +896,13 @@ export async function deleteSession(sessionId: string): Promise<{ success: boole
 
 // ============================================
 // Failed Tasks API
+// NOTE: FailedTasksController removed - now using Messages API
+// Failed messages are tracked via Message.Status = "failed"
 // ============================================
 
 /**
  * Get failed tasks with pagination
+ * @deprecated Use getFailedSessions() instead - FailedTasks table removed
  */
 export async function getFailedTasks(options?: {
   queueId?: number;
@@ -884,46 +910,83 @@ export async function getFailedTasks(options?: {
   pageNumber?: number;
   pageSize?: number;
 }): Promise<PaginatedFailedTasksResponse> {
-  const params = new URLSearchParams();
-  if (options?.queueId !== undefined) {
-    params.append('queueId', options.queueId.toString());
+  // FailedTasks endpoint removed - redirect to failed sessions
+  const response = await getFailedSessions();
+
+  // Transform FailedSessionDto to FailedTaskDto format
+  const items: FailedTaskDto[] = [];
+  if (response.success && response.data) {
+    response.data.forEach(session => {
+      session.patients.forEach(patient => {
+        items.push({
+          id: patient.messageId || String(patient.patientId),
+          queueId: session.queueId,
+          queueName: session.queueName,
+          moderatorId: 0, // Not available in session response
+          moderatorName: '',
+          patientPhone: patient.phone,
+          messageContent: patient.messageContent || '',
+          attempts: patient.attempts || 0,
+          errorMessage: patient.failedReason,
+          status: 'failed',
+          createdAt: session.startTime,
+        });
+      });
+    });
   }
-  if (options?.moderatorUserId !== undefined) {
-    params.append('moderatorUserId', options.moderatorUserId.toString());
-  }
-  if (options?.pageNumber !== undefined) {
-    params.append('pageNumber', options.pageNumber.toString());
-  }
-  if (options?.pageSize !== undefined) {
-    params.append('pageSize', options.pageSize.toString());
-  }
-  
-  const queryString = params.toString();
-  return fetchAPI(`/failed-tasks${queryString ? `?${queryString}` : ''}`);
+
+  return {
+    items,
+    totalCount: items.length,
+    pageNumber: options?.pageNumber || 1,
+    pageSize: options?.pageSize || items.length,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPreviousPage: false,
+  };
 }
 
 /**
  * Get a single failed task
+ * @deprecated Use message status check instead - FailedTasks table removed
  */
 export async function getFailedTask(id: number): Promise<FailedTaskDto> {
-  return fetchAPI(`/failed-tasks/${id}`);
+  throw new Error('getFailedTask is deprecated - FailedTasks table removed. Use message status check instead.');
 }
 
 /**
- * Retry a failed task
+ * Retry a failed task (message)
+ * Now uses /messages/{id}/retry endpoint since FailedTasksController was removed
  */
 export async function retryFailedTask(id: string): Promise<FailedTaskDto> {
-  return fetchAPI(`/failed-tasks/${id}/retry`, {
+  // Use the message retry endpoint instead of deleted failed-tasks endpoint
+  const result = await fetchAPI<{ success: boolean; status: string; attempts: number }>(`/messages/${id}/retry`, {
     method: 'POST',
   });
+
+  // Transform to FailedTaskDto format for backwards compatibility
+  return {
+    id: id,
+    queueId: 0,
+    queueName: '',
+    moderatorId: 0,
+    moderatorName: '',
+    patientPhone: '',
+    messageContent: '',
+    attempts: result.attempts || 0,
+    status: result.status || 'queued',
+    createdAt: new Date().toISOString(),
+  };
 }
 
 /**
- * Dismiss a failed task
+ * Dismiss a failed task (delete message)
+ * Now uses /messages/{id} DELETE endpoint since FailedTasksController was removed
  */
 export async function dismissFailedTask(id: string): Promise<void> {
-  return fetchAPI(`/failed-tasks/${id}/dismiss`, {
-    method: 'POST',
+  // Use the message delete endpoint instead of deleted failed-tasks endpoint
+  await fetchAPI(`/messages/${id}`, {
+    method: 'DELETE',
   });
 }
 
@@ -973,21 +1036,21 @@ export const messageApiClient = {
   getTrashTemplates,
   getArchivedTemplates,
   restoreTemplate,
-  
+
   // Conditions
   getConditions,
   getCondition,
   createCondition,
   updateCondition,
   deleteCondition,
-  
+
   // Quotas
   getMyQuota,
   getAllQuotas,
   getQuota,
   addQuota,
   updateQuota,
-  
+
   // Messages
   sendMessage,
   sendMessages,
@@ -999,7 +1062,7 @@ export const messageApiClient = {
   resumeSessionMessages,
   pauseAllModeratorMessages,
   resumeAllModeratorMessages,
-  
+
   // Sessions
   getOngoingSessions,
   getFailedSessions,
@@ -1008,16 +1071,16 @@ export const messageApiClient = {
   resumeSession,
   retrySession,
   deleteSession,
-  
+
   // Failed Tasks
   getFailedTasks,
   getFailedTask,
   retryFailedTask,
   dismissFailedTask,
-  
+
   // Retry Preview
   getRetryPreview,
-  
+
   // Utilities
   formatApiError,
   fetchAPI,

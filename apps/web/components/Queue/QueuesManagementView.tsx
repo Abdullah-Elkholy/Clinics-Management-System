@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Queues Management Page with Trash Integration
  * File: apps/web/components/Queue/QueuesManagementView.tsx
  * 
@@ -55,7 +55,7 @@ export default function QueuesManagementView() {
       setTrashTotalCount(response.totalCount);
       setTrashPageNumber(page);
     } catch (error: any) {
-      setTrashError(error?.message || 'فشل تحميل الطوابير المحذوفة');
+      setTrashError(error?.message || 'فشل تحميل العيادات المحذوفة');
       logger.error('Error loading trash queues:', error);
     } finally {
       setIsLoadingTrash(false);
@@ -75,7 +75,7 @@ export default function QueuesManagementView() {
       setArchivedTotalCount(response.totalCount);
       setArchivedPageNumber(page);
     } catch (error: any) {
-      setArchivedError(error?.message || 'فشل تحميل الطوابير المؤرشفة');
+      setArchivedError(error?.message || 'فشل تحميل العيادات المؤرشفة');
       logger.error('Error loading archived queues:', error);
     } finally {
       setIsLoadingArchived(false);
@@ -101,7 +101,7 @@ export default function QueuesManagementView() {
     async (queueId: string | number) => {
       try {
         await queuesApiClient.restoreQueue(Number(queueId));
-        addToast('تم استعادة الطابور بنجاح', 'success');
+        addToast('تم استعادة العيادة بنجاح', 'success');
         // Reload trash list
         loadTrashQueues(trashPageNumber);
         // Refresh sidebar queues
@@ -111,7 +111,7 @@ export default function QueuesManagementView() {
         // Dispatch event for other components
         window.dispatchEvent(new CustomEvent('queueDataUpdated'));
       } catch (error: any) {
-        addToast(error?.message || 'فشل استعادة الطابور', 'error');
+        addToast(error?.message || 'فشل استعادة العيادة', 'error');
         throw error;
       }
     },
@@ -190,3 +190,4 @@ export default function QueuesManagementView() {
     </div>
   );
 }
+

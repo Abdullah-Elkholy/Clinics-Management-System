@@ -1,4 +1,4 @@
-/**
+﻿/**
  * QueueStatsCard Component
  * 
  * Responsive card for displaying queue statistics and info
@@ -66,7 +66,7 @@ export function QueueStatsCard({
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="font-bold text-gray-800 text-lg truncate">{doctorName}</h3>
-          <p className="text-xs text-gray-500">دكتور</p>
+          <p className="text-xs text-gray-500">عيادة</p>
         </div>
         <Badge
           label={config.label}
@@ -123,3 +123,4 @@ export function QueueStatsCard({
     </div>
   );
 }
+

@@ -12,7 +12,6 @@ namespace Clinics.Api.DTOs
         public string FirstName { get; set; } = null!;
         public string? LastName { get; set; }
         public string? Password { get; set; }
-        public string? WhatsAppPhoneNumber { get; set; }
     }
 
     /// <summary>
@@ -22,7 +21,6 @@ namespace Clinics.Api.DTOs
     {
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
-        public string? WhatsAppPhoneNumber { get; set; }
         public bool? IsActive { get; set; }
     }
 
@@ -36,7 +34,6 @@ namespace Clinics.Api.DTOs
         public string FirstName { get; set; } = null!;
         public string? LastName { get; set; }
         public string FullName => string.IsNullOrEmpty(LastName) ? FirstName : $"{FirstName} {LastName}";
-        public string? WhatsAppPhoneNumber { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -59,51 +56,51 @@ namespace Clinics.Api.DTOs
     public class QuotaDto
     {
         public int Id { get; set; }
-        
+
         /// <summary>
         /// Maximum messages quota.
         /// Uses long to support large values up to JavaScript's MAX_SAFE_INTEGER (9007199254740991).
         /// </summary>
         public long Limit { get; set; }
-        
+
         /// <summary>
         /// Messages consumed so far.
         /// Uses long to match the database schema and support large values.
         /// </summary>
         public long Used { get; set; }
-        
+
         /// <summary>
         /// Remaining messages (calculated). Returns -1 if Limit is -1 (unlimited).
         /// Can be negative if used exceeds limit.
         /// </summary>
         public long Remaining => Limit == -1 ? -1 : Limit - Used;
-        
+
         /// <summary>
         /// Percentage of messages quota consumed (0-100). Returns 0 if Limit is -1 (unlimited).
         /// </summary>
         public decimal Percentage => Limit == -1 || Limit <= 0 ? 0 : (decimal)(Used * 100) / Limit;
-        
+
         /// <summary>
         /// Whether messages quota is low (> 80% consumed). Returns false if Limit is -1 (unlimited).
         /// </summary>
         public bool IsLow => Limit != -1 && Limit > 0 && Percentage > 80;
-        
+
         /// <summary>
         /// Maximum queues quota. Use -1 for unlimited.
         /// </summary>
         public int QueuesLimit { get; set; }
-        
+
         /// <summary>
         /// Queues consumed.
         /// </summary>
         public int QueuesUsed { get; set; }
-        
+
         /// <summary>
         /// Remaining queues (calculated). Returns -1 if QueuesLimit is -1 (unlimited).
         /// Can be negative if used exceeds limit.
         /// </summary>
         public int QueuesRemaining => QueuesLimit == -1 ? -1 : QueuesLimit - QueuesUsed;
-        
+
         public DateTime UpdatedAt { get; set; }
     }
 
@@ -153,12 +150,10 @@ namespace Clinics.Api.DTOs
     {
         public int Id { get; set; }
         public int ModeratorUserId { get; set; }
-        public string? SessionName { get; set; }
+        // SessionName, LastSyncAt, ProviderSessionId REMOVED - deprecated columns
         public string? Status { get; set; }
-        public DateTime? LastSyncAt { get; set; }
         public DateTime CreatedAt { get; set; }
-        public string? ProviderSessionId { get; set; }
-        
+
         // Audit trail fields
         public int? CreatedByUserId { get; set; }
         public int? LastActivityUserId { get; set; }

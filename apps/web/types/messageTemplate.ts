@@ -14,16 +14,17 @@ export interface MessageTemplate {
   condition?: MessageCondition; // associated condition (determines template role: DEFAULT/UNCONDITIONED/active)
   priority?: number;           // order when multiple templates available
   isActive?: boolean;          // whether template currently active/usable (UI flag)
-  
+
   // Metadata
   createdAt: Date;
   updatedAt?: Date;
   createdBy: string;           // GUID: user ID who created it
-  
+  updatedBy?: string;          // GUID: user ID who last updated it
+
   // Usage stats
   usageCount?: number;         // how many times sent
   successRate?: number;        // % of successfully sent messages
-  
+
   // Soft-delete fields (30-day trash window)
   isDeleted?: boolean;
   deletedAt?: string;

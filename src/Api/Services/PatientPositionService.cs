@@ -1,4 +1,4 @@
-/**
+/*
  * Patient Position Service
  * File: src/Api/Services/PatientPositionService.cs
  * 
@@ -76,7 +76,7 @@ public class PatientPositionService : IPatientPositionService
 
                 // Check if target position is already occupied by another patient
                 var conflictingPatient = await _db.Patients
-                    .FirstOrDefaultAsync(p => p.QueueId == queueId && !p.IsDeleted && 
+                    .FirstOrDefaultAsync(p => p.QueueId == queueId && !p.IsDeleted &&
                                                p.Id != patientId && p.Position == targetPosition);
 
                 int shiftedCount = 0;

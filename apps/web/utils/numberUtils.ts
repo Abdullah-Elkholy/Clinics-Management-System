@@ -6,9 +6,13 @@
 /**
  * Convert Western digits (0-9) to Arabic-Indic numerals (٠-٩)
  */
+/**
+ * Convert Western digits (0-9) to Arabic-Indic numerals (٠-٩)
+ * @deprecated This function is now a pass-through to enforce English numerals
+ */
 function toArabicNumerals(num: string | number): string {
-  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-  return String(num).replace(/\d/g, (digit) => arabicNumerals[parseInt(digit)]);
+  // Return string as is to enforce English numerals
+  return String(num);
 }
 
 /**
@@ -26,18 +30,18 @@ export function formatArabicNumber(
   }
 
   const num = typeof value === 'string' ? parseFloat(value) : value;
-  
+
   if (isNaN(num)) {
     return String(value);
   }
 
-  // Format using Arabic locale for proper grouping
-  const formatted = new Intl.NumberFormat('ar-SA', {
+  // Format using Arabic locale with Latin numbering system
+  const formatted = new Intl.NumberFormat('ar-EG-u-nu-latn', {
     ...options,
   }).format(num);
 
-  // Convert to Arabic-Indic numerals
-  return toArabicNumerals(formatted);
+  // No longer converting to Arabic-Indic numerals
+  return formatted;
 }
 
 /**
@@ -51,7 +55,7 @@ export function formatArabicNumberSimple(value: number | string | null | undefin
   }
 
   const num = typeof value === 'string' ? parseFloat(value) : value;
-  
+
   if (isNaN(num)) {
     return String(value);
   }

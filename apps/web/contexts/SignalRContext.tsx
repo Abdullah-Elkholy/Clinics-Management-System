@@ -39,6 +39,8 @@ export function SignalRProvider({ children }: { children: React.ReactNode }) {
   const isConnectingRef = useRef<boolean>(false);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTokenRef = useRef<string | null>(null);
+  // Track pending subscriptions made before connection is ready
+  const pendingSubscriptionsRef = useRef<Map<string, Set<(...args: any[]) => void>>>(new Map());
 
   // SignalR hub is part of the main API (Clinics.Api) which runs on port 5000
   // Use NEXT_PUBLIC_API_URL which points to the main API endpoint
@@ -139,10 +141,8 @@ export function SignalRProvider({ children }: { children: React.ReactNode }) {
               const currentToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
               return currentToken || '';
             },
-            transport: signalR.HttpTransportType.WebSockets | 
-                      signalR.HttpTransportType.ServerSentEvents | 
-                      signalR.HttpTransportType.LongPolling,
-            // Optimize long polling interval to reduce network traffic
+            // Use only LongPolling to avoid WebSocket/SSE fallback errors
+            transport: signalR.HttpTransportType.LongPolling,
             skipNegotiation: false,
           })
           .withAutomaticReconnect({
@@ -155,7 +155,7 @@ export function SignalRProvider({ children }: { children: React.ReactNode }) {
               return 60000; // Max 60s between retries
             }
           })
-          .configureLogging(signalR.LogLevel.Warning) // Reduced logging to prevent noise
+          .configureLogging(signalR.LogLevel.Error) // Only log actual errors
           .build();
 
         // Connection event handlers
@@ -252,17 +252,49 @@ export function SignalRProvider({ children }: { children: React.ReactNode }) {
     };
   }, [hasToken, cleanupConnection]); // Added cleanupConnection to dependencies
 
-  // Event subscription helper with connection check
+  // Apply any pending subscriptions when connection becomes ready
+  useEffect(() => {
+    if (connection && connection.state === signalR.HubConnectionState.Connected) {
+      const pending = pendingSubscriptionsRef.current;
+      if (pending.size > 0) {
+        // Apply pending subscriptions silently
+        pending.forEach((callbacks, eventName) => {
+          callbacks.forEach(callback => {
+            connection.on(eventName, callback);
+          });
+        });
+        // Clear pending after applying
+        pendingSubscriptionsRef.current = new Map();
+      }
+    }
+  }, [connection, isConnected]);
+
+  // Event subscription helper - queues if not connected
   const on = useCallback((eventName: string, callback: (...args: any[]) => void) => {
     if (connection && connection.state === signalR.HubConnectionState.Connected) {
       connection.on(eventName, callback);
     } else {
-      console.warn(`SignalR: Cannot subscribe to '${eventName}' - connection not ready`);
+      // Queue subscription for when connection becomes ready
+      const pending = pendingSubscriptionsRef.current;
+      if (!pending.has(eventName)) {
+        pending.set(eventName, new Set());
+      }
+      pending.get(eventName)!.add(callback);
+      // Subscription queued silently - will be applied when connected
     }
   }, [connection]);
 
-  // Event unsubscription helper
+  // Event unsubscription helper - also removes from pending queue
   const off = useCallback((eventName: string, callback: (...args: any[]) => void) => {
+    // Remove from pending queue if present
+    const pending = pendingSubscriptionsRef.current;
+    if (pending.has(eventName)) {
+      pending.get(eventName)!.delete(callback);
+      if (pending.get(eventName)!.size === 0) {
+        pending.delete(eventName);
+      }
+    }
+    // Remove from active connection
     if (connection) {
       connection.off(eventName, callback);
     }

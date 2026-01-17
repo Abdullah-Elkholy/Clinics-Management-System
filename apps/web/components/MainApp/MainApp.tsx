@@ -19,8 +19,7 @@ import FailedTasksPanel from '../Queue/FailedTasksPanel';
 import CompletedTasksPanel from '../Queue/CompletedTasksPanel';
 import MessagesPanel from '../Content/MessagesPanel';
 import ManagementPanel from '../Content/ManagementPanel';
-import BrowserStatusPanel from '../Content/BrowserStatusPanel';
-import BrowserStatusOverview from '../Content/BrowserStatusOverview';
+
 import * as Modals from '../Modals';
 
 function MainAppContent() {
@@ -29,7 +28,7 @@ function MainAppContent() {
   const { isNavigatingToHome, clearNavigationFlag, user } = useAuth();
   const { isCollapsed } = useSidebarCollapse();
   const [customSidebarWidth, setCustomSidebarWidth] = React.useState<number | null>(null);
-  
+
   // Check if user is admin
   const isAdmin = user?.role === 'primary_admin' || user?.role === 'secondary_admin';
 
@@ -63,7 +62,7 @@ function MainAppContent() {
     // Check on interval during drag and on window resize
     const interval = setInterval(checkSidebarWidth, 50);
     window.addEventListener('resize', checkSidebarWidth);
-    
+
     // Also listen for mutations
     const observer = new MutationObserver(checkSidebarWidth);
     observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-sidebar-width', 'class'] });
@@ -95,7 +94,7 @@ function MainAppContent() {
       <Header />
       {/* Fixed Navigation (sidebar) - positioned fixed on right */}
       <Navigation />
-      
+
       {/* Main content area with spacer to prevent overlap */}
       <div className="flex flex-1 overflow-hidden pt-20 md:pt-24">
         {/* Spacer: mirrors sidebar width to prevent content overlap */}
@@ -106,7 +105,7 @@ function MainAppContent() {
           }}
           className="flex-shrink-0 transition-all duration-300 ease-in-out"
         />
-        
+
         <div className="flex-1 bg-white overflow-y-auto">
           {/* Show loading during panel transitions to prevent glitchy UI */}
           {isTransitioning ? (
@@ -133,12 +132,7 @@ function MainAppContent() {
               <MessagesPanel />
             ) : currentPanel === 'management' ? (
               <ManagementPanel />
-            ) : currentPanel === 'browserStatus' ? (
-              isAdmin ? (
-                <BrowserStatusOverview />
-              ) : (
-                <BrowserStatusPanel />
-              )
+
             ) : (
               // Default fallback - should only happen on initial load before URL sync
               <WelcomeScreen />
@@ -175,7 +169,7 @@ export default function MainApp() {
         <Modals.QuotaManagementModal />
         <Modals.QRCodeModal />
       </ModalProvider>
-      
+
       {/* Global Progress Indicator - Visible on ALL pages */}
       <GlobalProgressIndicator />
     </GlobalProgressProvider>

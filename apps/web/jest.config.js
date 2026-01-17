@@ -1,35 +1,23 @@
-module.exports = {
-  displayName: 'Clinics Frontend',
-  preset: 'ts-jest',
-  testEnvironment: 'jsdom',
-  roots: ['<rootDir>', '<rootDir>/__tests__'],
-  testMatch: ['**/__tests__/**/*.ts?(x)', '**/?(*.)+(spec|test).ts?(x)'],
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
-  collectCoverageFrom: [
-    'components/**/*.{ts,tsx}',
-    'contexts/**/*.{ts,tsx}',
-    'hooks/**/*.{ts,tsx}',
-    'lib/**/*.{ts,tsx}',
-    'utils/**/*.{ts,tsx}',
-    '!**/*.d.ts',
-    '!**/index.ts',
-    '!**/*.stories.tsx',
-  ],
-  coveragePathIgnorePatterns: ['/node_modules/', '/.next/'],
-  setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'],
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/$1',
-  },
-  globals: {
-    'ts-jest': {
-      tsconfig: {
-        jsx: 'react-jsx',
-        esModuleInterop: true,
-      },
+const nextJest = require('next/jest');
+
+const createJestConfig = nextJest({
+    // Provide the path to your Next.js app to load next.config.js and .env files
+    dir: './',
+});
+
+// Add any custom config to be passed to Jest
+const customJestConfig = {
+    setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+    testEnvironment: 'jest-environment-jsdom',
+    moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
     },
-  },
-  testPathIgnorePatterns: ['/node_modules/', '/.next/', '/e2e/'],
-  watchPathIgnorePatterns: ['/node_modules/', '/.next/'],
-  // E2E tests handled separately by Playwright
-  collectCoverage: false, // Set to true with npm test -- --coverage
+    testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
+    collectCoverageFrom: [
+        'src/**/*.{ts,tsx}',
+        '!src/**/*.d.ts',
+        '!src/**/index.ts',
+    ],
 };
+
+module.exports = createJestConfig(customJestConfig);

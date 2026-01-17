@@ -4,15 +4,13 @@
   "description": "WhatsApp message automation system for clinics with queue management, patient message tracking, and automated messaging.",
   "main": "index.js",
   "directories": {
-    "doc": "docs",
-    "test": "tests"
+    "doc": "docs"
   },
   "scripts": {},
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@playwright/test": "^1.56.1",
     "@types/node": "^24.10.1"
   }
 }

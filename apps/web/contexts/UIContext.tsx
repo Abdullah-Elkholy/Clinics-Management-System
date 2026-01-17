@@ -8,8 +8,8 @@ interface UIContextType {
   toasts: Toast[];
   addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => void;
   removeToast: (id: string) => void;
-  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus';
-  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus') => void;
+  currentPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed';
+  setCurrentPanel: (panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed') => void;
   selectedQueueId: string | null;
   setSelectedQueueId: (id: string | null) => void;
   isTransitioning: boolean;
@@ -29,12 +29,12 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }
     return null;
   });
-  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus'>('welcome');
+  const [currentPanel, setCurrentPanel] = useState<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed'>('welcome');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const toastCounterRef = React.useRef(0);
   const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const navigationTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  const pendingPanelRef = React.useRef<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus' | null>(null);
+  const pendingPanelRef = React.useRef<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | null>(null);
 
   // Sync selectedQueueId with localStorage on mount (if not already set from initial state)
   // This ensures queue is available immediately when queue routes are accessed
@@ -61,9 +61,9 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const isUpdatingFromUrl = React.useRef(false);
   const lastPathnameRef = React.useRef<string | null>(null);
   const isNavigatingProgrammatically = React.useRef(false);
-  
+
   // Helper function to get path for a panel (defined before useEffect that uses it)
-  const getPathForPanel = React.useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus'): string => {
+  const getPathForPanel = React.useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed'): string => {
     switch (panel) {
       case 'messages':
         return '/messages';
@@ -77,13 +77,11 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         return '/queues/failed';
       case 'completed':
         return '/queues/completed';
-      case 'browserStatus':
-        return '/browser/status';
       default:
         return '/home';
     }
   }, []);
-  
+
   useEffect(() => {
     // Skip if already updating or pathname hasn't changed
     // Also skip if we're in the middle of programmatic navigation
@@ -99,7 +97,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }
       return;
     }
-    
+
     // If we're navigating programmatically, let the navigation handler manage state
     if (isNavigatingProgrammatically.current) {
       lastPathnameRef.current = pathname;
@@ -131,13 +129,13 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         return;
       }
     }
-    
+
     // Browser navigation (back/forward) or direct URL access
     // Clear any pending panel since this is not programmatic navigation
     if (pendingPanelRef.current) {
       pendingPanelRef.current = null;
     }
-    
+
     lastPathnameRef.current = pathname;
     isUpdatingFromUrl.current = true;
 
@@ -179,16 +177,6 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         if (prev !== null) return null;
         return prev;
       });
-    } else if (pathname === '/browser/status') {
-      setCurrentPanel(prev => {
-        if (prev !== 'browserStatus') return 'browserStatus';
-        return prev;
-      });
-      // Clear queue selection when on browser status
-      setSelectedQueueId(prev => {
-        if (prev !== null) return null;
-        return prev;
-      });
     } else if (pathname.startsWith('/queues/')) {
       // Queue routes: /queues/dashboard, /queues/ongoing, /queues/failed, /queues/completed
       const match = pathname.match(/^\/queues\/(dashboard|ongoing|failed|completed)$/);
@@ -204,7 +192,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         } else if (subPanel === 'completed') {
           targetPanel = 'completed';
         }
-        
+
         // Queue routes require a selected queue - restore from localStorage if needed
         // Use functional update to ensure we get the latest state
         setSelectedQueueId(prev => {
@@ -216,7 +204,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
           return prev;
         });
-        
+
         // ALWAYS set the panel to match the URL - don't check if it's already set
         // This ensures URL and panel state are always in sync
         setCurrentPanel(targetPanel);
@@ -225,7 +213,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         router.replace('/queues/dashboard');
       }
     }
-    
+
     // Reset flag after URL sync completes
     transitionTimeoutRef.current = setTimeout(() => {
       isUpdatingFromUrl.current = false;
@@ -241,22 +229,22 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning', debugData?: Record<string, any>) => {
     setToasts((prev) => {
       const now = Date.now();
-      
+
       // Aggressive deduplication with message similarity check for toast aggregation
       // This prevents toast spam by grouping similar errors (e.g., multiple PendingQR)
       const normalizeMessage = (msg: string) => msg.toLowerCase().trim().replace(/\s+/g, ' ');
       const normalizedMessage = normalizeMessage(message);
-      
+
       // Check for exact duplicates within 1 second
       const recentExactDuplicate = prev.find(
-        (t) => t.message === message && t.type === type && 
-        (now - parseInt(t.id.split('-')[0])) < 1000
+        (t) => t.message === message && t.type === type &&
+          (now - parseInt(t.id.split('-')[0])) < 1000
       );
-      
+
       if (recentExactDuplicate) {
         return prev; // Toast already exists, don't add duplicate
       }
-      
+
       // Check for similar messages within 3 seconds (toast aggregation)
       // Group messages with similar content to prevent spam
       const recentSimilar = prev.find(
@@ -264,24 +252,24 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const timeDiff = now - parseInt(t.id.split('-')[0]);
           if (timeDiff > 3000) return false; // Only aggregate within 3 seconds
           if (t.type !== type) return false; // Must be same type
-          
+
           const normalizedExisting = normalizeMessage(t.message);
-          
+
           // Check for keyword overlap for common error patterns
           const commonErrorKeywords = [
             'واتساب', 'whatsapp', 'قر', 'qr', 'شبكة', 'network',
             'مصادقة', 'authentication', 'متصفح', 'browser', 'فشل', 'failed'
           ];
-          
-          const hasCommonKeyword = commonErrorKeywords.some(keyword => 
+
+          const hasCommonKeyword = commonErrorKeywords.some(keyword =>
             normalizedMessage.includes(keyword) && normalizedExisting.includes(keyword)
           );
-          
+
           // If messages share error keywords and are same type, aggregate them
           return hasCommonKeyword;
         }
       );
-      
+
       if (recentSimilar) {
         // Similar toast exists, update its message to indicate multiple occurrences
         return prev.map(t => {
@@ -290,12 +278,12 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             const countMatch = t.message.match(/\((\d+)\s*\u0645\u0631\u0629\)$/); // matches "(N مرة)" in Arabic
             const currentCount = countMatch ? parseInt(countMatch[1]) : 1;
             const newCount = currentCount + 1;
-            
+
             // Update message to show count
-            const baseMessage = countMatch 
-              ? t.message.replace(/\(\d+\s*\u0645\u0631\u0629\)$/, '') 
+            const baseMessage = countMatch
+              ? t.message.replace(/\(\d+\s*\u0645\u0631\u0629\)$/, '')
               : t.message;
-            
+
             return {
               ...t,
               message: `${baseMessage.trim()} (${newCount} \u0645\u0631\u0629)`,
@@ -305,7 +293,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           return t;
         });
       }
-      
+
       const id = `${now}-${++toastCounterRef.current}`;
       const toast: Toast = { id, message, type, debugData };
 
@@ -313,7 +301,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       setTimeout(() => {
         setToasts((current) => current.filter((t) => t.id !== id));
       }, 3000);
-      
+
       return [...prev, toast];
     });
   }, []);
@@ -323,7 +311,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   // Enhanced setCurrentPanel that updates URL
-  const handleSetCurrentPanel = useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus') => {
+  const handleSetCurrentPanel = useCallback((panel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed') => {
     // Authentication check for management panel
     if (panel === 'management') {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -332,21 +320,21 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         return;
       }
     }
-    
+
     // Panels that don't require a queue - clear queue selection first
     // Note: 'welcome' panel represents queue dashboard, so it DOES require a queue
-    const panelsWithoutQueue = ['messages', 'management', 'browserStatus'];
+    const panelsWithoutQueue = ['messages', 'management'];
     const shouldClearQueue = panelsWithoutQueue.includes(panel) && selectedQueueId !== null;
-    
+
     // Calculate target path
     const targetPath = getPathForPanel(panel);
-    
+
     // Prevent updates only if both panel state AND URL are already at target AND queue state is correct
     // This ensures URL always stays in sync with panel state
     if (currentPanel === panel && pathname === targetPath && !shouldClearQueue) {
       return;
     }
-    
+
     // Clear any existing transition timeout
     if (transitionTimeoutRef.current) {
       clearTimeout(transitionTimeoutRef.current);
@@ -354,18 +342,18 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (navigationTimeoutRef.current) {
       clearTimeout(navigationTimeoutRef.current);
     }
-    
+
     // Mark that we're about to navigate - prevent URL sync effect from running
     lastPathnameRef.current = pathname; // Keep current pathname to prevent immediate sync
     isUpdatingFromUrl.current = true;
     isNavigatingProgrammatically.current = true;
-    
+
     // Show loading during navigation - this prevents panel from rendering before URL is ready
     setIsTransitioning(true);
-    
+
     // Store pending panel - will be activated when URL matches
     pendingPanelRef.current = panel;
-    
+
     // Clear queue selection if needed (for panels that don't use queues)
     if (shouldClearQueue) {
       setSelectedQueueId(prev => {
@@ -373,7 +361,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         return prev;
       });
     }
-    
+
     // Navigate to target path FIRST - don't update panel state yet
     if (pathname !== targetPath) {
       router.push(targetPath);
@@ -385,18 +373,18 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       isNavigatingProgrammatically.current = false;
       isUpdatingFromUrl.current = false;
     }
-    
+
     // Fallback timeout - if URL doesn't update within 1 second, activate panel anyway
     navigationTimeoutRef.current = setTimeout(() => {
       if (pendingPanelRef.current === panel) {
         setCurrentPanel(panel);
         pendingPanelRef.current = null;
-      setIsTransitioning(false);
+        setIsTransitioning(false);
         isNavigatingProgrammatically.current = false;
-      isUpdatingFromUrl.current = false;
+        isUpdatingFromUrl.current = false;
       }
     }, 1000);
-    
+
     // Reset flags after URL sync completes (handled by URL sync effect)
   }, [router, selectedQueueId, currentPanel, pathname, getPathForPanel]);
 
@@ -404,8 +392,8 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const handleSetSelectedQueueId = useCallback((id: string | null) => {
     // Calculate target path based on current panel and new queue selection
     let targetPath = '/home';
-    let targetPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | 'browserStatus' = currentPanel;
-    
+    let targetPanel: 'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' = currentPanel;
+
     if (id !== null) {
       // Queue selected - always navigate to dashboard when clicking a queue
       // This provides consistent behavior: clicking a queue always shows its dashboard
@@ -416,13 +404,13 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       targetPath = '/home';
       targetPanel = 'welcome';
     }
-    
+
     // Prevent updates only if both state AND URL are already at target
     // This prevents unnecessary navigation when clicking the same queue that's already selected
     if (selectedQueueId === id && pathname === targetPath) {
       return;
     }
-    
+
     // Clear any existing transition timeout
     if (transitionTimeoutRef.current) {
       clearTimeout(transitionTimeoutRef.current);
@@ -430,23 +418,23 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     if (navigationTimeoutRef.current) {
       clearTimeout(navigationTimeoutRef.current);
     }
-    
+
     // Mark that we're about to navigate - prevent URL sync effect from running
     lastPathnameRef.current = pathname; // Keep current pathname to prevent immediate sync
     isUpdatingFromUrl.current = true;
     isNavigatingProgrammatically.current = true;
-    
+
     // Show loading during queue selection navigation
     setIsTransitioning(true);
-    
+
     // Store pending panel - will be activated when URL matches
     pendingPanelRef.current = targetPanel;
-    
+
     // Update queue selection state immediately
     if (selectedQueueId !== id) {
       setSelectedQueueId(id);
     }
-    
+
     // Navigate to target path FIRST - don't update panel state yet
     if (pathname !== targetPath) {
       router.push(targetPath);
@@ -458,15 +446,15 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       isNavigatingProgrammatically.current = false;
       isUpdatingFromUrl.current = false;
     }
-    
+
     // Fallback timeout - if URL doesn't update within 1 second, activate panel anyway
     navigationTimeoutRef.current = setTimeout(() => {
       if (pendingPanelRef.current === targetPanel) {
         setCurrentPanel(targetPanel);
         pendingPanelRef.current = null;
-      setIsTransitioning(false);
+        setIsTransitioning(false);
         isNavigatingProgrammatically.current = false;
-      isUpdatingFromUrl.current = false;
+        isUpdatingFromUrl.current = false;
       }
     }, 1000);
   }, [router, selectedQueueId, pathname, currentPanel, getPathForPanel]);

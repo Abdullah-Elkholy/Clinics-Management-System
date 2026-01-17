@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 import { useQueue } from '../../contexts/QueueContext';
@@ -13,10 +13,12 @@ import { SidebarHeader } from './SidebarHeader';
 import { NavigationItem } from './NavigationItem';
 import { TabItem } from './TabItem';
 import { QueueListItem } from './QueueListItem';
+import { LoadingSpinner } from '@/components/state';
 import logger from '@/utils/logger';
 import queuesApiClient from '@/services/api/queuesApiClient';
 import { useUserManagement } from '../../hooks/useUserManagement';
 import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
+
 
 export default function Navigation() {
   const { queues, selectedQueueId, setSelectedQueueId, moderators: queueBasedModerators, queuesLoading, refreshQueues } = useQueue();
@@ -26,7 +28,7 @@ export default function Navigation() {
   const { isCollapsed, toggleCollapse, isHydrated } = useSidebarCollapse();
   const { user, isAuthenticated } = useAuth();
   const [userManagementState, userManagementActions] = useUserManagement();
-  
+
   // Listen for user data updates to refresh moderators in sidebar
   // Use ref to prevent infinite loops from userManagementActions dependency changes
   const userManagementActionsRef = React.useRef(userManagementActions);
@@ -46,20 +48,20 @@ export default function Navigation() {
       window.removeEventListener('userDataUpdated', handleUserDataUpdate);
     };
   }, []); // Empty deps - event listener doesn't need to re-register, ref provides latest actions
-  
+
   // Role flags
   const isPrimaryAdmin = user?.role === UserRole.PrimaryAdmin;
   const isSecondaryAdmin = user?.role === UserRole.SecondaryAdmin;
   const isAdmin = isPrimaryAdmin || isSecondaryAdmin; // Admin views get moderator grouping
   const isModerator = user?.role === UserRole.Moderator;
   const isUser = user?.role === UserRole.User;
-  
+
   // Merge all moderators from system with queue-based moderators
   const allModerators = React.useMemo<ModeratorWithStats[]>(() => {
     if (!isAdmin) {
       return queueBasedModerators;
     }
-    
+
     // Create a map of queue-based moderators by ID (normalize to string for comparison)
     const queueModeratorMap = new Map<string, ModeratorWithStats>();
     queueBasedModerators.forEach(mod => {
@@ -70,11 +72,11 @@ export default function Navigation() {
         queueModeratorMap.set(String(mod.moderatorId), mod);
       }
     });
-    
+
     // Merge with all moderators from user management
     const mergedModerators: ModeratorWithStats[] = [];
     const processedIds = new Set<string>();
-    
+
     // Helper function to get moderator display name following priority:
     // 1. firstName + lastName (if both exist)
     // 2. firstName (if lastName is null/empty)
@@ -94,11 +96,11 @@ export default function Navigation() {
     userManagementState.moderators.forEach(userMod => {
       const modId = String(userMod.id || userMod.username);
       processedIds.add(modId);
-      
+
       // Check if this moderator has queues (try multiple ID formats for matching)
       // Handle both string and numeric ID comparisons
       let queueMod = queueModeratorMap.get(modId);
-      
+
       // If not found, try numeric comparison
       if (!queueMod && !isNaN(Number(userMod.id)) && !isNaN(Number(modId))) {
         // Try to find by numeric value
@@ -111,7 +113,7 @@ export default function Navigation() {
           }
         }
       }
-      
+
       if (queueMod) {
         // Use queue-based data (has queues, stats, etc.)
         // But update moderatorName from user data following priority
@@ -124,7 +126,7 @@ export default function Navigation() {
       } else {
         // Moderator exists but has no queues
         const moderatorName = getModeratorDisplayName(userMod, modId);
-        
+
         mergedModerators.push({
           moderatorId: modId,
           moderatorName: moderatorName,
@@ -136,7 +138,7 @@ export default function Navigation() {
         });
       }
     });
-    
+
     // Also include any queue-based moderators that might not be in user management (edge case)
     queueBasedModerators.forEach(queueMod => {
       const normalizedId = String(queueMod.moderatorId);
@@ -145,11 +147,11 @@ export default function Navigation() {
         processedIds.add(normalizedId);
       }
     });
-    
+
     // Sort by moderator ID
     return mergedModerators.sort((a, b) => Number(a.moderatorId) - Number(b.moderatorId));
   }, [isAdmin, queueBasedModerators, userManagementState.moderators]);
-  
+
   const moderators = allModerators;
 
   // Custom width state for resizing
@@ -157,7 +159,7 @@ export default function Navigation() {
   const [customWidth, setCustomWidth] = React.useState<number | null>(400);
   const isResizing = React.useRef(false);
   const wasCollapsedByDrag = React.useRef(false); // Track if we collapsed due to dragging narrow
-  
+
   // Detect icon-only mode: either collapsed via toggle OR dragged to narrow width (56px)
   const isIconOnly = isCollapsed || customWidth === 56;
 
@@ -223,7 +225,7 @@ export default function Navigation() {
   // Track the active moderator (the one whose queue is currently selected)
   // This helps determine when to keep moderator expanded vs when to collapse
   const activeModeratorIdRef = React.useRef<string | number | null>(null);
-  
+
   // Get moderator ID for the currently selected queue
   const getModeratorIdForQueue = React.useCallback((queueId: string | null): string | number | null => {
     if (!queueId) return null;
@@ -235,13 +237,12 @@ export default function Navigation() {
   // This ensures only one moderator is expanded at a time for clarity
   React.useEffect(() => {
     if (!isAdmin) return; // Only for admin view
-    
+
     const currentModeratorId = getModeratorIdForQueue(selectedQueueId);
-    const isQueuePanel = currentPanel === 'ongoing' || currentPanel === 'failed' || 
-                         currentPanel === 'completed' || (currentPanel === 'welcome' && selectedQueueId !== null);
-    const isUpperPanel = currentPanel === 'messages' || currentPanel === 'management' || 
-                         currentPanel === 'browserStatus';
-    
+    const isQueuePanel = currentPanel === 'ongoing' || currentPanel === 'failed' ||
+      currentPanel === 'completed' || (currentPanel === 'welcome' && selectedQueueId !== null);
+    const isUpperPanel = currentPanel === 'messages' || currentPanel === 'management';
+
     if (currentModeratorId && isQueuePanel) {
       // Queue is selected and on a queue panel - expand ONLY this moderator, collapse all others
       setExpandedModerators(prev => {
@@ -253,7 +254,7 @@ export default function Navigation() {
         next.add(currentModeratorId);
         return next;
       });
-      
+
       activeModeratorIdRef.current = currentModeratorId;
     } else if (isUpperPanel || (!selectedQueueId && !isQueuePanel)) {
       // Navigating to upper panels or queue deselected - collapse ALL moderators
@@ -275,7 +276,7 @@ export default function Navigation() {
   const handleResizeStart = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isResizing.current = true;
-    
+
     // Create bound event handlers for this drag session
     const onMouseMove = (moveEvent: MouseEvent) => {
       if (!isResizing.current) return;
@@ -290,7 +291,7 @@ export default function Navigation() {
       isResizing.current = false;
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      
+
       // Snapping logic happens after drag ends
       setCustomWidth(prev => {
         if (prev !== null) {
@@ -308,7 +309,7 @@ export default function Navigation() {
   // Helper: queues for current moderator (when logged in as moderator) or user (when logged in as user)
   const moderatorQueues = React.useMemo(() => {
     if ((!isModerator && !isUser) || !user) return [];
-    
+
     if (isModerator) {
       // Moderator: filter queues where ModeratorId == user.id
       const uid = user.id?.toString();
@@ -331,7 +332,7 @@ export default function Navigation() {
       const moderatorId = user.assignedModerator.toString();
       return queues.filter(q => q.moderatorId === moderatorId);
     }
-    
+
     return [];
   }, [isModerator, isUser, user, queues]);
 
@@ -346,12 +347,12 @@ export default function Navigation() {
 
   const handleDeleteQueue = async (queueId: string) => {
     const queue = queues.find((q) => q.id === queueId);
-    const isConfirmed = await confirm(createDeleteConfirmation(`${queue?.doctorName || 'الطابور'}`));
+    const isConfirmed = await confirm(createDeleteConfirmation(`${queue?.doctorName || 'العيادة'}`));
     if (isConfirmed) {
       try {
         await queuesApiClient.deleteQueue(Number(queueId));
-        addToast('تم حذف الطابور بنجاح', 'success');
-        
+        addToast('تم حذف العيادة بنجاح', 'success');
+
         // Select another queue if this one was selected
         if (selectedQueueId === queueId && queues.length > 1) {
           const otherQueue = queues.find((q) => q.id !== queueId);
@@ -362,12 +363,12 @@ export default function Navigation() {
           // setCurrentPanel will handle clearing queue selection internally
           setCurrentPanel('welcome');
         }
-        
+
         // Refresh queues list
         await refreshQueues();
       } catch (error: any) {
         logger.error('Error deleting queue:', error);
-        addToast(error?.message || 'فشل حذف الطابور', 'error');
+        addToast(error?.message || 'فشل حذف العيادة', 'error');
       }
     }
   };
@@ -388,7 +389,7 @@ export default function Navigation() {
 
   return (
     <div
-      style={{ 
+      style={{
         width: customWidth ? `${customWidth}px` : undefined,
         '--sidebar-width': customWidth ? `${customWidth}px` : (isCollapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-expanded-width)')
       } as React.CSSProperties}
@@ -403,13 +404,7 @@ export default function Navigation() {
       {/* Loading overlay when queues are loading */}
       {queuesLoading && (
         <div className="absolute inset-0 z-50 bg-white/70 flex items-center justify-center">
-          <div className="flex items-center gap-3">
-            <svg className="w-6 h-6 text-blue-600 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-            </svg>
-            <span className="text-sm text-gray-700">جاري التحميل...</span>
-          </div>
+          <LoadingSpinner size="md" label="جاري التحميل..." variant="primary" centered={false} />
         </div>
       )}
       {/* Resize Handle - Left edge (RTL) */}
@@ -422,547 +417,537 @@ export default function Navigation() {
       <div className="flex-shrink-0">
         <SidebarHeader isCollapsed={isIconOnly} onToggle={handleToggleCollapse} />
       </div>
-      
+
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto">
 
-      {/* Main Navigation */}
-      <nav className={`border-b border-gray-200 flex-shrink-0 overflow-hidden ${isCollapsed ? 'p-1' : 'px-2 py-3 sm:px-3 md:px-4'}`}>
-        <ul className={`${isCollapsed ? 'space-y-1' : 'space-y-2'}`}>
-          <li>
-            <NavigationItem
-              icon="fa-comments"
-              label="الرسائل"
-              isActive={!isQueueSelected && currentPanel === 'messages'}
-              isCollapsed={isCollapsed}
-              onClick={() => {
-                // setCurrentPanel will handle clearing queue selection internally
-                setCurrentPanel('messages');
-              }}
-            />
-          </li>
-          <li>
-            <NavigationItem
-              icon="fa-cog"
-              label="الإدارة"
-              isActive={!isQueueSelected && currentPanel === 'management'}
-              isCollapsed={isCollapsed}
-              onClick={() => {
-                // Authentication check before navigating to management
-                if (!isAuthenticated || !user) {
-                  addToast('يجب تسجيل الدخول للوصول إلى إدارة المستخدمين', 'error');
-                  return;
-                }
-                // setCurrentPanel will handle clearing queue selection internally
-                setCurrentPanel('management');
-              }}
-            />
-          </li>
-          <li>
-            <NavigationItem
-              icon="fa-window-restore"
-              label="حالة المتصفح"
-              isActive={!isQueueSelected && currentPanel === 'browserStatus'}
-              isCollapsed={isCollapsed}
-              onClick={() => {
-                // setCurrentPanel will handle clearing queue selection internally
-                setCurrentPanel('browserStatus');
-              }}
-            />
-          </li>
-        </ul>
-      </nav>
+        {/* Main Navigation */}
+        <nav className={`border-b border-gray-200 flex-shrink-0 overflow-hidden ${isCollapsed ? 'p-1' : 'px-2 py-3 sm:px-3 md:px-4'}`}>
+          <ul className={`${isCollapsed ? 'space-y-1' : 'space-y-2'}`}>
+            <li>
+              <NavigationItem
+                icon="fa-comments"
+                label="الرسائل"
+                isActive={!isQueueSelected && currentPanel === 'messages'}
+                isCollapsed={isCollapsed}
+                onClick={() => {
+                  // setCurrentPanel will handle clearing queue selection internally
+                  setCurrentPanel('messages');
+                }}
+              />
+            </li>
+            <li>
+              <NavigationItem
+                icon="fa-cog"
+                label="الإدارة"
+                isActive={!isQueueSelected && currentPanel === 'management'}
+                isCollapsed={isCollapsed}
+                onClick={() => {
+                  // Authentication check before navigating to management
+                  if (!isAuthenticated || !user) {
+                    addToast('يجب تسجيل الدخول للوصول إلى إدارة المستخدمين', 'error');
+                    return;
+                  }
+                  // setCurrentPanel will handle clearing queue selection internally
+                  setCurrentPanel('management');
+                }}
+              />
+            </li>
 
-      {/* Docked Task Panels - Show for moderator/user views (not admin) */}
-      {!isAdmin && !isCollapsed && (
-        <nav
-          className="p-4 border-b border-gray-200 bg-gradient-to-b from-blue-50 to-white flex-shrink-0"
-          role="tablist"
-        >
-          <div className="space-y-2">
-            <TabItem
-              icon="fa-spinner"
-              label="المهام الجارية"
-              isActive={currentPanel === 'ongoing'}
-              onClick={() => setCurrentPanel('ongoing')}
-            />
-            <TabItem
-              icon="fa-exclamation-circle"
-              label="المهام الفاشلة"
-              isActive={currentPanel === 'failed'}
-              onClick={() => setCurrentPanel('failed')}
-            />
-            <TabItem
-              icon="fa-check-circle"
-              label="المهام المكتملة"
-              isActive={currentPanel === 'completed'}
-              onClick={() => setCurrentPanel('completed')}
-            />
-          </div>
+          </ul>
         </nav>
-      )}
 
-      {/* Queues / Moderators Panel - Expanded */}
-      {!isCollapsed && (
-        <div className="px-2 sm:px-3 md:px-4 py-3 border-t border-gray-200 flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200 overflow-hidden min-w-0">
-            <h3 className="font-bold text-gray-800 text-xs sm:text-sm uppercase tracking-wide truncate">
+        {/* Docked Task Panels - Show for moderator/user views (not admin) */}
+        {!isAdmin && !isCollapsed && (
+          <nav
+            className="p-4 border-b border-gray-200 bg-gradient-to-b from-blue-50 to-white flex-shrink-0"
+            role="tablist"
+          >
+            <div className="space-y-2">
+              <TabItem
+                icon="fa-spinner"
+                label="المهام الجارية"
+                isActive={currentPanel === 'ongoing'}
+                onClick={() => setCurrentPanel('ongoing')}
+              />
+              <TabItem
+                icon="fa-exclamation-circle"
+                label="المهام الفاشلة"
+                isActive={currentPanel === 'failed'}
+                onClick={() => setCurrentPanel('failed')}
+              />
+              <TabItem
+                icon="fa-check-circle"
+                label="المهام المكتملة"
+                isActive={currentPanel === 'completed'}
+                onClick={() => setCurrentPanel('completed')}
+              />
+            </div>
+          </nav>
+        )}
 
-              {isAdmin ? 'المشرفون والطوابير' : 'الطوابير'}
-            </h3>
-            {/* Global add button removed for admins per new rule; all roles can still add via contextual buttons */}
-            {!isAdmin && (
-              <button
-                onClick={() => openModal('addQueue')}
-                title={'إضافة طابور جديد'}
-                aria-label="Add new queue"
-                className="
+        {/* Queues / Moderators Panel - Expanded */}
+        {!isCollapsed && (
+          <div className="px-2 sm:px-3 md:px-4 py-3 border-t border-gray-200 flex-1 flex flex-col overflow-hidden min-w-0">
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-200 overflow-hidden min-w-0">
+              <h3 className="font-bold text-gray-800 text-xs sm:text-sm uppercase tracking-wide truncate">
+
+                {isAdmin ? 'المشرفون والعيادات' : 'العيادات'}
+              </h3>
+              {/* Global add button removed for admins per new rule; all roles can still add via contextual buttons */}
+              {!isAdmin && (
+                <button
+                  onClick={() => openModal('addQueue')}
+                  title={'إضافة عيادة جديدة'}
+                  aria-label="Add new queue"
+                  className="
                   bg-gradient-to-r from-blue-600 to-blue-700 text-white w-8 h-8 rounded-full
                   hover:from-blue-700 hover:to-blue-800 transition-all duration-200
                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
                   hover:shadow-md active:scale-95
                 "
-              >
-                <i className="fas fa-plus text-xs"></i>
-              </button>
-            )}
-          </div>
+                >
+                  <i className="fas fa-plus text-xs"></i>
+                </button>
+              )}
+            </div>
 
-          {/* Admin view: group queues by moderator */}
-          {isAdmin && (
-            <div className="space-y-3 flex-1">
-              {/* Check if there are any moderators first */}
-              {moderators.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center px-2">
-                  <i className="fas fa-users-slash text-4xl text-gray-300 mb-3"></i>
-                  <p className="text-xs text-gray-700 font-semibold mb-2">لا يوجد مشرفون</p>
-                  <p className="text-xs text-gray-500 mb-3">يجب إنشاء مشرف أولاً لإضافة طوابير مرتبطة به</p>
-                  <button
-                    onClick={() => {
-                      // Authentication check before navigating to management
-                      if (!isAuthenticated || !user) {
-                        addToast('يجب تسجيل الدخول للوصول إلى إدارة المستخدمين', 'error');
-                        return;
-                      }
-                      setCurrentPanel('management');
-                    }}
-                    title="انتقل لإدارة المستخدمين"
-                    className="
+            {/* Admin view: group queues by moderator */}
+            {isAdmin && (
+              <div className="space-y-3 flex-1">
+                {/* Check if there are any moderators first */}
+                {moderators.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center px-2">
+                    <i className="fas fa-users-slash text-4xl text-gray-300 mb-3"></i>
+                    <p className="text-xs text-gray-700 font-semibold mb-2">لا يوجد مشرفون</p>
+                    <p className="text-xs text-gray-500 mb-3">يجب إنشاء مشرف أولاً لإضافة عيادات مرتبطة به</p>
+                    <button
+                      onClick={() => {
+                        // Authentication check before navigating to management
+                        if (!isAuthenticated || !user) {
+                          addToast('يجب تسجيل الدخول للوصول إلى إدارة المستخدمين', 'error');
+                          return;
+                        }
+                        setCurrentPanel('management');
+                      }}
+                      title="انتقل لإدارة المستخدمين"
+                      className="
                       text-xs bg-blue-600 text-white px-3 py-1.5 rounded
                       hover:bg-blue-700 transition-colors
                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
                     "
-                  >
-                    <i className="fas fa-user-plus mr-1"></i>
-                    إدارة المستخدمين
-                  </button>
-                </div>
-              ) : (
-                moderators.map(mod => {
-                  const isExpanded = expandedModerators.has(mod.moderatorId);
-                  return (
-                    <div
-                      key={String(mod.moderatorId)}
-                      className="border border-gray-200 rounded-lg bg-white overflow-hidden hover:border-blue-300 transition-colors min-w-0"
                     >
-                      {/* Moderator header tile */}
-                      <button
-                        onClick={() => toggleModeratorExpanded(mod.moderatorId)}
-                        className="w-full text-right px-2 sm:px-3 py-2 sm:py-3 flex items-center gap-1 sm:gap-2 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-hidden min-w-0"
-                        aria-label={`المشرف ${mod.moderatorName}`}
+                      <i className="fas fa-user-plus mr-1"></i>
+                      إدارة المستخدمين
+                    </button>
+                  </div>
+                ) : (
+                  moderators.map(mod => {
+                    const isExpanded = expandedModerators.has(mod.moderatorId);
+                    return (
+                      <div
+                        key={String(mod.moderatorId)}
+                        className="border border-gray-200 rounded-lg bg-white overflow-hidden hover:border-blue-300 transition-colors min-w-0"
                       >
-                        <i className={`fas fa-chevron-down text-gray-600 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}></i>
-                        <div className="flex-1 min-w-0 overflow-hidden">
-                          <p className="font-semibold text-xs sm:text-sm text-gray-900 flex items-center gap-1 truncate">
-                            <i className="fas fa-user-tie text-purple-600 flex-shrink-0"></i>
+                        {/* Moderator header tile */}
+                        <button
+                          onClick={() => toggleModeratorExpanded(mod.moderatorId)}
+                          className="w-full text-right px-2 sm:px-3 py-2 sm:py-3 flex items-center gap-1 sm:gap-2 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-hidden min-w-0"
+                          aria-label={`المشرف ${mod.moderatorName}`}
+                        >
+                          <i className={`fas fa-chevron-down text-gray-600 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}></i>
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <p className="font-semibold text-xs sm:text-sm text-gray-900 flex items-center gap-1 truncate">
+                              <i className="fas fa-user-tie text-purple-600 flex-shrink-0"></i>
 
-                            {mod.moderatorName}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-0.5">@{mod.moderatorUsername}</p>
-                        </div>
-                        <div className="flex gap-2 flex-shrink-0 sm:flex-row flex-col-reverse sm:items-center items-end">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-medium" title="عدد الطوابير">
-                            <span className="mr-1">🏥</span>
-                            <span>{mod.queuesCount}</span>
-                            <span className="hidden xl:inline">
-                              &nbsp;طابور
+                              {mod.moderatorName}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-0.5">@{mod.moderatorUsername}</p>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0 sm:flex-row flex-col-reverse sm:items-center items-end">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-medium" title="عدد العيادات">
+                              <span className="mr-1">🏥</span>
+                              <span>{mod.queuesCount}</span>
+                              <span className="hidden xl:inline">
+                                &nbsp;عيادة
+                              </span>
                             </span>
-                          </span>
-                          {mod.conflictCount > 0 && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-bold" title="عدد التضاربات">
-                              ⛔ {mod.conflictCount}
-                            </span>
-                          )}
-                          {/* Add queue for this moderator (use non-button inside a button to avoid nested <button>) */}
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            className="inline-flex items-center gap-1 px-1.5 xl:px-2 py-1 bg-green-600 text-white rounded text-[11px] hover:bg-green-700 transition-colors cursor-pointer flex-shrink-0 w-auto"
-                            title="إضافة طابور لهذا المشرف"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openModal('addQueue', { moderatorId: mod.moderatorId });
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
+                            {mod.conflictCount > 0 && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-bold" title="عدد التضاربات">
+                                ⛔ {mod.conflictCount}
+                              </span>
+                            )}
+                            {/* Add queue for this moderator (use non-button inside a button to avoid nested <button>) */}
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="inline-flex items-center gap-1 px-1.5 xl:px-2 py-1 bg-green-600 text-white rounded text-[11px] hover:bg-green-700 transition-colors cursor-pointer flex-shrink-0 w-auto"
+                              title="إضافة عيادة لهذا المشرف"
+                              onClick={(e) => {
                                 e.stopPropagation();
                                 openModal('addQueue', { moderatorId: mod.moderatorId });
-                              }
-                            }}
-                            aria-label={`إضافة طابور للمشرف ${mod.moderatorName}`}
-                          >
-                            <i className="fas fa-plus" aria-hidden="true"></i>
-                            <span className="hidden xl:inline">إضافة طابور</span>
-                          </span>
-                        </div>
-                      </button>
-                      {/* Task panels and queues under moderator */}
-                      {isExpanded && (
-                        <>
-                          {/* Docked task panels for this moderator */}
-                          <div className="border-t border-gray-100 bg-gradient-to-b from-blue-50 to-white p-2">
-                            <div className="space-y-1">
-                              {/* Check if selected queue belongs to this moderator */}
-                              {(() => {
-                                const selectedQueue = selectedQueueId ? queues.find(q => String(q.id) === String(selectedQueueId)) : null;
-                                const isThisModeratorActive = selectedQueue && String(selectedQueue.moderatorId) === String(mod.moderatorId);
-                                
-                                return (
-                                  <>
-                                    <TabItem
-                                      icon="fa-spinner"
-                                      label="المهام الجارية"
-                                      isActive={isThisModeratorActive && currentPanel === 'ongoing'}
-                                      onClick={(e) => {
-                                        e?.stopPropagation?.();
-                                        // If no queue selected or different moderator's queue, select first queue of this moderator
-                                        if (!selectedQueueId || !isThisModeratorActive) {
-                                          if (mod.queues && mod.queues.length > 0) {
-                                            setSelectedQueueId(mod.queues[0].id);
-                                          }
-                                        }
-                                        setCurrentPanel('ongoing');
-                                      }}
-                                    />
-                                    <TabItem
-                                      icon="fa-exclamation-circle"
-                                      label="المهام الفاشلة"
-                                      isActive={isThisModeratorActive && currentPanel === 'failed'}
-                                      onClick={(e) => {
-                                        e?.stopPropagation?.();
-                                        // If no queue selected or different moderator's queue, select first queue of this moderator
-                                        if (!selectedQueueId || !isThisModeratorActive) {
-                                          if (mod.queues && mod.queues.length > 0) {
-                                            setSelectedQueueId(mod.queues[0].id);
-                                          }
-                                        }
-                                        setCurrentPanel('failed');
-                                      }}
-                                    />
-                                    <TabItem
-                                      icon="fa-check-circle"
-                                      label="المهام المكتملة"
-                                      isActive={isThisModeratorActive && currentPanel === 'completed'}
-                                      onClick={(e) => {
-                                        e?.stopPropagation?.();
-                                        // If no queue selected or different moderator's queue, select first queue of this moderator
-                                        if (!selectedQueueId || !isThisModeratorActive) {
-                                          if (mod.queues && mod.queues.length > 0) {
-                                            setSelectedQueueId(mod.queues[0].id);
-                                          }
-                                        }
-                                        setCurrentPanel('completed');
-                                      }}
-                                    />
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                          <div className="border-t border-gray-100 bg-gray-50 p-1 space-y-0.5 overflow-hidden min-w-0">
-                          {mod.queues.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-6 text-center px-2">
-                              <i className="fas fa-hospital text-3xl text-gray-300 mb-2"></i>
-                              <p className="text-xs text-gray-700 font-semibold mb-1">لا توجد طوابير</p>
-                              <p className="text-xs text-gray-500 mb-3">لا توجد طوابير مرتبطة بهذا المشرف</p>
-                              <button
-                                onClick={(e) => {
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
                                   e.stopPropagation();
                                   openModal('addQueue', { moderatorId: mod.moderatorId });
-                                }}
-                                title="إضافة طابور لهذا المشرف"
-                                className="
+                                }
+                              }}
+                              aria-label={`إضافة عيادة للمشرف ${mod.moderatorName}`}
+                            >
+                              <i className="fas fa-plus" aria-hidden="true"></i>
+                              <span className="hidden xl:inline">إضافة عيادة</span>
+                            </span>
+                          </div>
+                        </button>
+                        {/* Task panels and queues under moderator */}
+                        {isExpanded && (
+                          <>
+                            {/* Docked task panels for this moderator */}
+                            <div className="border-t border-gray-100 bg-gradient-to-b from-blue-50 to-white p-2">
+                              <div className="space-y-1">
+                                {/* Check if selected queue belongs to this moderator */}
+                                {(() => {
+                                  const selectedQueue = selectedQueueId ? queues.find(q => String(q.id) === String(selectedQueueId)) : null;
+                                  const isThisModeratorActive = selectedQueue && String(selectedQueue.moderatorId) === String(mod.moderatorId);
+
+                                  return (
+                                    <>
+                                      <TabItem
+                                        icon="fa-spinner"
+                                        label="المهام الجارية"
+                                        isActive={isThisModeratorActive && currentPanel === 'ongoing'}
+                                        onClick={(e) => {
+                                          e?.stopPropagation?.();
+                                          // If no queue selected or different moderator's queue, select first queue of this moderator
+                                          if (!selectedQueueId || !isThisModeratorActive) {
+                                            if (mod.queues && mod.queues.length > 0) {
+                                              setSelectedQueueId(mod.queues[0].id);
+                                            }
+                                          }
+                                          setCurrentPanel('ongoing');
+                                        }}
+                                      />
+                                      <TabItem
+                                        icon="fa-exclamation-circle"
+                                        label="المهام الفاشلة"
+                                        isActive={isThisModeratorActive && currentPanel === 'failed'}
+                                        onClick={(e) => {
+                                          e?.stopPropagation?.();
+                                          // If no queue selected or different moderator's queue, select first queue of this moderator
+                                          if (!selectedQueueId || !isThisModeratorActive) {
+                                            if (mod.queues && mod.queues.length > 0) {
+                                              setSelectedQueueId(mod.queues[0].id);
+                                            }
+                                          }
+                                          setCurrentPanel('failed');
+                                        }}
+                                      />
+                                      <TabItem
+                                        icon="fa-check-circle"
+                                        label="المهام المكتملة"
+                                        isActive={isThisModeratorActive && currentPanel === 'completed'}
+                                        onClick={(e) => {
+                                          e?.stopPropagation?.();
+                                          // If no queue selected or different moderator's queue, select first queue of this moderator
+                                          if (!selectedQueueId || !isThisModeratorActive) {
+                                            if (mod.queues && mod.queues.length > 0) {
+                                              setSelectedQueueId(mod.queues[0].id);
+                                            }
+                                          }
+                                          setCurrentPanel('completed');
+                                        }}
+                                      />
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                            <div className="border-t border-gray-100 bg-gray-50 p-1 space-y-0.5 overflow-hidden min-w-0">
+                              {mod.queues.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-6 text-center px-2">
+                                  <i className="fas fa-hospital text-3xl text-gray-300 mb-2"></i>
+                                  <p className="text-xs text-gray-700 font-semibold mb-1">لا توجد عيادات</p>
+                                  <p className="text-xs text-gray-500 mb-3">لا توجد عيادات مرتبطة بهذا المشرف</p>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openModal('addQueue', { moderatorId: mod.moderatorId });
+                                    }}
+                                    title="إضافة عيادة لهذا المشرف"
+                                    className="
                                   text-xs bg-green-600 text-white px-3 py-1.5 rounded
                                   hover:bg-green-700 transition-colors
                                   focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2
                                 "
-                              >
-                                <i className="fas fa-plus mr-1"></i>
-                                إضافة طابور
-                              </button>
+                                  >
+                                    <i className="fas fa-plus mr-1"></i>
+                                    إضافة عيادة
+                                  </button>
+                                </div>
+                              ) : (
+                                mod.queues.map(q => (
+                                  <QueueListItem
+                                    key={q.id}
+                                    id={q.id}
+                                    doctorName={q.doctorName}
+                                    isSelected={selectedQueueId === q.id && currentPanel === 'welcome'}
+                                    isCollapsed={false}
+                                    onClick={() => {
+                                      // setSelectedQueueId will handle navigation to /queues/${id}
+                                      // Don't set panel here - let the queue selection handle it
+                                      setSelectedQueueId(q.id);
+                                    }}
+                                    onEdit={handleEditQueue}
+                                    onDelete={handleDeleteQueue}
+                                  />
+                                ))
+                              )}
                             </div>
-                          ) : (
-                            mod.queues.map(q => (
-                              <QueueListItem
-                                key={q.id}
-                                id={q.id}
-                                doctorName={q.doctorName}
-                                isSelected={selectedQueueId === q.id && currentPanel === 'welcome'}
-                                isCollapsed={false}
-                                onClick={() => {
-                                  // setSelectedQueueId will handle navigation to /queues/${id}
-                                  // Don't set panel here - let the queue selection handle it
-                                  setSelectedQueueId(q.id);
-                                }}
-                                onEdit={handleEditQueue}
-                                onDelete={handleDeleteQueue}
-                              />
-                            ))
-                          )}
-                        </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
-          {/* Moderator/self view: show only own queues */}
-          {isModerator && !isAdmin && (
-            <div className="space-y-2 flex-1">
-              {moderatorQueues.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <i className="fas fa-inbox text-4xl text-gray-300 mb-2"></i>
-                  <p className="text-xs text-gray-500">لا توجد طوابير</p>
-                </div>
-              ) : (
-                moderatorQueues.map(queue => (
-                  <QueueListItem
-                    key={queue.id}
-                    id={queue.id}
-                    doctorName={queue.doctorName}
-                    isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
-                    isCollapsed={false}
-                    onClick={() => {
-                      // setSelectedQueueId will handle navigation to /queues/${id}
-                      // The URL sync will automatically set panel to 'welcome' for queue routes
-                      setSelectedQueueId(queue.id);
-                    }}
-                    onEdit={handleEditQueue}
-                    onDelete={handleDeleteQueue}
-                  />
-                ))
-              )}
-            </div>
-          )}
+            {/* Moderator/self view: show only own queues */}
+            {isModerator && !isAdmin && (
+              <div className="space-y-2 flex-1">
+                {moderatorQueues.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <i className="fas fa-inbox text-4xl text-gray-300 mb-2"></i>
+                    <p className="text-xs text-gray-500">لا توجد عيادات</p>
+                  </div>
+                ) : (
+                  moderatorQueues.map(queue => (
+                    <QueueListItem
+                      key={queue.id}
+                      id={queue.id}
+                      doctorName={queue.doctorName}
+                      isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
+                      isCollapsed={false}
+                      onClick={() => {
+                        // setSelectedQueueId will handle navigation to /queues/${id}
+                        // The URL sync will automatically set panel to 'welcome' for queue routes
+                        setSelectedQueueId(queue.id);
+                      }}
+                      onEdit={handleEditQueue}
+                      onDelete={handleDeleteQueue}
+                    />
+                  ))
+                )}
+              </div>
+            )}
 
-          {/* Regular user (non-admin, non-moderator) fallback: show all queues flat */}
-          {!isAdmin && !isModerator && (
-            <div className="space-y-2 flex-1">
-              {queues.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <i className="fas fa-inbox text-4xl text-gray-300 mb-2"></i>
-                  <p className="text-xs text-gray-500">لا توجد طوابير</p>
-                </div>
-              ) : (
-                queues.map(queue => (
-                  <QueueListItem
-                    key={queue.id}
-                    id={queue.id}
-                    doctorName={queue.doctorName}
-                    isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
-                    isCollapsed={false}
-                    onClick={() => {
-                      // setSelectedQueueId will handle navigation to /queues/${id}
-                      // The URL sync will automatically set panel to 'welcome' for queue routes
-                      setSelectedQueueId(queue.id);
-                    }}
-                    onEdit={handleEditQueue}
-                    onDelete={handleDeleteQueue}
-                  />
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
+            {/* Regular user (non-admin, non-moderator) fallback: show all queues flat */}
+            {!isAdmin && !isModerator && (
+              <div className="space-y-2 flex-1">
+                {queues.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <i className="fas fa-inbox text-4xl text-gray-300 mb-2"></i>
+                    <p className="text-xs text-gray-500">لا توجد عيادات</p>
+                  </div>
+                ) : (
+                  queues.map(queue => (
+                    <QueueListItem
+                      key={queue.id}
+                      id={queue.id}
+                      doctorName={queue.doctorName}
+                      isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
+                      isCollapsed={false}
+                      onClick={() => {
+                        // setSelectedQueueId will handle navigation to /queues/${id}
+                        // The URL sync will automatically set panel to 'welcome' for queue routes
+                        setSelectedQueueId(queue.id);
+                      }}
+                      onEdit={handleEditQueue}
+                      onDelete={handleDeleteQueue}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
-          {/* Collapsed sidebar variant */}
-      {isCollapsed && (
-        <div className="p-2 border-t border-gray-200 flex-1 flex flex-col">
-          {/* Collapsed: docked task panel icons for moderator/user views */}
-          {!isAdmin && (
-            <div className="flex flex-col items-center gap-2 mb-2 px-1 border-b border-gray-200 pb-2">
+        {/* Collapsed sidebar variant */}
+        {isCollapsed && (
+          <div className="p-2 border-t border-gray-200 flex-1 flex flex-col">
+            {/* Collapsed: docked task panel icons for moderator/user views */}
+            {!isAdmin && (
+              <div className="flex flex-col items-center gap-2 mb-2 px-1 border-b border-gray-200 pb-2">
+                <button
+                  onClick={() => setCurrentPanel('ongoing')}
+                  title="المهام الجارية"
+                  aria-label="المهام الجارية"
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'ongoing' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                >
+                  <i className="fas fa-spinner text-xs"></i>
+                </button>
+                <button
+                  onClick={() => setCurrentPanel('failed')}
+                  title="المهام الفاشلة"
+                  aria-label="المهام الفاشلة"
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'failed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                >
+                  <i className="fas fa-exclamation-circle text-xs"></i>
+                </button>
+                <button
+                  onClick={() => setCurrentPanel('completed')}
+                  title="المهام المكتملة"
+                  aria-label="المهام المكتملة"
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'completed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                >
+                  <i className="fas fa-check-circle text-xs"></i>
+                </button>
+              </div>
+            )}
+            {/* Global add button removed for admins; non-admins retain it */}
+            {!isAdmin && (
               <button
-                onClick={() => setCurrentPanel('ongoing')}
-                title="المهام الجارية"
-                aria-label="المهام الجارية"
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'ongoing' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
-              >
-                <i className="fas fa-spinner text-xs"></i>
-              </button>
-              <button
-                onClick={() => setCurrentPanel('failed')}
-                title="المهام الفاشلة"
-                aria-label="المهام الفاشلة"
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'failed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
-              >
-                <i className="fas fa-exclamation-circle text-xs"></i>
-              </button>
-              <button
-                onClick={() => setCurrentPanel('completed')}
-                title="المهام المكتملة"
-                aria-label="المهام المكتملة"
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'completed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
-              >
-                <i className="fas fa-check-circle text-xs"></i>
-              </button>
-            </div>
-          )}
-          {/* Global add button removed for admins; non-admins retain it */}
-          {!isAdmin && (
-            <button
-              onClick={() => openModal('addQueue')}
-              title={'إضافة طابور جديد'}
-              aria-label="Add new queue"
-              className="
+                onClick={() => openModal('addQueue')}
+                title={'إضافة عيادة جديدة'}
+                aria-label="Add new queue"
+                className="
                 w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white p-2 rounded-lg
                 hover:from-blue-700 hover:to-blue-800 transition-all duration-200
                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
                 hover:shadow-md active:scale-95 mb-2
               "
-            >
-              <i className="fas fa-plus text-sm"></i>
-            </button>
-          )}
+              >
+                <i className="fas fa-plus text-sm"></i>
+              </button>
+            )}
 
-          <div className="space-y-1 flex-1">
-            {/* Admin collapsed: show empty state or moderators icons */}
-            {isAdmin && (
-              moderators.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 text-center px-2">
-                  <i className="fas fa-users-slash text-3xl text-gray-300 mb-2"></i>
-                  <p className="text-[10px] text-gray-700 font-semibold mb-1">لا يوجد مشرفون</p>
-                  <p className="text-[9px] text-gray-500 mb-2">يجب إنشاء مشرف أولاً</p>
-                  <button
-                    onClick={() => {
-                      // Authentication check before navigating to management
-                      if (!isAuthenticated || !user) {
-                        addToast('يجب تسجيل الدخول للوصول إلى إدارة المستخدمين', 'error');
-                        return;
-                      }
-                      setCurrentPanel('management');
-                    }}
-                    title="انتقل لإدارة المستخدمين"
-                    className="
+            <div className="space-y-1 flex-1">
+              {/* Admin collapsed: show empty state or moderators icons */}
+              {isAdmin && (
+                moderators.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-center px-2">
+                    <i className="fas fa-users-slash text-3xl text-gray-300 mb-2"></i>
+                    <p className="text-[10px] text-gray-700 font-semibold mb-1">لا يوجد مشرفون</p>
+                    <p className="text-[9px] text-gray-500 mb-2">يجب إنشاء مشرف أولاً</p>
+                    <button
+                      onClick={() => {
+                        // Authentication check before navigating to management
+                        if (!isAuthenticated || !user) {
+                          addToast('يجب تسجيل الدخول للوصول إلى إدارة المستخدمين', 'error');
+                          return;
+                        }
+                        setCurrentPanel('management');
+                      }}
+                      title="انتقل لإدارة المستخدمين"
+                      className="
                       text-[10px] bg-blue-600 text-white px-2 py-1 rounded
                       hover:bg-blue-700 transition-colors
                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
                     "
-                  >
-                    <i className="fas fa-user-plus mr-1"></i>
-                    إدارة المستخدمين
-                  </button>
-                </div>
-              ) : (
-                moderators.map(mod => (
-                  <div
-                    key={String(mod.moderatorId)}
-                    className="flex flex-col items-center gap-1 py-2 rounded-lg hover:bg-gray-100 cursor-pointer relative"
-                    onClick={() => {
-                      // Toggle quick menu for this moderator in collapsed mode
-                      setOpenCollapsedMod(prev => (prev === mod.moderatorId ? null : mod.moderatorId));
-                    }}
-                  >
-                    {/* Collapsed: per-moderator add (+) visible as corner button */}
-                    <button
-                      className="absolute -top-1 -left-1 w-5 h-5 rounded-full bg-green-600 text-white flex items-center justify-center shadow hover:bg-green-700"
-                      title="إضافة طابور"
-                      aria-label={`إضافة طابور للمشرف ${mod.moderatorName}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openModal('addQueue', { moderatorId: mod.moderatorId });
+                    >
+                      <i className="fas fa-user-plus mr-1"></i>
+                      إدارة المستخدمين
+                    </button>
+                  </div>
+                ) : (
+                  moderators.map(mod => (
+                    <div
+                      key={String(mod.moderatorId)}
+                      className="flex flex-col items-center gap-1 py-2 rounded-lg hover:bg-gray-100 cursor-pointer relative"
+                      onClick={() => {
+                        // Toggle quick menu for this moderator in collapsed mode
+                        setOpenCollapsedMod(prev => (prev === mod.moderatorId ? null : mod.moderatorId));
                       }}
                     >
-                      <i className="fas fa-plus text-[10px]"></i>
-                    </button>
-                    <i className={`fas fa-user-tie text-purple-600 ${openCollapsedMod === mod.moderatorId ? 'opacity-100' : 'opacity-80'}`}></i>
-                    <span className="text-[10px] text-gray-700 font-medium truncate max-w-full" title={mod.moderatorName}>{mod.moderatorName.split(' ')[0]}</span>
-                    <span className="text-[9px] text-blue-600" title="عدد الطوابير">{mod.queuesCount}</span>
+                      {/* Collapsed: per-moderator add (+) visible as corner button */}
+                      <button
+                        className="absolute -top-1 -left-1 w-5 h-5 rounded-full bg-green-600 text-white flex items-center justify-center shadow hover:bg-green-700"
+                        title="إضافة عيادة"
+                        aria-label={`إضافة عيادة للمشرف ${mod.moderatorName}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openModal('addQueue', { moderatorId: mod.moderatorId });
+                        }}
+                      >
+                        <i className="fas fa-plus text-[10px]"></i>
+                      </button>
+                      <i className={`fas fa-user-tie text-purple-600 ${openCollapsedMod === mod.moderatorId ? 'opacity-100' : 'opacity-80'}`}></i>
+                      <span className="text-[10px] text-gray-700 font-medium truncate max-w-full" title={mod.moderatorName}>{mod.moderatorName.split(' ')[0]}</span>
+                      <span className="text-[9px] text-blue-600" title="عدد العيادات">{mod.queuesCount}</span>
 
-                    {/* Quick access queues grid when collapsed - no internal scroll */}
-                    {openCollapsedMod === mod.moderatorId && mod.queues && mod.queues.length > 0 && (
-                      <div className="w-full mt-1 bg-white border border-gray-200 rounded-lg shadow p-2 z-20" onClick={(e) => e.stopPropagation()}>
-                        <div className="grid grid-cols-2 gap-1">
-                          {mod.queues.map(q => (
-                            <button
-                              key={q.id}
-                              title={q.doctorName}
-                              aria-label={`فتح الطابور: ${q.doctorName}`}
-                              className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${
-                                selectedQueueId === q.id && currentPanel === 'welcome'
-                                  ? 'bg-blue-100 ring-2 ring-blue-500' 
+                      {/* Quick access queues grid when collapsed - no internal scroll */}
+                      {openCollapsedMod === mod.moderatorId && mod.queues && mod.queues.length > 0 && (
+                        <div className="w-full mt-1 bg-white border border-gray-200 rounded-lg shadow p-2 z-20" onClick={(e) => e.stopPropagation()}>
+                          <div className="grid grid-cols-2 gap-1">
+                            {mod.queues.map(q => (
+                              <button
+                                key={q.id}
+                                title={q.doctorName}
+                                aria-label={`فتح العيادة: ${q.doctorName}`}
+                                className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${selectedQueueId === q.id && currentPanel === 'welcome'
+                                  ? 'bg-blue-100 ring-2 ring-blue-500'
                                   : 'bg-gray-50 hover:bg-gray-100 ring-1 ring-gray-200'
-                              }`}
-                              onClick={() => {
-                                // setSelectedQueueId will handle navigation to /queues/${id}
-                                // The URL sync will automatically set panel to 'welcome' for queue routes
-                                setSelectedQueueId(q.id);
-                                setOpenCollapsedMod(null);
-                              }}
-                            >
-                              <i className="fas fa-hospital text-lg text-purple-600"></i>
-                              <span className="text-[10px] text-gray-700 font-medium truncate max-w-full mt-1" title={q.doctorName}>
-                                {q.doctorName.split(' ')[0]}
-                              </span>
-                            </button>
-                          ))}
+                                  }`}
+                                onClick={() => {
+                                  // setSelectedQueueId will handle navigation to /queues/${id}
+                                  // The URL sync will automatically set panel to 'welcome' for queue routes
+                                  setSelectedQueueId(q.id);
+                                  setOpenCollapsedMod(null);
+                                }}
+                              >
+                                <i className="fas fa-hospital text-lg text-purple-600"></i>
+                                <span className="text-[10px] text-gray-700 font-medium truncate max-w-full mt-1" title={q.doctorName}>
+                                  {q.doctorName.split(' ')[0]}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )
-            )}
-            {/* Moderator collapsed: own queues */}
-            {isModerator && !isAdmin && moderatorQueues.map(queue => (
-              <QueueListItem
-                key={queue.id}
-                id={queue.id}
-                doctorName={queue.doctorName}
-                isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
-                isCollapsed={isIconOnly}
-                onClick={() => {
-                  setSelectedQueueId(queue.id);
-                  setCurrentPanel('welcome');
-                }}
-                onEdit={handleEditQueue}
-                onDelete={handleDeleteQueue}
-              />
-            ))}
-            {/* Regular user collapsed: all queues */}
-            {!isAdmin && !isModerator && queues.map(queue => (
-              <QueueListItem
-                key={queue.id}
-                id={queue.id}
-                doctorName={queue.doctorName}
-                isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
-                isCollapsed={isIconOnly}
-                onClick={() => {
-                  setSelectedQueueId(queue.id);
-                  setCurrentPanel('welcome');
-                }}
-                onEdit={handleEditQueue}
-                onDelete={handleDeleteQueue}
-              />
-            ))}
+                      )}
+                    </div>
+                  ))
+                )
+              )}
+              {/* Moderator collapsed: own queues */}
+              {isModerator && !isAdmin && moderatorQueues.map(queue => (
+                <QueueListItem
+                  key={queue.id}
+                  id={queue.id}
+                  doctorName={queue.doctorName}
+                  isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
+                  isCollapsed={isIconOnly}
+                  onClick={() => {
+                    setSelectedQueueId(queue.id);
+                    setCurrentPanel('welcome');
+                  }}
+                  onEdit={handleEditQueue}
+                  onDelete={handleDeleteQueue}
+                />
+              ))}
+              {/* Regular user collapsed: all queues */}
+              {!isAdmin && !isModerator && queues.map(queue => (
+                <QueueListItem
+                  key={queue.id}
+                  id={queue.id}
+                  doctorName={queue.doctorName}
+                  isSelected={selectedQueueId === queue.id && currentPanel === 'welcome'}
+                  isCollapsed={isIconOnly}
+                  onClick={() => {
+                    setSelectedQueueId(queue.id);
+                    setCurrentPanel('welcome');
+                  }}
+                  onEdit={handleEditQueue}
+                  onDelete={handleDeleteQueue}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
     </div>
   );
 }
+
+

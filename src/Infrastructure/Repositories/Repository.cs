@@ -65,7 +65,7 @@ namespace Clinics.Infrastructure.Repositories
             return entity;
         }
 
-        public virtual async Task<T> UpdateAsync(T entity)
+        public virtual Task<T> UpdateAsync(T entity)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
             DbSet.Update(entity);
@@ -76,10 +76,10 @@ namespace Clinics.Infrastructure.Repositories
                 auditable.UpdatedAt = DateTime.UtcNow;
             }
 
-            return entity;
+            return Task.FromResult(entity);
         }
 
-        public virtual async Task<T> SoftDeleteAsync(T entity, int? deletedBy = null)
+        public virtual Task<T> SoftDeleteAsync(T entity, int? deletedBy = null)
         {
             if (!_isSoftDeletable)
                 throw new InvalidOperationException($"Entity type {typeof(T).Name} does not support soft delete.");
@@ -92,10 +92,10 @@ namespace Clinics.Infrastructure.Repositories
             }
 
             DbSet.Update(entity);
-            return entity;
+            return Task.FromResult(entity);
         }
 
-        public virtual async Task<T> RestoreAsync(T entity, int? restoredBy = null, DateTime? restoredAt = null)
+        public virtual Task<T> RestoreAsync(T entity, int? restoredBy = null, DateTime? restoredAt = null)
         {
             if (!_isSoftDeletable)
                 throw new InvalidOperationException($"Entity type {typeof(T).Name} does not support restore.");
@@ -120,21 +120,21 @@ namespace Clinics.Infrastructure.Repositories
             }
 
             DbSet.Update(entity);
-            return entity;
+            return Task.FromResult(entity);
         }
 
-        public virtual async Task<int> PurgeAsync(int olderThanDays)
+        public virtual Task<int> PurgeAsync(int olderThanDays)
         {
             // Purging is disabled by policy. Soft-deleted records are kept indefinitely for traceability.
             // This method is a no-op to maintain backward compatibility.
-            return 0;
+            return Task.FromResult(0);
         }
 
-        public virtual async Task<bool> DeleteAsync(T entity)
+        public virtual Task<bool> DeleteAsync(T entity)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
             DbSet.Remove(entity);
-            return true;
+            return Task.FromResult(true);
         }
 
         public virtual async Task<int> SaveChangesAsync()
@@ -198,11 +198,11 @@ namespace Clinics.Infrastructure.Repositories
             return entities.Count;
         }
 
-        public async Task DeleteRangeAsync(IEnumerable<T> entities)
+        public Task DeleteRangeAsync(IEnumerable<T> entities)
         {
             if (entities == null) throw new ArgumentNullException(nameof(entities));
             DbSet.RemoveRange(entities);
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
 
         public async Task<(IEnumerable<T> Items, int Total)> GetPagedAsync(

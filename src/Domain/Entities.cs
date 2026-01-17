@@ -163,7 +163,7 @@ namespace Clinics.Domain
         [Phone]
         public string PhoneNumber { get; set; } = null!;
 
-    // PhoneExtension removed: all numbers validated and stored as single E.164 phone number.
+        // PhoneExtension removed: all numbers validated and stored as single E.164 phone number.
 
         /// <summary>
         /// Country code for the phone number (e.g., "+20", "+966")
@@ -209,6 +209,14 @@ namespace Clinics.Domain
         public DateTime? RestoredAt { get; set; }
 
         public int? RestoredBy { get; set; }
+
+        /// <summary>
+        /// DEF-013 FIX: Row version for optimistic concurrency control.
+        /// Prevents race conditions when multiple users update the same patient's position.
+        /// EF Core will automatically check this value and throw DbUpdateConcurrencyException if stale.
+        /// </summary>
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
     }
 
     [Table("MessageTemplates")]
@@ -392,9 +400,6 @@ namespace Clinics.Domain
         [ForeignKey(nameof(ModeratorId))]
         public User? Moderator { get; set; }
 
-        [StringLength(100)]
-        public string? ProviderMessageId { get; set; }
-
         /// <summary>
         /// Session identifier for grouping related messages.
         /// Messages sent together in a batch share the same SessionId.
@@ -409,12 +414,6 @@ namespace Clinics.Domain
         /// </summary>
         public Guid? CorrelationId { get; set; }
 
-        /// <summary>
-        /// WhatsApp session name being used in that process.
-        /// Stored from WhatsAppSession.SessionName for the moderator.
-        /// </summary>
-        [StringLength(20)]
-        public string Channel { get; set; } = "whatsapp";
 
         [Required]
         public int Attempts { get; set; }
@@ -462,6 +461,27 @@ namespace Clinics.Domain
         [StringLength(100)]
         public string? PauseReason { get; set; }
 
+        /// <summary>
+        /// When this message becomes eligible for retry after a transient failure.
+        /// Used for durable retry scheduling instead of in-memory Task.Run delays.
+        /// Processor query includes: OR (NextAttemptAt IS NOT NULL AND NextAttemptAt <= NOW)
+        /// </summary>
+        public DateTime? NextAttemptAt { get; set; }
+
+        /// <summary>
+        /// ID of the extension command currently processing this message.
+        /// Prevents creating duplicate commands when the provider times out but command is still running.
+        /// Cleared when command completes (success or failure) or message returns to queued.
+        /// </summary>
+        public Guid? InFlightCommandId { get; set; }
+
+        /// <summary>
+        /// Concurrency token for optimistic concurrency control.
+        /// Prevents lost updates when pause and send-complete race.
+        /// </summary>
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
+
         // Soft-delete fields
         [Required]
         public bool IsDeleted { get; set; } = false;
@@ -471,45 +491,8 @@ namespace Clinics.Domain
         public int? DeletedBy { get; set; }
     }
 
-    [Table("FailedTasks")]
-    public class FailedTask
-    {
-        [Key]
-        public long Id { get; set; }
-
-        /// <summary>
-        /// Reference to the failed message.
-        /// Changed from long to Guid to match Message.Id type.
-        /// </summary>
-        public Guid? MessageId { get; set; }
-
-        [ForeignKey(nameof(MessageId))]
-        public Message? Message { get; set; }
-
-        public int? PatientId { get; set; }
-
-        [ForeignKey(nameof(PatientId))]
-        public Patient? Patient { get; set; }
-
-        public int? QueueId { get; set; }
-
-        [ForeignKey(nameof(QueueId))]
-        public Queue? Queue { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
-
-        [StringLength(500)]
-        public string? Reason { get; set; }
-
-        [StringLength(2000)]
-        public string? ProviderResponse { get; set; }
-
-        [Required]
-        public DateTime CreatedAt { get; set; }
-
-        public DateTime? LastRetryAt { get; set; }
-
-        [Required]
-        public int RetryCount { get; set; }
-    }
+    // FailedTask entity REMOVED: Failures now tracked via Message.Status = "failed"
+    // Migration will drop FailedTasks table
 
     [Table("Quotas")]
     public class Quota
@@ -630,16 +613,10 @@ namespace Clinics.Domain
         [Required]
         public int ModeratorUserId { get; set; }
 
-        [StringLength(100)]
-        public string? SessionName { get; set; }
-
-        [StringLength(100)]
-        public string? ProviderSessionId { get; set; }
+        // SessionName, ProviderSessionId, LastSyncAt REMOVED - deprecated columns
 
         [StringLength(20)]
         public string? Status { get; set; }
-
-        public DateTime? LastSyncAt { get; set; }
 
         [Required]
         public DateTime CreatedAt { get; set; }
@@ -668,11 +645,25 @@ namespace Clinics.Domain
         public int? PausedBy { get; set; }
 
         /// <summary>
-        /// Reason for global pause (e.g., "PendingQR", "PendingNET", "BrowserClosed", "Authentication check", "check-whatsapp")
+        /// Reason for global pause (e.g., "PendingQR", "PendingNET", "BrowserClosed", "Authentication check", "CheckWhatsApp")
         /// Max 100 characters for database efficiency
         /// </summary>
         [StringLength(100)]
         public string? PauseReason { get; set; }
+
+        /// <summary>
+        /// Computed property indicating whether the session can be resumed.
+        /// CRITICAL: A paused session is ONLY resumable when:
+        /// - It is paused AND
+        /// - Session Status is "connected" (authenticated and working) AND
+        /// - PauseReason is NOT "CheckWhatsApp" (checks must complete before resuming)
+        /// This ensures users cannot resume when session is pending/disconnected or during check operations,
+        /// preventing message sending failures and providing clear feedback.
+        /// </summary>
+        [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+        public bool IsResumable => IsPaused
+            && Status == "connected"
+            && PauseReason?.Contains("CheckWhatsApp", StringComparison.OrdinalIgnoreCase) != true;
 
         // Soft-delete fields
         public bool IsDeleted { get; set; } = false;
@@ -708,6 +699,14 @@ namespace Clinics.Domain
 
         [Required]
         public int UserId { get; set; }
+
+        /// <summary>
+        /// Type of session: "send" for message sending, "check_whatsapp" for number validation.
+        /// Check sessions have higher priority and don't appear in CompletedTasksPanel.
+        /// </summary>
+        [Required]
+        [StringLength(20)]
+        public string SessionType { get; set; } = MessageSessionTypes.Send;
 
         [Required]
         [StringLength(20)]
@@ -770,6 +769,13 @@ namespace Clinics.Domain
         /// </summary>
         public Guid? CorrelationId { get; set; }
 
+        /// <summary>
+        /// Concurrency token for optimistic concurrency control.
+        /// Prevents lost updates when multiple operations modify session state.
+        /// </summary>
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
+
         // Soft-delete fields
         [Required]
         public bool IsDeleted { get; set; } = false;
@@ -779,39 +785,9 @@ namespace Clinics.Domain
         public int? DeletedBy { get; set; }
     }
 
-    /// <summary>
-    /// Settings and configuration specific to each moderator
-    /// </summary>
-    [Table("ModeratorSettings")]
-    public class ModeratorSettings
-    {
-        [Key]
-        public int Id { get; set; }
-
-        [Required]
-        public int ModeratorUserId { get; set; }
-
-        [ForeignKey(nameof(ModeratorUserId))]
-        public User? Moderator { get; set; } // OnDelete: Restrict (handled in ApplicationDbContext)
-
-        /// <summary>
-        /// WhatsApp phone number associated with this moderator
-        /// </summary>
-        [StringLength(20)]
-        [Phone]
-        public string? WhatsAppPhoneNumber { get; set; }
-
-        /// <summary>
-        /// Whether this moderator's settings are active
-        /// </summary>
-        public bool IsActive { get; set; } = true;
-
-        [Required]
-        public DateTime CreatedAt { get; set; }
-
-        [Required]
-        public DateTime UpdatedAt { get; set; }
-    }
+    // ModeratorSettings entity REMOVED: No longer used
+    // WhatsApp phone number tracked via WhatsAppSession
+    // Migration will drop ModeratorSettings table
 
     /// <summary>
     /// MessageCondition: One-to-one REQUIRED relationship with MessageTemplate.
@@ -856,8 +832,10 @@ namespace Clinics.Domain
         ///              Exactly one per queue enforced by filtered unique index: WHERE Operator = 'DEFAULT'.
         ///   - UNCONDITIONED: No custom criteria; template selection is unconditioned ("بدون شرط").
         ///   - EQUAL/GREATER/LESS/RANGE: Active condition; template selected when patient field matches operator/values.
+        /// 
+        /// Note: [ForeignKey] attribute removed. Relationship is fully configured via Fluent API in ApplicationDbContext
+        /// to avoid EF Core warning about dual ForeignKey attributes creating two separate relationships.
         /// </summary>
-        [ForeignKey(nameof(TemplateId))]
         public MessageTemplate? Template { get; set; }
 
         /// <summary>
@@ -931,68 +909,496 @@ namespace Clinics.Domain
         public int? RestoredBy { get; set; }
     }
 
+    // AuditLog entity REMOVED: No longer used
+    // Migration will drop AuditLogs table
+
+    #region Extension Runner Entities
+
     /// <summary>
-    /// AuditLog entity tracks all significant operations for compliance and debugging.
-    /// Used to log: Create, Update, SoftDelete, Restore, Purge, and quota operations.
+    /// Represents a paired browser extension device for a moderator.
+    /// Each moderator can have multiple paired devices, but only one active lease at a time.
     /// </summary>
-    [Table("AuditLogs")]
-    public class AuditLog
+    [Table("ExtensionDevices")]
+    public class ExtensionDevice
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator this device is paired with.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// Unique device identifier generated and stored by the extension.
+        /// Used to identify the same extension instance across sessions.
+        /// </summary>
+        [Required]
+        [StringLength(64)]
+        public string DeviceId { get; set; } = null!;
+
+        /// <summary>
+        /// Friendly name for the device (e.g., "Chrome on Desktop", "Work Laptop").
+        /// Set by user during pairing or auto-generated from user agent.
+        /// </summary>
+        [StringLength(100)]
+        public string? DeviceName { get; set; }
+
+        /// <summary>
+        /// Hash of the device token (never store plain token).
+        /// Token is issued during pairing and used for authentication.
+        /// </summary>
+        [Required]
+        [StringLength(128)]
+        public string TokenHash { get; set; } = null!;
+
+        /// <summary>
+        /// Extension version at time of pairing (e.g., "1.0.0").
+        /// </summary>
+        [StringLength(20)]
+        public string? ExtensionVersion { get; set; }
+
+        /// <summary>
+        /// Browser user agent at time of pairing.
+        /// </summary>
+        [StringLength(500)]
+        public string? UserAgent { get; set; }
+
+        /// <summary>
+        /// When the device token expires and requires re-pairing.
+        /// </summary>
+        [Required]
+        public DateTime TokenExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// When this device was first paired.
+        /// </summary>
+        [Required]
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Last time this device was seen (heartbeat or command completion).
+        /// </summary>
+        public DateTime? LastSeenAtUtc { get; set; }
+
+        /// <summary>
+        /// If device is revoked, this is when it was revoked.
+        /// </summary>
+        public DateTime? RevokedAtUtc { get; set; }
+
+        /// <summary>
+        /// Reason for revocation (e.g., "UserRevoked", "AdminRevoked", "TokenExpired", "Takeover").
+        /// </summary>
+        [StringLength(50)]
+        public string? RevokedReason { get; set; }
+
+        /// <summary>
+        /// Whether this device is currently active (not revoked).
+        /// </summary>
+        [NotMapped]
+        public bool IsActive => RevokedAtUtc == null && TokenExpiresAtUtc > DateTime.UtcNow;
+
+        /// <summary>
+        /// The pairing code that was used to pair this device (optional, one-to-one).
+        /// Reverse navigation from ExtensionPairingCode.UsedByDevice.
+        /// </summary>
+        public ExtensionPairingCode? PairingCode { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a pairing code for connecting an extension to a moderator account.
+    /// Short-lived (5 minutes) and single-use.
+    /// </summary>
+    [Table("ExtensionPairingCodes")]
+    public class ExtensionPairingCode
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator requesting to pair a device.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// Short numeric code for user to enter in extension (e.g., "12345678").
+        /// </summary>
+        [Required]
+        [StringLength(8)]
+        public string Code { get; set; } = null!;
+
+        /// <summary>
+        /// When this code was created.
+        /// </summary>
+        [Required]
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// When this code expires (typically 5 minutes after creation).
+        /// </summary>
+        [Required]
+        public DateTime ExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// When this code was used (null if not yet used).
+        /// </summary>
+        public DateTime? UsedAtUtc { get; set; }
+
+        /// <summary>
+        /// The device that used this code (null if not yet used).
+        /// </summary>
+        public Guid? UsedByDeviceId { get; set; }
+
+        [ForeignKey(nameof(UsedByDeviceId))]
+        public ExtensionDevice? UsedByDevice { get; set; }
+
+        /// <summary>
+        /// Whether this code is still valid (not expired, not used).
+        /// </summary>
+        [NotMapped]
+        public bool IsValid => UsedAtUtc == null && ExpiresAtUtc > DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Represents an active session lease for a browser extension.
+    /// Only one active lease per moderator at a time (enforced by unique index).
+    /// Lease must be renewed via heartbeat or it expires.
+    /// </summary>
+    [Table("ExtensionSessionLeases")]
+    public class ExtensionSessionLease
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator this lease is for.
+        /// Unique constraint ensures only one active lease per moderator.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// The device holding this lease.
+        /// </summary>
+        [Required]
+        public Guid DeviceId { get; set; }
+
+        [ForeignKey(nameof(DeviceId))]
+        public ExtensionDevice? Device { get; set; }
+
+        /// <summary>
+        /// Hash of lease token for validation.
+        /// </summary>
+        [Required]
+        [StringLength(128)]
+        public string LeaseTokenHash { get; set; } = null!;
+
+        /// <summary>
+        /// When this lease was acquired.
+        /// </summary>
+        [Required]
+        public DateTime AcquiredAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// When this lease expires if not renewed.
+        /// Typically 2-5 minutes from last heartbeat.
+        /// </summary>
+        [Required]
+        public DateTime ExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// Last heartbeat received from the extension.
+        /// </summary>
+        [Required]
+        public DateTime LastHeartbeatAtUtc { get; set; }
+
+        /// <summary>
+        /// If lease was revoked (takeover or explicit release), when it was revoked.
+        /// </summary>
+        public DateTime? RevokedAtUtc { get; set; }
+
+        /// <summary>
+        /// Reason for revocation (e.g., "Released", "Takeover", "Expired", "AdminRevoked").
+        /// </summary>
+        [StringLength(50)]
+        public string? RevokedReason { get; set; }
+
+        /// <summary>
+        /// Current WhatsApp Web tab URL as reported by extension.
+        /// </summary>
+        [StringLength(500)]
+        public string? CurrentUrl { get; set; }
+
+        /// <summary>
+        /// Current WhatsApp session status as reported by extension.
+        /// Values: "connected", "pending_qr", "pending_net", "disconnected", "unknown"
+        /// </summary>
+        [StringLength(20)]
+        public string? WhatsAppStatus { get; set; }
+
+        /// <summary>
+        /// Last error message from extension (for diagnostics).
+        /// </summary>
+        [StringLength(500)]
+        public string? LastError { get; set; }
+
+        /// <summary>
+        /// Whether this lease is currently active (not revoked, not expired).
+        /// </summary>
+        [NotMapped]
+        public bool IsActive => RevokedAtUtc == null && ExpiresAtUtc > DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Represents a command sent to the browser extension.
+    /// Commands are processed in order and must be acknowledged.
+    /// </summary>
+    [Table("ExtensionCommands")]
+    public class ExtensionCommand
+    {
+        [Key]
+        public Guid Id { get; set; }
+
+        /// <summary>
+        /// The moderator/extension this command is for.
+        /// </summary>
+        [Required]
+        public int ModeratorUserId { get; set; }
+
+        [ForeignKey(nameof(ModeratorUserId))]
+        public User? Moderator { get; set; }
+
+        /// <summary>
+        /// Command type (e.g., "SendMessage", "Refresh", "HealthCheck", "Pause").
+        /// </summary>
+        [Required]
+        [StringLength(50)]
+        public string CommandType { get; set; } = null!;
+
+        /// <summary>
+        /// JSON payload with command-specific data.
+        /// For SendMessage: { phoneNumber, messageText, messageId, sessionId }
+        /// </summary>
+        [Required]
+        [Column(TypeName = "nvarchar(max)")]
+        public string PayloadJson { get; set; } = null!;
+
+        /// <summary>
+        /// Reference to the Message entity if this is a SendMessage command.
+        /// </summary>
+        public Guid? MessageId { get; set; }
+
+        [ForeignKey(nameof(MessageId))]
+        public Message? Message { get; set; }
+
+        /// <summary>
+        /// Command status: "pending", "sent", "acked", "completed", "failed", "expired"
+        /// </summary>
+        [Required]
+        [StringLength(20)]
+        public string Status { get; set; } = "pending";
+
+        /// <summary>
+        /// When this command was created.
+        /// </summary>
+        [Required]
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// When this command expires and should be considered failed.
+        /// </summary>
+        [Required]
+        public DateTime ExpiresAtUtc { get; set; }
+
+        /// <summary>
+        /// When command was sent to extension via SignalR/SSE.
+        /// </summary>
+        public DateTime? SentAtUtc { get; set; }
+
+        /// <summary>
+        /// When extension acknowledged receipt of command.
+        /// </summary>
+        public DateTime? AckedAtUtc { get; set; }
+
+        /// <summary>
+        /// When extension reported completion (success or failure).
+        /// </summary>
+        public DateTime? CompletedAtUtc { get; set; }
+
+        /// <summary>
+        /// JSON result from extension.
+        /// Contains status, error details, observations, etc.
+        /// </summary>
+        [Column(TypeName = "nvarchar(max)")]
+        public string? ResultJson { get; set; }
+
+        /// <summary>
+        /// Result status from extension (e.g., "success", "pendingQR", "pendingNET", "failed").
+        /// </summary>
+        [StringLength(20)]
+        public string? ResultStatus { get; set; }
+
+        /// <summary>
+        /// Number of times this command was retried.
+        /// </summary>
+        [Required]
+        public int RetryCount { get; set; } = 0;
+
+        /// <summary>
+        /// Priority for command ordering (lower = higher priority).
+        /// Default 100, urgent commands can use lower values.
+        /// </summary>
+        [Required]
+        public int Priority { get; set; } = 100;
+    }
+
+    /// <summary>
+    /// Message session types for distinguishing send vs check operations.
+    /// </summary>
+    public static class MessageSessionTypes
+    {
+        public const string Send = "send";
+        public const string CheckWhatsApp = "check_whatsapp";
+    }
+
+    /// <summary>
+    /// Enum for extension command types.
+    /// </summary>
+    public static class ExtensionCommandTypes
+    {
+        public const string SendMessage = "SendMessage";
+        public const string CheckWhatsAppNumber = "CheckWhatsAppNumber";
+        public const string Refresh = "Refresh";
+        public const string HealthCheck = "HealthCheck";
+        public const string Pause = "Pause";
+        public const string Resume = "Resume";
+        public const string GetStatus = "GetStatus";
+        public const string GetQrCode = "GetQrCode";
+    }
+
+    /// <summary>
+    /// Enum for extension command statuses.
+    /// </summary>
+    public static class ExtensionCommandStatuses
+    {
+        public const string Pending = "pending";
+        public const string Sent = "sent";
+        public const string Acked = "acked";
+        public const string Completed = "completed";
+        public const string Failed = "failed";
+        public const string Expired = "expired";
+    }
+
+    /// <summary>
+    /// Enum for extension result statuses (from extension to server).
+    /// Maps to existing OperationResult categories.
+    /// P2.9: Added ExtensionTimeout and NoActiveLease for explicit error handling.
+    /// </summary>
+    public static class ExtensionResultStatuses
+    {
+        public const string Success = "success";
+        public const string PendingQR = "pendingQR";
+        public const string PendingNET = "pendingNET";
+        public const string Waiting = "waiting";
+        public const string Failed = "failed";
+
+        /// <summary>
+        /// Extension command timed out but may still complete later.
+        /// Message should stay in 'sending' state.
+        /// </summary>
+        public const string ExtensionTimeout = "extensionTimeout";
+
+        /// <summary>
+        /// No active extension lease for the moderator.
+        /// User needs to connect the browser extension.
+        /// </summary>
+        public const string NoActiveLease = "noActiveLease";
+    }
+
+    #endregion
+    public class PhoneWhatsAppRegistry
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required]
+        [MaxLength(20)]
+        public string PhoneNumber { get; set; } = null!; // E.164 format
+
+        public bool HasWhatsApp { get; set; }
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public DateTime? ExpiresAt { get; set; }
+
+        public int? CheckedByUserId { get; set; }
+
+        public int ValidationCount { get; set; }
+    }
+
+    /// <summary>
+    /// System-wide configuration settings.
+    /// Used for rate limiting, feature flags, and other admin-configurable options.
+    /// </summary>
+    [Table("SystemSettings")]
+    public class SystemSettings
     {
         [Key]
         public int Id { get; set; }
 
         /// <summary>
-        /// The type of action performed (Create, Update, SoftDelete, Restore, Purge, etc.)
-        /// </summary>
-        [Required]
-        public AuditAction Action { get; set; }
-
-        /// <summary>
-        /// The entity type being modified (e.g., "Queue", "Patient", "MessageTemplate").
+        /// Unique key for the setting (e.g., "RateLimitMinSeconds", "RateLimitMaxSeconds")
         /// </summary>
         [Required]
         [StringLength(50)]
-        public string EntityType { get; set; } = null!;
+        public string Key { get; set; } = null!;
 
         /// <summary>
-        /// The primary key of the entity being modified.
+        /// Setting value as string (parsed based on context)
         /// </summary>
         [Required]
-        public int EntityId { get; set; }
+        [StringLength(200)]
+        public string Value { get; set; } = null!;
 
         /// <summary>
-        /// The ID of the user who performed the action.
+        /// Description in Arabic for admin UI
         /// </summary>
-        public int? ActorUserId { get; set; }
-
-        [ForeignKey(nameof(ActorUserId))]
-        public User? Actor { get; set; }
+        [StringLength(500)]
+        public string? Description { get; set; }
 
         /// <summary>
-        /// Timestamp when the action occurred.
+        /// Category for grouping settings (e.g., "RateLimit", "Features")
         /// </summary>
+        [StringLength(50)]
+        public string? Category { get; set; }
+
+        // Audit fields
         [Required]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        /// <summary>
-        /// JSON representation of changes (new values after operation, or reason for deletion).
-        /// Stored as string for flexibility across entity types.
-        /// Example: {"QueueId":5,"PatientCount":0,"MessageCount":0}
-        /// </summary>
-        [Column(TypeName = "nvarchar(max)")]
-        public string? Changes { get; set; }
+        public DateTime? UpdatedAt { get; set; }
 
-        /// <summary>
-        /// Optional notes or reason for the operation (e.g., "User requested deletion", "Quota recovery").
-        /// </summary>
-        [StringLength(500)]
-        public string? Notes { get; set; }
+        public int? UpdatedBy { get; set; }
+    }
 
-        /// <summary>
-        /// Optional JSON for additional context (e.g., quota released: 100, cascade impact).
-        /// </summary>
-        [Column(TypeName = "nvarchar(max)")]
-        public string? Metadata { get; set; }
+    /// <summary>
+    /// Well-known keys for system settings
+    /// </summary>
+    public static class SystemSettingKeys
+    {
+        public const string RateLimitMinSeconds = "RateLimitMinSeconds";
+        public const string RateLimitMaxSeconds = "RateLimitMaxSeconds";
+        public const string RateLimitEnabled = "RateLimitEnabled";
     }
 }
-

@@ -1,4 +1,4 @@
-/**
+/*
  * Template Cascade Service - Soft Delete Handler
  * File: src/Api/Services/TemplateCascadeService.cs
  * 
@@ -78,10 +78,10 @@ public class TemplateCascadeService : ITemplateCascadeService
             // If this template has a DEFAULT condition, require replacement or ensure there's another default
             // Load template's condition via navigation property
             await _db.Entry(template).Reference(t => t.Condition).LoadAsync();
-            var templateCondition = template.Condition != null && !template.Condition.IsDeleted 
-                ? template.Condition 
+            var templateCondition = template.Condition != null && !template.Condition.IsDeleted
+                ? template.Condition
                 : null;
-            
+
             if (templateCondition?.Operator == "DEFAULT")
             {
                 var otherActiveTemplates = await _db.MessageTemplates
@@ -103,11 +103,11 @@ public class TemplateCascadeService : ITemplateCascadeService
                         await transaction.RollbackAsync();
                         return (false, "Replacement template not found or not active");
                     }
-                    
+
                     // Load replacement template's condition via navigation property
                     await _db.Entry(replacement).Reference(t => t.Condition).LoadAsync();
-                    var replacementCondition = replacement.Condition != null && !replacement.Condition.IsDeleted 
-                        ? replacement.Condition 
+                    var replacementCondition = replacement.Condition != null && !replacement.Condition.IsDeleted
+                        ? replacement.Condition
                         : null;
                     if (replacementCondition != null)
                     {
@@ -130,7 +130,7 @@ public class TemplateCascadeService : ITemplateCascadeService
                         };
                         _db.Set<MessageCondition>().Add(replacementCondition);
                         await _db.SaveChangesAsync(); // Save to get condition ID
-                        
+
                         // Update replacement template with MessageConditionId (maintain bidirectional relationship)
                         replacement.MessageConditionId = replacementCondition.Id;
                     }
@@ -340,7 +340,7 @@ public class TemplateCascadeService : ITemplateCascadeService
 
             int deleted = await _db.SaveChangesAsync();
             await transaction.CommitAsync();
-            
+
             _logger.LogInformation("Permanently deleted {Count} archived templates at {Timestamp}", deleted, operationTimestamp);
             return deleted;
         }

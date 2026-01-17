@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useQueue } from '@/contexts/QueueContext';
@@ -14,10 +14,10 @@ import ModeratorMessagesOverview from './ModeratorMessagesOverview';
 import { UserRole } from '@/types/roles';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState } from '@/components/state';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictBadge } from '@/components/Common/ConflictBadge';
-import { formatLocalDate, formatLocalDateTime } from '@/utils/dateTimeUtils';
+import { formatLocalDate, formatLocalDateTime, parseAsUtc } from '@/utils/dateTimeUtils';
 import logger from '@/utils/logger';
 import type { MessageCondition } from '@/types/messageCondition';
 import { useUserManagement } from '@/hooks/useUserManagement';
@@ -41,11 +41,11 @@ const USAGE_GUIDE_ITEMS = [
   },
   {
     title: 'توسيع/طي',
-    description: 'استخدم زر "توسيع الكل" أو "طي الكل" لإدارة جميع الطوابير بسرعة'
+    description: 'استخدم زر "توسيع الكل" أو "طي الكل" لإدارة جميع العيادات بسرعة'
   },
   {
     title: 'القالب الافتراضي',
-    description: 'يجب أن يكون هناك قالب واحد بدون شروط (لم يتم تحديده بعد) لكل طابور، وهو يُستخدم عند عدم توفر شروط أخرى'
+    description: 'يجب أن يكون هناك قالب واحد بدون شروط (لم يتم تحديده بعد) لكل عيادة، وهو يُستخدم عند عدم توفر شروط أخرى'
   },
   {
     title: 'الشروط',
@@ -109,7 +109,7 @@ export default function MessagesPanel() {
     };
 
     loadQuota();
-    
+
     // Fetch users and moderators to populate userManagementState for getUserDisplayName
     if (user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin || user.role === UserRole.Moderator)) {
       userManagementActions.fetchUsers();
@@ -131,12 +131,12 @@ export default function MessagesPanel() {
       .map(q => String(q.id))
       .sort((a, b) => a.localeCompare(b));
     const idsString = sortedIds.join(',');
-    
+
     // Only return new value if IDs actually changed (value comparison, not reference)
     if (idsString !== queueIdsRef.current) {
       queueIdsRef.current = idsString;
     }
-    
+
     return queueIdsRef.current;
   }, [
     // Depend on length and a stable representation of the IDs
@@ -146,7 +146,7 @@ export default function MessagesPanel() {
     // but useMemo will only trigger effects when the actual value changes (React compares by value for strings)
     queues.map(q => String(q.id)).sort((a, b) => a.localeCompare(b)).join(',')
   ]);
-  
+
   // Refs for preventing concurrent refreshes and rapid successive calls
   const isRefreshingRef = useRef(false);
   const lastRefreshTimeRef = useRef<Map<string, number>>(new Map());
@@ -198,7 +198,7 @@ export default function MessagesPanel() {
             // Targeted refresh: only refresh the specific queue that changed
             const queueId = String(queueIdFromEvent);
             const lastRefreshTime = lastRefreshTimeRef.current.get(queueId) || 0;
-            
+
             if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
               logger.debug(`MessagesPanel: Skipping queue ${queueId} refresh (too soon after last refresh)`);
             } else {
@@ -216,11 +216,11 @@ export default function MessagesPanel() {
             // This reduces server load significantly
             if (queueIdsArray.length > 0 && typeof refreshQueueDataRef.current === 'function') {
               const DELAY_BETWEEN_REQUESTS_MS = 400; // 400ms delay between each request
-              
+
               // Process queues sequentially with delays to reduce server load
               for (const queueId of queueIdsArray) {
                 const lastRefreshTime = lastRefreshTimeRef.current.get(queueId) || 0;
-                
+
                 if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
                   logger.debug(`MessagesPanel: Skipping queue ${queueId} refresh (too soon)`);
                   continue;
@@ -233,7 +233,7 @@ export default function MessagesPanel() {
                 } catch (err) {
                   logger.error(`MessagesPanel: Failed to refresh queue ${queueId}:`, err);
                 }
-                
+
                 // Add delay between requests (except for the last one)
                 if (queueIdsArray.indexOf(queueId) < queueIdsArray.length - 1) {
                   await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_REQUESTS_MS));
@@ -241,7 +241,7 @@ export default function MessagesPanel() {
               }
             }
           }
-          
+
           // Refetch quota (only once, not per queue)
           try {
             const quota = await messageApiClient.getMyQuota();
@@ -350,7 +350,7 @@ export default function MessagesPanel() {
       const newSet = new Set(prev);
       const queueIdStr = String(queueId);
       const isCurrentlyExpanded = newSet.has(queueIdStr);
-      
+
       if (isCurrentlyExpanded) {
         // Collapsing - just remove from set
         newSet.delete(queueIdStr);
@@ -361,19 +361,19 @@ export default function MessagesPanel() {
         setTimeout(async () => {
           // Prevent duplicate requests
           if (loadingQueuesRef.current.has(queueIdStr)) return;
-          
+
           // Check if recently loaded (within last 5 seconds)
           const lastRefreshTime = lastRefreshTimeRef.current.get(queueIdStr) || 0;
           const now = Date.now();
           const MIN_REFRESH_INTERVAL_MS = 5000;
-          
+
           if (now - lastRefreshTime < MIN_REFRESH_INTERVAL_MS) {
             logger.debug(`MessagesPanel: Queue ${queueIdStr} was recently loaded, skipping`);
             return;
           }
-          
+
           loadingQueuesRef.current.add(queueIdStr);
-          
+
           try {
             await refreshQueueDataRef.current(queueIdStr);
             lastRefreshTimeRef.current.set(queueIdStr, now);
@@ -412,10 +412,10 @@ export default function MessagesPanel() {
         // Find condition from messageConditions array first, then fall back to template.condition
         return messageConditions.find((c) => c.templateId === t.id) ?? t.condition ?? null;
       })
-      .filter((c): c is MessageCondition => 
-        c !== null && 
-        c !== undefined && 
-        c.operator !== undefined && 
+      .filter((c): c is MessageCondition =>
+        c !== null &&
+        c !== undefined &&
+        c.operator !== undefined &&
         c.operator !== 'DEFAULT' // Exclude DEFAULT as it's a sentinel
       );
 
@@ -454,42 +454,54 @@ export default function MessagesPanel() {
   const getConflictingConditionIds = useCallback((queueId: string): Set<string> => {
     const intersections = checkConditionIntersections(queueId);
     const conflictingIds = new Set<string>();
-    
+
     intersections.forEach((intersection) => {
       conflictingIds.add(intersection.cond1.id);
       conflictingIds.add(intersection.cond2.id);
     });
-    
+
     return conflictingIds;
   }, [messageConditions, messageTemplates]);
 
   /**
    * Helper function to get user display name following priority:
-   * 1. firstName + lastName (if both exist)
-   * 2. firstName only (if lastName is null/empty)
-   * 3. username (fallback, never return "Unknown" or "غير معروف" if username exists)
+   * 1. Check if it matches current logged-in user (for admins not in moderators/users list)
+   * 2. firstName + lastName (if both exist)
+   * 3. firstName only (if lastName is null/empty)
+   * 4. username (fallback)
    */
   const getUserDisplayName = useCallback((userId: string | number | undefined): string => {
     if (!userId) return 'غير معروف';
-    
+
     const userIdStr = String(userId).trim();
     if (!userIdStr) return 'غير معروف';
-    
+
+    // First check if it matches the current logged-in user (for admins who may not be in moderators/users list)
+    if (user && String(user.id) === userIdStr) {
+      if (user.firstName && user.lastName) {
+        return `${user.firstName} ${user.lastName}`;
+      }
+      if (user.firstName) {
+        return user.firstName;
+      }
+      return user.username || '-';
+    }
+
     const allUsers = [
       ...(userManagementState.moderators || []),
       ...(userManagementState.users || []),
     ];
-    
+
     // Try to find user by ID (both string and number comparison)
     const foundUser = allUsers.find(u => {
       const uIdStr = String(u.id).trim();
       const uIdNum = Number(u.id);
       const searchIdNum = Number(userIdStr);
-      
-      return uIdStr === userIdStr || 
-             (!isNaN(uIdNum) && !isNaN(searchIdNum) && uIdNum === searchIdNum);
+
+      return uIdStr === userIdStr ||
+        (!isNaN(uIdNum) && !isNaN(searchIdNum) && uIdNum === searchIdNum);
     });
-    
+
     if (foundUser) {
       // If both firstName and lastName exist, show both
       if (foundUser.firstName && foundUser.lastName) {
@@ -504,10 +516,10 @@ export default function MessagesPanel() {
         return foundUser.username;
       }
     }
-    
-    // If user not found or no username, return 'غير معروف'
-    return 'غير معروف';
-  }, [userManagementState]);
+
+    // If user not found, return '-'
+    return '-';
+  }, [userManagementState, user]);
 
   /**
    * Get range representation of a condition
@@ -538,9 +550,9 @@ export default function MessagesPanel() {
   const conditionsOverlap = (cond1: MessageCondition, cond2: MessageCondition): boolean => {
     const range1 = getConditionRange(cond1);
     const range2 = getConditionRange(cond2);
-    
+
     if (!range1 || !range2) return false;
-    
+
     // Two ranges overlap if NOT (range1.max < range2.min OR range2.max < range1.min)
     return !(range1.max < range2.min || range2.max < range1.min);
   };
@@ -550,6 +562,8 @@ export default function MessagesPanel() {
    */
   const getConditionText = (cond: MessageCondition): string => {
     const operatorMap: Record<string, string> = {
+      'UNCONDITIONED': 'بدون شرط',
+      'DEFAULT': 'افتراضي',
       'EQUAL': 'يساوي',
       'GREATER': 'أكثر من',
       'LESS': 'أقل من',
@@ -557,6 +571,12 @@ export default function MessagesPanel() {
     };
 
     const operatorText = operatorMap[cond.operator] || cond.operator;
+
+    // For UNCONDITIONED and DEFAULT, no value to show
+    if (cond.operator === 'UNCONDITIONED' || cond.operator === 'DEFAULT') {
+      return operatorText;
+    }
+
     const valueText =
       cond.operator === 'RANGE' ? `${cond.minValue}-${cond.maxValue}` : cond.value;
 
@@ -580,7 +600,7 @@ export default function MessagesPanel() {
 
     // Format value for display: show "غير محدود" for -1
     const formatQuotaValue = (value: number): string => {
-      return value === -1 ? 'غير محدود' : value.toLocaleString('ar-SA');
+      return value === -1 ? 'غير محدود' : value.toLocaleString('ar-EG-u-nu-latn');
     };
 
     // Since we're in moderator view (admins are redirected to ModeratorMessagesOverview)
@@ -594,7 +614,7 @@ export default function MessagesPanel() {
       },
       {
         label: 'الرسائل المستخدمة',
-        value: baseStats.used.toLocaleString('ar-SA'),
+        value: baseStats.used.toLocaleString('ar-EG-u-nu-latn'),
         color: 'yellow' as const,
         info: 'من حصتي الشخصية'
       },
@@ -616,7 +636,7 @@ export default function MessagesPanel() {
       <PanelHeader
         icon="fa-envelope"
         title="إدارة قوالب الرسائل"
-        description="إدارة قوالب الرسائل لكل طابور بشكل منفصل وسهل"
+        description="إدارة قوالب الرسائل لكل عيادة بشكل منفصل وسهل"
         stats={getRoleContextStats}
         actions={[]}
       />
@@ -641,7 +661,7 @@ export default function MessagesPanel() {
             <button
               onClick={toggleAllQueues}
               className="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium whitespace-nowrap h-fit"
-              title="توسيع أو طي جميع الطوابير"
+              title="توسيع أو طي جميع العيادات"
             >
               <i className={`fas ${expandedQueues.size === queues.length ? 'fa-compress' : 'fa-expand'}`}></i>
               {expandedQueues.size === queues.length ? 'طي الكل' : 'توسيع الكل'}
@@ -655,8 +675,8 @@ export default function MessagesPanel() {
         {queues.length === 0 ? (
           <EmptyState
             icon="fa-inbox"
-            title="لا توجد طوابير"
-            message="يرجى إنشاء طابور أولاً من لوحة التحكم"
+            title="لا توجد عيادات"
+            message="يرجى إنشاء عيادة أولاً من لوحة التحكم"
             actionLabel="اذهب إلى لوحة التحكم"
             onAction={() => {
               // Navigate to welcome screen (dashboard)
@@ -681,14 +701,13 @@ export default function MessagesPanel() {
                       className="flex items-center gap-3 flex-1 text-right"
                     >
                       <i
-                        className={`fas fa-chevron-down text-gray-600 transition-transform ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
+                        className={`fas fa-chevron-down text-gray-600 transition-transform ${isExpanded ? 'rotate-180' : ''
+                          }`}
                       ></i>
                       <div className="text-right">
                         <h4 className="font-semibold text-gray-900">
                           <i className="fas fa-hospital-user text-blue-600 ml-2"></i>
-                          {queue.doctorName || `الطابور #${queue.id}`}
+                          {queue.doctorName || `العيادة #${queue.id}`}
                         </h4>
                         <p className="text-xs text-gray-600 mt-1">
                           📧 {messageTemplates.filter((t) => t.queueId === String(queue.id)).length} قالب رسالة
@@ -701,12 +720,12 @@ export default function MessagesPanel() {
                       <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
                         📦 رسائل
                       </span>
-                      
+
                       {/* Conflict Badge - Only show when collapsed */}
                       {!isExpanded && (() => {
                         const intersections = checkConditionIntersections(String(queue.id));
                         return intersections.length > 0 ? (
-                          <ConflictBadge 
+                          <ConflictBadge
                             conflictCount={intersections.length}
                             size="sm"
                             onClick={() => toggleQueueExpanded(queue.id)}
@@ -737,7 +756,7 @@ export default function MessagesPanel() {
                         return intersections.length > 0 ? (
                           <div className="border-t border-red-100 px-4 py-2 bg-red-50 space-y-2">
                             <p className="text-xs font-semibold text-red-900 mb-2">
-                              ⛔ طوابير بها تضاربات:
+                              ⛔ عيادات بها تضاربات:
                             </p>
                             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-3">
                               <div className="flex items-start gap-2">
@@ -772,9 +791,8 @@ export default function MessagesPanel() {
                               <tr className="bg-gray-100 border-b border-gray-200">
                                 <th className="px-4 py-2 text-right">العنوان</th>
                                 <th className="px-4 py-2 text-right">الشرط المطبق</th>
-                                <th className="px-4 py-2 text-right">انشئ بواسطة</th>
+                                <th className="px-4 py-2 text-right">آخر تحديث بواسطة</th>
                                 <th className="px-4 py-2 text-right">آخر تحديث</th>
-                                <th className="px-4 py-2 text-right">الحالة</th>
                                 <th className="px-4 py-2 text-right">الإجراءات</th>
                               </tr>
                             </thead>
@@ -788,156 +806,152 @@ export default function MessagesPanel() {
                                     (t.content && t.content.toLowerCase().includes(searchLower))
                                   );
                                 })
-                                .sort((_a, _b) => {
-                                  return 0;
+                                .sort((a, b) => {
+                                  // Sort by creation date descending (newest first)
+                                  const dateA = parseAsUtc(a.createdAt)?.getTime() || 0;
+                                  const dateB = parseAsUtc(b.createdAt)?.getTime() || 0;
+                                  return dateB - dateA;
                                 })
                                 .map((template) => {
-                                // Find condition from messageConditions array (authoritative source) or fall back to template.condition
-                                // This matches the logic in EditTemplateModal to ensure consistency
-                                const condition = 
-                                  messageConditions.find((c) => c.templateId === template.id) ??
-                                  template.condition ??
-                                  null;
-                                
-                                // Check if this template's condition is conflicting
-                                const conflictingIds = getConflictingConditionIds(String(queue.id));
-                                const hasConflict = condition && conflictingIds.has(condition.id);
-                                
-                                return (
-                                  <tr key={template.id} className={`border-b border-gray-200 transition-colors ${
-                                    hasConflict 
-                                      ? 'bg-red-100 hover:bg-red-150 border-l-4 border-l-red-600' 
+                                  // Find condition from messageConditions array (authoritative source) or fall back to template.condition
+                                  // This matches the logic in EditTemplateModal to ensure consistency
+                                  const condition =
+                                    messageConditions.find((c) => c.templateId === template.id) ??
+                                    template.condition ??
+                                    null;
+
+                                  // Check if this template's condition is conflicting
+                                  const conflictingIds = getConflictingConditionIds(String(queue.id));
+                                  const hasConflict = condition && conflictingIds.has(condition.id);
+
+                                  return (
+                                    <tr key={template.id} className={`border-b border-gray-200 transition-colors ${hasConflict
+                                      ? 'bg-red-100 hover:bg-red-150 border-l-4 border-l-red-600'
                                       : highlightedConditionType && condition && condition.operator === highlightedConditionType
                                         ? 'bg-yellow-100 hover:bg-yellow-150 border-l-4 border-l-yellow-500'
                                         : 'hover:bg-blue-50'
-                                  }`}>
-                                    <td className="px-4 py-2">
-                                      <div>
-                                        <p className="font-medium text-gray-900">{template.title}</p>
-                                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                                          {template.content.substring(0, 80)}
-                                          {template.content.length > 80 ? '...' : ''}
-                                        </p>
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      {condition ? (
-                                        condition.operator === 'DEFAULT' ? (
-                                          <span className="text-green-600 font-medium bg-green-50 px-3 py-1 rounded-full text-sm">
-                                            ✓ افتراضي
-                                          </span>
-                                        ) : (
-                                          <div className="flex items-center gap-2 flex-wrap">
-                                            {hasConflict && (
-                                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold animate-pulse">
-                                                <i className="fas fa-exclamation-triangle"></i>
-                                                تضارب!
-                                              </span>
-                                            )}
-                                            <span className="text-sm font-semibold text-blue-600">
-                                              {condition.operator === 'EQUAL' && 'يساوي'}
-                                              {condition.operator === 'GREATER' && 'أكثر من'}
-                                              {condition.operator === 'LESS' && 'أقل من'}
-                                              {condition.operator === 'RANGE' && 'نطاق'}
-                                            </span>
-                                            {condition.operator === 'RANGE' ? (
-                                              <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
-                                                {condition.minValue} - {condition.maxValue}
-                                              </span>
-                                            ) : (
-                                              <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
-                                                {condition.value}
-                                              </span>
-                                            )}
-                                          </div>
-                                        )
-                                      ) : (
-                                        <span className="text-amber-600 font-medium">لم يتم تحديده بعد</span>
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      <span className="text-sm text-gray-700">{getUserDisplayName(template.createdBy)}</span>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      <span className="text-sm text-gray-700">
-                                        {template.updatedAt ? formatLocalDateTime(template.updatedAt instanceof Date ? template.updatedAt : new Date(template.updatedAt)) : '-'}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                                        !template.isDeleted 
-                                          ? 'bg-green-100 text-green-800' 
-                                          : 'bg-red-100 text-red-800'
                                       }`}>
-                                        <i className={`fas ${!template.isDeleted ? 'fa-check-circle' : 'fa-times-circle'}`}></i>
-                                        {!template.isDeleted ? 'نشط' : 'معطل'}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          onClick={() => {
-                                            // Edit template - open edit modal
-                                            openModal('editTemplate', { templateId: template.id, queueId: queue.id });
-                                            addToast('فتح تحرير القالب: ' + template.title, 'info');
-                                          }}
-                                          className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors"
-                                          title="تحرير"
-                                        >
-                                          <i className="fas fa-edit"></i>
-                                          تحرير
-                                        </button>
-                                        <button
-                                          onClick={async (e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            
-                                            try {
-                                              const confirmOptions = createDeleteConfirmation('القالب: ' + template.title);
-                                              const confirmed = await confirm(confirmOptions);
-                                              if (!confirmed) return;
-                                              
-                                              const templateIdNum = Number(template.id);
-                                              if (isNaN(templateIdNum)) {
-                                                addToast('معرّف القالب غير صالح', 'error');
-                                                return;
-                                              }
+                                      <td className="px-4 py-2">
+                                        <div>
+                                          <p className="font-medium text-gray-900">{template.title}</p>
+                                          <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                                            {template.content.substring(0, 80)}
+                                            {template.content.length > 80 ? '...' : ''}
+                                          </p>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        {condition ? (
+                                          condition.operator === 'DEFAULT' ? (
+                                            <span className="text-green-600 font-medium bg-green-50 px-3 py-1 rounded-full text-sm">
+                                              ✓ افتراضي
+                                            </span>
+                                          ) : condition.operator === 'UNCONDITIONED' ? (
+                                            <span className="text-gray-600 font-medium bg-gray-100 px-3 py-1 rounded-full text-sm">
+                                              ○ بدون شرط
+                                            </span>
+                                          ) : (
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              {hasConflict && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold animate-pulse">
+                                                  <i className="fas fa-exclamation-triangle"></i>
+                                                  تضارب!
+                                                </span>
+                                              )}
+                                              <span className="text-sm font-semibold text-blue-600">
+                                                {condition.operator === 'EQUAL' && 'يساوي'}
+                                                {condition.operator === 'GREATER' && 'أكثر من'}
+                                                {condition.operator === 'LESS' && 'أقل من'}
+                                                {condition.operator === 'RANGE' && 'نطاق'}
+                                              </span>
+                                              {condition.operator === 'RANGE' ? (
+                                                <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
+                                                  {condition.minValue} - {condition.maxValue}
+                                                </span>
+                                              ) : (
+                                                <span className="text-sm font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded">
+                                                  {condition.value}
+                                                </span>
+                                              )}
+                                            </div>
+                                          )
+                                        ) : (
+                                          <span className="text-amber-600 font-medium">لم يتم تحديده بعد</span>
+                                        )}
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <span className="text-sm text-gray-700">{getUserDisplayName(template.updatedBy || template.createdBy)}</span>
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <span className="text-sm text-gray-700">
+                                          {template.updatedAt ? formatLocalDateTime(template.updatedAt) : '-'}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => {
+                                              // Edit template - open edit modal
+                                              openModal('editTemplate', { templateId: template.id, queueId: queue.id });
+                                              addToast('فتح تحرير القالب: ' + template.title, 'info');
+                                            }}
+                                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors"
+                                            title="تحرير"
+                                          >
+                                            <i className="fas fa-edit"></i>
+                                            تحرير
+                                          </button>
+                                          <button
+                                            onClick={async (e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
 
-                                              await messageApiClient.deleteTemplate(templateIdNum);
-                                              
-                                              // Refetch queue data to reflect changes
-                                              if (typeof refreshQueueData === 'function' && queue.id) {
-                                                await refreshQueueData(String(queue.id));
-                                              }
-                                              
-                                              // Refresh quota to update PanelHeader stats
                                               try {
-                                                const quota = await messageApiClient.getMyQuota();
-                                                setUserQuota(quota);
-                                              } catch (err) {
-                                                // Silently fail quota refetch
+                                                const confirmOptions = createDeleteConfirmation('القالب: ' + template.title);
+                                                const confirmed = await confirm(confirmOptions);
+                                                if (!confirmed) return;
+
+                                                const templateIdNum = Number(template.id);
+                                                if (isNaN(templateIdNum)) {
+                                                  addToast('معرّف القالب غير صالح', 'error');
+                                                  return;
+                                                }
+
+                                                await messageApiClient.deleteTemplate(templateIdNum);
+
+                                                // Refetch queue data to reflect changes
+                                                if (typeof refreshQueueData === 'function' && queue.id) {
+                                                  await refreshQueueData(String(queue.id));
+                                                }
+
+                                                // Refresh quota to update PanelHeader stats
+                                                try {
+                                                  const quota = await messageApiClient.getMyQuota();
+                                                  setUserQuota(quota);
+                                                } catch (err) {
+                                                  // Silently fail quota refetch
+                                                }
+
+                                                // Notify other components
+                                                window.dispatchEvent(new CustomEvent('templateDataUpdated'));
+
+                                                addToast('تم حذف القالب: ' + template.title, 'success');
+                                              } catch (error: any) {
+                                                const errorMsg = error?.message || error?.error || 'فشل حذف القالب';
+                                                addToast(errorMsg, 'error');
                                               }
-                                              
-                                              // Notify other components
-                                              window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-                                              
-                                              addToast('تم حذف القالب: ' + template.title, 'success');
-                                            } catch (error: any) {
-                                              const errorMsg = error?.message || error?.error || 'فشل حذف القالب';
-                                              addToast(errorMsg, 'error');
-                                            }
-                                          }}
-                                          className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors"
-                                          title="حذف"
-                                        >
-                                          <i className="fas fa-trash"></i>
-                                          حذف
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
+                                            }}
+                                            className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors"
+                                            title="حذف"
+                                          >
+                                            <i className="fas fa-trash"></i>
+                                            حذف
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                             </tbody>
                           </table>
                         </div>
@@ -955,10 +969,11 @@ export default function MessagesPanel() {
 
       {/* Usage Guide Section */}
       <div className="px-4 pb-4">
-        <UsageGuideSection 
+        <UsageGuideSection
           items={USAGE_GUIDE_ITEMS}
         />
       </div>
     </PanelWrapper>
   );
 }
+

@@ -3,7 +3,7 @@
 	"tasks": [
 		{
 			"label": "build-api",
-			"command": "dotnet",
+			"command": "C:\\Program Files\\dotnet\\dotnet.exe",
 			"type": "process",
 			"args": [
 				"build",
@@ -43,7 +43,7 @@
 		{
 			"label": "build-api (verify DTO fix)",
 			"type": "shell",
-			"command": "dotnet",
+			"command": "C:\\Program Files\\dotnet\\dotnet.exe",
 			"args": [
 				"build",
 				"src/Api/Clinics.Api.csproj",

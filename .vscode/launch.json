@@ -1,10 +1,10 @@
 {
-  "configurations": 
-  [
+  "configurations": [
     {
       "name": "WA ........ WhatsApp Service (dotnet)",
       "type": "coreclr",
       "request": "launch",
+      "targetArchitecture": "x86_64",
       "preLaunchTask": "build-whatsapp",
       "program": "${workspaceFolder}/ClinicsManagementService/bin/Debug/net8.0/WhatsAppMessagingService.dll",
       "args": [],
@@ -23,6 +23,7 @@
       "name": "BE only . Backend API (dotnet)",
       "type": "coreclr",
       "request": "launch",
+      "targetArchitecture": "x86_64",
       "preLaunchTask": "build-api",
       "program": "${workspaceFolder}/src/Api/bin/Debug/net8.0/Clinics.Api.dll",
       "args": [],
@@ -47,21 +48,29 @@
       // "preLaunchTask": "start-frontend",
       "cwd": "${workspaceFolder}/apps/web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],      
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "console": "integratedTerminal",
       "env": {}
     }
   ],
-  
-  "compounds": 
-  [
+  "compounds": [
     {
       "name": "BE + FE (Backend & Frontend)",
-      "configurations": [ "FE only . Frontend (Next.js)", "BE only . Backend API (dotnet)" ]
+      "configurations": [
+        "FE only . Frontend (Next.js)",
+        "BE only . Backend API (dotnet)"
+      ]
     },
     {
       "name": "Run All",
-      "configurations": [ "FE only . Frontend (Next.js)", "BE only . Backend API (dotnet)", "WA ........ WhatsApp Service (dotnet)" ]
+      "configurations": [
+        "FE only . Frontend (Next.js)",
+        "BE only . Backend API (dotnet)",
+        "WA ........ WhatsApp Service (dotnet)"
+      ]
     }
   ]
 }

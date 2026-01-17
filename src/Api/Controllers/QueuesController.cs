@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Clinics.Domain;
 using Clinics.Infrastructure;
 using Clinics.Api.DTOs;
@@ -23,7 +23,7 @@ namespace Clinics.Api.Controllers
         private readonly ISoftDeleteTTLQueries<Queue> _ttlQueries;
 
         public QueuesController(
-            ApplicationDbContext db, 
+            ApplicationDbContext db,
             QuotaService quotaService,
             ILogger<QueuesController> logger,
             Clinics.Api.Services.IQueueCascadeService queueCascadeService,
@@ -45,7 +45,7 @@ namespace Clinics.Api.Controllers
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 ?? User.FindFirst("sub")?.Value
                 ?? User.FindFirst("userId")?.Value;
-            
+
             if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
             {
                 return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
@@ -86,7 +86,8 @@ namespace Clinics.Api.Controllers
 
             // Return basic queue list with patient counts for UI
             var qs = await query
-                .Select(q => new QueueDto {
+                .Select(q => new QueueDto
+                {
                     Id = q.Id,
                     DoctorName = q.DoctorName,
                     CreatedBy = q.CreatedBy,
@@ -103,7 +104,8 @@ namespace Clinics.Api.Controllers
         {
             var q = await _db.Queues.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted);
             if (q == null) return NotFound(new { success = false });
-            var dto = new QueueDto {
+            var dto = new QueueDto
+            {
                 Id = q.Id,
                 DoctorName = q.DoctorName,
                 CreatedBy = q.CreatedBy,
@@ -131,10 +133,10 @@ namespace Clinics.Api.Controllers
 
                 if (!ModelState.IsValid)
                 {
-                    return BadRequest(new 
-                    { 
-                        success = false, 
-                        errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage) 
+                    return BadRequest(new
+                    {
+                        success = false,
+                        errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage)
                     });
                 }
 
@@ -145,7 +147,7 @@ namespace Clinics.Api.Controllers
                     ?? User.FindFirst("userId")?.Value
                     ?? User.FindFirst("id")?.Value
                     ?? User.FindFirst("Id")?.Value;
-                    
+
                 if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
                 {
                     return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
@@ -183,7 +185,7 @@ namespace Clinics.Api.Controllers
                         return BadRequest(new
                         {
                             success = false,
-                            error = "حصة الطوابير غير كافية",
+                            error = "حصة العيادات غير كافية",
                             code = "QUOTA_EXCEEDED"
                         });
                     }
@@ -247,7 +249,7 @@ namespace Clinics.Api.Controllers
                             _logger.LogWarning("Effective moderator {ModeratorId} for user {UserId} has role {Role} instead of 'moderator'", moderatorId, userId, moderatorCheck.Role);
                             return BadRequest(new { success = false, error = "المستخدم المرتبط ليس مشرفاً" });
                         }
-                        
+
                         _logger.LogWarning("Effective moderator {ModeratorId} for user {UserId} not found (unknown reason)", moderatorId, userId);
                         return BadRequest(new { success = false, error = "لا يمكن تحديد المشرف المرتبط بالمستخدم" });
                     }
@@ -264,7 +266,7 @@ namespace Clinics.Api.Controllers
                         return BadRequest(new
                         {
                             success = false,
-                            error = "حصة الطوابير غير كافية",
+                            error = "حصة العيادات غير كافية",
                             code = "QUOTA_EXCEEDED"
                         });
                     }
@@ -311,21 +313,21 @@ namespace Clinics.Api.Controllers
                 var msg = dbEx.InnerException?.Message ?? dbEx.Message;
                 if (msg.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) || msg.Contains("constraint", StringComparison.OrdinalIgnoreCase))
                 {
-                    return BadRequest(new { success = false, error = "تعذر إنشاء الطابور بسبب مرجع غير صالح (المشرف غير موجود)" });
+                    return BadRequest(new { success = false, error = "تعذر إنشاء العيادة بسبب مرجع غير صالح (المشرف غير موجود)" });
                 }
                 if (_env.IsDevelopment())
                 {
                     try
                     {
                         var conn = _db.Database.GetDbConnection();
-                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = msg, db = new { provider = _db.Database.ProviderName, dataSource = conn.DataSource, database = conn.Database } });
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء العيادة", details = msg, db = new { provider = _db.Database.ProviderName, dataSource = conn.DataSource, database = conn.Database } });
                     }
                     catch
                     {
-                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = msg });
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء العيادة", details = msg });
                     }
                 }
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء العيادة" });
             }
             catch (Exception ex)
             {
@@ -335,14 +337,14 @@ namespace Clinics.Api.Controllers
                     try
                     {
                         var conn = _db.Database.GetDbConnection();
-                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = ex.Message, stackTrace = ex.StackTrace, db = new { provider = _db.Database.ProviderName, dataSource = conn.DataSource, database = conn.Database } });
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء العيادة", details = ex.Message, stackTrace = ex.StackTrace, db = new { provider = _db.Database.ProviderName, dataSource = conn.DataSource, database = conn.Database } });
                     }
                     catch
                     {
-                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور", details = ex.Message, stackTrace = ex.StackTrace });
+                        return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء العيادة", details = ex.Message, stackTrace = ex.StackTrace });
                     }
                 }
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء الطابور" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء إنشاء العيادة" });
             }
         }
 
@@ -357,7 +359,7 @@ namespace Clinics.Api.Controllers
                 ?? User.FindFirst("userId")?.Value
                 ?? User.FindFirst("id")?.Value
                 ?? User.FindFirst("Id")?.Value;
-            
+
             if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
             {
                 return Unauthorized(new { success = false, error = "المستخدم غير مصرح له" });
@@ -369,7 +371,7 @@ namespace Clinics.Api.Controllers
             // Authorization check: Only admins can update any queue
             // Moderators and users can only update queues they own
             var isAdmin = User.IsInRole("primary_admin") || User.IsInRole("secondary_admin");
-            
+
             if (!isAdmin)
             {
                 // Get current user to check ownership
@@ -404,13 +406,13 @@ namespace Clinics.Api.Controllers
             q.DoctorName = req.DoctorName;
             if (req.EstimatedWaitMinutes.HasValue) q.EstimatedWaitMinutes = req.EstimatedWaitMinutes.Value;
             if (req.CurrentPosition.HasValue) q.CurrentPosition = req.CurrentPosition.Value;
-            
+
             // Set UpdatedAt and UpdatedBy for audit trail
             q.UpdatedAt = DateTime.UtcNow;
             q.UpdatedBy = userId;
-            
+
             await _db.SaveChangesAsync();
-            
+
             var dto = new QueueDto
             {
                 Id = q.Id,
@@ -421,7 +423,7 @@ namespace Clinics.Api.Controllers
                 EstimatedWaitMinutes = q.EstimatedWaitMinutes,
                 PatientCount = _db.Patients.Count(p => p.QueueId == q.Id && !p.IsDeleted)
             };
-            
+
             return Ok(new { success = true, data = dto, queue = dto });
         }
 
@@ -440,10 +442,10 @@ namespace Clinics.Api.Controllers
 
                 // Get current user ID for audit
                 var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
-                
+
                 // Soft-delete queue and cascade to related entities
                 var (success, errorMessage) = await _queueCascadeService.SoftDeleteQueueAsync(id, userId);
-                
+
                 if (!success)
                 {
                     return BadRequest(new { success = false, error = errorMessage });
@@ -453,7 +455,7 @@ namespace Clinics.Api.Controllers
                 if (q.CreatedBy > 0)
                 {
                     await _quotaService.ReleaseQueueQuotaAsync(q.CreatedBy);
-                    _logger.LogInformation("Released queue quota for user {UserId} after soft-deleting queue {QueueId}", 
+                    _logger.LogInformation("Released queue quota for user {UserId} after soft-deleting queue {QueueId}",
                         q.CreatedBy, id);
                 }
 
@@ -462,7 +464,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting queue {QueueId}", id);
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء حذف الطابور" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء حذف العيادة" });
             }
         }
 
@@ -475,7 +477,7 @@ namespace Clinics.Api.Controllers
             var patientIds = req.Positions.Select(p => p.Id).ToArray();
             var patients = await _db.Patients.Where(p => p.QueueId == id && patientIds.Contains(p.Id)).ToListAsync();
             var posMap = req.Positions.ToDictionary(p => p.Id, p => p.Position);
-            foreach(var p in patients)
+            foreach (var p in patients)
             {
                 if (posMap.TryGetValue(p.Id, out var newPos)) p.Position = newPos;
             }
@@ -502,9 +504,9 @@ namespace Clinics.Api.Controllers
                 // Exclude queues whose moderator is deleted (cascade delete scenario)
                 // Queues deleted as part of moderator deletion should not appear in trash
                 // This ensures only the moderator appears in trash, not its queues
-                query = query.Where(q => 
-                    !_db.Users.IgnoreQueryFilters().Any(m => 
-                        m.Id == q.ModeratorId && 
+                query = query.Where(q =>
+                    !_db.Users.IgnoreQueryFilters().Any(m =>
+                        m.Id == q.ModeratorId &&
                         m.Role == "moderator" &&
                         m.IsDeleted));
 
@@ -559,7 +561,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching trash queues");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المحذوفة", message = "حدث خطأ أثناء جلب الطوابير المحذوفة." });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب العيادات المحذوفة", message = "حدث خطأ أثناء جلب العيادات المحذوفة." });
             }
         }
 
@@ -597,7 +599,7 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching archived queues");
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب الطوابير المؤرشفة", message = "حدث خطأ أثناء جلب الطوابير المؤرشفة." });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء جلب العيادات المؤرشفة", message = "حدث خطأ أثناء جلب العيادات المؤرشفة." });
             }
         }
 
@@ -612,12 +614,12 @@ namespace Clinics.Api.Controllers
             try
             {
                 var queue = await _db.Queues.IgnoreQueryFilters().FirstOrDefaultAsync(q => q.Id == id);
-                if (queue == null) 
-                    return NotFound(new { success = false, error = "الطابور غير موجود", message = "الطابور غير موجود.", statusCode = 404 });
+                if (queue == null)
+                    return NotFound(new { success = false, error = "العيادة غير موجودة", message = "العيادة غير موجودة.", statusCode = 404 });
 
                 // Check if queue is deleted
                 if (!queue.IsDeleted)
-                    return BadRequest(new { success = false, error = "الطابور غير موجود في سلة المحذوفات", message = "الطابور غير موجود في سلة المحذوفات.", statusCode = 400 });
+                    return BadRequest(new { success = false, error = "العيادة غير موجودة في سلة المحذوفات", message = "العيادة غير موجودة في سلة المحذوفات.", statusCode = 400 });
 
                 // Check TTL - only allow restore for items in trash (within 30 days)
                 if (!_ttlQueries.IsRestoreAllowed(queue, 30))
@@ -629,7 +631,7 @@ namespace Clinics.Api.Controllers
                     {
                         success = false,
                         error = "restore_window_expired",
-                        message = "لا يمكن استعادة الطابور بعد 30 يومًا من الحذف",
+                        message = "لا يمكن استعادة العيادة بعد 30 يومًا من الحذف",
                         statusCode = 409,
                         metadata = new { daysElapsed, ttlDays = 30 }
                     });
@@ -652,15 +654,14 @@ namespace Clinics.Api.Controllers
 
                 // Attempt restore via cascade service
                 var restoreResult = await _quotaService.RestoreQueueAsync(queue, userId);
-                
+
                 if (!restoreResult.Success)
                 {
-                    return StatusCode(restoreResult.StatusCode, new 
-                    { 
-                        success = false, 
-                        error = restoreResult.Message,
-                        errorCode = restoreResult.ErrorCode,
-                        metadata = restoreResult.Metadata
+                    return BadRequest(new
+                    {
+                        success = false,
+                        error = restoreResult.ErrorMessage,
+                        statusCode = 400
                     });
                 }
 
@@ -670,10 +671,11 @@ namespace Clinics.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error restoring queue {QueueId}", id);
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استعادة الطابور", message = "حدث خطأ أثناء استعادة الطابور." });
-                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استعادة الطابور" });
+                return StatusCode(500, new { success = false, error = "حدث خطأ أثناء استعادة العيادة" });
             }
         }
     }
 }
+
+
 

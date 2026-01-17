@@ -1,4 +1,4 @@
-using Clinics.Domain;
+﻿using Clinics.Domain;
 using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
@@ -198,7 +198,7 @@ namespace Clinics.Api.Services
                 var defaultTemplateAhmed = new MessageTemplate
                 {
                     Title = "Welcome",
-                    Content = "مرحباً {PN}، أنت في الموضع {CQP} في الطابور. الوقت المتوقع {ETR} دقيقة.",
+                    Content = "مرحباً {PN}، أنت في الموضع {CQP} في العيادة. الوقت المتوقع {ETR} دقيقة.",
                     CreatedBy = moderatorAhmed.Id,
                     ModeratorId = moderatorAhmed.Id,
                     QueueId = queueAhmed.Id,
@@ -220,7 +220,7 @@ namespace Clinics.Api.Services
                 var defaultTemplateSara = new MessageTemplate
                 {
                     Title = "رسالة ترحيب سارة",
-                    Content = "أهلاً وسهلاً {PN}، رقمك {CQP} في الطابور.",
+                    Content = "أهلاً وسهلاً {PN}، رقمك {CQP} في العيادة.",
                     CreatedBy = moderatorSara.Id,
                     ModeratorId = moderatorSara.Id,
                     QueueId = queueSara.Id,
@@ -308,3 +308,4 @@ namespace Clinics.Api.Services
         }
     }
 }
+

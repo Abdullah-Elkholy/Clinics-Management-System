@@ -13,13 +13,23 @@ namespace Clinics.Infrastructure
         public DbSet<Patient> Patients => Set<Patient>();
         public DbSet<MessageTemplate> MessageTemplates => Set<MessageTemplate>();
         public DbSet<Message> Messages => Set<Message>();
-        public DbSet<FailedTask> FailedTasks => Set<FailedTask>();
+        // FailedTasks DbSet REMOVED: Failures now tracked via Message.Status
         public DbSet<Quota> Quotas => Set<Quota>();
         public DbSet<Session> Sessions => Set<Session>();
         public DbSet<WhatsAppSession> WhatsAppSessions => Set<WhatsAppSession>();
         public DbSet<MessageSession> MessageSessions => Set<MessageSession>();
-        public DbSet<ModeratorSettings> ModeratorSettings => Set<ModeratorSettings>();
-        public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+        // ModeratorSettings DbSet REMOVED - entity deprecated
+        // AuditLogs DbSet REMOVED: No longer used
+        public DbSet<PhoneWhatsAppRegistry> PhoneWhatsAppRegistry => Set<PhoneWhatsAppRegistry>();
+
+        // Extension Runner entities
+        public DbSet<ExtensionDevice> ExtensionDevices => Set<ExtensionDevice>();
+        public DbSet<ExtensionPairingCode> ExtensionPairingCodes => Set<ExtensionPairingCode>();
+        public DbSet<ExtensionSessionLease> ExtensionSessionLeases => Set<ExtensionSessionLease>();
+        public DbSet<ExtensionCommand> ExtensionCommands => Set<ExtensionCommand>();
+
+        // System settings for rate limiting and other admin-configurable options
+        public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -45,11 +55,7 @@ namespace Clinics.Infrastructure
                 .WithMany()
                 .HasForeignKey(m => m.QueueId)
                 .OnDelete(DeleteBehavior.Restrict);
-            modelBuilder.Entity<FailedTask>()
-                .HasOne(f => f.Queue)
-                .WithMany()
-                .HasForeignKey(f => f.QueueId)
-                .OnDelete(DeleteBehavior.Restrict);
+            // FailedTask configuration REMOVED
             modelBuilder.Entity<Quota>()
                 .HasOne(q => q.Moderator)
                 .WithMany()
@@ -60,13 +66,13 @@ namespace Clinics.Infrastructure
                 .WithMany()
                 .HasForeignKey(s => s.QueueId)
                 .OnDelete(DeleteBehavior.Restrict);
-            
+
             modelBuilder.Entity<MessageSession>()
                 .HasOne(s => s.Moderator)
                 .WithMany()
                 .HasForeignKey(s => s.ModeratorId)
                 .OnDelete(DeleteBehavior.Restrict);
-            
+
             modelBuilder.Entity<MessageSession>().HasIndex(s => s.ModeratorId);
 
             modelBuilder.Entity<Queue>()
@@ -87,7 +93,7 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<Message>().HasIndex(m => m.ModeratorId);
             modelBuilder.Entity<Message>().HasIndex(m => m.SessionId);
             modelBuilder.Entity<Message>().HasIndex(m => new { m.IsPaused, m.Status });
-            
+
             // Performance: Composite indexes for ongoing/retry queries
             modelBuilder.Entity<Message>().HasIndex(m => new { m.SessionId, m.Status, m.IsPaused, m.IsDeleted });
             modelBuilder.Entity<Message>().HasIndex(m => new { m.ModeratorId, m.Status, m.IsPaused });
@@ -96,28 +102,26 @@ namespace Clinics.Infrastructure
                 .WithMany()
                 .HasForeignKey(m => m.ModeratorId)
                 .OnDelete(DeleteBehavior.Restrict);
-            
+
             // Fix: Disable OUTPUT clause for Messages table due to database triggers
             // SQL Server doesn't allow OUTPUT clause on tables with enabled triggers
             // See: https://aka.ms/efcore-docs-sqlserver-save-changes-and-output-clause
             modelBuilder.Entity<Message>()
                 .ToTable(tb => tb.UseSqlOutputClause(false));
 
-            modelBuilder.Entity<FailedTask>().HasIndex(f => f.RetryCount);
-            
-            // Tightening: CHECK constraint for FailedTask-Message invariant
-            // Note: EF Core doesn't support CHECK constraints directly, this will be added in migration
-            // (Status='failed') should align with EXISTS(FailedTask WHERE MessageId=Id)
-            
+            // FailedTask indexes REMOVED - entity deleted
+
             // Quota: enforce one-to-one with Moderator via unique index
             modelBuilder.Entity<Quota>().HasIndex(q => q.ModeratorUserId).IsUnique();
-            
+
+            // FailedTask configuration REMOVED - failures tracked via Message.Status
+
             // MessageCondition: enforce exactly one DEFAULT condition per queue via filtered unique index
             modelBuilder.Entity<MessageCondition>()
                 .HasIndex(c => new { c.QueueId, c.Operator })
                 .IsUnique()
                 .HasFilter("[Operator] = 'DEFAULT'");
-            
+
             modelBuilder.Entity<MessageSession>().HasIndex(s => new { s.Status, s.StartTime });
 
             modelBuilder.Entity<User>()
@@ -126,11 +130,7 @@ namespace Clinics.Infrastructure
                 .HasForeignKey(u => u.ModeratorId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<ModeratorSettings>()
-                .HasOne(m => m.Moderator)
-                .WithMany()
-                .HasForeignKey(m => m.ModeratorUserId)
-                .OnDelete(DeleteBehavior.Restrict);
+            // ModeratorSettings FK configuration REMOVED - entity deprecated
             // MessageCondition: One-to-one required relationship with MessageTemplate
             // MessageTemplate owns the relationship (has MessageConditionId foreign key)
             // MessageCondition also has TemplateId foreign key for reverse lookup (maintained manually)
@@ -140,12 +140,12 @@ namespace Clinics.Infrastructure
                 .HasForeignKey<MessageTemplate>(t => t.MessageConditionId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
-            
+
             // Ensure MessageConditionId is unique (one condition per template)
             modelBuilder.Entity<MessageTemplate>()
                 .HasIndex(t => t.MessageConditionId)
                 .IsUnique();
-            
+
             // Configure MessageCondition.TemplateId as a foreign key for reverse lookup
             // This is maintained alongside the one-to-one relationship for easier queries
             // Note: This creates a bidirectional FK relationship - both FKs must be kept in sync
@@ -159,49 +159,194 @@ namespace Clinics.Infrastructure
             // TemplateId is optional; keep a non-unique index for lookup performance
             modelBuilder.Entity<MessageCondition>()
                 .HasIndex(mc => mc.TemplateId);
-            
+
             modelBuilder.Entity<MessageCondition>()
                 .HasOne(mc => mc.Queue)
                 .WithMany()
                 .HasForeignKey(mc => mc.QueueId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<ModeratorSettings>().HasIndex(m => m.ModeratorUserId).IsUnique();
+            // ModeratorSettings index REMOVED - entity deprecated
 
             modelBuilder.Entity<MessageTemplate>().Property(t => t.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<Message>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            modelBuilder.Entity<FailedTask>().Property(f => f.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            // FailedTask CreatedAt REMOVED
             modelBuilder.Entity<Quota>().Property(q => q.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<Session>().Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
             modelBuilder.Entity<WhatsAppSession>().Property(w => w.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            
+
             // WhatsAppSession unique constraint - one session per moderator
             modelBuilder.Entity<WhatsAppSession>()
                 .HasIndex(w => w.ModeratorUserId)
                 .IsUnique();
-            
+
             // WhatsAppSession soft-delete global query filter
             modelBuilder.Entity<WhatsAppSession>()
                 .HasQueryFilter(w => !w.IsDeleted);
-            
+
             modelBuilder.Entity<MessageSession>().Property(s => s.StartTime).HasDefaultValueSql("SYSUTCDATETIME()");
-            modelBuilder.Entity<ModeratorSettings>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            modelBuilder.Entity<ModeratorSettings>().Property(m => m.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            
+            // ModeratorSettings default values REMOVED - entity deprecated
+
             // Patient CountryCode default value
             modelBuilder.Entity<Patient>().Property(p => p.CountryCode).HasDefaultValue("+20");
 
-            // AuditLog configuration
-            modelBuilder.Entity<AuditLog>().HasIndex(a => new { a.EntityType, a.EntityId });
-            modelBuilder.Entity<AuditLog>().HasIndex(a => a.Action);
-            modelBuilder.Entity<AuditLog>().HasIndex(a => a.ActorUserId);
-            modelBuilder.Entity<AuditLog>().HasIndex(a => a.CreatedAt);
-            modelBuilder.Entity<AuditLog>()
-                .HasOne(a => a.Actor)
+            // AuditLog configuration REMOVED
+
+            // PhoneWhatsAppRegistry configuration
+            modelBuilder.Entity<PhoneWhatsAppRegistry>().HasIndex(p => p.PhoneNumber).IsUnique();
+            modelBuilder.Entity<PhoneWhatsAppRegistry>().HasIndex(p => p.ExpiresAt);
+
+            #region Extension Runner Entity Configuration
+
+            // ExtensionDevice configuration
+            modelBuilder.Entity<ExtensionDevice>()
+                .HasOne(d => d.Moderator)
                 .WithMany()
-                .HasForeignKey(a => a.ActorUserId)
+                .HasForeignKey(d => d.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Unique constraint: only one active (non-revoked) device per moderator+deviceId combination
+            // Revoked devices are historical records and don't conflict
+            modelBuilder.Entity<ExtensionDevice>()
+                .HasIndex(d => new { d.ModeratorUserId, d.DeviceId })
+                .IsUnique()
+                .HasFilter("[RevokedAtUtc] IS NULL");
+
+            modelBuilder.Entity<ExtensionDevice>()
+                .HasIndex(d => d.ModeratorUserId);
+
+            modelBuilder.Entity<ExtensionDevice>()
+                .Property(d => d.CreatedAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // ExtensionPairingCode configuration
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasOne(p => p.Moderator)
+                .WithMany()
+                .HasForeignKey(p => p.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // ExtensionPairingCode ↔ ExtensionDevice one-to-one relationship
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasOne(p => p.UsedByDevice)
+                .WithOne(d => d.PairingCode)
+                .HasForeignKey<ExtensionPairingCode>(p => p.UsedByDeviceId)
                 .OnDelete(DeleteBehavior.SetNull);
-            modelBuilder.Entity<AuditLog>().Property(a => a.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasIndex(p => p.Code);
+
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .HasIndex(p => p.ModeratorUserId);
+
+            modelBuilder.Entity<ExtensionPairingCode>()
+                .Property(p => p.CreatedAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // ExtensionSessionLease configuration
+            // CRITICAL: Only one active lease per moderator (filtered unique index)
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasIndex(l => l.ModeratorUserId)
+                .IsUnique()
+                .HasFilter("[RevokedAtUtc] IS NULL");
+
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasOne(l => l.Moderator)
+                .WithMany()
+                .HasForeignKey(l => l.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasOne(l => l.Device)
+                .WithMany()
+                .HasForeignKey(l => l.DeviceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .HasIndex(l => new { l.ModeratorUserId, l.RevokedAtUtc });
+
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .Property(l => l.AcquiredAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            modelBuilder.Entity<ExtensionSessionLease>()
+                .Property(l => l.LastHeartbeatAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // ExtensionCommand configuration
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasOne(c => c.Moderator)
+                .WithMany()
+                .HasForeignKey(c => c.ModeratorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasOne(c => c.Message)
+                .WithMany()
+                .HasForeignKey(c => c.MessageId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Index for pending commands per moderator (for command dispatch)
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasIndex(c => new { c.ModeratorUserId, c.Status, c.Priority, c.CreatedAtUtc });
+
+            // Index for command status tracking
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasIndex(c => new { c.Status, c.ExpiresAtUtc });
+
+            // Index for message-related commands
+            modelBuilder.Entity<ExtensionCommand>()
+                .HasIndex(c => c.MessageId);
+
+            modelBuilder.Entity<ExtensionCommand>()
+                .Property(c => c.CreatedAtUtc)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            #endregion
+
+            #region SystemSettings Configuration
+
+            // Unique index on Key for fast lookups
+            modelBuilder.Entity<SystemSettings>()
+                .HasIndex(s => s.Key)
+                .IsUnique();
+
+            modelBuilder.Entity<SystemSettings>()
+                .Property(s => s.CreatedAt)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // Seed default rate limit settings
+            modelBuilder.Entity<SystemSettings>().HasData(
+                new SystemSettings
+                {
+                    Id = 1,
+                    Key = SystemSettingKeys.RateLimitEnabled,
+                    Value = "true",
+                    Description = "تفعيل تحديد معدل الإرسال بين الرسائل",
+                    Category = "RateLimit",
+                    CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, DateTimeKind.Utc)
+                },
+                new SystemSettings
+                {
+                    Id = 2,
+                    Key = SystemSettingKeys.RateLimitMinSeconds,
+                    Value = "3",
+                    Description = "الحد الأدنى للتأخير بين الرسائل (بالثواني)",
+                    Category = "RateLimit",
+                    CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, DateTimeKind.Utc)
+                },
+                new SystemSettings
+                {
+                    Id = 3,
+                    Key = SystemSettingKeys.RateLimitMaxSeconds,
+                    Value = "7",
+                    Description = "الحد الأقصى للتأخير بين الرسائل (بالثواني)",
+                    Category = "RateLimit",
+                    CreatedAt = new DateTime(2026, 1, 12, 0, 0, 0, DateTimeKind.Utc)
+                }
+            );
+
+            #endregion
         }
 
         /// <summary>
@@ -212,7 +357,7 @@ namespace Clinics.Infrastructure
         {
             // Track Message.Status and IsDeleted changes before save
             var affectedSessionIds = new HashSet<string>();
-            
+
             foreach (var entry in ChangeTracker.Entries<Message>())
             {
                 if (entry.State == EntityState.Added || entry.State == EntityState.Modified || entry.State == EntityState.Deleted)
@@ -280,9 +425,9 @@ namespace Clinics.Infrastructure
                             {
                                 // Check if all messages are processed (sent or failed)
                                 // Note: Deleted messages are tracked via IsDeleted, not Status
-                                var allProcessed = sessionMessages.All(m => 
+                                var allProcessed = sessionMessages.All(m =>
                                     m.Status == "sent" || m.Status == "failed" || m.IsDeleted);
-                                
+
                                 if (allProcessed)
                                 {
                                     session.Status = "completed";

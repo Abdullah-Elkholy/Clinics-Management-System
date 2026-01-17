@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useModal } from '@/contexts/ModalContext';
 import { useQueue } from '@/contexts/QueueContext';
@@ -10,7 +10,7 @@ import { useUserManagement } from '@/hooks/useUserManagement';
 import { queuesApiClient } from '@/services/api/queuesApiClient';
 import logger from '@/utils/logger';
 import Modal from './Modal';
-import { useState, useRef, type FormEvent } from 'react';
+import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
 export default function AddQueueModal() {
@@ -18,8 +18,8 @@ export default function AddQueueModal() {
   const { refreshQueues } = useQueue();
   const { addToast } = useUI();
   const { user: currentUser } = useAuth();
-  const [userManagementState] = useUserManagement();
-  
+  const [userManagementState, { fetchModerators }] = useUserManagement();
+
   const [doctorName, setDoctorName] = useState('');
   const [errors, setErrors] = useState<ValidationError>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -29,6 +29,14 @@ export default function AddQueueModal() {
   const isOpen = openModals.has('addQueue');
   const modalData = getModalData('addQueue');
   const targetModeratorId = modalData?.moderatorId;
+
+  // Fetch moderators when modal opens to ensure we have correct names
+  useEffect(() => {
+    if (isOpen) {
+      fetchModerators();
+    }
+  }, [isOpen, fetchModerators]);
+
   // Use real moderator data from backend instead of mock data
   const moderatorInfo = targetModeratorId ? getModeratorInfo(targetModeratorId, userManagementState.moderators) : null;
 
@@ -58,10 +66,10 @@ export default function AddQueueModal() {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setTouched(true);
-    
+
     // Validate doctor name
     const error = validateName(doctorName, 'اسم الطبيب');
-    
+
     if (error) {
       setErrors({ doctorName: error });
       return; // Prevent submission if validation fails
@@ -69,7 +77,7 @@ export default function AddQueueModal() {
 
     try {
       setIsLoading(true);
-      
+
       // Make API call to create queue
       // If a moderatorId is provided in modal data (e.g., admin creating for moderator), use it
       // Otherwise, use the current user's ID
@@ -83,8 +91,8 @@ export default function AddQueueModal() {
         currentPosition: 1,
         isActive: true,
       });
-      addToast('تم إضافة الطابور بنجاح', 'success');
-      
+      addToast('تم إضافة العيادة بنجاح', 'success');
+
       // Refresh queues list from backend to include the newly created queue
       // Wait for refetch to complete before closing modal and dispatching event
       await refreshQueues();
@@ -93,9 +101,9 @@ export default function AddQueueModal() {
       setDoctorName('');
       setErrors({});
       setTouched(false);
-      
+
       closeModal('addQueue');
-      
+
       // Trigger a custom event to notify other components to refetch
       // Dispatch after a small delay to ensure refreshQueues has updated the state
       setTimeout(() => {
@@ -116,7 +124,7 @@ export default function AddQueueModal() {
   useFormKeyboardNavigation({
     formRef,
     onEnterSubmit: () => {
-      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      const fakeEvent = { preventDefault: () => { } } as FormEvent<HTMLFormElement>;
       handleSubmit(fakeEvent);
     },
     enableEnterSubmit: true,
@@ -134,14 +142,14 @@ export default function AddQueueModal() {
         setErrors({});
         setTouched(false);
       }}
-      title={moderatorInfo ? `إضافة طابور للمشرف: ${moderatorInfo.name} (@${moderatorInfo.username})` : 'إضافة طابور جديد'}
+      title={moderatorInfo ? `إضافة عيادة للمشرف: ${moderatorInfo.name} (@${moderatorInfo.username})` : 'إضافة عيادة جديدة'}
       size="lg"
     >
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {moderatorInfo && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
             <i className="fas fa-user-tie text-blue-600"></i>
-            <span>سيتم ربط هذا الطابور تلقائياً بالمشرف <strong>{moderatorInfo.name}</strong></span>
+            <span>سيتم ربط هذه العيادة تلقائياً بالمشرف <strong>{moderatorInfo.name}</strong></span>
           </div>
         )}
         {/* Validation Errors Alert - Only show if user touched field and there are errors */}
@@ -175,11 +183,10 @@ export default function AddQueueModal() {
             onChange={(e) => handleFieldChange(e.target.value)}
             onBlur={handleFieldBlur}
             placeholder="أدخل اسم الطبيب"
-            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-              errors.doctorName
+            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${errors.doctorName
                 ? 'border-red-500 focus:ring-red-500'
                 : 'border-gray-300 focus:ring-blue-500'
-            }`}
+              }`}
             disabled={isLoading}
           />
           {errors.doctorName && (
@@ -226,3 +233,5 @@ export default function AddQueueModal() {
     </Modal>
   );
 }
+
+

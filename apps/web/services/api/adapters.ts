@@ -9,6 +9,7 @@ import type { UserDto } from './usersApiClient';
 import type { MessageTemplate } from '@/types/messageTemplate';
 import type { MessageCondition, ConditionOperator } from '@/types/messageCondition';
 import type { Queue, Patient } from '@/types';
+import { parseAsUtc } from '@/utils/dateTimeUtils';
 
 /**
  * Convert backend TemplateDto to frontend MessageTemplate
@@ -21,9 +22,10 @@ export function templateDtoToModel(dto: TemplateDto, queueId?: string): MessageT
     content: dto.content,
     variables: extractVariablesFromTemplate(dto.content),
     condition: dto.condition ? conditionDtoToModel(dto.condition) : undefined,
-    createdAt: new Date(dto.createdAt),
-    updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
+    createdAt: parseAsUtc(dto.createdAt) || new Date(),
+    updatedAt: dto.updatedAt ? parseAsUtc(dto.updatedAt) : undefined,
     createdBy: dto.createdBy?.toString() || '', // Use real CreatedBy from backend
+    updatedBy: dto.updatedBy?.toString() || '', // User who last updated it
     isDeleted: dto.isDeleted ?? false, // Single source of truth: active = !isDeleted
   };
 }
@@ -56,8 +58,8 @@ export function conditionDtoToModel(dto: ConditionDto, index?: number): MessageC
     minValue: dto.minValue ?? undefined,
     maxValue: dto.maxValue ?? undefined,
     template: '',
-    createdAt: dto.createdAt ? new Date(dto.createdAt) : undefined,
-    updatedAt: dto.updatedAt ? new Date(dto.updatedAt) : undefined,
+    createdAt: dto.createdAt ? parseAsUtc(dto.createdAt) : undefined,
+    updatedAt: dto.updatedAt ? parseAsUtc(dto.updatedAt) : undefined,
   };
 }
 
@@ -113,7 +115,7 @@ function extractVariablesFromTemplate(content: string): string[] {
   const variablePattern = /\{([A-Z]+)\}/g;
   const matches = content.match(variablePattern);
   if (!matches) return [];
-  
+
   // Remove duplicates and the braces
   return Array.from(new Set(matches.map(m => m.slice(1, -1))));
 }

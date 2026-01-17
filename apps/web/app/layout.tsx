@@ -69,14 +69,14 @@ export default function RootLayout({
               <ConfirmationProvider>
                 <InputDialogProvider>
                   <SelectDialogProvider>
-                    <WhatsAppSessionWrapper>
-                      <QueueProvider>
+                    <QueueProvider>
+                      <WhatsAppSessionWrapper>
                         <ModalProvider>
                           {children}
                           <ToastContainer />
                         </ModalProvider>
-                      </QueueProvider>
-                    </WhatsAppSessionWrapper>
+                      </WhatsAppSessionWrapper>
+                    </QueueProvider>
                   </SelectDialogProvider>
                 </InputDialogProvider>
               </ConfirmationProvider>

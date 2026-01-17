@@ -7,7 +7,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { formatLocalDate } from '@/utils/dateTimeUtils';
+import { formatLocalDate, toLocalDate } from '@/utils/dateTimeUtils';
 
 interface TrashCountdownBadgeProps {
   deletedAt: string;          // ISO 8601 timestamp of deletion
@@ -23,7 +23,9 @@ export const TrashCountdownBadge: React.FC<TrashCountdownBadgeProps> = ({
   compact = false,
 }) => {
   const daysRemaining = useMemo(() => {
-    const deleted = new Date(deletedAt);
+    const deleted = toLocalDate(deletedAt);
+    if (!deleted) return 0;
+
     const expiryDate = new Date(deleted);
     expiryDate.setDate(expiryDate.getDate() + ttlDays);
 
@@ -39,7 +41,7 @@ export const TrashCountdownBadge: React.FC<TrashCountdownBadgeProps> = ({
 
   // Determine badge color based on days remaining
   let badgeClass = 'px-3 py-1 rounded-full text-sm font-medium';
-  
+
   if (isExpired) {
     badgeClass += ' bg-red-100 text-red-800 border border-red-300';
   } else if (isWarning) {

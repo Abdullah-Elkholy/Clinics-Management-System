@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 /* Lines 2-11 omitted */
 import { ConditionApplicationSection } from '../Common/ConditionApplicationSection';
 import UsageGuideSection from '../Common/UsageGuideSection';
@@ -36,6 +36,7 @@ export default function EditTemplateModal() {
 
   // Condition choice states - for building actual condition data
   const [selectedOperator, setSelectedOperator] = useState<'EQUAL' | 'GREATER' | 'LESS' | 'RANGE' | 'DEFAULT' | null>(null);
+  const [hasUserChangedOperator, setHasUserChangedOperator] = useState(false); // Track if user explicitly changed operator
   const [selectedValue, setSelectedValue] = useState<number | undefined>(undefined);
   const [selectedMinValue, setSelectedMinValue] = useState<number | undefined>(undefined);
   const [selectedMaxValue, setSelectedMaxValue] = useState<number | undefined>(undefined);
@@ -51,15 +52,15 @@ export default function EditTemplateModal() {
   // Fetch fresh template data when modal opens
   useEffect(() => {
     if (!isOpen || !templateId) return;
-    
+
     const fetchFreshTemplateData = async () => {
       try {
         const templateIdNum = Number(templateId);
         if (!isNaN(templateIdNum)) {
           const freshTemplateDto: TemplateDto = await messageApiClient.getTemplate(templateIdNum);
           if (freshTemplateDto) {
-            // Convert backend DTO to frontend format
-            const freshTemplate = templateDtoToModel(freshTemplateDto, templateId);
+            // Convert backend DTO to frontend format - let dto.queueId be used directly
+            const freshTemplate = templateDtoToModel(freshTemplateDto);
             setFreshTemplateData(freshTemplate);
           }
         }
@@ -71,21 +72,21 @@ export default function EditTemplateModal() {
         setFreshTemplateData(null);
       }
     };
-    
+
     // Always refetch when modal opens to ensure fresh data
     fetchFreshTemplateData();
   }, [isOpen, templateId]);
 
   // Get fresh template data - prioritize freshTemplateData, then messageTemplates array, then null
-  const freshTemplate = freshTemplateData 
-    || (templateId 
+  const freshTemplate = freshTemplateData
+    || (templateId
       ? messageTemplates.find((t) => t.id === templateId)
       : null);
 
   // Load template data when modal opens - use fresh data
   useEffect(() => {
     if (!isOpen) return;
-    
+
     if (freshTemplate) {
       setCurrentTemplate(freshTemplate);
       setTitle(freshTemplate.title || '');
@@ -120,6 +121,9 @@ export default function EditTemplateModal() {
         setSelectedMinValue(undefined);
         setSelectedMaxValue(undefined);
       }
+
+      // Reset user change flag when modal opens with fresh data
+      setHasUserChangedOperator(false);
 
       setErrors({});
       setShowDefaultWarning(false);
@@ -320,7 +324,7 @@ export default function EditTemplateModal() {
     // Validate queue ID
     const queueIdNum = Number(currentTemplate.queueId);
     if (isNaN(queueIdNum)) {
-      addToast('معرّف الطابور غير صالح', 'error');
+      addToast('معرّف العيادة غير صالح', 'error');
       return;
     }
 
@@ -331,14 +335,19 @@ export default function EditTemplateModal() {
       return;
     }
 
+    // Determine conditionOperator: 
+    // - If user explicitly changed operator, use selectedOperator (null means UNCONDITIONED)
+    // - Otherwise fall back to existing condition or UNCONDITIONED
     const conditionOperator = (
-      selectedOperator ?? templateCondition?.operator ?? 'UNCONDITIONED'
+      hasUserChangedOperator
+        ? (selectedOperator ?? 'UNCONDITIONED')  // User explicitly changed: null = UNCONDITIONED
+        : (selectedOperator ?? templateCondition?.operator ?? 'UNCONDITIONED')  // Use existing condition
     ) as ConditionOperator;
 
     const normalizedValue =
       conditionOperator === 'EQUAL' ||
-      conditionOperator === 'GREATER' ||
-      conditionOperator === 'LESS'
+        conditionOperator === 'GREATER' ||
+        conditionOperator === 'LESS'
         ? selectedValue
         : undefined;
     const normalizedMinValue = conditionOperator === 'RANGE' ? selectedMinValue : undefined;
@@ -359,13 +368,13 @@ export default function EditTemplateModal() {
           // Only check conditions in the same queue
           const conditionQueueId = c.queueId?.toString();
           if (conditionQueueId !== String(queueIdNum)) return false;
-          
+
           // Skip the current condition being edited
           if (templateCondition && c.id === templateCondition.id) return false;
-          
+
           // Skip UNCONDITIONED and DEFAULT conditions (they don't conflict)
           if (c.operator === 'UNCONDITIONED' || c.operator === 'DEFAULT') return false;
-          
+
           // Check if conditions overlap
           return conditionsOverlap(newCondition, c);
         })
@@ -391,7 +400,7 @@ export default function EditTemplateModal() {
             return `- ${c.templateTitle} (${condDesc})`;
           })
           .join('\n');
-        
+
         const shouldProceed = await confirm({
           title: 'تعارض في الشروط',
           message: `هناك تعارض مع الشروط التالية:\n\n${conflictDetails}\n\nهل تريد المتابعة على أي حال؟`,
@@ -421,7 +430,7 @@ export default function EditTemplateModal() {
           if (errorMessage.includes('A default template already exists') || errorMessage.includes('default template already exists')) {
             const shouldOverride = await confirm({
               title: 'قالب افتراضي موجود بالفعل',
-              message: 'يوجد قالب افتراضي آخر في هذا الطابور. هل تريد جعل هذا القالب هو الافتراضي وتغيير القالب الآخر إلى "بدون قالب"؟',
+              message: 'يوجد قالب افتراضي آخر في هذه العيادة. هل تريد جعل هذا القالب هو الافتراضي وتغيير القالب الآخر إلى "بدون قالب"؟',
               confirmText: 'نعم، تغيير',
               cancelText: 'إلغاء',
             });
@@ -469,26 +478,35 @@ export default function EditTemplateModal() {
             const updateRequest: any = {
               operator: conditionOperator,
             };
-            
+
             // Include values that should be set (backend will clear the others based on operator)
             if (conditionOperator === 'RANGE') {
               updateRequest.minValue = normalizedMinValue;
               updateRequest.maxValue = normalizedMaxValue;
+              // Explicitly set value to null for RANGE as required by backend
+              updateRequest.value = null;
             } else if (conditionOperator === 'EQUAL' || conditionOperator === 'GREATER' || conditionOperator === 'LESS') {
               updateRequest.value = normalizedValue;
+            } else {
+              // UNCONDITIONED or DEFAULT: clear all values explicitly
+              updateRequest.value = null;
+              updateRequest.minValue = null;
+              updateRequest.maxValue = null;
             }
-            // For UNCONDITIONED or DEFAULT, we don't need to send any values
-            // Backend will clear them automatically
-            
+
             await messageApiClient.updateCondition(conditionIdNum, updateRequest);
           }
         } else {
           // Create new condition
+          // For RANGE and UNCONDITIONED, explicitly set value to null
+          const createValue = (conditionOperator === 'RANGE' || conditionOperator === 'UNCONDITIONED')
+            ? null
+            : normalizedValue;
           await messageApiClient.createCondition({
             templateId: templateBackendId,
             queueId: queueIdNum,
             operator: conditionOperator,
-            value: normalizedValue,
+            value: createValue,
             minValue: normalizedMinValue,
             maxValue: normalizedMaxValue,
           });
@@ -514,8 +532,10 @@ export default function EditTemplateModal() {
 
       // Trigger custom events to notify other components to refetch (immediate, no delay)
       // Dispatch these events BEFORE closing modal to ensure components receive them
-      window.dispatchEvent(new CustomEvent('templateDataUpdated'));
-      window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
+      // Include queueId for targeted refresh in MessagesPanel
+      const queueIdForEvent = currentTemplate.queueId;
+      window.dispatchEvent(new CustomEvent('templateDataUpdated', { detail: { queueId: queueIdForEvent } }));
+      window.dispatchEvent(new CustomEvent('conditionDataUpdated', { detail: { queueId: queueIdForEvent } }));
 
       // Clear form fields after successful update
       setTitle('');
@@ -537,14 +557,14 @@ export default function EditTemplateModal() {
       } else {
         addToast('تم تحديث قالب الرسالة والشرط بنجاح', 'success');
       }
-      
+
       // Close modal after dispatching events and showing toast to ensure UI updates
       closeModal('editTemplate');
     } catch (error) {
       // Extract detailed error information
       let errorMessage = 'Unknown error';
       let statusCode: number | undefined;
-      
+
       if (error instanceof Error) {
         errorMessage = error.message;
       } else if (error && typeof error === 'object') {
@@ -559,7 +579,7 @@ export default function EditTemplateModal() {
           errorMessage = (error as { error: string }).error;
         }
       }
-      
+
       logger.error('Failed to update template:', {
         error: errorMessage,
         statusCode: statusCode,
@@ -569,14 +589,14 @@ export default function EditTemplateModal() {
         normalizedMinValue: normalizedMinValue,
         normalizedMaxValue: normalizedMaxValue,
       });
-      
+
       // Show more detailed error message to user
       const userFriendlyMessage = errorMessage.includes('overlap') || errorMessage.includes('تضارب')
         ? 'هناك تضارب في الشروط. يرجى التحقق من الشروط المطبقة.'
         : errorMessage.includes('validation') || errorMessage.includes('validation')
-        ? 'خطأ في التحقق من البيانات. يرجى التحقق من القيم المدخلة.'
-        : 'حدث خطأ أثناء تحديث القالب';
-      
+          ? 'خطأ في التحقق من البيانات. يرجى التحقق من القيم المدخلة.'
+          : 'حدث خطأ أثناء تحديث القالب';
+
       addToast(userFriendlyMessage, 'error');
     } finally {
       // Always reset loading state, even if an error occurred
@@ -588,7 +608,7 @@ export default function EditTemplateModal() {
   useFormKeyboardNavigation({
     formRef,
     onEnterSubmit: () => {
-      const fakeEvent = { preventDefault: () => {} } as FormEvent<HTMLFormElement>;
+      const fakeEvent = { preventDefault: () => { } } as FormEvent<HTMLFormElement>;
       handleSubmit(fakeEvent);
     },
     enableEnterSubmit: true,
@@ -644,11 +664,10 @@ export default function EditTemplateModal() {
             onBlur={() => handleFieldBlur('title')}
             placeholder="أدخل عنوان القالب"
             disabled={isLoading}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
-              errors.title
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 focus:ring-blue-500'
-            }`}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${errors.title
+              ? 'border-red-500 focus:ring-red-500'
+              : 'border-gray-300 focus:ring-blue-500'
+              }`}
           />
           {errors.title && (
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
@@ -671,11 +690,10 @@ export default function EditTemplateModal() {
             rows={4}
             placeholder="أدخل محتوى الرسالة"
             disabled={isLoading}
-            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all resize-none ${
-              errors.content
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 focus:ring-blue-500'
-            }`}
+            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all resize-none ${errors.content
+              ? 'border-red-500 focus:ring-red-500'
+              : 'border-gray-300 focus:ring-blue-500'
+              }`}
           />
           <div className="flex items-center justify-between mt-1">
             {errors.content && (
@@ -684,11 +702,10 @@ export default function EditTemplateModal() {
                 {errors.content}
               </p>
             )}
-            <p className={`text-xs ml-auto ${
-              content.length > MAX_CONTENT_LENGTH * 0.9
-                ? 'text-orange-600'
-                : 'text-gray-500'
-            }`}>
+            <p className={`text-xs ml-auto ${content.length > MAX_CONTENT_LENGTH * 0.9
+              ? 'text-orange-600'
+              : 'text-gray-500'
+              }`}>
               {content.length} / {MAX_CONTENT_LENGTH}
             </p>
           </div>
@@ -723,7 +740,7 @@ export default function EditTemplateModal() {
             >
               <span className="font-bold text-lg text-blue-600">{'{PQP}'}</span>
               <br />
-              <span className="text-sm font-medium text-gray-700">الموضع الحالي للمريض في الطابور</span>
+              <span className="text-sm font-medium text-gray-700">الموضع الحالي للمريض في العيادة</span>
             </button>
             <button
               type="button"
@@ -733,7 +750,7 @@ export default function EditTemplateModal() {
             >
               <span className="font-bold text-lg text-blue-600">{'{CQP}'}</span>
               <br />
-              <span className="text-sm font-medium text-gray-700">الموضع الحالي لمجمل الطابور</span>
+              <span className="text-sm font-medium text-gray-700">الموضع الحالي لمجمل العيادة</span>
             </button>
             <button
               type="button"
@@ -748,101 +765,6 @@ export default function EditTemplateModal() {
           </div>
         </div>
 
-        {/* Applied Conditions Section - Show existing conditions for this queue */}
-        {currentTemplate?.queueId && messageConditions.length > 0 && (
-          <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg p-4 space-y-3">
-            <h5 className="text-sm font-bold text-purple-900 mb-3 flex items-center gap-2">
-              <i className="fas fa-list-check text-purple-600"></i>
-              الشروط المطبقة:
-            </h5>
-            <div className="space-y-2">
-              {(() => {
-                // Get all conditions for this queue, sorted: DEFAULT first, then others
-                const queueConditions = messageConditions
-                  .filter(c => String(c.queueId) === String(currentTemplate.queueId))
-                  .sort((a, b) => {
-                    // DEFAULT always comes first
-                    if (a.operator === 'DEFAULT' && b.operator !== 'DEFAULT') return -1;
-                    if (a.operator !== 'DEFAULT' && b.operator === 'DEFAULT') return 1;
-                    return 0;
-                  });
-                
-                // Detect conflicts
-                const activeConditions = queueConditions.filter(c => 
-                  c.operator && c.operator !== 'DEFAULT' && c.operator !== 'UNCONDITIONED'
-                );
-                const overlappingConditions = detectOverlappingConditions(activeConditions as any);
-                const conflictingIds = new Set<string>();
-                overlappingConditions.forEach(overlap => {
-                  // Each overlap is an object with id1 and id2 properties
-                  if (overlap.id1) conflictingIds.add(overlap.id1);
-                  if (overlap.id2) conflictingIds.add(overlap.id2);
-                });
-                
-                return queueConditions.map((condition) => {
-                  const template = messageTemplates.find(t => t.id === condition.templateId);
-                  const isInConflict = condition.id && conflictingIds.has(condition.id);
-                  const isCurrentTemplate = condition.templateId === currentTemplate.id;
-                  
-                  let conditionText = '';
-                  if (condition.operator === 'DEFAULT') {
-                    conditionText = 'افتراضي';
-                  } else if (condition.operator === 'UNCONDITIONED') {
-                    conditionText = 'بدون شرط';
-                  } else if (condition.operator === 'RANGE') {
-                    conditionText = `نطاق: ${condition.minValue} - ${condition.maxValue}`;
-                  } else {
-                    const operatorLabels: Record<string, string> = {
-                      'EQUAL': 'يساوي',
-                      'GREATER': 'أكبر من',
-                      'LESS': 'أقل من',
-                    };
-                    conditionText = `${operatorLabels[condition.operator] || condition.operator}: ${condition.value}`;
-                  }
-                  
-                  return (
-                    <div
-                      key={condition.id}
-                      className={`p-3 rounded-lg border-2 transition ${
-                        isInConflict
-                          ? 'bg-red-100 border-red-400'
-                          : isCurrentTemplate
-                          ? 'bg-blue-100 border-blue-400'
-                          : condition.operator === 'DEFAULT'
-                          ? 'bg-green-100 border-green-300'
-                          : 'bg-white border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className={`text-sm font-semibold ${
-                            isInConflict ? 'text-red-900' : isCurrentTemplate ? 'text-blue-900' : 'text-gray-900'
-                          }`}>
-                            {template?.title || 'غير معروف'}
-                            {isCurrentTemplate && (
-                              <span className="ml-2 text-xs text-blue-600">(هذا القالب)</span>
-                            )}
-                          </p>
-                          <p className={`text-xs mt-1 ${
-                            isInConflict ? 'text-red-700' : 'text-gray-600'
-                          }`}>
-                            {conditionText}
-                          </p>
-                        </div>
-                        {isInConflict && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
-                            <i className="fas fa-exclamation-triangle"></i>
-                            تضارب!
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        )}
 
         {/* Condition Application Section */}
         <ConditionApplicationSection
@@ -850,7 +772,10 @@ export default function EditTemplateModal() {
           value={selectedValue}
           minValue={selectedMinValue}
           maxValue={selectedMaxValue}
-          onOperatorChange={setSelectedOperator}
+          onOperatorChange={(op) => {
+            setSelectedOperator(op);
+            setHasUserChangedOperator(true);
+          }}
           onValueChange={setSelectedValue}
           onMinValueChange={setSelectedMinValue}
           onMaxValueChange={setSelectedMaxValue}
@@ -869,7 +794,7 @@ export default function EditTemplateModal() {
             },
             {
               title: 'قالب افتراضي',
-              description: 'يمكنك تعيين قالب واحد فقط كقالب افتراضي لكل طابور. سيتم إرسال هذا القالب عندما لا ينطبق أي شرط آخر'
+              description: 'يمكنك تعيين قالب واحد فقط كقالب افتراضي لكل عيادة. سيتم إرسال هذا القالب عندما لا ينطبق أي شرط آخر'
             },
             {
               title: 'جميع القيم يجب أن تكون أكبر من صفر (≥1)',
@@ -929,7 +854,7 @@ export default function EditTemplateModal() {
         message={
           <div className="space-y-3">
             <p>
-              القالب الافتراضي الحالي للطابور هو: <strong className="text-blue-600">{existingDefaultTemplate?.title}</strong>
+              القالب الافتراضي الحالي للعيادة هو: <strong className="text-blue-600">{existingDefaultTemplate?.title}</strong>
             </p>
             <p>
               هل تريد استبدال القالب الافتراضي الحالي بهذا القالب؟
@@ -971,3 +896,5 @@ export default function EditTemplateModal() {
     </Modal>
   );
 }
+
+

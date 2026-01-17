@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useRouter } from 'next/navigation';
 import { useQueue } from '@/contexts/QueueContext';
@@ -15,12 +15,13 @@ import queuesApiClient from '@/services/api/queuesApiClient';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
 import { ResponsiveTable } from '@/components/Common/ResponsiveTable';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState, DataStateWrapper } from '@/components/state';
 import UsageGuideSection from '@/components/Common/UsageGuideSection';
 import { ConflictWarning } from '@/components/Common/ConflictBadge';
 import { QueueStatsCard } from './QueueStatsCard';
 import { formatPhoneForDisplay } from '@/utils/phoneUtils';
 import logger from '@/utils/logger';
+import { useWhatsAppSession } from '@/contexts/WhatsAppSessionContext';
 
 export default function QueueDashboard() {
   const { selectedQueueId, queues, queuesLoading, messageTemplates, messageConditions, patients, refreshPatients, refreshQueueData, refreshQueues } = useQueue();
@@ -28,36 +29,37 @@ export default function QueueDashboard() {
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { addToast } = useUI();
+  const { detailedStatus } = useWhatsAppSession();
   const router = useRouter();
-  
+
   const queue = queues.find((q) => q.id === selectedQueueId);
-  
+
   // ALL hooks must be declared before any conditional returns
   // Initialize CQP and ETS from queue data
   const [currentCQP, setCurrentCQP] = useState(() => queue?.currentPosition?.toString() || '1');
   const [originalCQP, setOriginalCQP] = useState(() => queue?.currentPosition?.toString() || '1');
   const [isEditingCQP, setIsEditingCQP] = useState(false);
-  
+
   const [currentETS, setCurrentETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
   const [originalETS, setOriginalETS] = useState(() => queue?.estimatedWaitMinutes?.toString() || '15');
   const [isEditingETS, setIsEditingETS] = useState(false);
-  
+
   const [selectedPatients, setSelectedPatients] = useState<string[]>([]);
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
   const [editingQueueValue, setEditingQueueValue] = useState('');
   const [isMessageSectionExpanded, setIsMessageSectionExpanded] = useState(true);
-  
+
   // Authentication guard - ensure user has token and valid role
   // Wait for auth validation to complete before checking
   const { isValidating } = useAuth();
-  
+
   useEffect(() => {
     // Wait for auth validation to complete
     if (isValidating) return;
-    
+
     // Check for token
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    
+
     // CRITICAL: Only redirect to login if we're CERTAIN the user is not authenticated
     // Don't redirect if we have a token and isAuthenticated is true, even if user is temporarily null
     // This prevents false redirects during user data refresh after login
@@ -66,14 +68,14 @@ export default function QueueDashboard() {
       router.replace('/');
       return;
     }
-    
+
     // If we have a token but isAuthenticated is false, redirect
     // But if isAuthenticated is true, wait for user object (might be refreshing)
     if (!isAuthenticated) {
       router.replace('/');
       return;
     }
-    
+
     // If we have token and isAuthenticated but no user object yet, wait a bit
     // This handles the case where user data is being refreshed after login
     if (!user) {
@@ -98,7 +100,7 @@ export default function QueueDashboard() {
       if (queuesLoading) {
         return; // Wait for queues to load
       }
-      
+
       // Only check if queues are loaded (even if empty)
       if (queues.length > 0) {
         const selectedQueue = queues.find((q) => q.id === selectedQueueId);
@@ -120,7 +122,7 @@ export default function QueueDashboard() {
               if (typeof window !== 'undefined') {
                 localStorage.removeItem('selectedQueueId');
               }
-              addToast('ليس لديك صلاحية للوصول إلى هذا الطابور', 'error');
+              addToast('ليس لديك صلاحية للوصول إلى هذه العيادة', 'error');
               router.replace('/home');
               return;
             }
@@ -129,7 +131,7 @@ export default function QueueDashboard() {
             // Check if assignedModerator is explicitly null/undefined (not just not loaded yet)
             // If it's undefined, it might still be loading, so wait a bit
             const hasExplicitlyNoModerator = user.assignedModerator === null || user.assignedModerator === '';
-            
+
             if (hasExplicitlyNoModerator) {
               logger.warn('QueueDashboard: User has no assigned moderator', {
                 userAssignedModerator: user.assignedModerator,
@@ -169,7 +171,7 @@ export default function QueueDashboard() {
       // or user might not have any queues assigned (which is valid)
     }
   }, [isAuthenticated, user, router, isValidating, selectedQueueId, queues, queuesLoading, addToast]);
-  
+
   // Update CQP and ETS when queue data changes
   useEffect(() => {
     if (queue) {
@@ -213,15 +215,15 @@ export default function QueueDashboard() {
     const baseItems = [
       {
         title: '',
-        description: 'كل دكتور/عيادة له قائمة المرضى الخاصة وقوالب الرسائل والشروط الخاصة به المنفصلة عن باقي الدكاترة/العيادات',
+        description: 'للتمكن من إرسال الرسائل, يجب أولا التأكد من وجود مريض واحد على الأقل مضاف عن طريق زر "إضافة مريض يدوياً" أو "رفع ملف المرضى", ووجود رسالة افتراضية من خلال زر "تحديث الشروط" بالأعلى إذا كان هناك رسائل تم إنشاؤها أو التوجه إلى قسم "الرسائل" في الشريط الجانبي لإنشاء رسالة وجعلها افتراضية, وعدم وجود أي تضاربات في شروط الرسائل عن طريق نفس الواجهة',
       },
       {
         title: '',
-        description: 'لكل مشرف عدد محدود من "الرسائل المرسلة" و"عدد الطوابير (الدكاترة)", برجاء مراجعة الإدارة في حالة نفاذهم',
+        description: 'كل عيادة لها قائمة المرضى الخاصة وقوالب الرسائل والشروط الخاصة بها المنفصلة عن باقي العيادات',
       },
       {
         title: '',
-        description: 'للتمكن من إرسال الرسائل, يجب أولا التأكد من وجود مريض واحد على الأقل مضاف عن طريق زر "إضافة مريض يدوياً" أو "رفع ملف المرضى", ووجود رسالة افتراضية من خلال زر "تحديث الشروط" بالأعلى إذا كان هناك رسائل تم إنشاؤها أو قسم "الرسائل" في الشريط الجانبي لإنشاء رسالة وجعلها افتراضية, وعدم وجود أي تضاربات في شروط الرسائل عن طريق نفس الزر',
+        description: 'لكل مشرف عدد محدود من "الرسائل المرسلة" و"عدد العيادات", برجاء مراجعة الإدارة في حالة نفاذهم',
       },
       {
         title: 'CQP',
@@ -237,19 +239,19 @@ export default function QueueDashboard() {
       },
       {
         title: 'إدارة المستخدمين',
-        description: 'لإدارة المستخدمين المصرح لك بهم ومراجعة عدد الرسائل والطوابير المسموحة، توجه إلى قسم الإدارة في الشريط الجانبي'
+        description: 'لإدارة المستخدمين المصرح لك بهم ومراجعة عدد الرسائل والعيادات المسموحة، توجه إلى قسم الإدارة في الشريط الجانبي'
       },
       {
-        title: 'إضافة طابور',
-        description: 'لإضافة طابور جديد، استخدم زر الزائد "إضافة طابور" في الشريط الجانبي. للعلم أن الطوابير محدودة لكل مشرف, برجاء الرجوع للإدارة في حالة نفاذهم'
+        title: 'إضافة عيادة',
+        description: 'لإضافة عيادة جديدة، استخدم زر الزائد "إضافة عيادة" في الشريط الجانبي. للعلم أن العيادات محدودة لكل مشرف, برجاء الرجوع للإدارة في حالة نفاذهم'
       },
       {
-        title: 'تعديل اسم الطابور',
-        description: 'لتعديل اسم الطابور, استخدم زر القلم "تعديل" بجوار الاسم في الشريط الجانبي',
+        title: 'تعديل اسم العيادة',
+        description: 'لتعديل اسم العيادة, استخدم زر القلم "تعديل" بجوار الاسم في الشريط الجانبي',
       },
       {
-        title: 'حذف الطابور بالكامل',
-        description: 'لحذف الطابور بالكامل, استخدم زر سلة المهملات "حذف" بجوار الاسم في الشريط الجانبي',
+        title: 'حذف العيادة بالكامل',
+        description: 'لحذف العيادة بالكامل, استخدم زر سلة المهملات "حذف" بجوار الاسم في الشريط الجانبي',
       },
       {
         title: 'المهام الجارية',
@@ -288,8 +290,8 @@ export default function QueueDashboard() {
         description: 'لحذف مرضى محددين، اخترهم ثم استخدم زر "حذف المحددين" في الأعلى'
       },
       {
-        title: 'حذف مريض من الطابور',
-        description: 'لحذف مريض من الطابور، استخدم زر سلة المهملات "حذف" في عمود الإجراءات'
+        title: 'حذف مريض من العيادة',
+        description: 'لحذف مريض من العيادة، استخدم زر سلة المهملات "حذف" في عمود الإجراءات'
       },
       {
         title: 'تعديل بيانات المريض',
@@ -309,7 +311,7 @@ export default function QueueDashboard() {
         // Add warning item if no default template
         baseItems.push({
           title: '⚠️ تنبيه هام',
-          description: 'لم يتم تحديد قالب رسالة افتراضي لهذه الطابور. يجب إنشاء قالب افتراضي قبل تفعيل الرسائل الآلية.'
+          description: 'لم يتم تحديد قالب رسالة افتراضي لهذه العيادة. يجب إنشاء قالب افتراضي قبل تفعيل الرسائل الآلية.'
         });
       }
     }
@@ -346,38 +348,38 @@ export default function QueueDashboard() {
       addToast('الموضع الحالي يجب أن يكون أكبر من أو يساوي 1', 'error');
       return;
     }
-    
+
     // Validate CQP <= max patient position
     if (cqpNum > maxPatientPosition) {
-      addToast(`الموضع الحالي يجب أن يكون أقل من أو يساوي أكبر موضع في الطابور (${maxPatientPosition})`, 'error');
+      addToast(`الموضع الحالي يجب أن يكون أقل من أو يساوي أكبر موضع في العيادة (${maxPatientPosition})`, 'error');
       return;
     }
-    
+
     const error = validateNumber(currentCQP, 'الموضع الحالي', 1, maxPatientPosition);
     if (error) {
       addToast(error, 'error');
       return;
     }
     if (!queue || !selectedQueueId) {
-      addToast('الطابور غير محدد', 'error');
+      addToast('العيادة غير محدد', 'error');
       return;
     }
-    
+
     try {
       const queueIdNum = Number(selectedQueueId);
       if (isNaN(queueIdNum)) {
-        addToast('معرف الطابور غير صالح', 'error');
+        addToast('معرف العيادة غير صالح', 'error');
         return;
       }
-      
+
       await queuesApiClient.updateQueue(queueIdNum, {
         doctorName: queue.doctorName,
         currentPosition: parseInt(currentCQP, 10),
       });
-      
+
       setIsEditingCQP(false);
       addToast('تم تحديث الموضع الحالي بنجاح', 'success');
-      
+
       // Refetch queue metadata to update currentPosition immediately
       if (typeof refreshQueues === 'function') {
         await refreshQueues();
@@ -418,38 +420,38 @@ export default function QueueDashboard() {
       addToast('الوقت المقدر يجب أن يكون أكبر من أو يساوي 1', 'error');
       return;
     }
-    
+
     // Validate ETS <= 600
     if (etsNum > 600) {
       addToast('الوقت المقدر يجب أن يكون أقل من أو يساوي 600', 'error');
       return;
     }
-    
+
     const error = validateNumber(currentETS, 'الوقت المقدر', 1, 600);
     if (error) {
       addToast(error, 'error');
       return;
     }
     if (!queue || !selectedQueueId) {
-      addToast('الطابور غير محدد', 'error');
+      addToast('العيادة غير محدد', 'error');
       return;
     }
-    
+
     try {
       const queueIdNum = Number(selectedQueueId);
       if (isNaN(queueIdNum)) {
-        addToast('معرف الطابور غير صالح', 'error');
+        addToast('معرف العيادة غير صالح', 'error');
         return;
       }
-      
+
       await queuesApiClient.updateQueue(queueIdNum, {
         doctorName: queue.doctorName,
         estimatedWaitMinutes: parseInt(currentETS, 10),
       });
-      
+
       setIsEditingETS(false);
       addToast('تم تحديث الوقت المقدر بنجاح', 'success');
-      
+
       // Refetch queue metadata to update estimatedWaitMinutes immediately
       if (typeof refreshQueues === 'function') {
         await refreshQueues();
@@ -509,9 +511,9 @@ export default function QueueDashboard() {
   const conditionsOverlap = (cond1: any, cond2: any): boolean => {
     const range1 = getConditionRange(cond1);
     const range2 = getConditionRange(cond2);
-    
+
     if (!range1 || !range2) return false;
-    
+
     return !(range1.max < range2.min || range2.max < range1.min);
   };
 
@@ -523,9 +525,9 @@ export default function QueueDashboard() {
 
     // Get only active conditions from context (exclude DEFAULT and UNCONDITIONED, exclude deleted)
     const queueConditions = messageConditions.filter(
-      (c) => 
-        c.queueId === selectedQueueId && 
-        c.operator !== 'DEFAULT' && 
+      (c) =>
+        c.queueId === selectedQueueId &&
+        c.operator !== 'DEFAULT' &&
         c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from conflict detection
         ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
         c.templateId &&
@@ -553,7 +555,7 @@ export default function QueueDashboard() {
           const template2 = messageTemplates.find((t) => t.id === cond2.templateId);
           const template1Name = template1?.title || 'قالب غير معروف';
           const template2Name = template2?.title || 'قالب غير معروف';
-          
+
           overlappingConditions.push({
             id1: cond1.id,
             id2: cond2.id,
@@ -575,7 +577,7 @@ export default function QueueDashboard() {
       'GREATER': 'أكثر من',
       'LESS': 'أقل من',
       'RANGE': 'نطاق',
-      'UNCONDITIONED': 'بدون شرط', 
+      'UNCONDITIONED': 'بدون شرط',
       'DEFAULT': 'افتراضي',
     };
 
@@ -599,7 +601,7 @@ export default function QueueDashboard() {
    */
   const getQueueConflictDetails = useCallback(() => {
     if (!selectedQueueId) return null;
-    
+
     const conflicts = detectQueueConflicts();
     if (conflicts.length === 0) {
       // Check for multiple DEFAULT conditions even if no overlaps
@@ -607,7 +609,7 @@ export default function QueueDashboard() {
         (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT'
       );
       const hasMultipleDefaults = defaultConditions.length > 1;
-      
+
       if (hasMultipleDefaults) {
         return {
           hasOverlaps: false,
@@ -664,18 +666,18 @@ export default function QueueDashboard() {
       addToast('الترتيب يجب أن يكون رقم موجب', 'error');
       return;
     }
-    
+
     try {
       const patientIdNum = Number(patientId);
       if (isNaN(patientIdNum)) {
         addToast('معرف المريض غير صالح. برجاء تحديث الصفحة وإعادة المحاولة', 'error');
         return;
       }
-      
+
       await patientsApiClient.updatePatientPosition(patientIdNum, newPosition);
       setEditingQueueId(null);
       addToast('تم تحديث ترتيب الانتظار بنجاح', 'success');
-      
+
       // Refetch patients
       if (typeof refreshPatients === 'function') {
         await refreshPatients();
@@ -810,7 +812,7 @@ export default function QueueDashboard() {
                       addToast('معرّف المريض غير صالح', 'error');
                       return;
                     }
-                    
+
                     logger.info('Deleting patient with ID:', patientId, 'from patient:', patient);
                     await patientsApiClient.deletePatient(patientId);
                     addToast('تم حذف المريض بنجاح', 'success');
@@ -824,7 +826,7 @@ export default function QueueDashboard() {
                     logger.error('Error deleting patient:', error, 'Patient ID:', patient.id);
                     const errorMessage = error?.message || 'فشل حذف المريض';
                     addToast(errorMessage, 'error');
-                    
+
                     // Refresh patients list in case it's stale
                     if (selectedQueueId) {
                       try {
@@ -860,7 +862,7 @@ export default function QueueDashboard() {
             icon: 'fa-users',
           },
           {
-            label: 'المحددون',
+            label: 'المحددون حاليًا',
             value: selectedPatients.length.toString(),
             icon: 'fa-check-circle',
           },
@@ -1064,16 +1066,16 @@ export default function QueueDashboard() {
                     logger.error(`Failed to delete patient ${patientId}:`, error);
                   }
                 }
-                
+
                 if (deletedCount > 0) {
                   addToast(`تم حذف ${deletedCount} مريض بنجاح`, 'success');
                   setSelectedPatients([]);
-                  
+
                   // Refresh patients list from API
                   if (selectedQueueId) {
                     await refreshPatients(selectedQueueId);
                   }
-                  
+
                   // Trigger a custom event to notify other components to refetch
                   setTimeout(() => {
                     window.dispatchEvent(new CustomEvent('patientDataUpdated'));
@@ -1099,7 +1101,7 @@ export default function QueueDashboard() {
             const conflictDetails = getQueueConflictDetails();
             if (conflictDetails) {
               let errorMessage = 'هناك تضارب في الشروط:\n';
-              
+
               // Add overlapping conditions details
               if (conflictDetails.overlappingConditions.length > 0) {
                 errorMessage += '\n• شروط متداخلة:\n';
@@ -1107,20 +1109,26 @@ export default function QueueDashboard() {
                   errorMessage += `  ${index + 1}. ${conflict.description}\n`;
                 });
               }
-              
+
               // Add multiple DEFAULT conditions details
               if (conflictDetails.hasMultipleDefaults) {
                 errorMessage += `\n• يوجد ${conflictDetails.defaultConditions.length} قالب افتراضي (يجب أن يكون هناك قالب افتراضي واحد فقط)`;
               }
-              
+
               errorMessage += '\n\nيرجى حل جميع التضاربات قبل الإرسال';
               addToast(errorMessage, 'error');
               return;
             }
-            
-            // Send to all patients (no need to select)
+
             if (patients.length === 0) {
               addToast('لا يوجد مرضى للإرسال إليهم', 'error');
+              return;
+            }
+
+            // Check WhatsApp connection status
+            // Allow connected_paused since the session is authenticated - it's just temporarily paused
+            if (detailedStatus !== 'connected_idle' && detailedStatus !== 'connected_sending' && detailedStatus !== 'connected_paused') {
+              addToast('جلسة الواتساب غير متصلة أو غير جاهزة للإرسال. يرجى التحقق من اتصال الإضافة وحالة الواتساب أولاً.', 'error');
               return;
             }
 
@@ -1136,7 +1144,7 @@ export default function QueueDashboard() {
               selectedPatients: patients.map(p => p.id), // Send to ALL patients
               selectedPatientCount: patients.length,
               queueId: selectedQueueId,
-              queueName: queue?.doctorName || 'طابور',
+              queueName: queue?.doctorName || 'عيادة',
               currentCQP: parseInt(currentCQP),
               estimatedTimeRemaining: parseInt(currentETS),
               patients: patients, // All patients
@@ -1176,7 +1184,7 @@ export default function QueueDashboard() {
                 openModal('manageConditions', {
                   templateId: null,
                   queueId: selectedQueueId,
-                  queueName: queue?.doctorName || 'طابور',
+                  queueName: queue?.doctorName || 'عيادة',
                   currentConditions: messageConditions,
                   allConditions: messageConditions,
                   allTemplates: [], // Templates will be populated by the context
@@ -1193,7 +1201,7 @@ export default function QueueDashboard() {
                   openModal('manageConditions', {
                     templateId: null,
                     queueId: selectedQueueId,
-                    queueName: queue?.doctorName || 'طابور',
+                    queueName: queue?.doctorName || 'عيادة',
                     currentConditions: messageConditions,
                     allConditions: messageConditions,
                     allTemplates: [], // Templates will be populated by the context
@@ -1218,294 +1226,301 @@ export default function QueueDashboard() {
           <>
             <div className="border-t-2 border-blue-200"></div>
             <div className="px-6 py-4 space-y-6">
-              {/* Check if default template exists */}
-              {(() => {
-                // Find default template using TemplateId foreign key directly
-                const defaultCondition = messageConditions.find(
-                  (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT' && c.templateId
-                );
-                
-                // Use TemplateId FK directly - no fallback needed since backend always returns templateId
-                const defaultTemplate = defaultCondition?.templateId
-                  ? messageTemplates.find((t) => t.id === defaultCondition.templateId)
-                  : undefined;
-                
-                const hasDefaultTemplate = !!defaultTemplate;
-
-                if (!hasDefaultTemplate) {
-                  return (
-                    <div className="flex flex-col gap-4">
-                      <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
-                        <div className="flex items-start gap-3">
-                          <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0 text-lg"></i>
-                          <div className="flex-1">
-                            <h4 className="font-bold text-amber-900 mb-1">لم يتم تحديد رسالة افتراضية</h4>
-                            <p className="text-sm text-amber-800 mb-2">
-                              يجب إنشاء قالب رسالة بشرط افتراضي (DEFAULT) قبل تفعيل الرسائل الآلية
-                            </p>
-                            <p className="text-xs text-amber-700">
-                              توجه إلى قسم <span className="font-semibold">الرسائل</span> في الشريط الجانبي لإنشاء قالب افتراضي
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+              <DataStateWrapper
+                isLoading={queuesLoading}
+                data={messageConditions || []}
+                isEmpty={() => false}
+              >
+                {/* Check if default template exists */}
+                {(() => {
+                  // Find default template using TemplateId foreign key directly
+                  const defaultCondition = messageConditions.find(
+                    (c) => c.queueId === selectedQueueId && c.operator === 'DEFAULT' && c.templateId
                   );
-                }
 
-                // Filter active conditions for this queue (exclude DEFAULT and UNCONDITIONED, exclude deleted)
-                const activeConditions = messageConditions.filter(
-                  (c) => 
-                    c.queueId === selectedQueueId && 
-                    c.operator !== 'DEFAULT' && 
-                    c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from display
-                    ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
-                    c.templateId &&
-                    !c.isDeleted // Exclude deleted conditions
-                );
-                
-                const hasActiveConditions = activeConditions.length > 0;
+                  // Use TemplateId FK directly - no fallback needed since backend always returns templateId
+                  const defaultTemplate = defaultCondition?.templateId
+                    ? messageTemplates.find((t) => t.id === defaultCondition.templateId)
+                    : undefined;
 
-                // Get the actual default template text from messageTemplates
-                const defaultTemplateText = defaultTemplate?.content || '';
-                
-                // Find template name for each condition
-                const getTemplateNameForCondition = (condition: typeof activeConditions[0]) => {
-                  if (!condition.templateId) return 'شرط بدون عنوان';
-                  const template = messageTemplates.find((t) => t.id === condition.templateId);
-                  return template?.title || 'شرط بدون عنوان';
-                };
-                
-                return (
-                  <div className="flex flex-col gap-6">
-                    <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
-                      <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                        <i className="fas fa-message text-blue-600"></i>
-                        الرسالة الافتراضية:
-                      </h4>
-                      {defaultTemplateText ? (
-                        <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
-                          <p className="text-gray-800 text-sm leading-relaxed font-medium whitespace-pre-wrap">
-                            {defaultTemplateText}
-                          </p>
-                          <p className="text-xs text-gray-600 mt-3 border-t border-blue-200 pt-3">
-                            <i className="fas fa-info-circle text-blue-500 ml-1"></i>
-                            المتغيرات المتاحة: {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
-                          </p>
-                        </div>
-                      ) : (
+                  const hasDefaultTemplate = !!defaultTemplate;
+
+                  if (!hasDefaultTemplate) {
+                    return (
+                      <div className="flex flex-col gap-4">
                         <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
                           <div className="flex items-start gap-3">
-                            <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0"></i>
+                            <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0 text-lg"></i>
                             <div className="flex-1">
-                              <p className="text-sm text-amber-800 font-semibold">
-                                لم يتم تحميل نص الرسالة الافتراضية
+                              <h4 className="font-bold text-amber-900 mb-1">لم يتم تحديد رسالة افتراضية</h4>
+                              <p className="text-sm text-amber-800 mb-2">
+                                يجب إنشاء قالب رسالة بشرط افتراضي (DEFAULT) قبل تفعيل الرسائل الآلية
                               </p>
-                              <p className="text-xs text-amber-700 mt-1">
-                                يرجى التحقق من إعدادات الشروط أو إعادة تحميل الصفحة
+                              <p className="text-xs text-amber-700">
+                                توجه إلى قسم <span className="font-semibold">الرسائل</span> في الشريط الجانبي لإنشاء قالب افتراضي
                               </p>
                             </div>
                           </div>
                         </div>
-                      )}
-                    </div>
-                    
-                    {hasActiveConditions && (() => {
-                      // Detect conflicts
-                      const overlappingConditions = detectQueueConflicts();
-                      const conflictingIds = new Set<string>();
-                      overlappingConditions.forEach(overlap => {
-                        // Each overlap is an object with id1 and id2 properties
-                        if (overlap.id1) conflictingIds.add(overlap.id1);
-                        if (overlap.id2) conflictingIds.add(overlap.id2);
-                      });
-                      
-                      // activeConditions already excludes DEFAULT and UNCONDITIONED, so no sorting needed
-                      // Just use activeConditions directly
-                      return (
-                        <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
-                          <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                            <i className="fas fa-filter text-green-600"></i>
-                            الشروط المطبقة ({activeConditions.length}):
-                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
-                              {activeConditions.length}
-                            </span>
-                          </h4>
-                          <div className="space-y-2">
-                            {activeConditions.map((condition, idx) => {
-                              const templateName = getTemplateNameForCondition(condition);
-                              const isInConflict = condition.id && conflictingIds.has(condition.id);
-                              const conditionText = 
-                                condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
-                                condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
-                                condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
-                                condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
-                                condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
-                                '';
-                              
-                              return (
-                                <div 
-                                  key={condition.id || idx} 
-                                  className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${
-                                    isInConflict
+                      </div>
+                    );
+                  }
+
+                  // Filter active conditions for this queue (exclude DEFAULT and UNCONDITIONED, exclude deleted)
+                  const activeConditions = messageConditions.filter(
+                    (c) =>
+                      c.queueId === selectedQueueId &&
+                      c.operator !== 'DEFAULT' &&
+                      c.operator !== 'UNCONDITIONED' && // Exclude UNCONDITIONED from display
+                      ['EQUAL', 'GREATER', 'LESS', 'RANGE'].includes(c.operator) &&
+                      c.templateId &&
+                      !c.isDeleted // Exclude deleted conditions
+                  );
+
+                  const hasActiveConditions = activeConditions.length > 0;
+
+                  // Get the actual default template text from messageTemplates
+                  const defaultTemplateText = defaultTemplate?.content || '';
+
+                  // Find template name for each condition
+                  const getTemplateNameForCondition = (condition: typeof activeConditions[0]) => {
+                    if (!condition.templateId) return 'شرط بدون عنوان';
+                    const template = messageTemplates.find((t) => t.id === condition.templateId);
+                    return template?.title || 'شرط بدون عنوان';
+                  };
+
+                  return (
+                    <div className="flex flex-col gap-6">
+                      <div className="bg-white rounded-lg border border-blue-200 p-4 shadow-sm">
+                        <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                          <i className="fas fa-message text-blue-600"></i>
+                          الرسالة الافتراضية:
+                        </h4>
+                        {defaultTemplateText ? (
+                          <div className="bg-blue-50 rounded-lg p-4 border-l-4 border-blue-500">
+                            <p className="text-gray-800 text-sm leading-relaxed font-medium whitespace-pre-wrap">
+                              {defaultTemplateText}
+                            </p>
+                            <p className="text-xs text-gray-600 mt-3 border-t border-blue-200 pt-3">
+                              <i className="fas fa-info-circle text-blue-500 ml-1"></i>
+                              المتغيرات المتاحة: {'{PN}'} = اسم المريض، {'{PQP}'} = موضع المريض، {'{CQP}'} = الموضع الحالي، {'{ETR}'} = الوقت المتبقي
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
+                            <div className="flex items-start gap-3">
+                              <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0"></i>
+                              <div className="flex-1">
+                                <p className="text-sm text-amber-800 font-semibold">
+                                  لم يتم تحميل نص الرسالة الافتراضية
+                                </p>
+                                <p className="text-xs text-amber-700 mt-1">
+                                  يرجى التحقق من إعدادات الشروط أو إعادة تحميل الصفحة
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {hasActiveConditions && (() => {
+                        // Detect conflicts
+                        const overlappingConditions = detectQueueConflicts();
+                        const conflictingIds = new Set<string>();
+                        overlappingConditions.forEach(overlap => {
+                          // Each overlap is an object with id1 and id2 properties
+                          if (overlap.id1) conflictingIds.add(overlap.id1);
+                          if (overlap.id2) conflictingIds.add(overlap.id2);
+                        });
+
+                        // activeConditions already excludes DEFAULT and UNCONDITIONED, so no sorting needed
+                        // Just use activeConditions directly
+                        return (
+                          <div className="bg-white rounded-lg border border-green-200 p-4 shadow-sm">
+                            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                              <i className="fas fa-filter text-green-600"></i>
+                              الشروط المطبقة ({activeConditions.length}):
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-200 text-green-700 text-xs font-bold ml-1">
+                                {activeConditions.length}
+                              </span>
+                            </h4>
+                            <div className="space-y-2">
+                              {activeConditions.map((condition, idx) => {
+                                const templateName = getTemplateNameForCondition(condition);
+                                const isInConflict = condition.id && conflictingIds.has(condition.id);
+                                const conditionText =
+                                  condition.operator === 'UNCONDITIONED' ? `✓ بدون شرط` :
+                                    condition.operator === 'EQUAL' ? `✓ يساوي: ${condition.value}` :
+                                      condition.operator === 'GREATER' ? `✓ أكبر من: ${condition.value}` :
+                                        condition.operator === 'LESS' ? `✓ أقل من: ${condition.value}` :
+                                          condition.operator === 'RANGE' ? `✓ نطاق: من ${condition.minValue} إلى ${condition.maxValue}` :
+                                            '';
+
+                                return (
+                                  <div
+                                    key={condition.id || idx}
+                                    className={`flex items-start gap-3 rounded-lg p-3 border transition-colors ${isInConflict
                                       ? 'bg-red-100 border-red-400 hover:bg-red-150'
                                       : 'bg-green-50 border-green-100 hover:border-green-300 hover:bg-green-100'
-                                  }`}
-                                >
-                                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${
-                                    isInConflict
+                                      }`}
+                                  >
+                                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0 ${isInConflict
                                       ? 'bg-red-300 text-red-900'
                                       : 'bg-green-300 text-green-900'
-                                  }`}>
-                                    {idx + 1}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between">
-                                      <p className={`text-sm font-semibold ${
-                                        isInConflict ? 'text-red-900' : 'text-gray-900'
                                       }`}>
-                                        {templateName}
-                                      </p>
-                                      {isInConflict && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
-                                          <i className="fas fa-exclamation-triangle"></i>
-                                          تضارب!
-                                        </span>
+                                      {idx + 1}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between">
+                                        <p className={`text-sm font-semibold ${isInConflict ? 'text-red-900' : 'text-gray-900'
+                                          }`}>
+                                          {templateName}
+                                        </p>
+                                        {isInConflict && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-bold">
+                                            <i className="fas fa-exclamation-triangle"></i>
+                                            تضارب!
+                                          </span>
+                                        )}
+                                      </div>
+                                      {conditionText && (
+                                        <p className={`text-xs mt-1 ${isInConflict ? 'text-red-700' : 'text-gray-700'
+                                          }`}>
+                                          {conditionText}
+                                        </p>
                                       )}
                                     </div>
-                                    {conditionText && (
-                                      <p className={`text-xs mt-1 ${
-                                        isInConflict ? 'text-red-700' : 'text-gray-700'
-                                      }`}>
-                                        {conditionText}
-                                      </p>
-                                    )}
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
+                        );
+                      })()}
+
+                      {!hasActiveConditions && (
+                        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                          <p className="text-sm text-gray-600 text-center">
+                            <i className="fas fa-info-circle text-gray-400 ml-1"></i>
+                            لا توجد شروط نشطة. سيتم استخدام الرسالة الافتراضية لجميع المرضى.
+                          </p>
                         </div>
-                      );
-                    })()}
-                    
-                    {!hasActiveConditions && (
-                      <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
-                        <p className="text-sm text-gray-600 text-center">
-                          <i className="fas fa-info-circle text-gray-400 ml-1"></i>
-                          لا توجد شروط نشطة. سيتم استخدام الرسالة الافتراضية لجميع المرضى.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                      )}
+                    </div>
+                  );
+                })()}
+              </DataStateWrapper>
             </div>
           </>
         )}
       </div>
 
       {/* Conflict Warning Section */}
-      {(() => {
-        const conflicts = detectQueueConflicts();
-        return conflicts.length > 0 ? (
-          <div className="mb-6">
-            <ConflictWarning 
-              overlappingConditions={conflicts}
-              hasDefaultConflict={false}
-            />
-          </div>
-        ) : null;
-      })()}
+      {
+        (() => {
+          const conflicts = detectQueueConflicts();
+          return conflicts.length > 0 ? (
+            <div className="mb-6">
+              <ConflictWarning
+                overlappingConditions={conflicts}
+                hasDefaultConflict={false}
+              />
+            </div>
+          ) : null;
+        })()
+      }
 
 
       {/* Patients Table */}
-      {patients.length === 0 ? (
-        <EmptyState
-          icon="fa-users"
-          title="لا يوجد مرضى"
-          message="لم يتم إضافة أي مريض بعد. ابدأ بإضافة مريض جديد"
-          actionLabel="إضافة مريض"
-          onAction={() => openModal('addPatient')}
-        />
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div
-                onClick={toggleAllPatients}
-                className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
-                style={{
-                  borderColor: selectedPatients.length === 0 ? '#d1d5db' : selectedPatients.length === patients.length ? '#3b82f6' : '#f59e0b',
-                  backgroundColor: selectedPatients.length === 0 ? 'white' : selectedPatients.length === patients.length ? '#3b82f6' : '#fef3c7',
-                }}
-                title={selectedPatients.length === 0 ? 'تحديد الكل' : selectedPatients.length === patients.length ? 'إلغاء التحديد' : 'تحديد الكل'}
-              >
-                {selectedPatients.length > 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <i
-                      className={`fas text-white text-xs ${
-                        selectedPatients.length === patients.length ? 'fa-check' : 'fa-minus'
-                      }`}
-                    ></i>
-                  </div>
-                )}
+      {
+        patients.length === 0 ? (
+          <EmptyState
+            icon="fa-users"
+            title="لا يوجد مرضى"
+            message="لم يتم إضافة أي مريض بعد. ابدأ بإضافة مريض جديد"
+            actionLabel="إضافة مريض"
+            onAction={() => openModal('addPatient')}
+          />
+        ) : (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div
+                  onClick={toggleAllPatients}
+                  className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
+                  style={{
+                    borderColor: selectedPatients.length === 0 ? '#d1d5db' : selectedPatients.length === patients.length ? '#3b82f6' : '#f59e0b',
+                    backgroundColor: selectedPatients.length === 0 ? 'white' : selectedPatients.length === patients.length ? '#3b82f6' : '#fef3c7',
+                  }}
+                  title={selectedPatients.length === 0 ? 'تحديد الكل' : selectedPatients.length === patients.length ? 'إلغاء التحديد' : 'تحديد الكل'}
+                >
+                  {selectedPatients.length > 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <i
+                        className={`fas text-white text-xs ${selectedPatients.length === patients.length ? 'fa-check' : 'fa-minus'
+                          }`}
+                      ></i>
+                    </div>
+                  )}
+                </div>
+                <h3 className="font-bold text-gray-800">قائمة المرضى</h3>
+                <span className="text-sm text-gray-600">
+                  {selectedPatients.length} من {patients.length} محدد
+                </span>
               </div>
-              <h3 className="font-bold text-gray-800">قائمة المرضى</h3>
-              <span className="text-sm text-gray-600">
-                {selectedPatients.length} من {patients.length} محدد
-              </span>
+              {selectedPatients.length > 0 && (
+                <button
+                  onClick={() => setSelectedPatients([])}
+                  className="text-sm text-red-600 hover:text-red-800"
+                >
+                  إلغاء التحديد
+                </button>
+              )}
             </div>
-            {selectedPatients.length > 0 && (
-              <button
-                onClick={() => setSelectedPatients([])}
-                className="text-sm text-red-600 hover:text-red-800"
-              >
-                إلغاء التحديد
-              </button>
-            )}
-          </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  {tableColumns.map((col) => (
-                    <th
-                      key={col.key}
-                      style={{ width: col.width }}
-                      className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {tableRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`border-b hover:bg-gray-50 transition-colors ${
-                      selectedPatients.includes(row.id) ? 'bg-blue-50' : ''
-                    }`}
-                  >
-                    <td className="px-6 py-3 text-sm">{row.checkbox}</td>
-                    <td className="px-6 py-3 text-sm">{row.queue}</td>
-                    <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
-                    <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
-                    <td className="px-6 py-3 text-sm">{row.actions}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    {tableColumns.map((col) => (
+                      <th
+                        key={col.key}
+                        style={{ width: col.width }}
+                        className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                      >
+                        {col.label}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {tableRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={`border-b hover:bg-gray-50 transition-colors ${selectedPatients.includes(row.id) ? 'bg-blue-50' : ''
+                        }`}
+                    >
+                      <td className="px-6 py-3 text-sm">{row.checkbox}</td>
+                      <td className="px-6 py-3 text-sm">{row.queue}</td>
+                      <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                      <td className="px-6 py-3 text-sm">{row.actions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Info Box */}
-      <UsageGuideSection 
+      <UsageGuideSection
         items={guideItems}
       />
-    </PanelWrapper>
+    </PanelWrapper >
   );
 }
+
+
+

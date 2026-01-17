@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { ModeratorQuota, User } from '@/types/user';
@@ -68,13 +68,13 @@ export default function ModeratorQueuesQuotaModal({
 
       // Validate integer maximum for queues quota
       if (formData.queuesQuota.limit !== -1 && formData.queuesQuota.limit > MAX_INTEGER) {
-        setError(`القيمة القصوى المسموحة هي ${MAX_INTEGER.toLocaleString('ar-SA')}`);
+        setError(`القيمة القصوى المسموحة هي ${MAX_INTEGER.toLocaleString('ar-EG-u-nu-latn')}`);
         setSaving(false);
         return;
       }
 
       if (mode === 'set' && formData.queuesQuota.limit !== -1 && formData.queuesQuota.limit < formData.queuesQuota.used) {
-        setError(`الحد لا يمكن أن يكون أقل من الكمية المستخدمة (${formData.queuesQuota.used.toLocaleString('ar-SA')})`);
+        setError(`الحد لا يمكن أن يكون أقل من الكمية المستخدمة (${formData.queuesQuota.used.toLocaleString('ar-EG-u-nu-latn')})`);
         setSaving(false);
         return;
       }
@@ -90,9 +90,9 @@ export default function ModeratorQueuesQuotaModal({
         const currentLimit = quota.queuesQuota.limit;
         const delta = parseInt(inputValue, 10) || 0;
         const maxAddable = MAX_INTEGER - currentLimit;
-        
+
         if (delta > maxAddable) {
-          setError(`لا يمكن إضافة أكثر من ${maxAddable.toLocaleString('ar-SA')} (الحد الأقصى: ${MAX_INTEGER.toLocaleString('ar-SA')})`);
+          setError(`لا يمكن إضافة أكثر من ${maxAddable.toLocaleString('ar-EG-u-nu-latn')} (الحد الأقصى: ${MAX_INTEGER.toLocaleString('ar-EG-u-nu-latn')})`);
           setSaving(false);
           return;
         }
@@ -104,7 +104,7 @@ export default function ModeratorQueuesQuotaModal({
         messagesQuota: { ...quota.messagesQuota }, // Keep original messages quota
         queuesQuota: { ...formData.queuesQuota },
       };
-      
+
       if (mode === 'unlimited') {
         // For 'unlimited' mode, set limit to -1
         quotaToSave.queuesQuota = {
@@ -128,8 +128,8 @@ export default function ModeratorQueuesQuotaModal({
         // For 'set' mode, use the calculated limit from formData (capped at MAX_INTEGER)
         quotaToSave.queuesQuota = {
           ...formData.queuesQuota,
-          limit: formData.queuesQuota.limit > MAX_INTEGER 
-            ? MAX_INTEGER 
+          limit: formData.queuesQuota.limit > MAX_INTEGER
+            ? MAX_INTEGER
             : formData.queuesQuota.limit,
         };
       } else if (mode === 'add' && inputValue === '') {
@@ -137,7 +137,7 @@ export default function ModeratorQueuesQuotaModal({
         setSaving(false);
         return;
       }
-      
+
       // Pass mode information via a custom property
       const quotaWithMode = { ...quotaToSave, _mode: mode } as any;
       await onSave(quotaWithMode as ModeratorQuota);
@@ -156,7 +156,7 @@ export default function ModeratorQueuesQuotaModal({
     }
 
     const currentLimit = quota.queuesQuota.limit;
-    
+
     if (mode === 'add' && currentLimit === -1) {
       return;
     }
@@ -166,7 +166,7 @@ export default function ModeratorQueuesQuotaModal({
     // For 'add' mode, cap the input value itself at (MAX_INTEGER - currentLimit)
     if (mode === 'add' && currentLimit !== -1 && parsedValue !== -1) {
       const maxAddable = MAX_INTEGER - currentLimit;
-      
+
       if (parsedValue > maxAddable) {
         // Cap the input value at maxAddable
         const cappedValue = String(maxAddable);
@@ -227,7 +227,7 @@ export default function ModeratorQueuesQuotaModal({
         <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
           <h2 className="text-base font-semibold text-gray-900">
             <i className="fas fa-layer-group text-purple-600 ml-2"></i>
-            إدارة حصة الطوابير - {moderatorName}
+            إدارة حصة العيادات - {moderatorName}
           </h2>
           <button
             onClick={onClose}
@@ -254,19 +254,19 @@ export default function ModeratorQueuesQuotaModal({
               <div>
                 <div className="text-purple-900 opacity-70 font-medium mb-0.5 text-xs">الإجمالي</div>
                 <div className="text-purple-900 font-bold text-xs">
-                  {wasUnlimited ? 'غير محدود' : quota.queuesQuota.limit.toLocaleString('ar-SA')}
+                  {wasUnlimited ? 'غير محدود' : quota.queuesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
               <div>
                 <div className="text-purple-900 opacity-70 font-medium mb-0.5 text-xs">المستخدم</div>
                 <div className="text-purple-900 font-bold text-xs">
-                  {quota.queuesQuota.used.toLocaleString('ar-SA')}
+                  {quota.queuesQuota.used.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
               <div>
                 <div className="text-purple-900 opacity-70 font-medium mb-0.5 text-xs">المتبقي</div>
                 <div className="text-purple-900 font-bold text-xs">
-                  {wasUnlimited ? 'غير محدود' : originalRemaining.toLocaleString('ar-SA')}
+                  {wasUnlimited ? 'غير محدود' : originalRemaining.toLocaleString('ar-EG-u-nu-latn')}
                 </div>
               </div>
             </div>
@@ -280,8 +280,8 @@ export default function ModeratorQueuesQuotaModal({
               onChange={(e) => handleLimitChange(e.target.value)}
               disabled={saving || isLoading || (mode === 'add' && wasUnlimited) || mode === 'unlimited'}
               placeholder={mode === 'unlimited' ? 'غير محدود' : (mode === 'add' ? 'أدخل الكمية المراد إضافتها' : 'أدخل الحد الجديد')}
-              max={mode === 'add' && quota.queuesQuota.limit !== -1 
-                ? MAX_INTEGER - quota.queuesQuota.limit 
+              max={mode === 'add' && quota.queuesQuota.limit !== -1
+                ? MAX_INTEGER - quota.queuesQuota.limit
                 : MAX_INTEGER}
               className="flex-1 px-3 py-1.5 text-right text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
@@ -335,9 +335,9 @@ export default function ModeratorQueuesQuotaModal({
             </p>
           ) : (
             <p className="text-xs text-gray-600">
-              {mode === 'set' 
+              {mode === 'set'
                 ? `سيتم تعيين القيمة المدخلة لتصبح هي نفسها الحد الإجمالي`
-                : `سيتم إضافة القيمة المدخلة على الحد الحالي (${quota.queuesQuota.limit === -1 ? 'غير محدود' : quota.queuesQuota.limit.toLocaleString('ar-SA')})`}
+                : `سيتم إضافة القيمة المدخلة على الحد الحالي (${quota.queuesQuota.limit === -1 ? 'غير محدود' : quota.queuesQuota.limit.toLocaleString('ar-EG-u-nu-latn')})`}
             </p>
           )}
 
@@ -349,19 +349,19 @@ export default function ModeratorQueuesQuotaModal({
                 <div>
                   <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">الإجمالي</div>
                   <div className="text-green-900 font-bold text-xs">
-                    {isUnlimited ? 'غير محدود' : formData.queuesQuota.limit.toLocaleString('ar-SA')}
+                    {isUnlimited ? 'غير محدود' : formData.queuesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                   </div>
                 </div>
                 <div>
                   <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">المستخدم</div>
                   <div className="text-green-900 font-bold text-xs">
-                    {formData.queuesQuota.used.toLocaleString('ar-SA')}
+                    {formData.queuesQuota.used.toLocaleString('ar-EG-u-nu-latn')}
                   </div>
                 </div>
                 <div>
                   <div className="text-green-700 opacity-70 font-medium mb-0.5 text-xs">المتبقي</div>
                   <div className="text-green-900 font-bold text-xs">
-                    {isUnlimited ? 'غير محدود' : remaining.toLocaleString('ar-SA')}
+                    {isUnlimited ? 'غير محدود' : remaining.toLocaleString('ar-EG-u-nu-latn')}
                   </div>
                 </div>
               </div>
@@ -373,7 +373,7 @@ export default function ModeratorQueuesQuotaModal({
             <div className="flex gap-2">
               <i className="fas fa-info-circle text-purple-600 mt-0.5 flex-shrink-0 text-xs"></i>
               <div className="text-xs text-purple-800">
-                <p className="font-semibold mb-1">ملاحظات عن الطوابير:</p>
+                <p className="font-semibold mb-1">ملاحظات عن العيادات:</p>
                 <ul className="space-y-0.5 list-disc list-inside text-xs">
                   <li>الحصة تتراكم ولا تُعاد تعيينها تلقائياً</li>
                   <li>اختر "تعيين الحد" لتحديد إجمالي جديد</li>
@@ -416,3 +416,4 @@ export default function ModeratorQueuesQuotaModal({
     </>
   );
 }
+

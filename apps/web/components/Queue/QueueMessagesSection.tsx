@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import { useModal } from '@/contexts/ModalContext';
@@ -31,7 +31,7 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
   if (templates.length === 0) {
     return (
       <div className="p-8 bg-gray-50 border border-gray-200 rounded-lg text-center">
-        <p className="text-gray-600 mb-4">لا توجد رسائل محفوظة لهذا الطابور</p>
+        <p className="text-gray-600 mb-4">لا توجد رسائل محفوظة لهذه العيادة</p>
         <button
           onClick={onAdd}
           className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
@@ -47,7 +47,7 @@ const QueueMessagesSection: React.FC<QueueMessagesSectionProps> = ({
     <div className="space-y-6">
       {/* Header with Add Button */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-800">رسائل الطابور ({templates.length})</h3>
+        <h3 className="text-lg font-semibold text-gray-800">رسائل العيادة ({templates.length})</h3>
         <button
           onClick={onAdd}
           className="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
@@ -267,3 +267,5 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
 };
 
 export default QueueMessagesSection;
+
+

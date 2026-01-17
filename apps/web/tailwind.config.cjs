@@ -61,6 +61,24 @@ module.exports = {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '.5' },
         },
+        glowSending: {
+          '0%, 100%': {
+            boxShadow: '0 0 5px rgba(59, 130, 246, 0.3), 0 0 10px rgba(59, 130, 246, 0.2)',
+            borderColor: 'rgba(59, 130, 246, 0.5)',
+          },
+          '50%': {
+            boxShadow: '0 0 15px rgba(59, 130, 246, 0.5), 0 0 25px rgba(59, 130, 246, 0.3)',
+            borderColor: 'rgba(59, 130, 246, 0.8)',
+          },
+        },
+        glowSuccess: {
+          '0%, 100%': {
+            boxShadow: '0 0 5px rgba(34, 197, 94, 0.3), 0 0 10px rgba(34, 197, 94, 0.2)',
+          },
+          '50%': {
+            boxShadow: '0 0 15px rgba(34, 197, 94, 0.5), 0 0 25px rgba(34, 197, 94, 0.3)',
+          },
+        },
       },
       animation: {
         'modal-in': 'modalIn 220ms cubic-bezier(.2,.9,.25,1) forwards',
@@ -68,6 +86,8 @@ module.exports = {
         'slide-in-right': 'slideInRight 200ms cubic-bezier(.2,.9,.25,1) forwards',
         'fade-in': 'fadeIn 160ms ease-out forwards',
         'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'glow-sending': 'glowSending 2s ease-in-out infinite',
+        'glow-success': 'glowSuccess 2s ease-in-out infinite',
       },
       borderRadius: {
         'xs': '0.25rem',
@@ -89,7 +109,7 @@ module.exports = {
   },
   plugins: [
     {
-      handler: function({ addComponents, theme }) {
+      handler: function ({ addComponents, theme }) {
         addComponents({
           '.btn-primary': {
             '@apply px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-lg shadow-md transition-all duration-200': {},

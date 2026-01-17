@@ -12,6 +12,13 @@ export interface OperationResult<T> {
   resultMessage?: string;
 }
 
+export interface ExtensionCheckResult {
+  success: boolean;
+  category: string;
+  message?: string;
+  data?: boolean;
+}
+
 export interface ApiError {
   message: string;
   statusCode?: number;
@@ -21,11 +28,7 @@ export interface ApiError {
 // API Client Configuration
 // ============================================
 
-const getClinicsManagementBaseUrl = (): string => {
-  const baseUrl = process.env.NEXT_PUBLIC_CLINICS_MANAGEMENT_URL || 'http://localhost:5185';
-  // Ensure no trailing slash
-  return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-};
+
 
 /**
  * Get main API base URL (for endpoints that are on the main API server, not ClinicsManagementService)
@@ -36,81 +39,6 @@ const getMainApiBaseUrl = (): string => {
   return baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
 };
 
-/**
- * Make fetch request to ClinicsManagementService
- */
-async function fetchAPI<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const BASE_URL = getClinicsManagementBaseUrl();
-  const url = `${BASE_URL}${endpoint}`;
-
-  // Get auth token from localStorage
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
-
-  // Add Authorization header if token exists
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      // Include signal if provided for cancellation
-      signal: options.signal,
-    });
-
-    // Handle non-JSON responses
-    let data: unknown;
-    const contentType = response.headers.get('content-type');
-    if (contentType?.includes('application/json')) {
-      data = await response.json();
-    } else {
-      data = await response.text();
-    }
-
-    if (!response.ok) {
-      // Try to extract meaningful error messages
-      let message: string | undefined;
-      if (typeof data === 'string') {
-        message = data;
-      } else if (data && typeof data === 'object') {
-        const obj = data as any;
-        if (obj.message) message = obj.message;
-        else if (obj.error) message = obj.error;
-        else if (obj.resultMessage) message = obj.resultMessage;
-        else if (Array.isArray(obj.errors)) message = obj.errors.join(', ');
-      }
-
-      throw {
-        message: message || 'API request failed',
-        statusCode: response.status,
-      } as ApiError;
-    }
-
-    return data as T;
-  } catch (error) {
-    // Translate network errors to Arabic
-    if (error && typeof error === 'object' && 'statusCode' in error) {
-      // This is already an ApiError, re-throw it
-      throw error;
-    }
-    
-    // This is a network/fetch error, translate it
-    const translatedMessage = translateNetworkError(error);
-    throw {
-      message: translatedMessage,
-      statusCode: 0, // Network errors don't have status codes
-    } as ApiError;
-  }
-}
 
 // ============================================
 // WhatsApp Utility API Methods
@@ -137,21 +65,21 @@ export async function checkWhatsAppNumber(
     if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    const result = await fetchAPI<OperationResult<boolean>>(
-      `/api/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}${query}`,
+    const result = await fetchMainAPI<OperationResult<boolean>>(
+      `/WhatsAppUtility/check-whatsapp/${encodedPhoneNumber}${query}`,
       {
         method: 'GET', // Changed from POST to GET to match backend endpoint
         signal, // Pass abort signal to fetch
       }
     );
-    
+
     // Emit event if PendingQR detected for UI updates
     if (result.state === 'PendingQR' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
         detail: { moderatorUserId, source: 'checkWhatsAppNumber' }
       }));
     }
-    
+
     return result;
   } catch (error: any) {
     // Check if error is due to abort
@@ -162,7 +90,7 @@ export async function checkWhatsAppNumber(
         resultMessage: 'تم إلغاء عملية التحقق',
       };
     }
-    
+
     // Handle 405 Method Not Allowed error specifically
     if (error?.statusCode === 405 || error?.message?.includes('405') || error?.message?.includes('Method Not Allowed')) {
       console.error('[WhatsApp API] Method Not Allowed (405) - endpoint may have changed:', error);
@@ -172,20 +100,20 @@ export async function checkWhatsAppNumber(
         resultMessage: 'خطأ في طريقة الاتصال بالخادم. يرجى تحديث الصفحة والمحاولة مرة أخرى.',
       };
     }
-    
+
     // Translate network errors to Arabic
     const translatedMessage = translateNetworkError(error);
-    
+
     // Handle connection and CORS errors gracefully
     const errorMessage = error?.message || '';
-    const isConnectionError = 
+    const isConnectionError =
       errorMessage.includes('ERR_CONNECTION_REFUSED') ||
       errorMessage.includes('Failed to fetch') ||
       errorMessage.includes('NetworkError') ||
       errorMessage.includes('connection refused') ||
       errorMessage.includes('CORS') ||
       errorMessage.includes('Access-Control-Allow-Origin');
-    
+
     if (isConnectionError) {
       return {
         isSuccess: false,
@@ -193,7 +121,7 @@ export async function checkWhatsAppNumber(
         resultMessage: translatedMessage || 'خدمة التحقق من الواتساب غير متاحة. يرجى التأكد من تشغيل الخادم وإعدادات CORS.',
       };
     }
-    
+
     // Return a failure result if request fails (use translated message)
     return {
       isSuccess: false,
@@ -215,24 +143,24 @@ export async function checkAuthentication(moderatorUserId?: number, userId?: num
     if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    const url = `/api/WhatsAppUtility/check-authentication${query}`;
-    
+    const url = `/WhatsAppUtility/check-authentication${query}`;
+
     console.log('[WhatsApp API] checkAuthentication called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
-    
-    const result = await fetchAPI<OperationResult<boolean>>(
+
+    const result = await fetchMainAPI<OperationResult<boolean>>(
       url,
       { method: 'GET' }
     );
-    
+
     console.log('[WhatsApp API] checkAuthentication result:', result);
-    
+
     // Emit event if PendingQR detected for UI updates
     if (result.state === 'PendingQR' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
         detail: { moderatorUserId, source: 'checkAuthentication' }
       }));
     }
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] checkAuthentication error:', error);
@@ -257,24 +185,24 @@ export async function authenticate(moderatorUserId?: number, userId?: number): P
     if (moderatorUserId) queryParams.append('moderatorUserId', moderatorUserId.toString());
     if (userId) queryParams.append('userId', userId.toString());
     const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    const url = `/api/WhatsAppUtility/authenticate${query}`;
-    
+    const url = `/WhatsAppUtility/authenticate${query}`;
+
     console.log('[WhatsApp API] authenticate called - moderatorUserId:', moderatorUserId, 'userId:', userId, 'url:', url);
-    
-    const result = await fetchAPI<OperationResult<boolean>>(
+
+    const result = await fetchMainAPI<OperationResult<boolean>>(
       url,
       { method: 'POST' }
     );
-    
+
     console.log('[WhatsApp API] authenticate result:', result);
-    
+
     // Emit event if PendingQR detected for UI updates
     if (result.state === 'PendingQR' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('whatsapp:pendingQR', {
         detail: { moderatorUserId, source: 'authenticate' }
       }));
     }
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] authenticate error:', error);
@@ -289,8 +217,10 @@ export async function authenticate(moderatorUserId?: number, userId?: number): P
 
 /**
  * Get session health metrics for a moderator
+ * @deprecated This function was used for the old ClinicsManagementService approach.
+ * Session health is no longer applicable with the extension-based WhatsApp integration.
  * @param moderatorUserId - Moderator user ID to get health metrics for
- * @returns Session health metrics including size, backup status, and provider session ID
+ * @returns Always returns null - kept for backward compatibility
  */
 export async function getSessionHealth(moderatorUserId: number): Promise<{
   currentSizeBytes: number;
@@ -307,16 +237,9 @@ export async function getSessionHealth(moderatorUserId: number): Promise<{
   thresholdMB: number;
   exceedsThreshold: boolean;
 } | null> {
-  try {
-    const result = await fetchAPI<any>(
-      `/api/SessionManagement/health?moderatorUserId=${moderatorUserId}`,
-      { method: 'GET' }
-    );
-    return result;
-  } catch (error: any) {
-    console.error('[WhatsApp API] getSessionHealth error:', error);
-    return null;
-  }
+  // Deprecated: Session health was for the old ClinicsManagementService approach
+  // With extension-based WhatsApp integration, this is no longer needed
+  return null;
 }
 
 /**
@@ -341,70 +264,9 @@ export interface ModeratorBrowserStatus extends BrowserStatus {
   error?: string;
 }
 
-export async function getBrowserStatus(moderatorUserId: number): Promise<BrowserStatus | null> {
-  try {
-    console.log('[WhatsApp API] getBrowserStatus called with moderatorUserId:', moderatorUserId);
-    const url = `/api/WhatsAppUtility/browser/status?moderatorUserId=${moderatorUserId}`;
-    console.log('[WhatsApp API] Fetching from URL:', url);
-    
-    const result = await fetchAPI<{ success: boolean; data: BrowserStatus }>(
-      url,
-      { method: 'GET' }
-    );
-    
-    console.log('[WhatsApp API] getBrowserStatus result:', result);
-    
-    if (result.success && result.data) {
-      return result.data;
-    }
-    
-    return null;
-  } catch (error: any) {
-    console.error('[WhatsApp API] getBrowserStatus error:', error);
-    return null;
-  }
-}
 
-/**
- * Get browser status for all moderators (Admin only)
- * @returns List of browser status for all moderators
- */
-export async function getAllModeratorsBrowserStatus(): Promise<ModeratorBrowserStatus[]> {
-  try {
-    const result = await fetchAPI<{ success: boolean; data: ModeratorBrowserStatus[] }>(
-      `/api/WhatsAppUtility/browser/status/all`,
-      { method: 'GET' }
-    );
-    
-    if (result.success && result.data) {
-      return result.data;
-    }
-    
-    return [];
-  } catch (error: any) {
-    console.error('[WhatsApp API] getAllModeratorsBrowserStatus error:', error);
-    return [];
-  }
-}
 
-/**
- * Refresh browser status for a moderator
- * @param moderatorUserId - Moderator user ID
- * @returns Success response
- */
-export async function refreshBrowserStatus(moderatorUserId: number): Promise<{ success: boolean; message?: string }> {
-  try {
-    const result = await fetchAPI<{ success: boolean; message?: string }>(
-      `/api/WhatsAppUtility/browser/refresh?moderatorUserId=${moderatorUserId}`,
-      { method: 'POST' }
-    );
-    
-    return result;
-  } catch (error: any) {
-    console.error('[WhatsApp API] refreshBrowserStatus error:', error);
-    throw error;
-  }
-}
+
 
 /**
  * Close browser session for a moderator
@@ -413,11 +275,11 @@ export async function refreshBrowserStatus(moderatorUserId: number): Promise<{ s
  */
 export async function closeBrowserSession(moderatorUserId: number): Promise<{ success: boolean; message?: string }> {
   try {
-    const result = await fetchAPI<{ success: boolean; message?: string }>(
-      `/api/WhatsAppUtility/browser/close?moderatorUserId=${moderatorUserId}`,
+    const result = await fetchMainAPI<{ success: boolean; message?: string }>(
+      `/WhatsAppUtility/browser/close?moderatorUserId=${moderatorUserId}`,
       { method: 'POST' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] closeBrowserSession error:', error);
@@ -441,11 +303,11 @@ export interface QRCodeResponse {
 
 export async function getQRCode(moderatorUserId: number): Promise<QRCodeResponse> {
   try {
-    const result = await fetchAPI<QRCodeResponse>(
-      `/api/WhatsAppUtility/qr-code?moderatorUserId=${moderatorUserId}`,
+    const result = await fetchMainAPI<QRCodeResponse>(
+      `/WhatsAppUtility/qr-code?moderatorUserId=${moderatorUserId}`,
       { method: 'GET' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] getQRCode error:', error);
@@ -519,7 +381,7 @@ async function fetchMainAPI<T>(
       // This is already an ApiError, re-throw it
       throw error;
     }
-    
+
     // This is a network/fetch error, translate it
     const translatedMessage = translateNetworkError(error);
     throw {
@@ -542,18 +404,18 @@ export interface PauseAllResponse {
 }
 
 export async function pauseAllModeratorTasks(
-  moderatorId: number, 
+  moderatorId: number,
   reason?: string
 ): Promise<PauseAllResponse> {
   try {
     const result = await fetchMainAPI<PauseAllResponse>(
       `/Moderators/${moderatorId}/pause-all`,
-      { 
+      {
         method: 'POST',
         body: JSON.stringify({ reason: reason || 'User paused' })
       }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] pauseAllModeratorTasks error:', error);
@@ -572,7 +434,7 @@ export async function resumeAllModeratorTasks(moderatorId: number): Promise<Paus
       `/Moderators/${moderatorId}/resume-all`,
       { method: 'POST' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] resumeAllModeratorTasks error:', error);
@@ -590,6 +452,21 @@ export interface GlobalPauseState {
   pauseReason: string | null;
   pausedAt: string | null;
   pausedBy: number | null;
+  /** 
+   * Computed by backend: true when session is paused and can be resumed
+   * (either not PendingQR, or PendingQR but now connected/authenticated)
+   */
+  isResumable: boolean;
+  /**
+   * True when extension has active lease and recent heartbeat.
+   * If false, pause/resume buttons should be disabled since there's nothing to pause.
+   */
+  isExtensionConnected: boolean;
+  /**
+   * WhatsApp session authentication status.
+   * 'connected' = authenticated, 'pending' = not authenticated, 'disconnected' = no session
+   */
+  status: string | null;
 }
 
 export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPauseState> {
@@ -598,7 +475,7 @@ export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPa
       `/Moderators/${moderatorId}/pause-state`,
       { method: 'GET' }
     );
-    
+
     return result;
   } catch (error: any) {
     console.error('[WhatsApp API] getGlobalPauseState error:', error);
@@ -606,18 +483,183 @@ export async function getGlobalPauseState(moderatorId: number): Promise<GlobalPa
   }
 }
 
+/**
+ * Combined status response from the server
+ * Reduces 4 API calls (session, extension, pause-state, health) into 1
+ */
+export interface CombinedStatusResponse {
+  success: boolean;
+  timestamp: string;
+  session: {
+    id: number;
+    moderatorUserId: number;
+    sessionName?: string;
+    status?: string;
+    lastSyncAt?: string;
+    createdAt: string;
+    providerSessionId?: string;
+    lastActivityAt?: string;
+  } | null;
+  pauseState: {
+    isPaused: boolean;
+    pauseReason: string | null;
+    pausedAt: string | null;
+    pausedBy: number | null;
+    isResumable: boolean;
+    isExtensionConnected?: boolean;
+  };
+  extension: {
+    hasActiveLease: boolean;
+    leaseId?: string;
+    deviceId?: number;
+    deviceName?: string;
+    whatsAppStatus?: string;
+    currentUrl?: string;
+    lastHeartbeat?: string;
+    expiresAt?: string;
+    isOnline: boolean;
+  };
+}
+
+/**
+ * Get combined status for a moderator (session + extension + pause state in one call)
+ * This reduces 4 API calls to 1 for better performance
+ * @param moderatorId - Moderator ID
+ * @returns Combined status data
+ */
+export async function getCombinedStatus(moderatorId: number): Promise<CombinedStatusResponse> {
+  try {
+    const result = await fetchMainAPI<CombinedStatusResponse>(
+      `/Moderators/${moderatorId}/combined-status`,
+      { method: 'GET' }
+    );
+
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] getCombinedStatus error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Check if a phone number has WhatsApp using browser extension (NEW)
+ * This replaces the legacy Playwright-based check with extension-driven validation
+ * Hard-pauses any active sending during check (unresumable until complete)
+ * @param phoneNumber Phone number (local format, e.g., 01234567890)
+ * @param options Configuration options including countryCode and abort signal
+ * @returns ExtensionCheckResult with validation status
+ */
+export async function checkWhatsAppNumberViaExtension(
+  phoneNumber: string,
+  options?: {
+    countryCode?: string;
+    forceCheck?: boolean;
+    signal?: AbortSignal;
+  }
+): Promise<ExtensionCheckResult> {
+  try {
+    const encodedPhoneNumber = encodeURIComponent(phoneNumber);
+    const queryParams = new URLSearchParams();
+    if (options.countryCode) {
+      queryParams.append('countryCode', options.countryCode);
+    }
+    if (options.forceCheck) {
+      queryParams.append('forceCheck', 'true');
+    }
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+    // Use the new extension controller endpoint
+    const result = await fetchMainAPI<{
+      success: boolean;
+      hasWhatsApp: boolean | null;
+      state: string;
+      message?: string;
+    }>(
+      `/extension/whatsapp/check-number/${encodedPhoneNumber}${query}`,
+      {
+        method: 'GET',
+        signal: options?.signal,
+      }
+    );
+
+    // Map response to ExtensionCheckResult format
+    return {
+      success: result.success,
+      category: result.state,
+      message: result.message,
+      data: result.hasWhatsApp ?? undefined,
+    };
+  } catch (error: any) {
+    // Check if error is due to abort
+    if (error?.name === 'AbortError' || options?.signal?.aborted) {
+      return {
+        success: false,
+        category: 'Aborted',
+        message: 'تم إلغاء عملية التحقق',
+      };
+    }
+
+    // Handle connection errors
+    const errorMessage = error?.message || '';
+    const isConnectionError =
+      errorMessage.includes('ERR_CONNECTION_REFUSED') ||
+      errorMessage.includes('Failed to fetch') ||
+      errorMessage.includes('NetworkError');
+
+    if (isConnectionError) {
+      return {
+        success: false,
+        category: 'ServiceUnavailable',
+        message: translateNetworkError(error),
+      };
+    }
+
+    // Return error result
+    return {
+      success: false,
+      category: 'Failed',
+      message: error?.message || 'حدث خطأ أثناء التحقق من الرقم',
+    };
+  }
+}
+
+/**
+ * Cancel any ongoing check session for the current moderator
+ * Clears the CheckWhatsApp pause and allows sending to resume
+ * @returns Success status
+ */
+export async function cancelCheckSession(): Promise<{ success: boolean; message?: string }> {
+  try {
+    const result = await fetchMainAPI<{ success: boolean; message?: string }>(
+      `/extension/whatsapp/check-cancel`,
+      {
+        method: 'POST',
+      }
+    );
+
+    return result;
+  } catch (error: any) {
+    console.error('[WhatsApp API] cancelCheckSession error:', error);
+    return {
+      success: false,
+      message: error?.message || 'فشل إلغاء عملية التحقق',
+    };
+  }
+}
+
 // Export the client object for consistency with other API clients
 export const whatsappApiClient = {
   checkWhatsAppNumber,
+  checkWhatsAppNumberViaExtension,
+  cancelCheckSession,
   checkAuthentication,
   authenticate,
   getSessionHealth,
-  getBrowserStatus,
-  getAllModeratorsBrowserStatus,
-  refreshBrowserStatus,
+
   closeBrowserSession,
   getQRCode,
   pauseAllModeratorTasks,
   resumeAllModeratorTasks,
   getGlobalPauseState,
+  getCombinedStatus,
 };

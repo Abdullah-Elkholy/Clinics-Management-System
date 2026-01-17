@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { ModeratorDetails, CreateModeratorRequest, UpdateModeratorRequest, AddUserToModeratorRequest } from '@/types/moderator';
@@ -7,7 +7,7 @@ import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { PanelWrapper } from '@/components/Common/PanelWrapper';
 import { PanelHeader } from '@/components/Common/PanelHeader';
-import { EmptyState } from '@/components/Common/EmptyState';
+import { EmptyState } from '@/components/state';
 import { useUserManagement } from '@/hooks/useUserManagement';
 import WhatsAppAuthTabContent from '@/components/Content/WhatsAppAuthTabContent';
 import { formatLocalDate } from '@/utils/dateTimeUtils';
@@ -110,7 +110,7 @@ export default function ModeratorsPanel() {
     if (!formData.firstName || !formData.lastName || !formData.username) {
       setState((prev) => ({
         ...prev,
-          error: 'يرجى ملء جميع الحقول المطلوبة',
+        error: 'يرجى ملء جميع الحقول المطلوبة',
       }));
       return;
     }
@@ -209,7 +209,7 @@ export default function ModeratorsPanel() {
     if (!state.selectedModerator || !userFormData.firstName || !userFormData.lastName || !userFormData.username) {
       setState((prev) => ({
         ...prev,
-          error: 'يرجى ملء جميع الحقول المطلوبة',
+        error: 'يرجى ملء جميع الحقول المطلوبة',
       }));
       return;
     }
@@ -246,7 +246,7 @@ export default function ModeratorsPanel() {
   const filteredModerators = state.moderators.filter((m) => {
     const fullName = getUserDisplayName(m);
     return fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           m.username.toLowerCase().includes(searchTerm.toLowerCase());
+      m.username.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   return (
@@ -293,11 +293,10 @@ export default function ModeratorsPanel() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 font-medium transition-colors ${
-              activeTab === tab
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
+            className={`px-4 py-2 font-medium transition-colors ${activeTab === tab
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-900'
+              }`}
           >
             {tab === 'overview' && '📋 نظرة عامة'}
             {tab === 'details' && '📝 التفاصيل'}
@@ -380,7 +379,7 @@ export default function ModeratorsPanel() {
                 />
                 <input
                   type="number"
-                  placeholder="حصة الطوابير"
+                  placeholder="حصة العيادات"
                   value={formData.queuesQuota}
                   onChange={(e) =>
                     setFormData({
@@ -411,9 +410,9 @@ export default function ModeratorsPanel() {
           {/* Moderators Grid */}
           {filteredModerators.length === 0 ? (
             <EmptyState
-              icon="fa-user-tie"
+              icon={<i className="fa-solid fa-user-tie text-4xl text-gray-300" />}
               title="لا توجد مشرفين"
-              message="ابدأ بإضافة مشرف جديد للنظام"
+              description="ابدأ بإضافة مشرف جديد للنظام"
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -431,11 +430,10 @@ export default function ModeratorsPanel() {
                         {moderator.username}
                       </p>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${
-                      moderator.isActive
-                        ? 'bg-blue-100 text-blue-800' 
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 ${moderator.isActive
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-gray-100 text-gray-800'
+                      }`}>
                       {moderator.isActive ? 'نشط' : 'معطل'}
                     </span>
                   </div>
@@ -473,7 +471,7 @@ export default function ModeratorsPanel() {
                       <span className="font-semibold">{moderator.managedUsersCount}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">الطوابير:</span>
+                      <span className="text-gray-600">العيادات:</span>
                       <span className="font-semibold">{moderator.queuesCount}</span>
                     </div>
                     <div className="flex justify-between text-sm">
@@ -490,8 +488,8 @@ export default function ModeratorsPanel() {
                         {moderator.whatsappSession?.status === 'connected'
                           ? '✅ متصل'
                           : moderator.whatsappSession?.status === 'pending'
-                          ? '⏳ في الانتظار'
-                          : '❌ غير متصل'}
+                            ? '⏳ في الانتظار'
+                            : '❌ غير متصل'}
                       </span>
                     </div>
                   </div>
@@ -560,18 +558,17 @@ export default function ModeratorsPanel() {
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">الرسائل</span>
                       <span className="text-sm font-semibold">
-                        {moderator.quota.messagesQuota.used} / {moderator.quota.messagesQuota.limit === -1 ? 'غير محدود' : moderator.quota.messagesQuota.limit.toLocaleString('ar-SA')}
+                        {moderator.quota.messagesQuota.used} / {moderator.quota.messagesQuota.limit === -1 ? 'غير محدود' : moderator.quota.messagesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                       <div
-                        className={`h-full transition-all ${
-                          messagesPercent > 80
-                            ? 'bg-red-500'
-                            : messagesPercent > 60
+                        className={`h-full transition-all ${messagesPercent > 80
+                          ? 'bg-red-500'
+                          : messagesPercent > 60
                             ? 'bg-yellow-500'
                             : 'bg-green-500'
-                        }`}
+                          }`}
                         style={{ width: `${Math.min(messagesPercent, 100)}%` }}
                       />
                     </div>
@@ -580,20 +577,19 @@ export default function ModeratorsPanel() {
                   {/* Queues Quota */}
                   <div>
                     <div className="flex justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">الطوابير</span>
+                      <span className="text-sm font-medium text-gray-700">العيادات</span>
                       <span className="text-sm font-semibold">
-                        {moderator.quota.queuesQuota.used} / {moderator.quota.queuesQuota.limit === -1 ? 'غير محدود' : moderator.quota.queuesQuota.limit.toLocaleString('ar-SA')}
+                        {moderator.quota.queuesQuota.used} / {moderator.quota.queuesQuota.limit === -1 ? 'غير محدود' : moderator.quota.queuesQuota.limit.toLocaleString('ar-EG-u-nu-latn')}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                       <div
-                        className={`h-full transition-all ${
-                          queuesPercent > 80
-                            ? 'bg-red-500'
-                            : queuesPercent > 60
+                        className={`h-full transition-all ${queuesPercent > 80
+                          ? 'bg-red-500'
+                          : queuesPercent > 60
                             ? 'bg-yellow-500'
                             : 'bg-green-500'
-                        }`}
+                          }`}
                         style={{ width: `${Math.min(queuesPercent, 100)}%` }}
                       />
                     </div>
@@ -674,9 +670,9 @@ export default function ModeratorsPanel() {
           {/* Users Table */}
           {state.selectedModerator.managedUsersCount === 0 ? (
             <EmptyState
-              icon="fa-user"
+              icon={<i className="fa-solid fa-user text-4xl text-gray-300" />}
               title="لا يوجد مستخدمون"
-              message="لم يتم إضافة أي مستخدمين لهذا المشرف بعد"
+              description="لم يتم إضافة أي مستخدمين لهذا المشرف بعد"
             />
           ) : (
             <div className="bg-white rounded-lg overflow-hidden border border-gray-200">
@@ -716,3 +712,4 @@ export default function ModeratorsPanel() {
     </PanelWrapper>
   );
 }
+

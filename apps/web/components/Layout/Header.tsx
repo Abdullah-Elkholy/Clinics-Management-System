@@ -1,17 +1,155 @@
 'use client';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { useModal } from '../../contexts/ModalContext';
-import { useWhatsAppSession } from '../../contexts/WhatsAppSessionContext';
+import { useUI } from '../../contexts/UIContext';
+import { useWhatsAppSession, DetailedSessionStatus, ExtensionStatus } from '../../contexts/WhatsAppSessionContext';
 import { getRoleDisplayName } from '../../lib/auth';
 import { User } from '../../types';
 
+// Helper function to get detailed status display based on DetailedSessionStatus
+const getDetailedStatusDisplay = (
+  detailedStatus: DetailedSessionStatus,
+  extensionStatus: ExtensionStatus | null,
+  sessionStatus: 'connected' | 'disconnected' | 'pending' | null,
+  globalPauseState: { isPaused: boolean; pauseReason?: string } | null
+) => {
+  // Use detailed status if available
+  switch (detailedStatus) {
+    case 'connected_sending':
+      return {
+        bgColor: 'bg-green-100',
+        dotColor: 'bg-green-500 animate-pulse',
+        textColor: 'text-green-700',
+        label: 'جاري إرسال الرسائل',
+        icon: 'paper-plane',
+        sublabel: 'يتم إرسال الرسائل حالياً...',
+      };
+    case 'connected_idle':
+      return {
+        bgColor: 'bg-green-100',
+        dotColor: 'bg-green-500',
+        textColor: 'text-green-700',
+        label: 'واتساب متصل وجاهز',
+        icon: 'check-circle',
+        sublabel: 'جاهز لإرسال الرسائل',
+      };
+    case 'connected_paused':
+      return {
+        bgColor: 'bg-yellow-100',
+        dotColor: 'bg-yellow-500',
+        textColor: 'text-yellow-700',
+        label: 'الإرسال متوقف مؤقتاً',
+        icon: 'pause-circle',
+        sublabel: 'اضغط استئناف لمتابعة الإرسال',
+      };
+    case 'extension_connected':
+      return {
+        bgColor: 'bg-blue-100',
+        dotColor: 'bg-blue-500 animate-pulse',
+        textColor: 'text-blue-700',
+        label: 'الإضافة متصلة',
+        icon: 'puzzle-piece',
+        sublabel: 'اضغط "فتح واتساب" في نافذة الإضافة',
+      };
+    case 'extension_disconnected':
+      return {
+        bgColor: 'bg-orange-100',
+        dotColor: 'bg-orange-500',
+        textColor: 'text-orange-700',
+        label: 'الإضافة غير متصلة',
+        icon: 'exclamation-triangle',
+        sublabel: 'افتح المتصفح ثم اضغط على أيقونة الإضافة',
+      };
+    case 'no_extension':
+      return {
+        bgColor: 'bg-gray-100',
+        dotColor: 'bg-gray-400',
+        textColor: 'text-gray-600',
+        label: 'الإضافة غير نشطة',
+        icon: 'plug',
+        sublabel: 'افتح الإضافة واضغط "بدء الجلسة"',
+      };
+    case 'pending_qr':
+      return {
+        bgColor: 'bg-yellow-100',
+        dotColor: 'bg-yellow-500 animate-pulse',
+        textColor: 'text-yellow-700',
+        label: 'في انتظار مسح QR',
+        icon: 'qrcode',
+        sublabel: 'افتح واتساب على هاتفك وامسح الكود',
+      };
+    case 'pending_net':
+      return {
+        bgColor: 'bg-orange-100',
+        dotColor: 'bg-orange-500',
+        textColor: 'text-orange-700',
+        label: 'مشكلة في الاتصال',
+        icon: 'wifi',
+        sublabel: 'تحقق من الإنترنت واتصال الهاتف',
+      };
+    case 'browser_closed':
+      return {
+        bgColor: 'bg-red-100',
+        dotColor: 'bg-red-500',
+        textColor: 'text-red-700',
+        label: 'المتصفح مغلق',
+        icon: 'times-circle',
+        sublabel: 'أعد فتح المتصفح وشغّل الإضافة',
+      };
+    case 'loading':
+      return {
+        bgColor: 'bg-gray-100',
+        dotColor: 'bg-gray-400 animate-pulse',
+        textColor: 'text-gray-600',
+        label: 'جاري التحميل...',
+        icon: 'spinner',
+        sublabel: undefined,
+      };
+    case 'disconnected':
+    default:
+      return {
+        bgColor: 'bg-gray-100',
+        dotColor: 'bg-gray-400',
+        textColor: 'text-gray-600',
+        label: 'غير متصل',
+        icon: 'plug',
+        sublabel: 'افتح الإضافة واضغط "بدء الجلسة"',
+      };
+  }
+};
+
 export default function Header() {
   const { user, logout } = useAuth();
-  const { openModal } = useModal();
-  const { sessionStatus, globalPauseState } = useWhatsAppSession();
+  const { setCurrentPanel, currentPanel } = useUI();
+  const { sessionStatus, detailedStatus, extensionStatus, globalPauseState } = useWhatsAppSession();
 
   if (!user) return null;
+
+  // Get status display based on detailed status
+  const statusDisplay = getDetailedStatusDisplay(detailedStatus, extensionStatus, sessionStatus, globalPauseState);
+
+  // Navigate to WhatsApp Auth tab in management panel
+  const handleWhatsAppStatusClick = () => {
+    // Persist desired tab (used when management panel mounts)
+    sessionStorage.setItem('userManagementActiveTab', 'whatsappAuth');
+
+    const dispatchTabSwitch = () => {
+      // Used when management panel is already mounted (same-panel navigation)
+      window.dispatchEvent(
+        new CustomEvent('userManagementActiveTabChange', { detail: 'whatsappAuth' })
+      );
+    };
+
+    if (currentPanel === 'management') {
+      // Already on management panel: force-switch tab immediately
+      dispatchTabSwitch();
+      return;
+    }
+
+    // Navigate to management panel, then request tab switch (next tick)
+    setCurrentPanel('management');
+    setTimeout(dispatchTabSwitch, 0);
+  };
 
   // Helper function to get user display name following priority:
   // 1. firstName + lastName (if both exist)
@@ -41,7 +179,7 @@ export default function Header() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-800">نظام إدارة العيادات</h1>
-            <p className="text-sm text-gray-600">{roleDisplay}</p>
+            <p className="text-sm text-gray-600">{roleDisplay}/ {fullName}</p>
           </div>
         </div>
 
@@ -49,58 +187,38 @@ export default function Header() {
         <div className="flex items-center space-x-4 space-x-reverse">
           {/* WhatsApp Status - Hidden for admin, shown for moderator and user */}
           {user.role !== 'primary_admin' && user.role !== 'secondary_admin' && (
-            <div className={`hidden sm:flex items-center space-x-2 space-x-reverse px-3 py-1 rounded-full ${
-              sessionStatus === 'connected' 
-                ? 'bg-green-100' 
-                : sessionStatus === 'pending' 
-                ? 'bg-yellow-100' 
-                : 'bg-red-100'
-            }`}>
-              <div className={`w-2 h-2 rounded-full ${
-                sessionStatus === 'connected' 
-                  ? 'bg-green-500 animate-pulse' 
-                  : sessionStatus === 'pending' 
-                  ? 'bg-yellow-500 animate-pulse' 
-                  : 'bg-red-500'
-              }`}></div>
-              <span className={`text-sm ${
-                sessionStatus === 'connected' 
-                  ? 'text-green-700' 
-                  : sessionStatus === 'pending' 
-                  ? 'text-yellow-700' 
-                  : 'text-red-700'
-              }`}>
-                {globalPauseState?.isPaused
-                  ? globalPauseState.pauseReason?.includes('PendingQR')
-                    ? 'في انتظار المصادقة (PendingQR)'
-                    : globalPauseState.pauseReason?.includes('PendingNET')
-                    ? 'فشل الاتصال بالإنترنت (PendingNET)'
-                    : globalPauseState.pauseReason?.includes('BrowserClosure')
-                    ? 'تم إغلاق المتصفح'
-                    : sessionStatus === 'connected' 
-                      ? 'واتساب متصل' 
-                      : sessionStatus === 'pending' 
-                      ? 'في انتظار المصادقة' 
-                      : 'واتساب غير متصل'
-                  : sessionStatus === 'connected' 
-                    ? 'واتساب متصل' 
-                    : sessionStatus === 'pending' 
-                    ? 'في انتظار المصادقة' 
-                    : 'واتساب غير متصل'}
-              </span>
+            <div
+              className="hidden sm:flex items-center gap-2 cursor-pointer group"
+              onClick={handleWhatsAppStatusClick}
+              title="اضغط لفتح إعدادات ربط واتساب"
+            >
+              {/* Status pill */}
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full group-hover:ring-2 group-hover:ring-blue-300 transition-all ${statusDisplay.bgColor}`}>
+                {/* Status icon */}
+                <i className={`fas fa-${statusDisplay.icon} ${statusDisplay.textColor} text-sm ${statusDisplay.icon === 'spinner' ? 'animate-spin' : ''}`}></i>
+
+                {/* Status dot */}
+                <div className={`w-2 h-2 rounded-full ${statusDisplay.dotColor}`}></div>
+
+                {/* Status text */}
+                <div className="flex flex-col">
+                  <span className={`text-sm font-medium ${statusDisplay.textColor}`}>
+                    {statusDisplay.label}
+                  </span>
+                  {statusDisplay.sublabel && (
+                    <span className={`text-xs ${statusDisplay.textColor} opacity-75`}>
+                      {statusDisplay.sublabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Settings icon hint */}
+              <i className="fas fa-cog text-gray-400 group-hover:text-blue-500 group-hover:rotate-90 transition-all text-sm"></i>
             </div>
           )}
 
-          {/* User Info and Logout */}
-          <div className="flex items-center space-x-3 space-x-reverse pl-4 border-l border-gray-200">
-            <span className="text-sm text-gray-700 font-medium">{fullName}</span>
-            <button
-              onClick={() => openModal('accountInfo')}
-              className="text-blue-600 hover:text-blue-700 transition-colors"
-              title="معلومات الحساب"
-            >
-              <i className="fas fa-user-circle text-lg"></i>
-            </button>
+          {/* Logout */}
+          <div className="flex items-center pl-4 border-l border-gray-200">
             <button
               onClick={logout}
               className="text-red-600 hover:text-red-700 transition-colors"

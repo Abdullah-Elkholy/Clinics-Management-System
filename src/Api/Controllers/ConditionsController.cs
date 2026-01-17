@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Clinics.Api.DTOs;
 using Clinics.Api.Services;
@@ -271,7 +271,7 @@ namespace Clinics.Api.Controllers
             // Users can now create overlapping conditions if they confirm the overlap
             // if (await _conditionValidationService.HasOverlapAsync(
             //     request.QueueId, request.Operator, request.Value, request.MinValue, request.MaxValue))
-            //     return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في الطابور." });
+            //     return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في العيادة." });
 
             // Create condition and update template's state atomically
             // Template state is implicit via condition.Operator (DEFAULT/UNCONDITIONED/active operator)
@@ -419,7 +419,7 @@ namespace Clinics.Api.Controllers
                 //     if (await _conditionValidationService.HasOverlapAsync(
                 //         condition.QueueId, request.Operator, request.Value ?? condition.Value, 
                 //         request.MinValue ?? condition.MinValue, request.MaxValue ?? condition.MaxValue, condition.Id))
-                //         return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في الطابور." });
+                //         return BadRequest(new { message = "هذا الشرط يتداخل مع شرط موجود في العيادة." });
                 // }
 
                 condition.Operator = request.Operator.ToUpper();
@@ -609,3 +609,4 @@ namespace Clinics.Api.Controllers
         }
     }
 }
+

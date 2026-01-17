@@ -192,7 +192,7 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
       if (result.success && result.data) {
         return result.data;
       }
-      setError(result.error || 'Failed to fetch user');
+      setError(result.error || 'فشل تحميل بيانات المستخدم');
       return null;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
