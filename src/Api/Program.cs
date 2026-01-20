@@ -19,6 +19,8 @@ using Hangfire.SqlServer;
 using Hangfire.Dashboard;
 using Hangfire.MemoryStorage;
 using System.Security.Claims;
+using Clinics.Api.Services.Telemetry;
+using Clinics.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
 
@@ -244,6 +246,9 @@ builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProvider, Cli
 builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProviderFactory, Clinics.Api.Services.Extension.WhatsAppProviderFactory>();
 builder.Services.AddScoped<Clinics.Api.Services.Extension.ICheckWhatsAppService, Clinics.Api.Services.Extension.CheckWhatsAppService>();
 
+// Telemetry provider for system performance monitoring
+builder.Services.AddHttpClient<ITelemetryProvider, TelemetryProvider>();
+
 // Authorization policies
 builder.Services.AddAuthorization(options =>
 {
@@ -275,6 +280,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 // Cookie policy for refresh token (HttpOnly cookie usage planned)
 app.UseCookiePolicy();
+
+// System diagnostics middleware for performance monitoring
+app.UseMiddleware<SystemDiagnosticsMiddleware>();
+
 app.MapControllers();
 
 // Map SignalR hub endpoint

@@ -7,6 +7,7 @@
 import { parseAsUtc } from '@/utils/dateTimeUtils';
 import { ModeratorQuota } from '@/types/user';
 import { messageApiClient, type MyQuotaDto, type QuotaDto } from '@/services/api/messageApiClient';
+import { getErrorMessage } from '@/utils/errorUtils';
 
 interface QuotaServiceResponse<T> {
   success: boolean;
@@ -47,7 +48,7 @@ class ModeratorQuotaService {
     } catch (error) {
       return {
         success: false,
-        error: `فشل تحميل الحصة: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`,
+        error: `فشل تحميل الحصة: ${getErrorMessage(error, 'خطأ غير معروف')}`,
       };
     }
   }
@@ -83,7 +84,7 @@ class ModeratorQuotaService {
       return { success: true, data: quota };
     } catch (error: any) {
       // Handle 405 Method Not Allowed and other errors gracefully
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = getErrorMessage(error, 'Unknown error');
       // Extract statusCode from various error shapes
       const statusCode = error?.statusCode || error?.status || (error?.message?.includes('405') ? 405 : undefined) || (error?.message?.includes('403') ? 403 : undefined);
 
@@ -163,7 +164,7 @@ class ModeratorQuotaService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to update quota: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to update quota: ${getErrorMessage(error, 'Unknown error')}`,
       };
     }
   }
@@ -203,7 +204,7 @@ class ModeratorQuotaService {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to add usage: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to add usage: ${getErrorMessage(error, 'Unknown error')}`,
       };
     }
   }

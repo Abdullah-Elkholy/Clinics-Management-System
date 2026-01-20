@@ -131,7 +131,7 @@ namespace Clinics.Api.Controllers
         /// Get all paired devices for current moderator.
         /// </summary>
         [HttpGet("devices")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult<IList<DeviceDto>>> GetDevices()
         {
             var moderatorId = GetModeratorId();
@@ -356,7 +356,7 @@ namespace Clinics.Api.Controllers
         /// Get active lease status for current moderator (for web UI).
         /// </summary>
         [HttpGet("lease/status")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult<LeaseStatusResponse>> GetLeaseStatus()
         {
             var moderatorId = GetModeratorId();

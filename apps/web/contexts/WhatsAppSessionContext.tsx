@@ -394,6 +394,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
           pausedBy: result.pauseState.pausedBy,
           isResumable: result.pauseState.isResumable,
           isExtensionConnected: result.pauseState.isExtensionConnected ?? result.extension.isOnline,
+          status: result.session?.status ?? null,
         });
 
         // Update extension status
@@ -411,6 +412,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         setGlobalPauseState({
           ...result.pauseState,
           isExtensionConnected: result.pauseState.isExtensionConnected ?? result.extension.isOnline,
+          status: result.session?.status ?? null,
         });
 
         // Calculate detailed status inline (avoid circular dependency)
@@ -418,6 +420,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
         const fullPauseState: GlobalPauseState = {
           ...result.pauseState,
           isExtensionConnected: result.pauseState.isExtensionConnected ?? result.extension.isOnline,
+          status: result.session?.status ?? null,
         };
         setDetailedStatus(calculateDetailedStatus(
           currentSessionStatus,
@@ -548,6 +551,7 @@ export function WhatsAppSessionProvider({ children, moderatorId }: WhatsAppSessi
           pausedBy: payload.pausedBy,
           isResumable: payload.isResumable || false,
           isExtensionConnected: payload.isExtensionConnected ?? extensionStatus?.isOnline ?? false,
+          status: payload.status ?? null,
         });
 
         // Use combined status refresh for full sync

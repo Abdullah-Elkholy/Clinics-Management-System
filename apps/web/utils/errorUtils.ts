@@ -3,6 +3,43 @@
  * Translates common network and API errors to descriptive Arabic messages
  */
 
+export const BACKEND_UNREACHABLE_MESSAGE =
+  'تعذر الاتصال بالخادم. تأكد من أن الخادم يعمل وحاول مرة أخرى';
+
+/**
+ * Extract a human-readable message from unknown error shapes.
+ * Prefers `.message`, then `.error`, then stringification.
+ */
+export function getErrorMessage(error: unknown, fallback = 'حدث خطأ غير متوقع'): string {
+  if (!error) return fallback;
+
+  if (typeof error === 'string') {
+    return error || fallback;
+  }
+
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+
+  if (typeof error === 'object') {
+    if ('message' in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string' && message) return message;
+    }
+
+    if ('error' in error) {
+      const err = (error as { error?: unknown }).error;
+      if (typeof err === 'string' && err) return err;
+    }
+  }
+
+  try {
+    return String(error) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Translate network errors to descriptive Arabic messages
  * @param error - Error object or error message string
@@ -27,7 +64,7 @@ export function translateNetworkError(error: unknown): string {
       message.includes('err_connection_refused') ||
       message.includes('connection refused')
     ) {
-      return 'فشل الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+      return BACKEND_UNREACHABLE_MESSAGE;
     }
 
     // Timeout errors
@@ -78,7 +115,7 @@ export function translateNetworkError(error: unknown): string {
       message.includes('err_connection_refused') ||
       message.includes('connection refused')
     ) {
-      return 'فشل الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+      return BACKEND_UNREACHABLE_MESSAGE;
     }
 
     if (
@@ -101,7 +138,7 @@ export function translateNetworkError(error: unknown): string {
       message.includes('err_connection_refused') ||
       message.includes('connection refused')
     ) {
-      return 'فشل الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى';
+      return BACKEND_UNREACHABLE_MESSAGE;
     }
 
     if (

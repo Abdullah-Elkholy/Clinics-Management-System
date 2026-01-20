@@ -370,11 +370,14 @@ export default function ExtensionPairingSection({
   };
 
   // Force release lease
+  const [isReleasingLease, setIsReleasingLease] = useState(false);
+
   const handleForceRelease = async () => {
     if (!confirm('هل تريد فصل الإضافة المتصلة حالياً؟')) {
       return;
     }
 
+    setIsReleasingLease(true);
     try {
       const result = await extensionApiClient.forceReleaseLease();
 
@@ -384,10 +387,29 @@ export default function ExtensionPairingSection({
         // Refresh all status to update Header and other components
         refreshCombinedStatus();
       } else {
-        addToast(result.error || 'فشل فصل الإضافة', 'error');
+        // Check for "no active lease" which means lease already expired - treat as success
+        const errorLower = (result.error || '').toLowerCase();
+        if (errorLower.includes('no active lease') || errorLower.includes('لا يوجد جلسة')) {
+          addToast('الإضافة غير متصلة بالفعل', 'info');
+          loadData();
+          refreshCombinedStatus();
+        } else {
+          addToast(result.error || 'فشل فصل الإضافة', 'error');
+        }
+      }
+    } catch (error: any) {
+      // Network errors or unexpected failures
+      const errorMsg = error?.message || 'حدث خطأ أثناء فصل الإضافة';
+      // If error indicates lease already gone, treat as success
+      if (errorMsg.toLowerCase().includes('no active lease') || errorMsg.toLowerCase().includes('404')) {
+        addToast('الإضافة غير متصلة بالفعل', 'info');
+        loadData();
+        refreshCombinedStatus();
+      } else {
+        addToast(errorMsg, 'error');
       }
     } finally {
-      // Always refresh after attempt
+      setIsReleasingLease(false);
     }
   };
 
@@ -573,10 +595,21 @@ export default function ExtensionPairingSection({
 
             <button
               onClick={handleForceRelease}
-              className="w-full px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+              disabled={isReleasingLease}
+              className={`w-full px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg transition-colors ${isReleasingLease ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100'
+                }`}
             >
-              <i className="fas fa-unlink ml-2"></i>
-              فصل الإضافة
+              {isReleasingLease ? (
+                <>
+                  <i className="fas fa-spinner fa-spin ml-2"></i>
+                  جاري الفصل...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-unlink ml-2"></i>
+                  فصل الإضافة
+                </>
+              )}
             </button>
           </div>
         )}

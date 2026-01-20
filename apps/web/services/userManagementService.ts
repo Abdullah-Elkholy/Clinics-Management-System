@@ -4,7 +4,7 @@
 import { UserRole } from '@/types/roles';
 import { usersApiClient, userDtoToModel } from '@/services/api/usersApiClient';
 import logger from '@/utils/logger';
-import { translateNetworkError } from '@/utils/errorUtils';
+import { getErrorMessage, translateNetworkError } from '@/utils/errorUtils';
 
 export type { User, ModeratorQuota, CreateUserPayload, UpdateUserPayload, UpdateQuotaPayload, AssignModeratorPayload } from '@/types/user';
 import type { User } from '@/types/user';
@@ -25,14 +25,12 @@ class UserManagementService {
         data: users.map(userDtoToModel)
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      // Error messages from API clients are already translated, but translate fallback if needed
-      const translatedError = errorMessage.includes('Failed to fetch') || errorMessage.includes('timeout')
-        ? translateNetworkError(error)
-        : errorMessage;
+      const errorMessage = getErrorMessage(error, 'Unknown error');
+      // Error messages from API clients are usually already translated; keep a safe fallback
+      const translatedError = translateNetworkError(error);
       return {
         success: false,
-        error: translatedError || 'فشل في جلب المستخدمين',
+        error: errorMessage === 'Unknown error' ? (translatedError || 'فشل في جلب المستخدمين') : (errorMessage || 'فشل في جلب المستخدمين'),
       };
     }
   }
@@ -42,14 +40,11 @@ class UserManagementService {
       const user = await usersApiClient.getUserById(parseInt(id, 10));
       return { success: true, data: userDtoToModel(user) };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      // Error messages from API clients are already translated, but translate fallback if needed
-      const translatedError = errorMessage.includes('Failed to fetch') || errorMessage.includes('timeout')
-        ? translateNetworkError(error)
-        : errorMessage;
+      const errorMessage = getErrorMessage(error, 'Unknown error');
+      const translatedError = translateNetworkError(error);
       return {
         success: false,
-        error: translatedError || 'فشل في جلب المستخدم',
+        error: errorMessage === 'Unknown error' ? (translatedError || 'فشل في جلب المستخدم') : (errorMessage || 'فشل في جلب المستخدم'),
       };
     }
   }
@@ -63,14 +58,11 @@ class UserManagementService {
         data: moderators.map(userDtoToModel),
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      // Error messages from API clients are already translated, but translate fallback if needed
-      const translatedError = errorMessage.includes('Failed to fetch') || errorMessage.includes('timeout')
-        ? translateNetworkError(error)
-        : errorMessage;
+      const errorMessage = getErrorMessage(error, 'Unknown error');
+      const translatedError = translateNetworkError(error);
       return {
         success: false,
-        error: translatedError || 'فشل في جلب المشرفين',
+        error: errorMessage === 'Unknown error' ? (translatedError || 'فشل في جلب المشرفين') : (errorMessage || 'فشل في جلب المشرفين'),
       };
     }
   }

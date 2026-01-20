@@ -42,6 +42,9 @@ export default function Navigation() {
       await userManagementActionsRef.current.fetchModerators();
     };
 
+    // Initial fetch of moderators
+    userManagementActionsRef.current.fetchModerators();
+
     window.addEventListener('userDataUpdated', handleUserDataUpdate);
 
     return () => {
