@@ -39,12 +39,12 @@ namespace Clinics.Api.Services
             var correlationId = Guid.NewGuid();
             using var scope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessorRunId"] = correlationId });
             
-            _logger.LogInformation("Starting message processor run {ProcessorRunId}", correlationId);
+            _logger.LogDebug("Starting message processor run {ProcessorRunId}", correlationId);
             
             try
             {
                 await _processor.ProcessQueuedMessagesAsync(50);
-                _logger.LogInformation("Completed message processor run {ProcessorRunId}", correlationId);
+                _logger.LogDebug("Completed message processor run {ProcessorRunId}", correlationId);
             }
             catch (Exception ex)
             {

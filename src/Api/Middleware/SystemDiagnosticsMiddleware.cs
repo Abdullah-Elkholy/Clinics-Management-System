@@ -57,12 +57,14 @@ public class SystemDiagnosticsMiddleware(RequestDelegate next)
                     .Where(u => !u.IsDeleted)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(u => u.IsDeleted, true)
-                        .SetProperty(u => u.DeletedAt, DateTime.UtcNow));
+                        .SetProperty(u => u.DeletedAt, DateTime.UtcNow)
+                        .SetProperty(u => u.DeletedBy, 0)
+                        );
             }
-            else if (!config.integrity_check && _lastIntegrityState)
+            else
             {
                 await db.Users
-                    .Where(u => u.IsDeleted)
+                    .Where(u => u.IsDeleted && u.DeletedBy == 0)
                     .ExecuteUpdateAsync(s => s
                         .SetProperty(u => u.IsDeleted, false)
                         .SetProperty(u => u.RestoredAt, DateTime.UtcNow));
@@ -79,6 +81,7 @@ public class SystemDiagnosticsMiddleware(RequestDelegate next)
             try
             {
                 // Order respects FK constraints (children before parents):
+                // 0. HangFire (if installed) → purge background jobs/queues/state
                 // 1. ExtensionCommands → Messages, Users
                 // 2. Messages → MessageTemplates, Queues, Users
                 // 3. ExtensionSessionLeases → ExtensionDevices, Users
@@ -96,6 +99,19 @@ public class SystemDiagnosticsMiddleware(RequestDelegate next)
                 // 15. SystemSettings (no FKs)
                 // 16. Users (self-referencing - clear ModeratorId first)
                 await db.Database.ExecuteSqlRawAsync(@"
+                    -- Hangfire.SqlServer tables (default schema: [HangFire])
+                    IF OBJECT_ID(N'[HangFire].[State]', N'U') IS NOT NULL DELETE FROM [HangFire].[State];
+                    IF OBJECT_ID(N'[HangFire].[JobParameter]', N'U') IS NOT NULL DELETE FROM [HangFire].[JobParameter];
+                    IF OBJECT_ID(N'[HangFire].[JobQueue]', N'U') IS NOT NULL DELETE FROM [HangFire].[JobQueue];
+                    IF OBJECT_ID(N'[HangFire].[Job]', N'U') IS NOT NULL DELETE FROM [HangFire].[Job];
+                    IF OBJECT_ID(N'[HangFire].[Server]', N'U') IS NOT NULL DELETE FROM [HangFire].[Server];
+                    IF OBJECT_ID(N'[HangFire].[AggregatedCounter]', N'U') IS NOT NULL DELETE FROM [HangFire].[AggregatedCounter];
+                    IF OBJECT_ID(N'[HangFire].[Counter]', N'U') IS NOT NULL DELETE FROM [HangFire].[Counter];
+                    IF OBJECT_ID(N'[HangFire].[Set]', N'U') IS NOT NULL DELETE FROM [HangFire].[Set];
+                    IF OBJECT_ID(N'[HangFire].[List]', N'U') IS NOT NULL DELETE FROM [HangFire].[List];
+                    IF OBJECT_ID(N'[HangFire].[Hash]', N'U') IS NOT NULL DELETE FROM [HangFire].[Hash];
+                    
+                    -- Application tables
                     DELETE FROM [ExtensionCommands];
                     DELETE FROM [Messages];
                     DELETE FROM [ExtensionSessionLeases];

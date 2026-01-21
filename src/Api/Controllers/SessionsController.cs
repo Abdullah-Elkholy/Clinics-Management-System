@@ -5,6 +5,7 @@ using Clinics.Api.DTOs;
 using Clinics.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using Clinics.Api.Logging;
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using Clinics.Api.Hubs;
@@ -94,7 +95,7 @@ namespace Clinics.Api.Controllers
             {
                 var userRole = User.IsInRole("primary_admin") ? "PrimaryAdmin" : User.IsInRole("secondary_admin") ? "SecondaryAdmin" : "Moderator";
                 var moderatorDisplay = filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All - Admin View)";
-                _logger.LogInformation("[SessionsController] Getting ongoing sessions for moderator {ModeratorId} (User: {UserId}, Role: {Role})", moderatorDisplay, userId, userRole);
+                _logger.LogDebug("[SessionsController] Getting ongoing sessions for moderator {ModeratorId} (User: {UserId}, Role: {Role})", moderatorDisplay, userId, userRole);
 
                 // Get sessions that have ongoing messages (queued or sending)
                 // IMPORTANT: Don't filter by session.Status - a session might be marked "completed" 
@@ -182,7 +183,7 @@ namespace Clinics.Api.Controllers
                     });
                 }
 
-                _logger.LogInformation("[SessionsController] Found {Count} ongoing sessions for moderator {ModeratorId}",
+                _logger.LogDebug("[SessionsController] Found {Count} ongoing sessions for moderator {ModeratorId}",
                     result.Count, filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All)");
 
                 return Ok(new { success = true, data = result });
@@ -214,7 +215,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 var moderatorDisplay = filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All - Admin View)";
-                _logger.LogInformation("[SessionsController] Getting failed sessions for moderator {ModeratorId} (User: {UserId})", moderatorDisplay, userId);
+                _logger.LogDebug("[SessionsController] Getting failed sessions for moderator {ModeratorId} (User: {UserId})", moderatorDisplay, userId);
 
                 // Get sessions that have failed messages
                 // Get sessions that have failed messages
@@ -286,7 +287,7 @@ namespace Clinics.Api.Controllers
                     });
                 }
 
-                _logger.LogInformation("[SessionsController] Found {Count} failed sessions for moderator {ModeratorId}",
+                _logger.LogDebug("[SessionsController] Found {Count} failed sessions for moderator {ModeratorId}",
                     result.Count, filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All)");
 
                 return Ok(new { success = true, data = result });
@@ -319,7 +320,7 @@ namespace Clinics.Api.Controllers
             try
             {
                 var moderatorDisplay = filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All - Admin View)";
-                _logger.LogInformation("[SessionsController] Getting completed sessions for moderator {ModeratorId} (User: {UserId})", moderatorDisplay, userId);
+                _logger.LogDebug("[SessionsController] Getting completed sessions for moderator {ModeratorId} (User: {UserId})", moderatorDisplay, userId);
 
                 var query = _db.MessageSessions
                     .AsNoTracking()
@@ -408,7 +409,7 @@ namespace Clinics.Api.Controllers
                     });
                 }
 
-                _logger.LogInformation("[SessionsController] Found {Count} sessions with sent messages for moderator {ModeratorId}",
+                _logger.LogDebug("[SessionsController] Found {Count} sessions with sent messages for moderator {ModeratorId}",
                     result.Count, filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All)");
 
                 return Ok(new { success = true, data = result });
@@ -467,7 +468,7 @@ namespace Clinics.Api.Controllers
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation("[SessionsController] Paused session {SessionId} hierarchically (no message rows updated)", sessionId);
-                _logger.LogInformation("[Business] تم إيقاف الجلسة {SessionId} مؤقتاً بواسطة {UserId}", sessionId, userId);
+                _logger.LogBusinessInformation("تم إيقاف الجلسة {SessionId} مؤقتاً بواسطة {UserId}", sessionId, userId);
 
                 return Ok(new { success = true, message = "تم إيقاف الجلسة (سيتم منع إرسال الرسائل تلقائياً)" });
             }
@@ -524,7 +525,7 @@ namespace Clinics.Api.Controllers
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation("[SessionsController] Resumed session {SessionId} hierarchically (no message rows updated)", sessionId);
-                _logger.LogInformation("[Business] تم استئناف الجلسة {SessionId} بواسطة {UserId}", sessionId, userId);
+                _logger.LogBusinessInformation("تم استئناف الجلسة {SessionId} بواسطة {UserId}", sessionId, userId);
 
                 return Ok(new { success = true, message = "تم استئناف الجلسة (ستستأنف معالجة الرسائل تلقائياً)" });
             }
@@ -614,7 +615,7 @@ namespace Clinics.Api.Controllers
 
                 _logger.LogInformation("[SessionsController] Retried session {SessionId}: {Requeued} requeued, {Skipped} skipped",
                     sessionId, requeued, skipped);
-                _logger.LogInformation("[Business] تمت إعادة محاولة الجلسة {SessionId} بواسطة {UserId} ({Requeued} رسالة)", sessionId, userId, requeued);
+                _logger.LogBusinessInformation("تمت إعادة محاولة الجلسة {SessionId} بواسطة {UserId} ({Requeued} رسالة)", sessionId, userId, requeued);
 
                 return Ok(new
                 {
@@ -680,7 +681,7 @@ namespace Clinics.Api.Controllers
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation("[SessionsController] Deleted session {SessionId}", sessionId);
-                _logger.LogInformation("[Business] تم حذف الجلسة {SessionId} بواسطة {UserId}", sessionId, userId);
+                _logger.LogBusinessInformation("تم حذف الجلسة {SessionId} بواسطة {UserId}", sessionId, userId);
 
                 return Ok(new { success = true });
             }

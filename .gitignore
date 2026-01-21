@@ -84,6 +84,9 @@ TestResults/
 .history/
 .idea/
 
+# Local temp build outputs
+.tmp/
+
 # Binaries
 *.dll
 *.exe

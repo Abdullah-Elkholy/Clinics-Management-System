@@ -434,19 +434,19 @@ export default function ExtensionPairingSection({
 
   return (
     <div className="space-y-6 mt-6">
-      {/* Extension Section Header */}
-      <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-        <h3 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
-          <i className="fas fa-puzzle-piece"></i>
-          إضافة المتصفح (Extension)
+      {/* Extension Section (WhatsApp Auth Tab) Header */}
+      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+        <h3 className="text-lg font-semibold text-green-900 flex items-center gap-2">
+          <i className="fab fa-whatsapp"></i>
+          مصادقة واتساب
         </h3>
-        <p className="text-sm text-blue-700 mt-2">
-          قم بتثبيت إضافة المتصفح على جهازك للتحكم في واتساب ويب مباشرة من متصفحك
+        <p className="text-sm text-green-700 mt-2">
+          إدارة حالة الواتساب وإضافة المتصفح (Extension) على جهازك للتحكم في واتساب ويب مباشرة من متصفحك
         </p>
       </div>
 
       {/* Session Info Card - Status Overview */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <h4 className="font-semibold text-gray-900 flex items-center gap-2">
             <i className="fas fa-info-circle text-blue-500"></i>
@@ -532,7 +532,7 @@ export default function ExtensionPairingSection({
       </div>
 
       {/* Current Extension Session Status */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <h4 className="font-semibold text-gray-900 flex items-center gap-2">
             <i className="fas fa-broadcast-tower"></i>
@@ -616,7 +616,7 @@ export default function ExtensionPairingSection({
       </div>
 
       {/* Pairing Code Section */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <i className="fas fa-qrcode"></i>
           إقران إضافة جديدة
@@ -701,7 +701,7 @@ export default function ExtensionPairingSection({
       </div>
 
       {/* Paired Devices Section */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <i className="fas fa-laptop"></i>
           الأجهزة المقترنة

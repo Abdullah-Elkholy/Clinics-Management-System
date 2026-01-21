@@ -151,17 +151,6 @@ export default function WhatsAppAuthTabContent() {
 
   return (
     <div className="space-y-6">
-      {/* WhatsApp Auth Header - Matches System Logs tab style */}
-      <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4">
-        <h3 className="text-lg font-semibold text-purple-900 flex items-center gap-2">
-          <i className="fab fa-whatsapp"></i>
-          مصادقة واتساب
-        </h3>
-        <p className="text-sm text-purple-700 mt-2">
-          إدارة اتصال إضافة المتصفح وحالة واتساب
-        </p>
-      </div>
-
       {/* Extension Pairing Section - includes Session Info */}
       <ExtensionPairingSection
         statusDisplay={statusDisplay}

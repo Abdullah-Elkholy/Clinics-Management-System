@@ -21,13 +21,50 @@ using Hangfire.MemoryStorage;
 using System.Security.Claims;
 using Clinics.Api.Services.Telemetry;
 using Clinics.Api.Middleware;
+using System.Globalization;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
 
 // Configure Serilog to log to the same global folder as the service API
 // This ensures all logs are in one place for easier monitoring.
+static bool IsBusinessLogEvent(Serilog.Events.LogEvent logEvent)
+    => logEvent.MessageTemplate.Text.StartsWith("[Business]", StringComparison.Ordinal);
+
+var mainLogPath = builder.Configuration["LogPaths:Main"] ?? "../../logs/main-.log";
+var businessLogPath = builder.Configuration["LogPaths:Business"] ?? "../../logs/business-.log";
+
+var mainOutputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}";
+
 Log.Logger = new LoggerConfiguration()
+    // Read MinimumLevel + Enrich from configuration (WriteTo is intentionally empty in config)
     .ReadFrom.Configuration(builder.Configuration)
+
+    // Non-business logs: console + main file
+    .WriteTo.Logger(lc => lc
+        .Filter.ByExcluding(IsBusinessLogEvent)
+        .WriteTo.Console())
+    .WriteTo.Logger(lc => lc
+        .Filter.ByExcluding(IsBusinessLogEvent)
+        .WriteTo.File(
+            path: mainLogPath,
+            rollingInterval: RollingInterval.Day,
+            rollOnFileSizeLimit: true,
+            fileSizeLimitBytes: 10 * 1024 * 1024,
+            retainedFileCountLimit: 30,
+            encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            outputTemplate: mainOutputTemplate))
+
+    // Business logs: UTF-8 file only (keeps Arabic safe and avoids console "???")
+    .WriteTo.Logger(lc => lc
+        .Filter.ByIncludingOnly(IsBusinessLogEvent)
+        .WriteTo.File(
+            path: businessLogPath,
+            rollingInterval: RollingInterval.Day,
+            rollOnFileSizeLimit: true,
+            fileSizeLimitBytes: 10 * 1024 * 1024,
+            retainedFileCountLimit: 30,
+            encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            outputTemplate: mainOutputTemplate))
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -307,6 +344,204 @@ try
 
         // Apply any pending migrations (including seeded data in migration)
         db.Database.Migrate();
+
+        var utcNow = DateTime.UtcNow;
+
+        // Seed required default users if Users table is empty
+        if (!db.Users.Any())
+        {
+            var admin = new User
+            {
+                Username = "admin",
+                PasswordHash = "AQAAAAIAAYagAAAAEFis02t8W90rJ6Pkqw6wwD45hx6QI2ArKLqW8tl77SnIidCWW43DLldUP2G1BhxkXw==",
+                FirstName = "Admin",
+                LastName = "One",
+                Role = "primary_admin",
+                ModeratorId = null,
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null,
+                LastLogin = null,
+                IsDeleted = false,
+                DeletedAt = null,
+                DeletedBy = null,
+                RestoredAt = null,
+                RestoredBy = null
+            };
+
+            var admin2 = new User
+            {
+                Username = "admin2",
+                PasswordHash = "AQAAAAIAAYagAAAAEFmtEKOGKA5/ficlHNopu3+fZ1ly0ocuBAvJgl59wxjRQgGSFDlPgKNa+KR2a8vpTA==",
+                FirstName = "Admin",
+                LastName = "Two",
+                Role = "secondary_admin",
+                ModeratorId = null,
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null,
+                LastLogin = null,
+                IsDeleted = false,
+                DeletedAt = null,
+                DeletedBy = null,
+                RestoredAt = null,
+                RestoredBy = null
+            };
+
+            var mod1 = new User
+            {
+                Username = "mod1",
+                PasswordHash = "AQAAAAIAAYagAAAAED2rs9SjaX3pu2CTEnn+zQ7BZmyYeHWYnD6QLOnwpthfMlk96bElhUhm7ElTbIDKlQ==",
+                FirstName = "Moderator",
+                LastName = "One",
+                Role = "moderator",
+                ModeratorId = null,
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null,
+                LastLogin = null,
+                IsDeleted = false,
+                DeletedAt = null,
+                DeletedBy = null,
+                RestoredAt = null,
+                RestoredBy = null
+            };
+
+            db.Users.AddRange(admin, admin2, mod1);
+            db.SaveChanges();
+
+            var user1 = new User
+            {
+                Username = "user1",
+                PasswordHash = "AQAAAAIAAYagAAAAEAl24nxVIY22QRB5OdNaWSlDWAVFL0NJRq5VxIpS2ReFYDg3Vh1KbnJbsNOnQPC/kw==",
+                FirstName = "User",
+                LastName = "One",
+                Role = "user",
+                ModeratorId = 3,
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null,
+                LastLogin = null,
+                IsDeleted = false,
+                DeletedAt = null,
+                DeletedBy = null,
+                RestoredAt = null,
+                RestoredBy = null
+            };
+
+            db.Users.Add(user1);
+            db.SaveChanges();
+        }
+
+        // Seed default system settings if missing (covers scenarios where migration seeding is bypassed)
+        var settingsToAdd = new List<SystemSettings>();
+        if (!db.SystemSettings.Any(s => s.Key == SystemSettingKeys.RateLimitEnabled))
+        {
+            settingsToAdd.Add(new SystemSettings
+            {
+                Key = SystemSettingKeys.RateLimitEnabled,
+                Value = "true",
+                Description = "تفعيل تحديد معدل الإرسال بين الرسائل",
+                Category = "RateLimit",
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null
+            });
+        }
+
+        if (!db.SystemSettings.Any(s => s.Key == SystemSettingKeys.RateLimitMinSeconds))
+        {
+            settingsToAdd.Add(new SystemSettings
+            {
+                Key = SystemSettingKeys.RateLimitMinSeconds,
+                Value = "3",
+                Description = "الحد الأدنى للتأخير بين الرسائل (بالثواني)",
+                Category = "RateLimit",
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null
+            });
+        }
+
+        if (!db.SystemSettings.Any(s => s.Key == SystemSettingKeys.RateLimitMaxSeconds))
+        {
+            settingsToAdd.Add(new SystemSettings
+            {
+                Key = SystemSettingKeys.RateLimitMaxSeconds,
+                Value = "7",
+                Description = "الحد الأقصى للتأخير بين الرسائل (بالثواني)",
+                Category = "RateLimit",
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null
+            });
+        }
+
+        if (settingsToAdd.Count > 0)
+        {
+            db.SystemSettings.AddRange(settingsToAdd);
+            db.SaveChanges();
+        }
+
+        // Ensure every moderator has a Quota and WhatsAppSession (idempotent)
+        var moderatorIds = db.Users
+            .Where(u => u.Role == "moderator" && !u.IsDeleted)
+            .Select(u => u.Id)
+            .ToList();
+
+        var quotasToAdd = new List<Quota>();
+        var sessionsToAdd = new List<WhatsAppSession>();
+
+        foreach (var moderatorId in moderatorIds)
+        {
+            if (!db.Quotas.Any(q => q.ModeratorUserId == moderatorId))
+            {
+                quotasToAdd.Add(new Quota
+                {
+                    ModeratorUserId = moderatorId,
+                    MessagesQuota = -1,
+                    ConsumedMessages = 0,
+                    QueuesQuota = -1,
+                    ConsumedQueues = 0,
+                    CreatedAt = utcNow,
+                    CreatedBy = moderatorId,
+                    UpdatedAt = utcNow,
+                    UpdatedBy = moderatorId,
+                    IsDeleted = false
+                });
+            }
+
+            if (!db.WhatsAppSessions.Any(s => s.ModeratorUserId == moderatorId))
+            {
+                sessionsToAdd.Add(new WhatsAppSession
+                {
+                    ModeratorUserId = moderatorId,
+                    Status = "disconnected",
+                    CreatedAt = utcNow,
+                    CreatedByUserId = moderatorId,
+                    LastActivityUserId = moderatorId,
+                    LastActivityAt = utcNow,
+                    IsPaused = true,
+                    PauseReason = "Extension not connected",
+                    IsDeleted = false
+                });
+            }
+        }
+
+        if (quotasToAdd.Count > 0)
+        {
+            db.Quotas.AddRange(quotasToAdd);
+        }
+
+        if (sessionsToAdd.Count > 0)
+        {
+            db.WhatsAppSessions.AddRange(sessionsToAdd);
+        }
+
+        if (quotasToAdd.Count > 0 || sessionsToAdd.Count > 0)
+        {
+            db.SaveChanges();
+        }
     }
 }
 catch (Exception ex)

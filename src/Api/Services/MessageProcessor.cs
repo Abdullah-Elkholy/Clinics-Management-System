@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.SignalR;
 using Clinics.Api.Hubs;
 using Clinics.Api.Services.Extension;
 using Microsoft.Extensions.DependencyInjection;
+using Clinics.Api.Logging;
 
 namespace Clinics.Api.Services
 {
@@ -64,8 +65,9 @@ namespace Clinics.Api.Services
                 ["ProcessorStartTime"] = DateTime.UtcNow
             });
 
-            _logger.LogInformation("ProcessorRun started: {ProcessorRunId}", processorRunId);
-            _logger.LogInformation("[Business] بدأ تشغيل معالج الرسائل: {ProcessorRunId}", processorRunId);
+            _logger.LogDebug("ProcessorRun started: {ProcessorRunId}", processorRunId);
+            // This method is invoked by a frequent Hangfire recurring job.
+            // Avoid emitting business logs on every tick to prevent log spam.
 
             // Priority order:
             // 1. Global WhatsAppSession.IsPaused (highest priority) - skip entire moderator
@@ -463,8 +465,8 @@ namespace Clinics.Api.Services
                             }
                         }
 
-                        // Arabic business log
-                        _logger.LogInformation("[Business] تم إرسال الرسالة بنجاح (ID: {MessageId}) إلى {Recipient}", m.Id, m.PatientPhone);
+                        // Arabic business log (UTF-8 file)
+                        _logger.LogBusinessInformation("تم إرسال الرسالة بنجاح (ID: {MessageId}) إلى {Recipient}", m.Id, m.PatientPhone);
 
                         // Notify via SignalR for real-time UI updates
                         await NotifyMessageUpdate(m, "sent");
@@ -663,8 +665,16 @@ namespace Clinics.Api.Services
             }
 
             // P2.8: Log processor run summary
-            _logger.LogInformation("ProcessorRun completed: {ProcessorRunId} - Processed={Processed}, Errors={Errors}, Total={Total}",
-                processorRunId, processedCount, errorCount, totalMessages);
+            if (totalMessages == 0 && errorCount == 0)
+            {
+                _logger.LogDebug("ProcessorRun completed: {ProcessorRunId} - Processed={Processed}, Errors={Errors}, Total={Total}",
+                    processorRunId, processedCount, errorCount, totalMessages);
+            }
+            else
+            {
+                _logger.LogInformation("ProcessorRun completed: {ProcessorRunId} - Processed={Processed}, Errors={Errors}, Total={Total}",
+                    processorRunId, processedCount, errorCount, totalMessages);
+            }
 
             // Update health metrics
             HealthController.UpdateProcessorState(processedCount, errorCount);
