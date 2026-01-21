@@ -43,10 +43,10 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Start pairing process - generates a short code for moderator to enter in extension.
-        /// Requires authenticated moderator.
+        /// Requires authenticated moderator or user under a moderator.
         /// </summary>
         [HttpPost("pairing/start")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult<PairingStartResponse>> StartPairing()
         {
             var moderatorId = GetModeratorId();
@@ -131,7 +131,7 @@ namespace Clinics.Api.Controllers
         /// Get all paired devices for current moderator.
         /// </summary>
         [HttpGet("devices")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult<IList<DeviceDto>>> GetDevices()
         {
             var moderatorId = GetModeratorId();
@@ -157,9 +157,10 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Revoke a device (logout).
+        /// Moderators and users under a moderator can revoke their own devices.
         /// </summary>
         [HttpPost("devices/{deviceId}/revoke")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult> RevokeDevice(Guid deviceId, [FromBody] RevokeDeviceRequest request)
         {
             var moderatorId = GetModeratorId();
@@ -223,7 +224,7 @@ namespace Clinics.Api.Controllers
         /// Use POST /devices/{deviceId}/revoke for soft-revoke with traceability.
         /// </summary>
         [HttpDelete("devices/{deviceId}")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         [Obsolete("Use RevokeDevice (POST /devices/{deviceId}/revoke) for soft-revoke with audit traceability")]
         public async Task<ActionResult> DeleteDevice(Guid deviceId)
         {
@@ -356,7 +357,7 @@ namespace Clinics.Api.Controllers
         /// Get active lease status for current moderator (for web UI).
         /// </summary>
         [HttpGet("lease/status")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult<LeaseStatusResponse>> GetLeaseStatus()
         {
             var moderatorId = GetModeratorId();
@@ -387,9 +388,10 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Force release the current lease from web UI.
+        /// Moderators and users can force release their own leases.
         /// </summary>
         [HttpPost("lease/force-release")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult> ForceReleaseLease()
         {
             var moderatorId = GetModeratorId();
@@ -516,9 +518,10 @@ namespace Clinics.Api.Controllers
         /// <summary>
         /// Check if a phone number has WhatsApp.
         /// This operation will hard-pause any active sending (unresumable until checks complete).
+        /// Moderators and users can check WhatsApp numbers.
         /// </summary>
         [HttpGet("whatsapp/check-number/{phoneNumber}")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult<CheckWhatsAppResponse>> CheckWhatsAppNumber(
             string phoneNumber,
             [FromQuery] string? countryCode = "+20",
@@ -570,9 +573,10 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Cancel any ongoing check session and allow sending to resume.
+        /// Moderators and users can cancel check sessions.
         /// </summary>
         [HttpPost("whatsapp/check-cancel")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult> CancelCheckSession()
         {
             var moderatorId = GetModeratorId();
@@ -587,9 +591,10 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Get active check session status.
+        /// Moderators and users can check session status.
         /// </summary>
         [HttpGet("whatsapp/check-status")]
-        [Authorize(Policy = "ModeratorOrAbove")]
+        [Authorize]
         public async Task<ActionResult<CheckSessionStatusResponse>> GetCheckSessionStatus()
         {
             var moderatorId = GetModeratorId();

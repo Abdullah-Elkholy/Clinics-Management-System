@@ -1,25 +1,6 @@
 {
   "configurations": [
     {
-      "name": "WA ........ WhatsApp Service (dotnet)",
-      "type": "coreclr",
-      "request": "launch",
-      "targetArchitecture": "x86_64",
-      "preLaunchTask": "build-whatsapp",
-      "program": "${workspaceFolder}/ClinicsManagementService/bin/Debug/net8.0/WhatsAppMessagingService.dll",
-      "args": [],
-      "cwd": "${workspaceFolder}/ClinicsManagementService",
-      "stopAtEntry": false,
-      "console": "integratedTerminal",
-      "env": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "ASPNETCORE_URLS": "http://localhost:5185"
-      },
-      "launchBrowser": {
-        "enabled": true
-      }
-    },
-    {
       "name": "BE only . Backend API (dotnet)",
       "type": "coreclr",
       "request": "launch",
@@ -62,14 +43,6 @@
       "configurations": [
         "FE only . Frontend (Next.js)",
         "BE only . Backend API (dotnet)"
-      ]
-    },
-    {
-      "name": "Run All",
-      "configurations": [
-        "FE only . Frontend (Next.js)",
-        "BE only . Backend API (dotnet)",
-        "WA ........ WhatsApp Service (dotnet)"
       ]
     }
   ]

@@ -370,11 +370,14 @@ export default function ExtensionPairingSection({
   };
 
   // Force release lease
+  const [isReleasingLease, setIsReleasingLease] = useState(false);
+
   const handleForceRelease = async () => {
     if (!confirm('هل تريد فصل الإضافة المتصلة حالياً؟')) {
       return;
     }
 
+    setIsReleasingLease(true);
     try {
       const result = await extensionApiClient.forceReleaseLease();
 
@@ -384,10 +387,29 @@ export default function ExtensionPairingSection({
         // Refresh all status to update Header and other components
         refreshCombinedStatus();
       } else {
-        addToast(result.error || 'فشل فصل الإضافة', 'error');
+        // Check for "no active lease" which means lease already expired - treat as success
+        const errorLower = (result.error || '').toLowerCase();
+        if (errorLower.includes('no active lease') || errorLower.includes('لا يوجد جلسة')) {
+          addToast('الإضافة غير متصلة بالفعل', 'info');
+          loadData();
+          refreshCombinedStatus();
+        } else {
+          addToast(result.error || 'فشل فصل الإضافة', 'error');
+        }
+      }
+    } catch (error: any) {
+      // Network errors or unexpected failures
+      const errorMsg = error?.message || 'حدث خطأ أثناء فصل الإضافة';
+      // If error indicates lease already gone, treat as success
+      if (errorMsg.toLowerCase().includes('no active lease') || errorMsg.toLowerCase().includes('404')) {
+        addToast('الإضافة غير متصلة بالفعل', 'info');
+        loadData();
+        refreshCombinedStatus();
+      } else {
+        addToast(errorMsg, 'error');
       }
     } finally {
-      // Always refresh after attempt
+      setIsReleasingLease(false);
     }
   };
 
@@ -412,19 +434,19 @@ export default function ExtensionPairingSection({
 
   return (
     <div className="space-y-6 mt-6">
-      {/* Extension Section Header */}
-      <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-        <h3 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
-          <i className="fas fa-puzzle-piece"></i>
-          إضافة المتصفح (Extension)
+      {/* Extension Section (WhatsApp Auth Tab) Header */}
+      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+        <h3 className="text-lg font-semibold text-green-900 flex items-center gap-2">
+          <i className="fab fa-whatsapp"></i>
+          مصادقة واتساب
         </h3>
-        <p className="text-sm text-blue-700 mt-2">
-          قم بتثبيت إضافة المتصفح على جهازك للتحكم في واتساب ويب مباشرة من متصفحك
+        <p className="text-sm text-green-700 mt-2">
+          إدارة حالة الواتساب وإضافة المتصفح (Extension) على جهازك للتحكم في واتساب ويب مباشرة من متصفحك
         </p>
       </div>
 
       {/* Session Info Card - Status Overview */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <h4 className="font-semibold text-gray-900 flex items-center gap-2">
             <i className="fas fa-info-circle text-blue-500"></i>
@@ -510,7 +532,7 @@ export default function ExtensionPairingSection({
       </div>
 
       {/* Current Extension Session Status */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">
           <h4 className="font-semibold text-gray-900 flex items-center gap-2">
             <i className="fas fa-broadcast-tower"></i>
@@ -573,17 +595,28 @@ export default function ExtensionPairingSection({
 
             <button
               onClick={handleForceRelease}
-              className="w-full px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+              disabled={isReleasingLease}
+              className={`w-full px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg transition-colors ${isReleasingLease ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-100'
+                }`}
             >
-              <i className="fas fa-unlink ml-2"></i>
-              فصل الإضافة
+              {isReleasingLease ? (
+                <>
+                  <i className="fas fa-spinner fa-spin ml-2"></i>
+                  جاري الفصل...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-unlink ml-2"></i>
+                  فصل الإضافة
+                </>
+              )}
             </button>
           </div>
         )}
       </div>
 
       {/* Pairing Code Section */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <i className="fas fa-qrcode"></i>
           إقران إضافة جديدة
@@ -668,7 +701,7 @@ export default function ExtensionPairingSection({
       </div>
 
       {/* Paired Devices Section */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-green-200 rounded-lg p-6">
         <h4 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <i className="fas fa-laptop"></i>
           الأجهزة المقترنة

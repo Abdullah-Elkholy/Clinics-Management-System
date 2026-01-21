@@ -15,18 +15,18 @@ export const MAX_PHONE_DIGITS = 15; // does NOT include leading '+'
 // Phone validation - accepts 1 to 15 digits (E.164 compliant)
 export const validatePhone = (phone: string): string | null => {
   if (!phone) return 'رقم الهاتف مطلوب';
-  
+
   // Remove spaces and common separators
   const cleaned = phone.replace(/[\s\-()]/g, '');
-  
+
   // Accept any combination of digits (with optional leading +) up to 15 digits
   // Examples: 01012345678, 201012345678, +201012345678, +966123456789
   const phoneRegex = /^(\+)?(\d{1,15})$/;
-  
+
   if (!phoneRegex.test(cleaned)) {
     return 'رقم الهاتف غير صحيح';
   }
-  
+
   const digitCount = cleaned.replace(/\D/g, '').length;
   if (digitCount < 7) {
     return 'رقم الهاتف قصير جداً';
@@ -34,20 +34,20 @@ export const validatePhone = (phone: string): string | null => {
   if (digitCount > 15) {
     return 'رقم الهاتف طويل جداً';
   }
-  
+
   return null;
 };
 
 // Email validation
 export const validateEmail = (email: string): string | null => {
   if (!email) return null; // Optional field
-  
+
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  
+
   if (!emailRegex.test(email)) {
     return 'البريد الإلكتروني غير صحيح';
   }
-  
+
   return null;
 };
 
@@ -73,7 +73,7 @@ export const validateName = (name: string, fieldName: string = 'الاسم'): st
   }
 
   // Allow only letters (Arabic/English), spaces, hyphens, and apostrophes
-  const nameRegex = /^[\u0600-\u06FFa-zA-Z\s\-']{3,100}$/;
+  const nameRegex = /^[\u0600-\u06FFa-zA-Z\s\-'.\/]{3,100}$/;
   if (!nameRegex.test(normalized)) {
     return `${fieldName} يحتوي على أحرف غير صالحة`;
   }
@@ -123,23 +123,23 @@ export const validateUsername = (username: string): string | null => {
 // Date of birth validation
 export const validateDateOfBirth = (date: string): string | null => {
   if (!date) return null; // Optional field
-  
+
   const birthDate = new Date(date);
   const today = new Date();
-  
+
   if (isNaN(birthDate.getTime())) {
     return 'التاريخ غير صحيح';
   }
-  
+
   if (birthDate > today) {
     return 'التاريخ يجب أن يكون في الماضي';
   }
-  
+
   const age = today.getFullYear() - birthDate.getFullYear();
   if (age > 120) {
     return 'التاريخ غير واقعي';
   }
-  
+
   return null;
 };
 
@@ -150,11 +150,11 @@ export const validateTextarea = (
   maxLength: number = 500
 ): string | null => {
   if (!text) return null; // Optional field
-  
+
   if (text.length > maxLength) {
     return `${fieldName} يجب أن لا يتجاوز ${maxLength} حرف`;
   }
-  
+
   return null;
 };
 
@@ -168,15 +168,15 @@ export const validateTextareaRequired = (
   if (!text || !text.trim()) {
     return `${fieldName} مطلوب`;
   }
-  
+
   if (text.trim().length < minLength) {
     return `${fieldName} يجب أن يكون ${minLength} أحرف على الأقل`;
   }
-  
+
   if (text.length > maxLength) {
     return `${fieldName} يجب أن لا يتجاوز ${maxLength} حرف`;
   }
-  
+
   return null;
 };
 
@@ -191,14 +191,14 @@ export const validateRequired = (value: string, fieldName: string = 'الحقل'
 // Validate form and return all errors
 export const validateForm = (formData: Record<string, any>, rules: Record<string, (value: any) => string | null>): ValidationError => {
   const errors: ValidationError = {};
-  
+
   Object.keys(rules).forEach((fieldName) => {
     const error = rules[fieldName](formData[fieldName]);
     if (error) {
       errors[fieldName] = error;
     }
   });
-  
+
   return errors;
 };
 
@@ -216,7 +216,7 @@ export const getFirstErrorField = (errors: ValidationError): string | null => {
 // Format phone number for display
 export const formatPhoneDisplay = (phone: string): string => {
   const cleaned = phone.replace(/\D/g, '');
-  
+
   if (cleaned.startsWith('20')) {
     // +20 format
     return `+${cleaned}`;
@@ -224,7 +224,7 @@ export const formatPhoneDisplay = (phone: string): string => {
     // 0 format to +20 format
     return `+20${cleaned.substring(1)}`;
   }
-  
+
   return phone;
 };
 
@@ -242,7 +242,7 @@ export const validationRules = {
       return validatePhone(value);
     },
   },
-  
+
   // For AddPatientModal
   addPatient: {
     name: (value: string) => validateName(value, 'اسم المريض'),
@@ -251,7 +251,7 @@ export const validationRules = {
     dateOfBirth: (value: string) => validateDateOfBirth(value),
     conditions: (value: string) => validateTextarea(value, 'الحالات الطبية', 500),
   },
-  
+
   // For AddTemplateModal
   addTemplate: {
     templateName: (value: string) => validateName(value, 'اسم الرسالة'),
@@ -275,21 +275,21 @@ export const validateNumber = (
   if (value === '' || value === null || value === undefined) {
     return `${fieldName} مطلوب`;
   }
-  
+
   const num = typeof value === 'string' ? parseInt(value, 10) : value;
-  
+
   if (isNaN(num)) {
     return `${fieldName} يجب أن يكون رقماً`;
   }
-  
+
   if (min !== undefined && num < min) {
     return `${fieldName} يجب أن يكون ${min} على الأقل`;
   }
-  
+
   if (max !== undefined && num > max) {
     return `${fieldName} يجب أن لا يتجاوز ${max}`;
   }
-  
+
   return null;
 };
 
@@ -298,30 +298,30 @@ export const validateCountryCode = (code: string, allowCustom: boolean = true): 
   if (!code || !code.trim()) {
     return 'كود الدولة مطلوب';
   }
-  
+
   // Handle spaces in country code (remove them for validation)
   // This ensures validation works correctly even if spaces are present
   const trimmedCode = code.trim().replace(/\s/g, '');
-  
+
   // Must start with +
   if (!trimmedCode.startsWith('+')) {
     return 'كود الدولة يجب أن يبدأ بـ +';
   }
-  
+
   // Get digits only
   const digitsOnly = trimmedCode.substring(1);
-  
+
   // Must contain only digits
   if (!/^\d+$/.test(digitsOnly)) {
     return 'كود الدولة يجب أن يحتوي على أرقام فقط بعد +';
   }
-  
+
   // Check length (1-4 digits allowed for custom, 1-3 for predefined)
   const maxLength = allowCustom ? 4 : 3;
   if (digitsOnly.length < 1 || digitsOnly.length > maxLength) {
     return `كود الدولة يجب أن يكون 1-${maxLength} أرقام`;
   }
-  
+
   return null;
 };
 
@@ -334,24 +334,24 @@ export const validateCellValue = (
 ): string | null => {
   // Convert to string
   const strValue = String(value).trim();
-  
+
   if (!strValue) {
     return `الخلية في الصف ${rowIndex}, العمود ${columnIndex} فارغة`;
   }
-  
+
   // Column-specific validations
   if (columnName === 'الاسم الكامل' || columnIndex === 1) {
     return validateName(strValue, 'الاسم');
   }
-  
+
   if (columnName === 'رقم الهاتف' || columnIndex === 3) {
     return validatePhone(strValue);
   }
-  
+
   if (columnName === 'كود الدولة' || columnIndex === 2) {
     return validateCountryCode(strValue);
   }
-  
+
   return null;
 };
 
@@ -363,11 +363,11 @@ export const validateExcelRow = (
   const errors = row.map((value, idx) => {
     // Skip order column (first column, optional)
     if (idx === 0) return null;
-    
+
     const header = headers[idx];
     return validateCellValue(value, header, 0, idx);
   });
-  
+
   return {
     hasErrors: errors.some((err) => err !== null),
     errors,
@@ -385,12 +385,12 @@ export const sanitizeInput = (input: string): string => {
 // Validate file name
 export const validateFileName = (fileName: string): string | null => {
   if (!fileName) return 'اسم الملف مطلوب';
-  
+
   const invalidChars = /[<>:"|?*/\\]/g;
   if (invalidChars.test(fileName)) {
     return 'اسم الملف يحتوي على أحرف غير صالحة';
   }
-  
+
   return null;
 };
 
@@ -404,15 +404,15 @@ export const validateLength = (
   if (!value && (minLength && minLength > 0)) {
     return `${fieldName} مطلوب`;
   }
-  
+
   if (minLength && value.length < minLength) {
     return `${fieldName} يجب أن يكون ${minLength} أحرف على الأقل`;
   }
-  
+
   if (maxLength && value.length > maxLength) {
     return `${fieldName} يجب أن لا يتجاوز ${maxLength} حرف`;
   }
-  
+
   return null;
 };
 
@@ -420,10 +420,10 @@ export const validateLength = (
 export const extendedValidationRules = {
   // For CQP (Current Queue Position)
   cqp: (value: string | number) => validateNumber(value, 'الموضع الحالي', 1, 1000),
-  
+
   // For ETS (Estimated Time Per Session)
   ets: (value: string | number) => validateNumber(value, 'الوقت المقدر لكل كشف', 1, 600),
-  
+
   // For cell editing in tables
   cellEdit: (value: string, columnIndex: number) => {
     if (!value.trim()) return 'القيمة مطلوبة';

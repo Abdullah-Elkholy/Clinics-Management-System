@@ -104,7 +104,7 @@ function QuotaTabContent({ currentUser }: { currentUser: User }) {
   const queuesPercentage = queuesQuota.limit === -1 ? 0 : Math.min(100, queuesQuota.percentage);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       {/* Quota Header */}
       <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4">
         <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
@@ -2034,11 +2034,10 @@ export default function UserManagementPanel() {
         {activeTab === 'quota' && (currentUser?.role === UserRole.Moderator || currentUser?.role === UserRole.User) && (
           <QuotaTabContent currentUser={currentUser} />
         )}
-      </div>
 
       {/* Log Detail Modal */}
       {selectedLog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -2153,7 +2152,7 @@ export default function UserManagementPanel() {
           </div>
 
           {/* Trash Tab Content - Users */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <button
               onClick={() => {
                 setExpandedTrashSections(prev => {
@@ -2162,7 +2161,7 @@ export default function UserManagementPanel() {
                   return next;
                 });
               }}
-              className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+              className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
             >
               <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
                 <i className="fas fa-users text-blue-600"></i>
@@ -2171,25 +2170,27 @@ export default function UserManagementPanel() {
               <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('users') ? 'rotate-180' : ''}`}></i>
             </button>
             {expandedTrashSections.has('users') && (
-              <TrashTab
-                entityType="user"
-                items={trashItems}
-                isLoading={isLoadingTrash}
-                isError={!!trashError}
-                errorMessage={trashError}
-                pageNumber={trashPageNumber}
-                pageSize={TRASH_PAGE_SIZE}
-                totalCount={trashTotalCount}
-                onPageChange={loadTrashUsers}
-                onRestore={handleRestoreUser}
-                adminOnly={false}
-                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-              />
+              <div className="p-4">
+                <TrashTab
+                  entityType="user"
+                  items={trashItems}
+                  isLoading={isLoadingTrash}
+                  isError={!!trashError}
+                  errorMessage={trashError}
+                  pageNumber={trashPageNumber}
+                  pageSize={TRASH_PAGE_SIZE}
+                  totalCount={trashTotalCount}
+                  onPageChange={loadTrashUsers}
+                  onRestore={handleRestoreUser}
+                  adminOnly={false}
+                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                />
+              </div>
             )}
           </div>
 
           {/* Trash Tab Content - Queues */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <button
               onClick={() => {
                 setExpandedTrashSections(prev => {
@@ -2198,7 +2199,7 @@ export default function UserManagementPanel() {
                   return next;
                 });
               }}
-              className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+              className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
             >
               <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
                 <i className="fas fa-layer-group text-purple-600"></i>
@@ -2207,25 +2208,27 @@ export default function UserManagementPanel() {
               <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('queues') ? 'rotate-180' : ''}`}></i>
             </button>
             {expandedTrashSections.has('queues') && (
-              <TrashTab
-                entityType="queue"
-                items={trashQueues.map(q => ({ ...q, name: q.doctorName, id: q.id }))}
-                isLoading={isLoadingTrashQueues}
-                isError={!!trashQueuesError}
-                errorMessage={trashQueuesError}
-                pageNumber={trashQueuesPageNumber}
-                pageSize={TRASH_PAGE_SIZE}
-                totalCount={trashQueuesTotalCount}
-                onPageChange={loadTrashQueues}
-                onRestore={handleRestoreQueue}
-                adminOnly={false}
-                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-              />
+              <div className="p-4">
+                <TrashTab
+                  entityType="queue"
+                  items={trashQueues.map(q => ({ ...q, name: q.doctorName, id: q.id }))}
+                  isLoading={isLoadingTrashQueues}
+                  isError={!!trashQueuesError}
+                  errorMessage={trashQueuesError}
+                  pageNumber={trashQueuesPageNumber}
+                  pageSize={TRASH_PAGE_SIZE}
+                  totalCount={trashQueuesTotalCount}
+                  onPageChange={loadTrashQueues}
+                  onRestore={handleRestoreQueue}
+                  adminOnly={false}
+                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                />
+              </div>
             )}
           </div>
 
           {/* Trash Tab Content - Templates */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <button
               onClick={() => {
                 setExpandedTrashSections(prev => {
@@ -2234,7 +2237,7 @@ export default function UserManagementPanel() {
                   return next;
                 });
               }}
-              className="w-full text-right flex items-center justify-between mb-4 hover:bg-gray-50 -m-2 p-2 rounded transition-colors"
+              className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
             >
               <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
                 <i className="fas fa-file-alt text-green-600"></i>
@@ -2243,21 +2246,23 @@ export default function UserManagementPanel() {
               <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('templates') ? 'rotate-180' : ''}`}></i>
             </button>
             {expandedTrashSections.has('templates') && (
-              <TrashTab
-                entityType="template"
-                items={trashTemplates.map(t => ({ ...t, name: t.title, id: t.id }))}
-                isLoading={isLoadingTrashTemplates}
-                isError={!!trashTemplatesError}
-                errorMessage={trashTemplatesError}
-                pageNumber={trashTemplatesPageNumber}
-                pageSize={TRASH_PAGE_SIZE}
-                totalCount={trashTemplatesTotalCount}
-                onPageChange={loadTrashTemplates}
-                onRestore={handleRestoreTemplate}
-                adminOnly={false}
-                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-                queues={queues}
-              />
+              <div className="p-4">
+                <TrashTab
+                  entityType="template"
+                  items={trashTemplates.map(t => ({ ...t, name: t.title, id: t.id }))}
+                  isLoading={isLoadingTrashTemplates}
+                  isError={!!trashTemplatesError}
+                  errorMessage={trashTemplatesError}
+                  pageNumber={trashTemplatesPageNumber}
+                  pageSize={TRASH_PAGE_SIZE}
+                  totalCount={trashTemplatesTotalCount}
+                  onPageChange={loadTrashTemplates}
+                  onRestore={handleRestoreTemplate}
+                  adminOnly={false}
+                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                  queues={queues}
+                />
+              </div>
             )}
           </div>
 
@@ -2293,30 +2298,30 @@ export default function UserManagementPanel() {
       {/* System Settings Section (Admin Only) */}
       {activeTab === 'systemSettings' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
         <div className="space-y-6">
-          {/* Header Banner - Same style as Logs/Trash tabs */}
-          <div className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg p-4 text-center">
-            <h3 className="text-xl font-bold text-white flex items-center justify-center gap-2">
+          {/* Header Banner */}
+          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
               <i className="fas fa-cog"></i>
               إعدادات النظام
             </h3>
-            <p className="text-purple-100 text-sm mt-1">
-              إدارة إعدادات النظام العامة
+            <p className="text-sm text-blue-700 mt-2">
+              إدارة إعدادات النظام الأساسية في حدود الاستخدام.
             </p>
           </div>
 
           {/* Rate Limit Settings Card */}
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            <div className="bg-purple-50 border-b border-purple-100 p-4">
-              <h4 className="text-lg font-semibold text-purple-900 flex items-center gap-2">
-                <i className="fas fa-shield-alt text-purple-600"></i>
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="bg-blue-50 border-b border-blue-100 p-4">
+              <h4 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
+                <i className="fas fa-shield-alt text-blue-600"></i>
                 إعدادات حماية الحساب (Rate Limiting)
               </h4>
-              <p className="text-purple-700 text-sm mt-1">
+              <p className="text-blue-700 text-sm mt-1">
                 تحكم في التأخير العشوائي بين الرسائل لحماية الحساب من اكتشاف النمط المتكرر
               </p>
             </div>
 
-            <div className="p-6">
+            <div className="p-4">
               {/* Current Settings Display */}
               {rateLimitSettings && (
                 <div className="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
@@ -2330,7 +2335,7 @@ export default function UserManagementPanel() {
                       <div className="text-gray-600">الحد الأدنى (ثانية)</div>
                     </div>
                     <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-                      <div className="text-2xl font-bold text-indigo-600">{rateLimitSettings.maxSeconds}</div>
+                      <div className="text-2xl font-bold text-blue-600">{rateLimitSettings.maxSeconds}</div>
                       <div className="text-gray-600">الحد الأقصى (ثانية)</div>
                     </div>
                     <div className="text-center p-3 bg-white rounded-lg shadow-sm">
@@ -2386,10 +2391,11 @@ export default function UserManagementPanel() {
                   </div>
                   <button
                     onClick={() => setTempEnabled(!tempEnabled)}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${tempEnabled ? 'bg-green-500' : 'bg-gray-300'
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${tempEnabled ? 'bg-green-500' : 'bg-gray-300'
                       }`}
                     role="switch"
                     aria-checked={tempEnabled}
+                    dir="ltr"
                   >
                     <span
                       className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${tempEnabled ? 'translate-x-5' : 'translate-x-0'
@@ -2467,12 +2473,12 @@ export default function UserManagementPanel() {
           </div>
 
           {/* Info Box */}
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <h4 className="text-amber-800 font-semibold mb-2 flex items-center gap-2">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="text-blue-800 font-semibold mb-2 flex items-center gap-2">
               <i className="fas fa-lightbulb"></i>
               ملاحظات مهمة
             </h4>
-            <ul className="text-amber-700 text-sm space-y-2 list-disc list-inside">
+            <ul className="text-blue-700 text-sm space-y-2 list-disc list-inside">
               <li>يتم توليد تأخير عشوائي بين الحد الأدنى والأقصى قبل كل رسالة</li>
               <li>التأخير العشوائي يمنع واتساب من اكتشاف نمط الإرسال الآلي</li>
               <li>القيم الافتراضية (3-7 ثانية) توفر توازناً جيداً بين السرعة والأمان</li>
@@ -2481,6 +2487,8 @@ export default function UserManagementPanel() {
           </div>
         </div>
       )}
+      </div>
+
 
       {/* Modals */}
       <EditUserModal selectedUser={null} />

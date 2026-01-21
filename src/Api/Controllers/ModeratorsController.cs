@@ -192,6 +192,24 @@ namespace Clinics.Api.Controllers
                 _db.Quotas.Add(quota);
                 await _db.SaveChangesAsync();
 
+                // Create default WhatsAppSession (disconnected + paused) so the moderator is ready immediately.
+                // Extension will later sync status to connected/pending/disconnected.
+                var session = new WhatsAppSession
+                {
+                    ModeratorUserId = moderator.Id,
+                    Status = "disconnected",
+                    CreatedAt = DateTime.UtcNow,
+                    CreatedByUserId = moderator.Id,
+                    LastActivityUserId = moderator.Id,
+                    LastActivityAt = DateTime.UtcNow,
+                    IsPaused = true,
+                    PauseReason = "Extension not connected",
+                    IsDeleted = false
+                };
+
+                _db.WhatsAppSessions.Add(session);
+                await _db.SaveChangesAsync();
+
                 var result = new ModeratorDto
                 {
                     Id = moderator.Id,

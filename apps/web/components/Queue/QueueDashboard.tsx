@@ -1230,6 +1230,7 @@ export default function QueueDashboard() {
                 isLoading={queuesLoading}
                 data={messageConditions || []}
                 isEmpty={() => false}
+                minHeight=""
               >
                 {/* Check if default template exists */}
                 {(() => {
@@ -1247,19 +1248,17 @@ export default function QueueDashboard() {
 
                   if (!hasDefaultTemplate) {
                     return (
-                      <div className="flex flex-col gap-4">
-                        <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
-                          <div className="flex items-start gap-3">
-                            <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0 text-lg"></i>
-                            <div className="flex-1">
-                              <h4 className="font-bold text-amber-900 mb-1">لم يتم تحديد رسالة افتراضية</h4>
-                              <p className="text-sm text-amber-800 mb-2">
-                                يجب إنشاء قالب رسالة بشرط افتراضي (DEFAULT) قبل تفعيل الرسائل الآلية
-                              </p>
-                              <p className="text-xs text-amber-700">
-                                توجه إلى قسم <span className="font-semibold">الرسائل</span> في الشريط الجانبي لإنشاء قالب افتراضي
-                              </p>
-                            </div>
+                      <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg px-4 py-3">
+                        <div className="flex items-start gap-3">
+                          <i className="fas fa-exclamation-triangle text-amber-600 mt-0.5 flex-shrink-0 text-lg"></i>
+                          <div className="flex-1">
+                            <h4 className="font-bold text-amber-900 mb-1">لم يتم تحديد رسالة افتراضية</h4>
+                            <p className="text-sm text-amber-800 mb-2">
+                              يجب إنشاء قالب رسالة بشرط افتراضي (DEFAULT) قبل تفعيل الرسائل الآلية
+                            </p>
+                            <p className="text-xs text-amber-700">
+                              توجه إلى قسم <span className="font-semibold">الرسائل</span> في الشريط الجانبي لإنشاء قالب افتراضي
+                            </p>
                           </div>
                         </div>
                       </div>

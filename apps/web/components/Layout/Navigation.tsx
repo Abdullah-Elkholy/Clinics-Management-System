@@ -42,6 +42,9 @@ export default function Navigation() {
       await userManagementActionsRef.current.fetchModerators();
     };
 
+    // Initial fetch of moderators
+    userManagementActionsRef.current.fetchModerators();
+
     window.addEventListener('userDataUpdated', handleUserDataUpdate);
 
     return () => {
@@ -212,8 +215,47 @@ export default function Navigation() {
     }
   }, [isIconOnly, isCollapsed, toggleCollapse]);
 
-  // Expanded moderators state (admin view only)
-  const [expandedModerators, setExpandedModerators] = React.useState<Set<string | number>>(new Set());
+  // Expanded moderators state (admin view only) - persist to localStorage
+  const [expandedModerators, setExpandedModerators] = React.useState<Set<string | number>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('expandedModerators');
+      if (stored) {
+        try {
+          const arr = JSON.parse(stored);
+          if (Array.isArray(arr)) {
+            return new Set(arr);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    return new Set();
+  });
+  // Track which moderator's task panels are currently active (for moderators without queues) - persist to localStorage
+  const [selectedModeratorId, setSelectedModeratorId] = React.useState<string | number | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('selectedModeratorId') || null;
+    }
+    return null;
+  });
+
+  // Persist expandedModerators to localStorage
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('expandedModerators', JSON.stringify(Array.from(expandedModerators)));
+    }
+  }, [expandedModerators]);
+
+  // Persist selectedModeratorId to localStorage
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (selectedModeratorId !== null) {
+        localStorage.setItem('selectedModeratorId', String(selectedModeratorId));
+      } else {
+        localStorage.removeItem('selectedModeratorId');
+      }
+    }
+  }, [selectedModeratorId]);
+
   const toggleModeratorExpanded = React.useCallback((moderatorId: string | number) => {
     setExpandedModerators(prev => {
       const next = new Set(prev);
@@ -233,31 +275,44 @@ export default function Navigation() {
     return queue?.moderatorId ?? null;
   }, [queues]);
 
-  // Auto-expand only the active moderator (whose queue is selected), collapse all others
+  // Auto-expand only the active moderator (whose queue is selected or task panel clicked), collapse all others
   // This ensures only one moderator is expanded at a time for clarity
+  // Skip on initial mount to allow URL sync to complete first (localStorage has the correct state)
+  const isInitialMountRef = React.useRef(true);
   React.useEffect(() => {
+    // Skip on initial mount - localStorage already has the correct state
+    // and we don't want to collapse before URL sync sets currentPanel
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+
     if (!isAdmin) return; // Only for admin view
 
     const currentModeratorId = getModeratorIdForQueue(selectedQueueId);
-    const isQueuePanel = currentPanel === 'ongoing' || currentPanel === 'failed' ||
-      currentPanel === 'completed' || (currentPanel === 'welcome' && selectedQueueId !== null);
+    const isTaskPanel = currentPanel === 'ongoing' || currentPanel === 'failed' || currentPanel === 'completed';
+    const isQueuePanel = isTaskPanel || (currentPanel === 'welcome' && selectedQueueId !== null);
     const isUpperPanel = currentPanel === 'messages' || currentPanel === 'management';
 
-    if (currentModeratorId && isQueuePanel) {
-      // Queue is selected and on a queue panel - expand ONLY this moderator, collapse all others
+    // Determine which moderator should be active
+    // Priority: queue-based moderator > explicitly selected moderator
+    const activeModId = currentModeratorId || (isTaskPanel ? selectedModeratorId : null);
+
+    if (activeModId && isQueuePanel) {
+      // Moderator is active (via queue or explicit selection) - expand ONLY this moderator
       setExpandedModerators(prev => {
-        // Only expand if not already expanded (avoid unnecessary state updates)
-        if (prev.has(currentModeratorId) && prev.size === 1) {
+        const normalizedModId = String(activeModId);
+        // Only update if not already in correct state
+        if (prev.size === 1 && Array.from(prev).some(id => String(id) === normalizedModId)) {
           return prev; // Already correct state
         }
         const next = new Set<string | number>();
-        next.add(currentModeratorId);
+        next.add(activeModId);
         return next;
       });
-
-      activeModeratorIdRef.current = currentModeratorId;
-    } else if (isUpperPanel || (!selectedQueueId && !isQueuePanel)) {
-      // Navigating to upper panels or queue deselected - collapse ALL moderators
+      activeModeratorIdRef.current = activeModId;
+    } else if (isUpperPanel) {
+      // Navigating to upper panels - collapse ALL moderators and clear selected moderator
       setExpandedModerators(prev => {
         if (prev.size === 0) {
           return prev; // Already collapsed
@@ -265,9 +320,10 @@ export default function Navigation() {
         return new Set();
       });
       activeModeratorIdRef.current = null;
+      setSelectedModeratorId(null);
     }
-    // If on queue panel with same moderator, keep expanded (no action needed - already handled above)
-  }, [selectedQueueId, currentPanel, isAdmin, getModeratorIdForQueue]);
+    // Keep current state if on task panel with no moderator identified
+  }, [selectedQueueId, currentPanel, isAdmin, getModeratorIdForQueue, selectedModeratorId]);
 
   // Collapsed-mode: track which moderator's quick menu is open
   const [openCollapsedMod, setOpenCollapsedMod] = React.useState<string | number | null>(null);
@@ -607,10 +663,12 @@ export default function Navigation() {
                             {/* Docked task panels for this moderator */}
                             <div className="border-t border-gray-100 bg-gradient-to-b from-blue-50 to-white p-2">
                               <div className="space-y-1">
-                                {/* Check if selected queue belongs to this moderator */}
+                                {/* Check if this moderator's task panels are active */}
                                 {(() => {
                                   const selectedQueue = selectedQueueId ? queues.find(q => String(q.id) === String(selectedQueueId)) : null;
-                                  const isThisModeratorActive = selectedQueue && String(selectedQueue.moderatorId) === String(mod.moderatorId);
+                                  const isThisModeratorActiveViaQueue = selectedQueue && String(selectedQueue.moderatorId) === String(mod.moderatorId);
+                                  // Moderator is active if their queue is selected OR they were explicitly selected
+                                  const isThisModeratorActive = isThisModeratorActiveViaQueue || String(selectedModeratorId) === String(mod.moderatorId);
 
                                   return (
                                     <>
@@ -620,11 +678,11 @@ export default function Navigation() {
                                         isActive={isThisModeratorActive && currentPanel === 'ongoing'}
                                         onClick={(e) => {
                                           e?.stopPropagation?.();
-                                          // If no queue selected or different moderator's queue, select first queue of this moderator
-                                          if (!selectedQueueId || !isThisModeratorActive) {
-                                            if (mod.queues && mod.queues.length > 0) {
-                                              setSelectedQueueId(mod.queues[0].id);
-                                            }
+                                          // Always track which moderator's panel was clicked
+                                          setSelectedModeratorId(mod.moderatorId);
+                                          // If moderator has queues and no queue selected, select first queue
+                                          if (mod.queues && mod.queues.length > 0 && !isThisModeratorActiveViaQueue) {
+                                            setSelectedQueueId(mod.queues[0].id);
                                           }
                                           setCurrentPanel('ongoing');
                                         }}
@@ -635,11 +693,11 @@ export default function Navigation() {
                                         isActive={isThisModeratorActive && currentPanel === 'failed'}
                                         onClick={(e) => {
                                           e?.stopPropagation?.();
-                                          // If no queue selected or different moderator's queue, select first queue of this moderator
-                                          if (!selectedQueueId || !isThisModeratorActive) {
-                                            if (mod.queues && mod.queues.length > 0) {
-                                              setSelectedQueueId(mod.queues[0].id);
-                                            }
+                                          // Always track which moderator's panel was clicked
+                                          setSelectedModeratorId(mod.moderatorId);
+                                          // If moderator has queues and no queue selected, select first queue
+                                          if (mod.queues && mod.queues.length > 0 && !isThisModeratorActiveViaQueue) {
+                                            setSelectedQueueId(mod.queues[0].id);
                                           }
                                           setCurrentPanel('failed');
                                         }}
@@ -650,11 +708,11 @@ export default function Navigation() {
                                         isActive={isThisModeratorActive && currentPanel === 'completed'}
                                         onClick={(e) => {
                                           e?.stopPropagation?.();
-                                          // If no queue selected or different moderator's queue, select first queue of this moderator
-                                          if (!selectedQueueId || !isThisModeratorActive) {
-                                            if (mod.queues && mod.queues.length > 0) {
-                                              setSelectedQueueId(mod.queues[0].id);
-                                            }
+                                          // Always track which moderator's panel was clicked
+                                          setSelectedModeratorId(mod.moderatorId);
+                                          // If moderator has queues and no queue selected, select first queue
+                                          if (mod.queues && mod.queues.length > 0 && !isThisModeratorActiveViaQueue) {
+                                            setSelectedQueueId(mod.queues[0].id);
                                           }
                                           setCurrentPanel('completed');
                                         }}

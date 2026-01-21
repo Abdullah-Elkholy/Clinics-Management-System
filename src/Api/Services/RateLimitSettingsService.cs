@@ -1,6 +1,7 @@
 using Clinics.Domain;
 using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Clinics.Api.Logging;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -155,8 +156,8 @@ namespace Clinics.Api.Services
             _logger.LogInformation("Rate limit settings updated by user {UserId}: Min={Min}s, Max={Max}s, Enabled={Enabled}",
                 updatedBy, minSeconds, maxSeconds, enabled);
 
-            // Arabic business log
-            _logger.LogInformation("[Business] قام المستخدم {UserId} بتحديث إعدادات حد السرعة: الحد الأدنى={Min}ث, الحد الأقصى={Max}ث, التفعيل={Enabled}",
+            // Arabic business log (UTF-8 file)
+            _logger.LogBusinessInformation("قام المستخدم {UserId} بتحديث إعدادات حد السرعة: الحد الأدنى={Min}ث, الحد الأقصى={Max}ث, التفعيل={Enabled}",
                 updatedBy, minSeconds, maxSeconds, enabled ? "نعم" : "لا");
         }
 
