@@ -16,6 +16,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Hangfire;
 using Hangfire.SqlServer;
+using Hangfire.PostgreSql;
 using Hangfire.Dashboard;
 using Hangfire.MemoryStorage;
 using System.Security.Claims;
@@ -230,20 +231,39 @@ if (string.IsNullOrEmpty(defaultConn) && useLocalSql)
     defaultConn = builder.Configuration["LocalSqlServer"] ?? "Server=BODYELKHOLY\\SQL2022;Database=ClinicsDb;User Id=sa;Password=123456;TrustServerCertificate=True;";
 }
 
-// Configure ApplicationDbContext: prefer SQL Server when we have a connection string, otherwise use InMemory for quick demo
+// Determine database provider: "PostgreSQL" for production, "SqlServer" for development (default)
+var databaseProvider = builder.Configuration["DatabaseProvider"] ?? Environment.GetEnvironmentVariable("DATABASE_PROVIDER") ?? "SqlServer";
+var isPostgreSQL = databaseProvider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase);
+
+// Configure ApplicationDbContext: supports SQL Server, PostgreSQL, or InMemory fallback
 if (!string.IsNullOrEmpty(defaultConn))
 {
     builder.Services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
     {
-        options.UseSqlServer(defaultConn);
+        if (isPostgreSQL)
+        {
+            options.UseNpgsql(defaultConn);
+        }
+        else
+        {
+            options.UseSqlServer(defaultConn);
+        }
         // Add interceptors: SignalR notifications and audit fields auto-population
         options.AddInterceptors(
             serviceProvider.GetRequiredService<Clinics.Api.Interceptors.AuditFieldsInterceptor>(),
             serviceProvider.GetRequiredService<Clinics.Api.Interceptors.ChangeNotificationInterceptor>()
         );
     });
-    // Configure Hangfire to use SQL Server storage (persistent job storage)
-    builder.Services.AddHangfire(config => config.UseSqlServerStorage(defaultConn));
+
+    // Configure Hangfire storage based on database provider
+    if (isPostgreSQL)
+    {
+        builder.Services.AddHangfire(config => config.UsePostgreSqlStorage(opts => opts.UseNpgsqlConnection(defaultConn)));
+    }
+    else
+    {
+        builder.Services.AddHangfire(config => config.UseSqlServerStorage(defaultConn));
+    }
 }
 else
 {

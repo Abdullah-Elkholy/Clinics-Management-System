@@ -1,0 +1,53 @@
+# Build artifacts
+**/bin
+**/obj
+**/out
+**/publish
+
+# IDE
+.idea
+.vscode
+*.suo
+*.user
+*.sln.docstates
+
+# Logs
+logs/
+*.log
+
+# Tests
+**/TestResults
+**/test-results
+tests/
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Screenshots and documentation
+screenshots/
+docs/
+*.md
+
+# Node modules (web app)
+**/node_modules
+**/.next
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Database
+*.bak
+*.mdf
+*.ldf
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+*.swp
+*.tmp

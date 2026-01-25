@@ -6,9 +6,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Enable standalone output for Docker deployment
+  output: 'standalone',
   // Help Next.js correctly infer the monorepo root to avoid ESLint/trace warnings
   outputFileTracingRoot: path.join(__dirname, '../..'),
-  
+
   // Optimize webpack configuration for better chunk loading
   webpack: (config, { isServer, dev }) => {
     if (!isServer && dev) {
@@ -21,7 +23,7 @@ const nextConfig = {
     }
     return config;
   },
-  
+
   // Increase timeout for chunk loading in development
   ...(process.env.NODE_ENV === 'development' && {
     onDemandEntries: {
