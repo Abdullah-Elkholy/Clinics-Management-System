@@ -1,45 +1,62 @@
-version: '3.8'
+# =============================================================================
+# Docker Compose - Development Environment
+# =============================================================================
+# Usage: docker-compose up -d
+# PostgreSQL-based setup for development
+
 services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: clinics-db-dev
+    environment:
+      POSTGRES_USER: clinics_user
+      POSTGRES_PASSWORD: clinics_dev_password
+      POSTGRES_DB: ClinicsDb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U clinics_user -d ClinicsDb" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # API Service
   api:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile
+    container_name: clinics-api-dev
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DATABASE_PROVIDER=PostgreSQL
+      - ConnectionStrings__DefaultConnection=Host=db;Database=ClinicsDb;Username=clinics_user;Password=clinics_dev_password
+      - Jwt__Key=DevKey_NotForProduction_ChangeThis_123456789!
     ports:
       - "5000:80"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
+  # Web Frontend
   web:
     build:
-      context: .
-      dockerfile: Dockerfile.web
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: clinics-web-dev
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+      - NODE_ENV=production
     ports:
       - "3000:3000"
     depends_on:
       - api
+    restart: unless-stopped
 
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    depends_on:
-      - api
-
-  db:
-    image: mcr.microsoft.com/mssql/server:2019-latest
-    environment:
-      SA_PASSWORD: "YourStrong!Passw0rd"
-      ACCEPT_EULA: "Y"
-    ports:
-      - "1433:1433"
-
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-
-  rabbitmq:
-    image: rabbitmq:3-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+volumes:
+  postgres_data_dev:
+    driver: local

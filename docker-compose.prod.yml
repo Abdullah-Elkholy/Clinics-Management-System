@@ -1,0 +1,100 @@
+# =============================================================================
+# Docker Compose - Production Environment
+# =============================================================================
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+# Secure PostgreSQL-based setup for production deployment
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: clinics-db-prod
+    environment:
+      POSTGRES_USER: ${DB_USER:-clinics_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Database password required}
+      POSTGRES_DB: ${DB_NAME:-ClinicsDb}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-clinics_user} -d ${DB_NAME:-ClinicsDb}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    # No port exposure in production - accessed only via internal network
+
+    # API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clinics-api-prod
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - DATABASE_PROVIDER=PostgreSQL
+      - ConnectionStrings__DefaultConnection=Host=db;Database=${DB_NAME:-ClinicsDb};Username=${DB_USER:-clinics_user};Password=${DB_PASSWORD}
+      - Jwt__Key=${JWT_SECRET_KEY:?JWT secret key required}
+    expose:
+      - "80"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Web Frontend
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: clinics-web-prod
+    environment:
+      - NEXT_PUBLIC_API_URL=${API_URL:-http://api}
+      - NODE_ENV=production
+    expose:
+      - "3000"
+    depends_on:
+      - api
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: clinics-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - certbot_data:/var/www/certbot:ro
+    depends_on:
+      - api
+      - web
+    restart: always
+
+  # Certbot for SSL (optional - run manually)
+  certbot:
+    image: certbot/certbot
+    container_name: clinics-certbot
+    volumes:
+      - certbot_data:/var/www/certbot
+      - ./nginx/ssl:/etc/letsencrypt
+    command: certonly --webroot -w /var/www/certbot --email ${SSL_EMAIL} -d ${DOMAIN} --agree-tos --no-eff-email
+    profiles:
+      - ssl
+
+volumes:
+  postgres_data_prod:
+    driver: local
+  certbot_data:
+    driver: local
