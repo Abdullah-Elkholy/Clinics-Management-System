@@ -1,0 +1,87 @@
+# =============================================================================
+# Docker Compose - Client Deployment (No Source Code)
+# =============================================================================
+# This file is safe to give to client - contains no source code
+# Usage: docker compose -f docker-compose.deploy.yml up -d
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: clinics-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-clinics_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Database password required}
+      POSTGRES_DB: ${DB_NAME:-ClinicsDb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-clinics_user} -d ${DB_NAME:-ClinicsDb}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - clinics-network
+
+  # API Service (from pre-built image)
+  api:
+    image: clinics-api:latest
+    container_name: clinics-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80
+      - DATABASE_PROVIDER=PostgreSQL
+      - ConnectionStrings__DefaultConnection=Host=db;Database=${DB_NAME:-ClinicsDb};Username=${DB_USER:-clinics_user};Password=${DB_PASSWORD}
+      - Jwt__Key=${JWT_SECRET_KEY:?JWT secret key required}
+    volumes:
+      - api_logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    networks:
+      - clinics-network
+
+  # Web Frontend (from pre-built image)
+  web:
+    image: clinics-web:latest
+    container_name: clinics-web
+    environment:
+      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost}
+      - NODE_ENV=production
+    depends_on:
+      - api
+    restart: always
+    networks:
+      - clinics-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: clinics-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - certbot_data:/var/www/certbot:ro
+    depends_on:
+      - api
+      - web
+    restart: always
+    networks:
+      - clinics-network
+
+networks:
+  clinics-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  api_logs:
+    driver: local
+  certbot_data:
+    driver: local

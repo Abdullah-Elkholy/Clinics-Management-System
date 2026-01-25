@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install dependencies
-RUN npm ci --only=production=false
+RUN npm ci --legacy-peer-deps
 
 # Stage 2: Build
 FROM node:20-alpine AS builder
@@ -40,7 +40,7 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
 # Copy necessary files
-COPY --from=builder /app/public ./public
+# COPY --from=builder /app/public ./public
 
 # Set permissions for prerender cache
 RUN mkdir .next && chown nextjs:nodejs .next
