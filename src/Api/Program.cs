@@ -15,7 +15,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Hangfire;
-using Hangfire.SqlServer;
 using Hangfire.PostgreSql;
 using Hangfire.Dashboard;
 using Hangfire.MemoryStorage;
@@ -362,8 +361,8 @@ try
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        // Apply any pending migrations (including seeded data in migration)
-        db.Database.Migrate();
+        // Create database from entity model (no migrations needed)
+        db.Database.EnsureCreated();
 
         var utcNow = DateTime.UtcNow;
 

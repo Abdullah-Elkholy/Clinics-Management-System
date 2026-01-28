@@ -1,24 +1,24 @@
 # =============================================================================
-# Docker Compose - Development Environment
+# Docker Compose - Development/Production Environment
 # =============================================================================
-# Usage: docker-compose up -d
-# PostgreSQL-based setup for development
+# Usage: docker compose up -d
+# Requires .env file with credentials (see .env.example)
 
 services:
   # PostgreSQL Database
   db:
     image: postgres:15-alpine
-    container_name: clinics-db-dev
+    container_name: clinics-db
     environment:
-      POSTGRES_USER: clinics_user
-      POSTGRES_PASSWORD: clinics_dev_password
-      POSTGRES_DB: ClinicsDb
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-ClinicsDb}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
-      - postgres_data_dev:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U clinics_user -d ClinicsDb" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME:-ClinicsDb}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,14 +29,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: clinics-api-dev
+    container_name: clinics-api
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Production}
       - DATABASE_PROVIDER=PostgreSQL
-      - ConnectionStrings__DefaultConnection=Host=db;Database=ClinicsDb;Username=clinics_user;Password=clinics_dev_password
-      - Jwt__Key=DevKey_NotForProduction_ChangeThis_123456789!
+      - ConnectionStrings__DefaultConnection=Host=db;Database=${DB_NAME:-ClinicsDb};Username=${DB_USER};Password=${DB_PASSWORD}
+      - Jwt__Key=${JWT_SECRET_KEY}
     ports:
-      - "5000:80"
+      - "${API_PORT:-5000}:80"
     depends_on:
       db:
         condition: service_healthy
@@ -47,16 +47,16 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
-    container_name: clinics-web-dev
+    container_name: clinics-web
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:5000
+      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:5000}
       - NODE_ENV=production
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     depends_on:
       - api
     restart: unless-stopped
 
 volumes:
-  postgres_data_dev:
+  postgres_data:
     driver: local

@@ -9,7 +9,7 @@ const elements = {
   pairedDisconnected: document.getElementById('paired-disconnected'),
   connected: document.getElementById('connected'),
   errorMessage: document.getElementById('error-message'),
-  
+
   apiUrlInput: document.getElementById('api-url-input'),
   saveUrlBtn: document.getElementById('save-url-btn'),
   pairingCodeInput: document.getElementById('pairing-code-input'),
@@ -19,7 +19,7 @@ const elements = {
   unpairBtn: document.getElementById('unpair-btn'),
   disconnectBtn: document.getElementById('disconnect-btn'),
   openWhatsAppBtn: document.getElementById('open-whatsapp-btn'),
-  
+
   waStatusDot: document.getElementById('wa-status-dot'),
   waStatusText: document.getElementById('wa-status-text'),
   moderatorDisplay: document.getElementById('moderator-display')
@@ -56,11 +56,11 @@ function hideAllViews() {
 // Update UI based on state
 function updateUI(state) {
   currentState = { ...currentState, ...state };
-  
+
   elements.loading.classList.add('hidden');
   elements.content.classList.remove('hidden');
   hideAllViews();
-  
+
   if (!currentState.apiBaseUrl) {
     // Not configured
     elements.notConfigured.classList.remove('hidden');
@@ -101,7 +101,7 @@ function updateWhatsAppStatus(status) {
     'phone_disconnected': { dot: 'red', text: 'Phone Disconnected' },
     'disconnected': { dot: 'red', text: 'Disconnected' }
   };
-  
+
   const info = statusMap[status] || statusMap['unknown'];
   elements.waStatusDot.className = `status-dot ${info.dot}`;
   elements.waStatusText.textContent = info.text;
@@ -127,7 +127,7 @@ elements.saveUrlBtn.addEventListener('click', async () => {
     showError('Please enter a valid URL');
     return;
   }
-  
+
   // Validate URL format
   try {
     new URL(url);
@@ -135,7 +135,7 @@ elements.saveUrlBtn.addEventListener('click', async () => {
     showError('Invalid URL format');
     return;
   }
-  
+
   elements.saveUrlBtn.disabled = true;
   try {
     await sendMessage({ type: 'SET_API_URL', url: url });
@@ -154,7 +154,7 @@ elements.pairBtn.addEventListener('click', async () => {
     showError('Please enter a valid 8-digit code');
     return;
   }
-  
+
   elements.pairBtn.disabled = true;
   elements.pairBtn.textContent = 'جاري الإقران...';
   try {
@@ -184,7 +184,10 @@ elements.pairBtn.addEventListener('click', async () => {
     }
   } catch (error) {
     let errorMsg = error.message || 'فشل الإقران';
-    if (errorMsg.includes('غير صالح') || errorMsg.includes('منتهي')) {
+    // Translate common errors to Arabic
+    if (errorMsg.toLowerCase().includes('failed to fetch') || errorMsg.toLowerCase().includes('network')) {
+      errorMsg = 'فشل الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت.';
+    } else if (errorMsg.includes('غير صالح') || errorMsg.includes('منتهي')) {
       errorMsg = 'رمز غير صالح أو منتهي الصلاحية. يرجى إنشاء رمز جديد من لوحة التحكم.';
     }
     showError(errorMsg);
@@ -258,7 +261,7 @@ elements.unpairBtn.addEventListener('click', async () => {
   if (!confirm('Are you sure you want to unpair this device?')) {
     return;
   }
-  
+
   elements.unpairBtn.disabled = true;
   try {
     await sendMessage({ type: 'UNPAIR' });

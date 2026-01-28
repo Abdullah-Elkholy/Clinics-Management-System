@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
+import { useQueue } from '@/contexts/QueueContext';
 import Modal from './Modal';
 import { validateCellValue, validateExcelRow, sanitizeInput, validateCountryCode } from '@/utils/validation';
 import { COUNTRY_CODES } from '@/constants';
@@ -10,6 +11,8 @@ import CountryCodeSelector from '@/components/Common/CountryCodeSelector';
 import CustomCountryCodeInput from '@/components/Common/CustomCountryCodeInput';
 import { getEffectiveCountryCode } from '@/utils/core.utils';
 import { FILE_UPLOAD_CONFIG } from '@/config/app.config';
+import { patientsApiClient } from '@/services/api/patientsApiClient';
+import logger from '@/utils/logger';
 
 interface FileError {
   type: string;
@@ -24,6 +27,7 @@ interface PreviewData {
 export default function UploadModal() {
   const { openModals, closeModal } = useModal();
   const { addToast } = useUI();
+  const { selectedQueueId, refreshPatients } = useQueue();
   const [file, setFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
   const [fileError, setFileError] = useState<FileError | null>(null);
@@ -36,8 +40,8 @@ export default function UploadModal() {
   const [editablePreview, setEditablePreview] = useState<(string | number)[][] | null>(null);
   const [selectedCountryCode, setSelectedCountryCode] = useState('+20');
   const [customCountryCode, setCustomCountryCode] = useState('');
-  const [cellErrors, setCellErrors] = useState<{[key: string]: string}>({});
-  const [rowCustomCountries, setRowCustomCountries] = useState<{[key: string]: string}>({});
+  const [cellErrors, setCellErrors] = useState<{ [key: string]: string }>({});
+  const [rowCustomCountries, setRowCustomCountries] = useState<{ [key: string]: string }>({});
 
   const isOpen = openModals.has('upload');
 
@@ -69,40 +73,40 @@ export default function UploadModal() {
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as (string | number)[][];
-      
+
       if (data.length < 2) {
         addToast('الملف يجب أن يحتوي على رأس أعمدة وبيانات', 'error');
         return;
       }
-      
+
       // Get headers from first row
       const headers = data[0].map(h => h?.toString() || '');
       const phoneColIdx = headers.findIndex(h => h.includes('هاتف') || h.toLowerCase().includes('phone'));
       const countryColIdx = headers.findIndex(h => h.includes('كود') || h.toLowerCase().includes('country'));
-      
+
       // Process data: normalize phone numbers and validate
       const processedData = data.map((row, rowIdx) => {
         if (rowIdx === 0) return row; // Skip header
-        
+
         const processedRow = [...row];
         const effectiveCountryCode = getEffectiveCountryCode(selectedCountryCode, customCountryCode);
-        
+
         // Normalize phone numbers
         if (phoneColIdx >= 0 && processedRow[phoneColIdx]) {
           const countryCode = countryColIdx >= 0 ? processedRow[countryColIdx]?.toString() : effectiveCountryCode;
           processedRow[phoneColIdx] = processedRow[phoneColIdx]?.toString().trim() || ''; // Store phone number as-is, no normalization
         }
-        
+
         return processedRow;
       });
-      
+
       // Validate data rows (skip header)
       let validationWarnings = 0;
-      const newCellErrors: {[key: string]: string} = {};
-      
+      const newCellErrors: { [key: string]: string } = {};
+
       for (let i = 1; i < Math.min(processedData.length, 6); i++) {
         const row = processedData[i];
-        
+
         // Validate phone number format if exists (national number only, no country code)
         if (phoneColIdx >= 0 && row[phoneColIdx]) {
           const phoneRegex = /^\d{5,15}$/; // 5-15 digits for national phone number
@@ -111,7 +115,7 @@ export default function UploadModal() {
             validationWarnings++;
           }
         }
-        
+
         // Validate country code if exists
         if (countryColIdx >= 0 && row[countryColIdx]) {
           const countryCodeError = validateCountryCode(row[countryColIdx]?.toString() || '', true);
@@ -121,13 +125,13 @@ export default function UploadModal() {
           }
         }
       }
-      
+
       setCellErrors(newCellErrors);
-      
+
       if (validationWarnings > 0) {
         addToast(`تحذير: ${validationWarnings} خطأ في البيانات (يمكن تصحيحها)`, 'warning');
       }
-      
+
       const previewSlice = processedData.slice(0, 6);
       setPreviewData({
         data: previewSlice,
@@ -142,11 +146,11 @@ export default function UploadModal() {
 
   const handleCellEdit = (rowIdx: number, cellIdx: number, value: string) => {
     if (!editablePreview || !previewData) return;
-    
+
     const columnName = previewData.data[0][cellIdx]?.toString() || '';
     let processedValue = sanitizeInput(value);
     const cellKey = `${rowIdx}-${cellIdx}`;
-    
+
     // Special handling for country code columns
     if (columnName === 'كود الدولة' || columnName.toLowerCase().includes('country')) {
       // If "OTHER" is selected, store the custom code in a separate state
@@ -157,12 +161,12 @@ export default function UploadModal() {
         // It's a regular code, validate it
         const validationError = validateCountryCode(processedValue, true);
         if (validationError) {
-          setCellErrors({...cellErrors, [cellKey]: validationError});
+          setCellErrors({ ...cellErrors, [cellKey]: validationError });
           addToast(`خطأ في كود الدولة: ${validationError}`, 'error');
           return;
         }
         // Clear any custom code for this row since they selected a predefined one
-        const newCustomCountries = {...rowCustomCountries};
+        const newCustomCountries = { ...rowCustomCountries };
         delete newCustomCountries[`${rowIdx}-${cellIdx}`];
         setRowCustomCountries(newCustomCountries);
       }
@@ -170,32 +174,32 @@ export default function UploadModal() {
     // Special handling for phone numbers
     else if (columnName === 'رقم الهاتف' || columnName.toLowerCase().includes('phone')) {
       // Get country code from the same row
-      const countryCodeIdx = previewData.data[0].findIndex(h => 
+      const countryCodeIdx = previewData.data[0].findIndex(h =>
         h?.toString().includes('كود') || h?.toString().toLowerCase().includes('country')
       );
       let rowCountryCode = countryCodeIdx >= 0 ? editablePreview[rowIdx][countryCodeIdx]?.toString() : selectedCountryCode;
-      
+
       // If it's "OTHER", use the custom code from rowCustomCountries
       if (rowCountryCode === 'OTHER') {
         rowCountryCode = rowCustomCountries[`${rowIdx}-${countryCodeIdx}`] || getEffectiveCountryCode(selectedCountryCode, customCountryCode);
       }
-      
+
       processedValue = value.trim(); // Store phone number as-is, no normalization
-      
+
       // Validate phone format (national number only, no country code)
       const phoneRegex = /^\d{5,15}$/; // 5-15 digits for national phone number
       if (!phoneRegex.test(processedValue)) {
-        setCellErrors({...cellErrors, [cellKey]: 'صيغة الهاتف غير صحيحة'});
+        setCellErrors({ ...cellErrors, [cellKey]: 'صيغة الهاتف غير صحيحة' });
         addToast('صيغة الهاتف غير صحيحة. يجب أن يكون الرقم بين 5 و 15 رقم', 'error');
         return;
       }
     }
-    
+
     // Clear error for this cell if validation passed
-    const newErrors = {...cellErrors};
+    const newErrors = { ...cellErrors };
     delete newErrors[cellKey];
     setCellErrors(newErrors);
-    
+
     const updated = editablePreview.map((row, rIdx) =>
       rIdx === rowIdx
         ? row.map((cell, cIdx) => (cIdx === cellIdx ? processedValue : cell))
@@ -207,20 +211,20 @@ export default function UploadModal() {
   const handleCustomCountryCodeInput = (rowIdx: number, cellIdx: number, customCode: string) => {
     const cellKey = `${rowIdx}-${cellIdx}`;
     const sanitizedCode = sanitizeInput(customCode);
-    
+
     // Validate the custom code format
     const validationError = validateCountryCode(sanitizedCode, true);
-    
+
     if (sanitizedCode && validationError) {
-      setCellErrors({...cellErrors, [cellKey]: validationError});
+      setCellErrors({ ...cellErrors, [cellKey]: validationError });
       return;
     }
-    
+
     // Clear error if validation passed
-    const newErrors = {...cellErrors};
+    const newErrors = { ...cellErrors };
     delete newErrors[cellKey];
     setCellErrors(newErrors);
-    
+
     // Store the custom code
     setRowCustomCountries({
       ...rowCustomCountries,
@@ -230,7 +234,7 @@ export default function UploadModal() {
 
   const addNewRowToPreview = () => {
     if (!editablePreview) return;
-    
+
     // Create new row with same structure as headers
     const newRow = editablePreview[0].map((header, _idx) => {
       const headerName = header?.toString() || '';
@@ -240,7 +244,7 @@ export default function UploadModal() {
       }
       return '';
     });
-    
+
     const updated = [...editablePreview, newRow];
     setEditablePreview(updated);
     addToast('تم إضافة صف جديد بنجاح', 'success');
@@ -250,26 +254,26 @@ export default function UploadModal() {
     try {
       // Import xlsx library dynamically
       const XLSX = await import('xlsx');
-      
+
       // Create a workbook with formatting
       const workbook = XLSX.utils.book_new();
       const sampleData = FILE_UPLOAD_CONFIG.SAMPLE_DATA.map(row => [...row]) as any[];
       const worksheet = XLSX.utils.aoa_to_sheet(sampleData);
-      
+
       // Set column widths
       worksheet['!cols'] = [
         { wch: 25 }, // الاسم الكامل
         { wch: 15 }, // كود الدولة
         { wch: 18 }, // رقم الهاتف
       ];
-      
+
       // Style header row
       const headerStyle = {
         fill: { fgColor: { rgb: 'FF4472C4' } },
         font: { bold: true, color: { rgb: 'FFFFFFFF' }, size: 12 },
         alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
       };
-      
+
       // Apply header styling
       for (let i = 0; i < FILE_UPLOAD_CONFIG.SAMPLE_DATA[0].length; i++) {
         const cellRef = XLSX.utils.encode_cell({ r: 0, c: i });
@@ -277,7 +281,7 @@ export default function UploadModal() {
           worksheet[cellRef].s = headerStyle;
         }
       }
-      
+
       // Style data rows with alternating colors
       for (let i = 1; i < FILE_UPLOAD_CONFIG.SAMPLE_DATA.length; i++) {
         for (let j = 0; j < FILE_UPLOAD_CONFIG.SAMPLE_DATA[i].length; j++) {
@@ -298,7 +302,7 @@ export default function UploadModal() {
           }
         }
       }
-      
+
       // Add header border
       for (let i = 0; i < FILE_UPLOAD_CONFIG.SAMPLE_DATA[0].length; i++) {
         const cellRef = XLSX.utils.encode_cell({ r: 0, c: i });
@@ -311,10 +315,10 @@ export default function UploadModal() {
           };
         }
       }
-      
+
       XLSX.utils.book_append_sheet(workbook, worksheet, 'نموذج المرضى');
       XLSX.writeFile(workbook, 'نموذج_المرضى.xlsx');
-      
+
       addToast('تم تحميل النموذج بنجاح', 'success');
     } catch (error) {
       addToast('حدث خطأ أثناء تحميل النموذج', 'error');
@@ -325,7 +329,7 @@ export default function UploadModal() {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       const error = validateFile(selectedFile);
-      
+
       if (error) {
         setFileError(error);
         setFile(null);
@@ -358,12 +362,12 @@ export default function UploadModal() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    
+
     const droppedFiles = e.dataTransfer.files;
     if (droppedFiles.length > 0) {
       const selectedFile = droppedFiles[0];
       const error = validateFile(selectedFile);
-      
+
       if (error) {
         setFileError(error);
         setFile(null);
@@ -406,36 +410,101 @@ export default function UploadModal() {
     }
 
     // Validate all rows and get country code column index
-    const countryCodeIdx = editablePreview[0].findIndex(h => 
+    const countryCodeIdx = editablePreview[0].findIndex(h =>
       h?.toString().includes('كود') || h?.toString().toLowerCase().includes('country')
     );
+
+    // Validate that a queue is selected
+    if (!selectedQueueId) {
+      addToast('يجب تحديد عيادة', 'error');
+      return;
+    }
+
+    const queueIdNum = Number(selectedQueueId);
+    if (isNaN(queueIdNum)) {
+      addToast('معرف القائمة غير صحيح', 'error');
+      return;
+    }
+
+    // Get column indices from header row
+    const headers = editablePreview[0];
+    const nameColIdx = headers.findIndex(h =>
+      h?.toString().includes('الاسم') || h?.toString().toLowerCase().includes('name')
+    );
+    const phoneColIdx = headers.findIndex(h =>
+      h?.toString().includes('هاتف') || h?.toString().toLowerCase().includes('phone')
+    );
+
+    if (nameColIdx === -1 || phoneColIdx === -1) {
+      addToast('لم يتم العثور على أعمدة الاسم أو الهاتف المطلوبة', 'error');
+      return;
+    }
 
     try {
       setIsProcessing(true);
       addToast('جاري معالجة الملف...', 'info');
 
       // Process data with custom country codes
-      const processedData = editablePreview.slice(1).map((row, rowIdx) => {
+      const dataRows = editablePreview.slice(1);
+      let addedCount = 0;
+      let failedCount = 0;
+
+      for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
+        const row = dataRows[rowIdx];
         const actualRowIdx = rowIdx + 1;
+
+        // Extract data from row
+        const fullName = row[nameColIdx]?.toString().trim() || '';
+        const phoneNumber = row[phoneColIdx]?.toString().trim() || '';
+
+        // Skip empty rows
+        if (!fullName || !phoneNumber) {
+          continue;
+        }
+
+        // Get country code
         let countryCode = row[countryCodeIdx]?.toString() || getEffectiveCountryCode(selectedCountryCode, customCountryCode);
-        
+
         // If country code is "OTHER", use the custom code from rowCustomCountries
         if (countryCode === 'OTHER') {
           const cellKey = `${actualRowIdx}-${countryCodeIdx}`;
           countryCode = rowCustomCountries[cellKey] || getEffectiveCountryCode(selectedCountryCode, customCountryCode);
         }
-        
-        return {
-          ...row,
-          countryCode
-        };
-      });
 
-      // Simulate processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+          await patientsApiClient.createPatient({
+            queueId: queueIdNum,
+            fullName,
+            phoneNumber,
+            countryCode,
+          });
+          addedCount++;
+        } catch (err) {
+          failedCount++;
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          logger.error(`Failed to add patient: ${fullName}`, {
+            error: errorMessage,
+            row: actualRowIdx,
+          });
+        }
+      }
 
-      addToast(`تم رفع الملف بنجاح - تم إضافة ${processedData.length} مريض`, 'success');
-      
+      // Show result message
+      if (addedCount > 0) {
+        // Refresh patients list
+        await refreshPatients(selectedQueueId);
+
+        const message = failedCount > 0
+          ? `تم إضافة ${addedCount} مريض بنجاح (${failedCount} فشل)`
+          : `تم رفع الملف بنجاح - تم إضافة ${addedCount} مريض`;
+        addToast(message, 'success');
+
+        // Dispatch event to notify other components
+        window.dispatchEvent(new CustomEvent('patientDataUpdated'));
+      } else {
+        addToast('فشل إضافة المرضى', 'error');
+      }
+
       // Reset all states
       setFile(null);
       setFileName('');
@@ -482,31 +551,28 @@ export default function UploadModal() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${
-            isDragging ? 'bg-blue-100 border-blue-400 opacity-60' : ''
-          } ${
-            fileError
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${isDragging ? 'bg-blue-100 border-blue-400 opacity-60' : ''
+            } ${fileError
               ? 'border-red-300 bg-red-50'
               : file
-              ? 'border-green-300 bg-green-50'
-              : 'border-gray-300 hover:border-gray-400'
-          }`}
+                ? 'border-green-300 bg-green-50'
+                : 'border-gray-300 hover:border-gray-400'
+            }`}
         >
           <i
-            className={`text-4xl mb-4 block ${
-              fileError
+            className={`text-4xl mb-4 block ${fileError
                 ? 'fas fa-exclamation-circle text-red-400'
                 : file
-                ? 'fas fa-check-circle text-green-500'
-                : 'fas fa-cloud-upload-alt text-gray-400'
-            }`}
+                  ? 'fas fa-check-circle text-green-500'
+                  : 'fas fa-cloud-upload-alt text-gray-400'
+              }`}
           ></i>
           <p className={`mb-2 ${fileError ? 'text-red-600' : file ? 'text-green-600' : 'text-gray-600'}`}>
             {fileError
               ? fileError.message
               : file
-              ? `تم اختيار: ${fileName}`
-              : 'اسحب الملف هنا أو انقر للاختيار'}
+                ? `تم اختيار: ${fileName}`
+                : 'اسحب الملف هنا أو انقر للاختيار'}
           </p>
           <input
             type="file"
@@ -599,11 +665,11 @@ export default function UploadModal() {
                           const hasError = cellErrors[cellKey];
                           const isCountryCol = headerName.includes('كود') || headerName.toLowerCase().includes('country');
                           const isPhoneCol = headerName.includes('هاتف') || headerName.toLowerCase().includes('phone');
-                          
+
                           // Determine if this is a known country code or "OTHER"
                           const isKnownCountry = COUNTRY_CODES.some(c => c.code === cell);
                           const isOtherCountry = cell === 'OTHER' || (!isKnownCountry && cell !== '');
-                          
+
                           return (
                             <td key={cellIdx} className="px-4 py-2 text-right">
                               {isCountryCol ? (
@@ -630,7 +696,7 @@ export default function UploadModal() {
                                     hasError={!!hasError}
                                     showOptgroups={true}
                                   />
-                                  
+
                                   {/* Custom Country Code Input - Show for 'OTHER' or unknown codes */}
                                   {isOtherCountry && (
                                     <CustomCountryCodeInput
@@ -650,7 +716,7 @@ export default function UploadModal() {
                                       showFullInfo={false}
                                     />
                                   )}
-                                  
+
                                   {hasError && (
                                     <div className="text-xs text-red-600">
                                       <i className="fas fa-exclamation-circle ml-1"></i>
@@ -668,11 +734,10 @@ export default function UploadModal() {
                                     value={cell}
                                     onChange={(e) => handleCellEdit(actualRowIdx, cellIdx, e.target.value)}
                                     autoComplete={isPhoneCol ? 'tel' : 'off'}
-                                    className={`w-full px-2 py-1 border rounded text-gray-700 focus:outline-none focus:ring-2 text-sm ${
-                                      hasError 
+                                    className={`w-full px-2 py-1 border rounded text-gray-700 focus:outline-none focus:ring-2 text-sm ${hasError
                                         ? 'border-red-400 bg-red-50 focus:ring-red-400'
                                         : 'border-green-300 focus:ring-green-400'
-                                    }`}
+                                      }`}
                                     placeholder={isPhoneCol ? '01012345678' : ''}
                                   />
                                   {hasError && (
@@ -875,11 +940,10 @@ export default function UploadModal() {
             type="button"
             onClick={handleUpload}
             disabled={isProcessing || !file}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 ${
-              isProcessing || !file
+            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-2 ${isProcessing || !file
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
+              }`}
           >
             {isProcessing ? (
               <>

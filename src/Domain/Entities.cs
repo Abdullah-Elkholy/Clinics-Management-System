@@ -1191,7 +1191,6 @@ namespace Clinics.Domain
         /// For SendMessage: { phoneNumber, messageText, messageId, sessionId }
         /// </summary>
         [Required]
-        [Column(TypeName = "nvarchar(max)")]
         public string PayloadJson { get; set; } = null!;
 
         /// <summary>
@@ -1240,7 +1239,6 @@ namespace Clinics.Domain
         /// JSON result from extension.
         /// Contains status, error details, observations, etc.
         /// </summary>
-        [Column(TypeName = "nvarchar(max)")]
         public string? ResultJson { get; set; }
 
         /// <summary>

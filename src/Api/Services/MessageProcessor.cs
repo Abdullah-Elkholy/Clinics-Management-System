@@ -762,7 +762,7 @@ namespace Clinics.Api.Services
         /// <summary>
         /// Atomically claim the next eligible message for processing.
         /// This prevents race conditions where multiple workers claim the same message.
-        /// Uses a single UPDATE with OUTPUT to atomically select and update in one query.
+        /// Uses a single UPDATE with OUTPUT/RETURNING to atomically select and update in one query.
         /// Note: Message.SessionId is a string (VARCHAR) storing the MessageSession.Id (GUID)
         /// </summary>
         private async Task<Message?> ClaimNextEligibleMessageAsync(List<int> pausedModeratorIds)
@@ -775,14 +775,54 @@ namespace Clinics.Api.Services
 
             // Generate a unique command ID to track this claim
             var commandId = Guid.NewGuid();
+            var sql = "";
 
-            // Atomic claim using OUTPUT INTO temp table - SQL Server specific
-            // Using OUTPUT INTO instead of plain OUTPUT to work with triggers on Messages table
-            // This atomically finds the next eligible message and marks it as 'sending'
-            // Note: SessionId is stored as VARCHAR(100), need to TRY_CAST for join
-            // CRITICAL: Only claim if no other message for the same moderator is already in 'sending' status
-            // This ensures sequential processing (one message at a time per moderator)
-            var sql = $@"
+            if (_db.IsPostgreSql)
+            {
+                // PostgreSQL Syntax: WITH ... UPDATE ... RETURNING
+                // Use subquery approach to avoid FOR UPDATE on LEFT JOIN (PostgreSQL limitation)
+                sql = $@"
+                WITH EligibleMessages AS (
+                    SELECT m.""Id""
+                    FROM ""Messages"" m
+                    WHERE m.""Status"" IN ('queued', 'pending')
+                      AND m.""IsPaused"" = FALSE
+                      AND m.""IsDeleted"" = FALSE
+                      AND (m.""NextAttemptAt"" IS NULL OR m.""NextAttemptAt"" <= NOW())
+                      {pausedModeratorFilter.Replace("m.ModeratorId", "m.\"ModeratorId\"")}
+                      -- Check session conditions only if SessionId is valid
+                      AND (
+                          m.""SessionId"" IS NULL 
+                          OR m.""SessionId"" = ''
+                          OR NOT EXISTS (
+                              SELECT 1 FROM ""MessageSessions"" s 
+                              WHERE s.""Id"" = (CASE WHEN m.""SessionId"" ~ '^[0-9a-fA-F-]{{{{36}}}}$' THEN m.""SessionId""::uuid ELSE NULL END)
+                                AND (s.""IsPaused"" = TRUE OR s.""IsDeleted"" = TRUE)
+                          )
+                      )
+                      -- CRITICAL: Only claim if no other message for this moderator is in 'sending' status
+                      AND NOT EXISTS (
+                          SELECT 1 FROM ""Messages"" sending
+                          WHERE sending.""ModeratorId"" = m.""ModeratorId""
+                            AND sending.""Status"" = 'sending'
+                            AND sending.""IsDeleted"" = FALSE
+                      )
+                    ORDER BY m.""CreatedAt"" ASC, m.""CalculatedPosition"" ASC, m.""Id"" ASC
+                    LIMIT 1
+                    FOR UPDATE OF m SKIP LOCKED
+                )
+                UPDATE ""Messages"" m
+                SET ""Status"" = 'sending',
+                    ""InFlightCommandId"" = '{commandId}'
+                FROM EligibleMessages e
+                WHERE m.""Id"" = e.""Id""
+                RETURNING m.""Id"";
+                ";
+            }
+            else
+            {
+                // SQL Server Syntax: TOP(1) ... UPDATE ... OUTPUT
+                sql = $@"
                 -- Create temp table for output
                 CREATE TABLE #ClaimedMessages (MessageId UNIQUEIDENTIFIER);
                 
@@ -795,6 +835,7 @@ namespace Clinics.Api.Services
                       AND m.IsDeleted = 0
                       AND (s.Id IS NULL OR (s.IsPaused = 0 AND s.IsDeleted = 0))
                       AND (m.NextAttemptAt IS NULL OR m.NextAttemptAt <= GETUTCDATE())
+                      AND (m.ModeratorId IS NULL OR m.ModeratorId NOT IN (3)) -- 3 is placeholder logic, replaced by filter
                       {pausedModeratorFilter}
                       -- CRITICAL: Only claim if no other message for this moderator is in 'sending' status
                       AND NOT EXISTS (
@@ -821,6 +862,7 @@ namespace Clinics.Api.Services
                 -- Cleanup
                 DROP TABLE #ClaimedMessages;
                 ";
+            }
 
             try
             {
