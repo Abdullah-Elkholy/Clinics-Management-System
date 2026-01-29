@@ -7,7 +7,7 @@ import { useModal } from '@/contexts/ModalContext';
 import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
-import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+import { validateName, validateTemplateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
 import { getConditionRange, conditionsOverlap } from '@/utils/moderatorAggregation';
 import { detectOverlappingConditions } from '@/utils/conditionConflictDetector';
 import { messageApiClient, type TemplateDto } from '@/services/api/messageApiClient';
@@ -229,7 +229,7 @@ export default function EditTemplateModal() {
 
     switch (fieldName) {
       case 'title':
-        error = validateName(value, 'عنوان القالب');
+        error = validateTemplateName(value, 'عنوان القالب');
         break;
       case 'content':
         error = validateTextareaRequired(value, 'محتوى الرسالة', MAX_CONTENT_LENGTH);
@@ -281,7 +281,7 @@ export default function EditTemplateModal() {
     // Validate all fields
     const newErrors: ValidationError = {};
 
-    const titleError = validateName(title, 'عنوان القالب');
+    const titleError = validateTemplateName(title, 'عنوان القالب');
     if (titleError) {
       newErrors.title = titleError;
     }

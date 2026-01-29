@@ -22,6 +22,7 @@ using System.Security.Claims;
 using Clinics.Api.Services.Telemetry;
 using Clinics.Api.Middleware;
 using System.Globalization;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
 
@@ -30,8 +31,8 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = ar
 static bool IsBusinessLogEvent(Serilog.Events.LogEvent logEvent)
     => logEvent.MessageTemplate.Text.StartsWith("[Business]", StringComparison.Ordinal);
 
-var mainLogPath = builder.Configuration["LogPaths:Main"] ?? "../../logs/main-.log";
-var businessLogPath = builder.Configuration["LogPaths:Business"] ?? "../../logs/business-.log";
+var mainLogPath = builder.Configuration["LogPaths:Main"] ?? "logs/main-.log";
+var businessLogPath = builder.Configuration["LogPaths:Business"] ?? "logs/business-.log";
 
 var mainOutputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}";
 
@@ -88,6 +89,11 @@ builder.Services.AddSwaggerGen(options =>
     }
     options.SchemaFilter<Clinics.Api.Swagger.OperatorSchemaFilter>();
 });
+
+// Configure Data Protection to persist keys to a specific directory
+// This prevents "No XML encryptor configured" warnings and keeps keys safe across restarts/deployments
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "DataProtection-Keys")));
 
 // (DbContext registration will be configured after we resolve the connection string below)
 
@@ -369,12 +375,31 @@ try
         // Seed required default users if Users table is empty
         if (!db.Users.Any())
         {
+            var root = new User
+            {
+                Username = "root",
+                PasswordHash = "AQAAAAIAAYagAAAAEOVl/Goh0ms6V7NLVmQCGR+EdEBstXbq5tARgYqkjcBvrR/Gx5YJ+FOtr4lFlV7ylg==",
+                FirstName = "عمدة",
+                LastName = "الكل ف الكل",
+                Role = "primary_admin",
+                ModeratorId = null,
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null,
+                LastLogin = null,
+                IsDeleted = false,
+                DeletedAt = null,
+                DeletedBy = null,
+                RestoredAt = null,
+                RestoredBy = null
+            };
+            //Username: admin Password: admin123
             var admin = new User
             {
                 Username = "admin",
                 PasswordHash = "AQAAAAIAAYagAAAAEFis02t8W90rJ6Pkqw6wwD45hx6QI2ArKLqW8tl77SnIidCWW43DLldUP2G1BhxkXw==",
-                FirstName = "Admin",
-                LastName = "One",
+                FirstName = "عمدة",
+                LastName = "الكل ف الكل",
                 Role = "primary_admin",
                 ModeratorId = null,
                 CreatedAt = utcNow,
@@ -388,12 +413,13 @@ try
                 RestoredBy = null
             };
 
+            //Username: admin2 Password: admin123
             var admin2 = new User
             {
                 Username = "admin2",
                 PasswordHash = "AQAAAAIAAYagAAAAEFmtEKOGKA5/ficlHNopu3+fZ1ly0ocuBAvJgl59wxjRQgGSFDlPgKNa+KR2a8vpTA==",
-                FirstName = "Admin",
-                LastName = "Two",
+                FirstName = "عمدة",
+                LastName = "المدير الاستبن",
                 Role = "secondary_admin",
                 ModeratorId = null,
                 CreatedAt = utcNow,
@@ -407,12 +433,13 @@ try
                 RestoredBy = null
             };
 
+            //Username: mod1 Password: mod123
             var mod1 = new User
             {
                 Username = "mod1",
                 PasswordHash = "AQAAAAIAAYagAAAAED2rs9SjaX3pu2CTEnn+zQ7BZmyYeHWYnD6QLOnwpthfMlk96bElhUhm7ElTbIDKlQ==",
-                FirstName = "Moderator",
-                LastName = "One",
+                FirstName = "عمدة",
+                LastName = "المشرف",
                 Role = "moderator",
                 ModeratorId = null,
                 CreatedAt = utcNow,
@@ -426,17 +453,15 @@ try
                 RestoredBy = null
             };
 
-            db.Users.AddRange(admin, admin2, mod1);
-            db.SaveChanges();
-
+            //Username: user1 Password: user123
             var user1 = new User
             {
                 Username = "user1",
                 PasswordHash = "AQAAAAIAAYagAAAAEAl24nxVIY22QRB5OdNaWSlDWAVFL0NJRq5VxIpS2ReFYDg3Vh1KbnJbsNOnQPC/kw==",
-                FirstName = "User",
-                LastName = "One",
+                FirstName = "عمدة",
+                LastName = "المستخدم",
                 Role = "user",
-                ModeratorId = 3,
+                ModeratorId = 4,
                 CreatedAt = utcNow,
                 UpdatedAt = null,
                 UpdatedBy = null,
@@ -448,9 +473,351 @@ try
                 RestoredBy = null
             };
 
-            db.Users.Add(user1);
+            db.Users.AddRange(root, admin, admin2, mod1, user1);
+            db.SaveChanges();
+
+            // Seed demo queue for mod1 (moderator)
+            if (!db.Queues.Any())
+            {
+                var demoQueue = new Queue
+                {
+                    DoctorName = "عيادة ميدتاون",
+                    ModeratorId = 4, // mod1's ID
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null,
+                    IsDeleted = false
+                };
+
+                db.Queues.Add(demoQueue);
+                db.SaveChanges();
+
+                // Seed DEFAULT message template with condition
+                var defaultCondition = new MessageCondition
+                {
+                    TemplateId = null, // Will be set after template is created
+                    QueueId = demoQueue.Id,
+                    Operator = "DEFAULT",
+                    Value = null,
+                    MinValue = null,
+                    MaxValue = null,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null
+                };
+                var equalCondition = new MessageCondition
+                {
+                    TemplateId = null, // Will be set after template is created
+                    QueueId = demoQueue.Id,
+                    Operator = "EQUAL",
+                    Value = 5,
+                    MinValue = null,
+                    MaxValue = null,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null
+                };
+                var lessThanCondition = new MessageCondition
+                {
+                    TemplateId = null, // Will be set after template is created
+                    QueueId = demoQueue.Id,
+                    Operator = "LESS",
+                    Value = 2,
+                    MinValue = null,
+                    MaxValue = null,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null
+                };
+                var rangeCondition = new MessageCondition
+                {
+                    TemplateId = null, // Will be set after template is created
+                    QueueId = demoQueue.Id,
+                    Operator = "RANGE",
+                    Value = null,
+                    MinValue = 3,
+                    MaxValue = 4,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null
+                };
+                var greaterThanCondition = new MessageCondition
+                {
+                    TemplateId = null, // Will be set after template is created
+                    QueueId = demoQueue.Id,
+                    Operator = "GREATER",
+                    Value = 5,
+                    MinValue = null,
+                    MaxValue = null,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null
+                };
+                var noCondition = new MessageCondition
+                {
+                    TemplateId = null, // Will be set after template is created
+                    QueueId = demoQueue.Id,
+                    Operator = "UNCONDITIONED",
+                    Value = null,
+                    MinValue = null,
+                    MaxValue = null,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null
+                };
+
+                db.Set<MessageCondition>().Add(defaultCondition);
+                db.Set<MessageCondition>().Add(equalCondition);
+                db.Set<MessageCondition>().Add(lessThanCondition);
+                db.Set<MessageCondition>().Add(rangeCondition);
+                db.Set<MessageCondition>().Add(greaterThanCondition);
+                db.Set<MessageCondition>().Add(noCondition);
+                db.SaveChanges();
+
+                var defaultTemplate = new Clinics.Domain.MessageTemplate
+                {
+                    Title = "رسالة الترحيب الافتراضية",
+                    Content = @"بص ياكبير انت معادك بعد {ETR}
+احلى مسا عليك يا{PN}
+ورقمك هو {PQP}, والرقم اللي عليه الدور دلوقتي هو {CQP}",
+                    ModeratorId = 4,
+                    QueueId = demoQueue.Id,
+                    MessageConditionId = defaultCondition.Id,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null,
+                    IsDeleted = false
+                };
+                var lessThanTemplate = new Clinics.Domain.MessageTemplate
+                {
+                    Title = "رسالة الترحيب للي أقل من اتنين",
+                    Content = "بنجرب الشرط اللي بيعمل أقل من 2",
+                    ModeratorId = 4,
+                    QueueId = demoQueue.Id,
+                    MessageConditionId = lessThanCondition.Id,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null,
+                    IsDeleted = false
+                };
+                var rangeTemplate = new Clinics.Domain.MessageTemplate
+                {
+                    Title = "رسالة الترحيب للي بين اتنين وتلاتة",
+                    Content = "بنجرب الشرط اللي بيعمل بين 2 و3",
+                    ModeratorId = 4,
+                    QueueId = demoQueue.Id,
+                    MessageConditionId = rangeCondition.Id,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null,
+                    IsDeleted = false
+                };
+                var greaterThanTemplate = new Clinics.Domain.MessageTemplate
+                {
+                    Title = "رسالة الترحيب للي أكبر من أربعة",
+                    Content = "بنجرب الشرط اللي بيعمل أكبر من 4",
+                    ModeratorId = 4,
+                    QueueId = demoQueue.Id,
+                    MessageConditionId = greaterThanCondition.Id,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null,
+                    IsDeleted = false
+                };
+                var equalTemplate = new Clinics.Domain.MessageTemplate
+                {
+                    Title = "رسالة الترحيب للي يساوي أربعة",
+                    Content = "بنجرب الشرط اللي بيعمل يساوي 4",
+                    ModeratorId = 4,
+                    QueueId = demoQueue.Id,
+                    MessageConditionId = equalCondition.Id,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null,
+                    IsDeleted = false
+                };
+                var noConditionTemplate = new Clinics.Domain.MessageTemplate
+                {
+                    Title = "رسالة الترحيب بدون شرط",
+                    Content = "مفيش شرط هنا ف الرسالة دي مش هتتبعت خالص",
+                    ModeratorId = 4,
+                    QueueId = demoQueue.Id,
+                    MessageConditionId = noCondition.Id,
+                    CreatedAt = utcNow,
+                    UpdatedAt = null,
+                    CreatedBy = 4,
+                    UpdatedBy = null,
+                    IsDeleted = false
+                };
+
+                db.MessageTemplates.AddRange(defaultTemplate, equalTemplate, lessThanTemplate, rangeTemplate, greaterThanTemplate, noConditionTemplate);
+                db.SaveChanges();
+
+                // Update condition with TemplateId
+                defaultCondition.TemplateId = defaultTemplate.Id;
+                equalCondition.TemplateId = equalTemplate.Id;
+                lessThanCondition.TemplateId = lessThanTemplate.Id;
+                rangeCondition.TemplateId = rangeTemplate.Id;
+                greaterThanCondition.TemplateId = greaterThanTemplate.Id;
+                noCondition.TemplateId = noConditionTemplate.Id;
+                db.Set<MessageCondition>().Update(defaultCondition);
+                db.Set<MessageCondition>().Update(equalCondition);
+                db.Set<MessageCondition>().Update(lessThanCondition);
+                db.Set<MessageCondition>().Update(rangeCondition);
+                db.Set<MessageCondition>().Update(greaterThanCondition);
+                db.Set<MessageCondition>().Update(noCondition);
+                db.SaveChanges();
+
+                // Seed sample patients
+                var samplePatients = new List<Patient>
+                {
+                    new Patient
+                    {
+                        FullName = "عبدالله الخولي",
+                        PhoneNumber = "1018542431",
+                        CountryCode = "+20",
+                        Position = 1,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                    new Patient
+                    {
+                        FullName = "اي اسم برقمي تاني",
+                        PhoneNumber = "1018542431",
+                        CountryCode = "+20",
+                        Position = 2,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                    new Patient
+                    {
+                        FullName = "مريم أحمد متسجلة برقمي برضو",
+                        PhoneNumber = "1018542431",
+                        CountryCode = "+20",
+                        Position = 3,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                    new Patient
+                    {
+                        FullName = "رقم غلط",
+                        PhoneNumber = "1018542433",
+                        CountryCode = "+20",
+                        Position = 4,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                    new Patient
+                    {
+                        FullName = "رقم صح",
+                        PhoneNumber = "1018542430",
+                        CountryCode = "+20",
+                        Position = 5,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                    new Patient
+                    {
+                        FullName = "رقم صح تو",
+                        PhoneNumber = "1018542432",
+                        CountryCode = "+20",
+                        Position = 6,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                    new Patient
+                    {
+                        FullName = "رقم غلط زيادة عشان نجرب",
+                        PhoneNumber = "1018542433",
+                        CountryCode = "+20",
+                        Position = 7,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                    new Patient
+                    {
+                        FullName = "آخر رقم غلط عشان نجرب صح",
+                        PhoneNumber = "1018542430",
+                        CountryCode = "+20",
+                        Position = 8,
+                        QueueId = demoQueue.Id,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        CreatedBy = 4,
+                        UpdatedBy = null,
+                        IsDeleted = false
+                    },
+                };
+
+                db.Patients.AddRange(samplePatients);
+                db.SaveChanges();
+            }
+        }
+        if (!db.Users.Where(u => u.Username == "root" && u.Role == "primary_admin" && u.IsDeleted == false).Any())
+        {
+            var root = new User
+            {
+                Username = "root",
+                PasswordHash = "AQAAAAIAAYagAAAAEOVl/Goh0ms6V7NLVmQCGR+EdEBstXbq5tARgYqkjcBvrR/Gx5YJ+FOtr4lFlV7ylg==",
+                FirstName = "المدير",
+                LastName = "الأساسي",
+                Role = "primary_admin",
+                ModeratorId = null,
+                CreatedAt = utcNow,
+                UpdatedAt = null,
+                UpdatedBy = null,
+                LastLogin = null,
+                IsDeleted = false,
+                DeletedAt = null,
+                DeletedBy = null,
+                RestoredAt = null,
+                RestoredBy = null
+            };
+
+            db.Users.Add(root);
             db.SaveChanges();
         }
+
 
         // Seed default system settings if missing (covers scenarios where migration seeding is bypassed)
         var settingsToAdd = new List<SystemSettings>();

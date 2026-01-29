@@ -8,7 +8,7 @@ import { useUI } from '@/contexts/UIContext';
 import { useQueue } from '@/contexts/QueueContext';
 import { useConfirmDialog } from '@/contexts/ConfirmationContext';
 import { messageApiClient } from '@/services/api/messageApiClient';
-import { validateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
+import { validateName, validateTemplateName, validateTextareaRequired, ValidationError } from '@/utils/validation';
 import { getConditionRange, conditionsOverlap } from '@/utils/moderatorAggregation';
 import logger from '@/utils/logger';
 import type { MessageTemplate } from '@/types/messageTemplate';
@@ -143,7 +143,7 @@ export default function AddTemplateModal() {
 
     switch (fieldName) {
       case 'title':
-        error = validateName(value, 'عنوان القالب');
+        error = validateTemplateName(value, 'عنوان القالب');
         break;
       case 'content':
         error = validateTextareaRequired(value, 'محتوى الرسالة', MAX_CONTENT_LENGTH);
@@ -194,8 +194,8 @@ export default function AddTemplateModal() {
     // Validate all fields
     const newErrors: ValidationError = {};
 
-    if (validateName(title, 'عنوان القالب')) {
-      newErrors.title = validateName(title, 'عنوان القالب') || '';
+    if (validateTemplateName(title, 'عنوان القالب')) {
+      newErrors.title = validateTemplateName(title, 'عنوان القالب') || '';
     }
 
     if (validateTextareaRequired(content, 'محتوى الرسالة', MAX_CONTENT_LENGTH)) {
