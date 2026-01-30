@@ -6,23 +6,38 @@ namespace Clinics.Api.Controllers
 {
     /// <summary>
     /// Controller for viewing system logs from log files.
-    /// Only accessible by primary admins.
+    /// Only accessible by admins.
     /// </summary>
     [ApiController]
     [Route("api/logs")]
-    [Authorize(Roles = "primary_admin")]
+    [Authorize(Roles = "primary_admin,secondary_admin")]
     public class LogsController : ControllerBase
     {
         private readonly ILogger<LogsController> _logger;
         private readonly IWebHostEnvironment _env;
+        private readonly IConfiguration _configuration;
         private readonly string _logsPath;
 
-        public LogsController(ILogger<LogsController> logger, IWebHostEnvironment env)
+        public LogsController(ILogger<LogsController> logger, IWebHostEnvironment env, IConfiguration configuration)
         {
             _logger = logger;
             _env = env;
-            // Logs are stored in ../../logs relative to the Api project
-            _logsPath = Path.Combine(env.ContentRootPath, "..", "..", "logs");
+            _configuration = configuration;
+
+            // Try to get logs path from configuration or environment variable
+            var configuredLogsPath = _configuration["LogPaths:Directory"]
+                ?? Environment.GetEnvironmentVariable("LOGS_PATH");
+
+            if (!string.IsNullOrEmpty(configuredLogsPath))
+            {
+                _logsPath = configuredLogsPath;
+            }
+            else
+            {
+                // Default to standard logs folder inside API root
+                // This matches the new configuration in Program.cs and appsettings.json
+                _logsPath = Path.Combine(_env.ContentRootPath, "logs");
+            }
         }
 
         /// <summary>
@@ -194,6 +209,10 @@ namespace Clinics.Api.Controllers
                     if (message.StartsWith("Executed DbCommand") || message.StartsWith("SELECT ") || message.StartsWith("INSERT "))
                         continue;
 
+                    // Skip noisy DataProtection and Kestrel logs
+                    if (IsNoisyLog(message))
+                        continue;
+
                     if (DateTime.TryParse(match.Groups[1].Value, out var timestamp))
                     {
                         entries.Add(new LogEntryDto
@@ -209,6 +228,22 @@ namespace Clinics.Api.Controllers
             }
 
             return entries;
+        }
+
+        private static bool IsNoisyLog(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return true;
+
+            // Kestrel startup noise
+            if (message.Contains("Overriding HTTP_PORTS")) return true;
+
+            // Data Protection noise (ephemeral keys) in containers
+            if (message.Contains("No XML encryptor configured")) return true;
+            if (message.Contains("Neither user profile nor HKLM registry available")) return true;
+            if (message.Contains("Using an in-memory repository")) return true;
+            if (message.Contains("Key {") && message.Contains("} may be persisted to storage in unencrypted form")) return true;
+
+            return false;
         }
 
         private static string GetArabicLevel(string level) => level switch

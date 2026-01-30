@@ -81,6 +81,31 @@ export const validateName = (name: string, fieldName: string = 'الاسم'): st
   return null;
 };
 
+// Template Name validation (Allows numbers)
+export const validateTemplateName = (name: string, fieldName: string = 'عنوان القالب'): string | null => {
+  if (!name || !name.trim()) {
+    return `${fieldName} مطلوب`;
+  }
+
+  const normalized = name.trim();
+
+  if (normalized.length < 3) {
+    return `${fieldName} يجب أن يكون 3 أحرف على الأقل`;
+  }
+
+  if (normalized.length > 100) {
+    return `${fieldName} يجب أن لا يتجاوز 100 حرف`;
+  }
+
+  // Allow letters (Arabic/English), NUMBERS, spaces, hyphens, underscores, parentheses, and apostrophes
+  const nameRegex = /^[\u0600-\u06FFa-zA-Z0-9\s\-'.\/()_]+$/;
+  if (!nameRegex.test(normalized)) {
+    return `${fieldName} يحتوي على أحرف غير صالحة`;
+  }
+
+  return null;
+};
+
 // Username validation
 export const validateUsername = (username: string): string | null => {
   if (!username || !username.trim()) {
@@ -254,7 +279,7 @@ export const validationRules = {
 
   // For AddTemplateModal
   addTemplate: {
-    templateName: (value: string) => validateName(value, 'اسم الرسالة'),
+    templateName: (value: string) => validateTemplateName(value, 'اسم الرسالة'),
     templateText: (value: string) => {
       if (!value || !value.trim()) return 'نص الرسالة مطلوب';
       if (value.trim().length < 10) return 'النص يجب أن يكون 10 أحرف على الأقل';

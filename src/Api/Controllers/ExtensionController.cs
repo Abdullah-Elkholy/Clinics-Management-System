@@ -617,6 +617,76 @@ namespace Clinics.Api.Controllers
 
         #endregion
 
+        #region Download Endpoints
+
+        /// <summary>
+        /// Download the Chrome extension package (.zip file).
+        /// No authentication required - public download.
+        /// </summary>
+        /// <returns>Extension .zip file</returns>
+        [HttpGet("download")]
+        [AllowAnonymous]
+        public IActionResult DownloadExtension()
+        {
+            try
+            {
+                var webHostEnv = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
+                var filePath = Path.Combine(webHostEnv.WebRootPath, "downloads", "clinics-whatsapp-extension.zip");
+
+                if (!System.IO.File.Exists(filePath))
+                {
+                    _logger.LogWarning("Extension package not found at: {FilePath}", filePath);
+                    return NotFound(new { message = "Extension package not available" });
+                }
+
+                var fileBytes = System.IO.File.ReadAllBytes(filePath);
+                _logger.LogInformation("Extension package downloaded. Size: {Size} bytes", fileBytes.Length);
+
+                return File(fileBytes, "application/zip", "clinics-whatsapp-extension.zip");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error downloading extension package");
+                return StatusCode(500, new { message = "Error downloading extension package" });
+            }
+        }
+
+        /// <summary>
+        /// Get extension package information without downloading.
+        /// </summary>
+        /// <returns>Package metadata</returns>
+        [HttpGet("download/info")]
+        [AllowAnonymous]
+        public IActionResult GetExtensionInfo()
+        {
+            try
+            {
+                var webHostEnv = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
+                var filePath = Path.Combine(webHostEnv.WebRootPath, "downloads", "clinics-whatsapp-extension.zip");
+
+                if (!System.IO.File.Exists(filePath))
+                {
+                    return NotFound(new { message = "Extension package not available" });
+                }
+
+                var fileInfo = new FileInfo(filePath);
+                return Ok(new
+                {
+                    fileName = "clinics-whatsapp-extension.zip",
+                    sizeBytes = fileInfo.Length,
+                    sizeKB = Math.Round(fileInfo.Length / 1024.0, 2),
+                    lastModified = fileInfo.LastWriteTimeUtc
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting extension package info");
+                return StatusCode(500, new { message = "Error getting extension package info" });
+            }
+        }
+
+        #endregion
+
         #region Helper Methods
 
         private int? GetModeratorId()

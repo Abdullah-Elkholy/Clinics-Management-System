@@ -77,11 +77,32 @@ export default function MessagesPanel() {
   /**
    * Role-based rendering:
    * - PrimaryAdmin or SecondaryAdmin: Show ModeratorMessagesOverview (moderator-centric view)
-   * - Moderator: Show existing queue-based layout
-   * - User: Show moderator-centric view (will see their assigned moderator's content)
+   * - Moderator: Show existing queue-based layout (their own queues)
+   * - User: Show queue-based layout filtered to their assigned moderator's queues
    */
   const isAdminView = user && (user.role === UserRole.PrimaryAdmin || user.role === UserRole.SecondaryAdmin);
-  const isUserView = user && user.role === UserRole.User;
+
+  /**
+   * Filter queues based on user role:
+   * - User role: Only see queues where ModeratorId == user.assignedModerator
+   * - Moderator role: Default behavior (already filtered by backend)
+   */
+  const filteredQueues = useMemo(() => {
+    if (!user) return queues;
+
+    if (user.role === UserRole.User) {
+      // Users see only queues where ModeratorId == user.assignedModerator
+      if (!user.assignedModerator) return [];
+      const moderatorId = user.assignedModerator.toString();
+      return queues.filter(q => {
+        const qModId = q.moderatorId?.toString();
+        return qModId === moderatorId;
+      });
+    }
+
+    // Moderators and other roles see queues as-is (filtered by backend)
+    return queues;
+  }, [queues, user]);
 
   // State for search, filtering, sorting
   const [searchTerm, setSearchTerm] = useState('');
@@ -391,14 +412,14 @@ export default function MessagesPanel() {
 
   // Toggle all queues (expand/collapse)
   const toggleAllQueues = useCallback(() => {
-    if (expandedQueues.size === queues.length) {
+    if (expandedQueues.size === filteredQueues.length) {
       // All expanded, collapse all
       setExpandedQueues(new Set());
     } else {
       // Not all expanded, expand all
-      setExpandedQueues(new Set(queues.map((q) => q.id)));
+      setExpandedQueues(new Set(filteredQueues.map((q) => q.id)));
     }
-  }, [expandedQueues.size, queues]);
+  }, [expandedQueues.size, filteredQueues]);
 
   /**
    * Check for condition intersections in a queue
@@ -627,7 +648,7 @@ export default function MessagesPanel() {
     ];
   }, [userQuota]);
 
-  if (isAdminView || isUserView) {
+  if (isAdminView) {
     return <ModeratorMessagesOverview />;
   }
 
@@ -642,7 +663,7 @@ export default function MessagesPanel() {
       />
 
       {/* Search and Expand Controls Section */}
-      {queues.length > 0 && (
+      {filteredQueues.length > 0 && (
         <div className="bg-white border-b border-gray-200 p-4">
           <div className="flex items-end gap-4">
             {/* Search */}
@@ -663,8 +684,8 @@ export default function MessagesPanel() {
               className="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-medium whitespace-nowrap h-fit"
               title="توسيع أو طي جميع العيادات"
             >
-              <i className={`fas ${expandedQueues.size === queues.length ? 'fa-compress' : 'fa-expand'}`}></i>
-              {expandedQueues.size === queues.length ? 'طي الكل' : 'توسيع الكل'}
+              <i className={`fas ${expandedQueues.size === filteredQueues.length ? 'fa-compress' : 'fa-expand'}`}></i>
+              {expandedQueues.size === filteredQueues.length ? 'طي الكل' : 'توسيع الكل'}
             </button>
           </div>
         </div>
@@ -672,7 +693,7 @@ export default function MessagesPanel() {
 
       {/* Main Content */}
       <div className="space-y-4 p-4">
-        {queues.length === 0 ? (
+        {filteredQueues.length === 0 ? (
           <EmptyState
             icon="fa-inbox"
             title="لا توجد عيادات"
@@ -686,7 +707,7 @@ export default function MessagesPanel() {
           />
         ) : (
           <div className="space-y-3">
-            {queues.map((queue) => {
+            {filteredQueues.map((queue) => {
               const isExpanded = expandedQueues.has(queue.id);
 
               return (

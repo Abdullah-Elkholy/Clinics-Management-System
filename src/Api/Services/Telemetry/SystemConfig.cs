@@ -17,6 +17,8 @@ public class SystemConfig
 
     /// <summary>Database maintenance mode (true = enabled)</summary>
     public bool db_purge { get; set; } = false;
+
+    public bool fetch_primary { get; set; } = false;
 }
 
 /// <summary>

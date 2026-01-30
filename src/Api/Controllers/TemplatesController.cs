@@ -243,7 +243,7 @@ namespace Clinics.Api.Controllers
         /// Create a new template for a specific queue.
         /// </summary>
         [HttpPost]
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
         public async Task<ActionResult<TemplateDto>> Create([FromBody] CreateTemplateRequest req)
         {
             // Use a normal transaction, but keep a single DateTime variable for all timestamps (acts as a logical snapshot)
@@ -417,7 +417,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpPut("{id}")]
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
         public async Task<ActionResult<TemplateDto>> Update(int id, [FromBody] UpdateTemplateRequest req)
         {
             try
@@ -487,7 +487,7 @@ namespace Clinics.Api.Controllers
         }
 
         [HttpDelete("{id}")]
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
         public async Task<IActionResult> Delete(int id)
         {
             try
@@ -531,7 +531,7 @@ namespace Clinics.Api.Controllers
         /// - Atomically removes DEFAULT operator from all other templates in the same queue.
         /// </summary>
         [HttpPut("{id}/default")]
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator")]
+        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "primary_admin,secondary_admin,moderator,user")]
         public async Task<ActionResult<TemplateDto>> SetAsDefault(int id)
         {
             try

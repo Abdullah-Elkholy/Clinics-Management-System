@@ -26,8 +26,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUI } from '@/contexts/UIContext';
-import { useConfirmDialog } from '@/contexts/ConfirmationContext';
-import { createDeleteConfirmation } from '@/utils/confirmationHelpers';
 import { UserRole } from '@/types/roles';
 import {
   userManagementService,
@@ -68,7 +66,6 @@ export interface UseUserManagementActions {
 export function useUserManagement(): readonly [UseUserManagementState, UseUserManagementActions] {
   const { user: currentUser } = useAuth();
   const { addToast } = useUI();
-  const { confirm } = useConfirmDialog();
 
   const [users, setUsers] = useState<User[]>([]);
   const [moderators, setModerators] = useState<User[]>([]);
@@ -213,12 +210,12 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         const result = await userManagementService.createUser(payload);
         if (result.success && result.data) {
           setUsers((prev) => [...prev, result.data]);
-          
+
           // If created user is a moderator, refetch moderators list for sidebar
           if (result.data.role === UserRole.Moderator) {
             await fetchModerators();
           }
-          
+
           addToast(`تم إنشاء المستخدم: ${result.data.firstName} ${result.data.lastName}`, 'success');
           return true;
         } else {
@@ -268,20 +265,20 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         // Check if user being updated is a moderator (before update)
         const userBeforeUpdate = users.find((u) => u.id === id);
         const wasModerator = userBeforeUpdate?.role === UserRole.Moderator;
-        
+
         const result = await userManagementService.updateUser(id, payload);
         if (result.success && result.data) {
           setUsers((prev) => prev.map((u) => (u.id === id ? result.data : u)));
           if (selectedUser?.id === id) {
             setSelectedUser(result.data);
           }
-          
+
           // Refetch moderators if user being updated is/was a moderator
           const isModerator = result.data.role === UserRole.Moderator;
           if (wasModerator || isModerator) {
             await fetchModerators();
           }
-          
+
           addToast(`تم تحديث المستخدم: ${result.data.firstName} ${result.data.lastName}`, 'success');
           return true;
         } else {
@@ -307,9 +304,8 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
    */
   const deleteUser = useCallback(
     async (id: string): Promise<boolean> => {
-      const confirmed = await confirm(createDeleteConfirmation('هذا المستخدم'));
-      if (!confirmed) return false;
-
+      // Confirmation is handled by the UI component (UserManagementPanel)
+      // which provides better context (names instead of generic "this user")
       setLoading(true);
       setError(null);
 
@@ -317,19 +313,19 @@ export function useUserManagement(): readonly [UseUserManagementState, UseUserMa
         // Check if user being deleted is a moderator
         const userToDelete = users.find((u) => u.id === id);
         const wasModerator = userToDelete?.role === UserRole.Moderator;
-        
+
         const result = await userManagementService.deleteUser(id);
         if (result.success) {
           setUsers((prev) => prev.filter((u) => u.id !== id));
           if (selectedUser?.id === id) {
             setSelectedUser(undefined);
           }
-          
+
           // Refetch moderators if deleted user was a moderator
           if (wasModerator) {
             await fetchModerators();
           }
-          
+
           addToast('تم حذف المستخدم بنجاح', 'success');
           return true;
         } else {

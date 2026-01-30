@@ -96,6 +96,22 @@ public class UserCascadeService : IUserCascadeService
                     }
                 }
 
+                // Soft-delete managed Users
+                var managedUsers = await _db.Users
+                    .Where(u => u.ModeratorId == userId && !u.IsDeleted)
+                    .ToListAsync();
+
+                foreach (var managedUser in managedUsers)
+                {
+                    managedUser.IsDeleted = true;
+                    managedUser.DeletedAt = operationTimestamp;
+                    managedUser.DeletedBy = deletedByUserId;
+
+                    _logger.LogInformation(
+                        "Managed User {UserId} soft-deleted via cascade from Moderator {ModeratorId}",
+                        managedUser.Id, userId);
+                }
+
                 // Soft-delete WhatsAppSession
                 var whatsappSession = await _db.Set<WhatsAppSession>()
                     .FirstOrDefaultAsync(s => s.ModeratorUserId == userId && !s.IsDeleted);
@@ -192,6 +208,29 @@ public class UserCascadeService : IUserCascadeService
                         _logger.LogError("Failed to restore Queue {QueueId} for moderator {UserId}: {Error}", queue.Id, userId, error);
                         return (false, $"فشل استعادة العيادة: {error}");
                     }
+                }
+
+                // Restore managed Users (if deleted during same cascade)
+                var managedUsers = await _db.Users
+                    .Where(u => u.ModeratorId == userId
+                        && u.IsDeleted
+                        && u.DeletedAt.HasValue
+                        && u.DeletedAt >= originalDeletedAt)
+                    .ToListAsync();
+
+                foreach (var managedUser in managedUsers)
+                {
+                    managedUser.IsDeleted = false;
+                    managedUser.DeletedAt = null;
+                    managedUser.DeletedBy = null;
+                    managedUser.RestoredAt = operationTimestamp;
+                    managedUser.RestoredBy = restoredBy;
+                    managedUser.UpdatedAt = operationTimestamp;
+                    managedUser.UpdatedBy = restoredBy;
+
+                    _logger.LogInformation(
+                        "Managed User {UserId} restored via cascade from Moderator {ModeratorId}",
+                        managedUser.Id, userId);
                 }
 
                 // Restore WhatsAppSession (if deleted during same cascade)

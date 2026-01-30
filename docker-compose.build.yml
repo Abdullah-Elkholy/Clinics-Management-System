@@ -1,0 +1,103 @@
+# =============================================================================
+# Docker Compose - Build on Server
+# =============================================================================
+# Usage: docker compose -f docker-compose.build.yml up -d --build
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: clinics-db
+    environment:
+      POSTGRES_USER: ${DB_USER:?Database user required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Database password required}
+      POSTGRES_DB: ${DB_NAME:-ClinicsDb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - clinics-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: clinics-api:latest
+    container_name: clinics-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      - DATABASE_PROVIDER=PostgreSQL
+      - ConnectionStrings__DefaultConnection=Host=db;Database=${DB_NAME:-ClinicsDb};Username=${DB_USER};Password=${DB_PASSWORD}
+      - Jwt__Key=${JWT_SECRET_KEY:?JWT secret key required}
+    volumes:
+      - api_logs:/app/logs
+    ports:
+      - "${API_PORT:-5000}:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+    networks:
+      - clinics-network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: clinics-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${SSL_EMAIL:?SSL email required}
+      PGADMIN_DEFAULT_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    restart: always
+    networks:
+      - clinics-network
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        - NEXT_PUBLIC_API_URL=${API_URL:-https://medtown.cloud}
+    image: clinics-web:latest
+    container_name: clinics-web
+    environment:
+      - NEXT_PUBLIC_API_URL=${API_URL:-https://medtown.cloud}
+      - NODE_ENV=production
+    depends_on:
+      - api
+    restart: always
+    networks:
+      - clinics-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: clinics-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment_package/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - certbot_data:/var/www/certbot:ro
+    depends_on:
+      - api
+      - web
+    restart: always
+    networks:
+      - clinics-network
+
+networks:
+  clinics-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  api_logs:
+  certbot_data:

@@ -8,6 +8,16 @@ namespace Clinics.Infrastructure
     {
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
+        // Database provider detection for multi-database support
+        public bool IsPostgreSql => Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+
+        // Helper method to get the correct UTC timestamp function based on provider
+        private string GetUtcNowSql() => IsPostgreSql ? "NOW()" : "SYSUTCDATETIME()";
+
+        // Helper method to get proper column quoting based on provider
+        // PostgreSQL uses "double quotes", SQL Server uses [brackets]
+        private string GetQuotedColumn(string column) => IsPostgreSql ? $"\"{column}\"" : $"[{column}]";
+
         public DbSet<User> Users => Set<User>();
         public DbSet<Queue> Queues => Set<Queue>();
         public DbSet<Patient> Patients => Set<Patient>();
@@ -106,8 +116,12 @@ namespace Clinics.Infrastructure
             // Fix: Disable OUTPUT clause for Messages table due to database triggers
             // SQL Server doesn't allow OUTPUT clause on tables with enabled triggers
             // See: https://aka.ms/efcore-docs-sqlserver-save-changes-and-output-clause
-            modelBuilder.Entity<Message>()
-                .ToTable(tb => tb.UseSqlOutputClause(false));
+            // Note: UseSqlOutputClause is SQL Server-specific, skip for PostgreSQL
+            if (!IsPostgreSql)
+            {
+                modelBuilder.Entity<Message>()
+                    .ToTable(tb => tb.UseSqlOutputClause(false));
+            }
 
             // FailedTask indexes REMOVED - entity deleted
 
@@ -120,7 +134,7 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<MessageCondition>()
                 .HasIndex(c => new { c.QueueId, c.Operator })
                 .IsUnique()
-                .HasFilter("[Operator] = 'DEFAULT'");
+                .HasFilter($"{GetQuotedColumn("Operator")} = 'DEFAULT'");
 
             modelBuilder.Entity<MessageSession>().HasIndex(s => new { s.Status, s.StartTime });
 
@@ -168,12 +182,12 @@ namespace Clinics.Infrastructure
 
             // ModeratorSettings index REMOVED - entity deprecated
 
-            modelBuilder.Entity<MessageTemplate>().Property(t => t.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            modelBuilder.Entity<Message>().Property(m => m.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            modelBuilder.Entity<MessageTemplate>().Property(t => t.CreatedAt).HasDefaultValueSql(GetUtcNowSql());
+            modelBuilder.Entity<Message>().Property(m => m.CreatedAt).HasDefaultValueSql(GetUtcNowSql());
             // FailedTask CreatedAt REMOVED
-            modelBuilder.Entity<Quota>().Property(q => q.UpdatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            modelBuilder.Entity<Session>().Property(s => s.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
-            modelBuilder.Entity<WhatsAppSession>().Property(w => w.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()");
+            modelBuilder.Entity<Quota>().Property(q => q.UpdatedAt).HasDefaultValueSql(GetUtcNowSql());
+            modelBuilder.Entity<Session>().Property(s => s.CreatedAt).HasDefaultValueSql(GetUtcNowSql());
+            modelBuilder.Entity<WhatsAppSession>().Property(w => w.CreatedAt).HasDefaultValueSql(GetUtcNowSql());
 
             // WhatsAppSession unique constraint - one session per moderator
             modelBuilder.Entity<WhatsAppSession>()
@@ -184,7 +198,7 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<WhatsAppSession>()
                 .HasQueryFilter(w => !w.IsDeleted);
 
-            modelBuilder.Entity<MessageSession>().Property(s => s.StartTime).HasDefaultValueSql("SYSUTCDATETIME()");
+            modelBuilder.Entity<MessageSession>().Property(s => s.StartTime).HasDefaultValueSql(GetUtcNowSql());
             // ModeratorSettings default values REMOVED - entity deprecated
 
             // Patient CountryCode default value
@@ -210,14 +224,14 @@ namespace Clinics.Infrastructure
             modelBuilder.Entity<ExtensionDevice>()
                 .HasIndex(d => new { d.ModeratorUserId, d.DeviceId })
                 .IsUnique()
-                .HasFilter("[RevokedAtUtc] IS NULL");
+                .HasFilter($"{GetQuotedColumn("RevokedAtUtc")} IS NULL");
 
             modelBuilder.Entity<ExtensionDevice>()
                 .HasIndex(d => d.ModeratorUserId);
 
             modelBuilder.Entity<ExtensionDevice>()
                 .Property(d => d.CreatedAtUtc)
-                .HasDefaultValueSql("SYSUTCDATETIME()");
+                .HasDefaultValueSql(GetUtcNowSql());
 
             // ExtensionPairingCode configuration
             modelBuilder.Entity<ExtensionPairingCode>()
@@ -241,14 +255,14 @@ namespace Clinics.Infrastructure
 
             modelBuilder.Entity<ExtensionPairingCode>()
                 .Property(p => p.CreatedAtUtc)
-                .HasDefaultValueSql("SYSUTCDATETIME()");
+                .HasDefaultValueSql(GetUtcNowSql());
 
             // ExtensionSessionLease configuration
             // CRITICAL: Only one active lease per moderator (filtered unique index)
             modelBuilder.Entity<ExtensionSessionLease>()
                 .HasIndex(l => l.ModeratorUserId)
                 .IsUnique()
-                .HasFilter("[RevokedAtUtc] IS NULL");
+                .HasFilter($"{GetQuotedColumn("RevokedAtUtc")} IS NULL");
 
             modelBuilder.Entity<ExtensionSessionLease>()
                 .HasOne(l => l.Moderator)
@@ -267,11 +281,11 @@ namespace Clinics.Infrastructure
 
             modelBuilder.Entity<ExtensionSessionLease>()
                 .Property(l => l.AcquiredAtUtc)
-                .HasDefaultValueSql("SYSUTCDATETIME()");
+                .HasDefaultValueSql(GetUtcNowSql());
 
             modelBuilder.Entity<ExtensionSessionLease>()
                 .Property(l => l.LastHeartbeatAtUtc)
-                .HasDefaultValueSql("SYSUTCDATETIME()");
+                .HasDefaultValueSql(GetUtcNowSql());
 
             // ExtensionCommand configuration
             modelBuilder.Entity<ExtensionCommand>()
@@ -300,7 +314,7 @@ namespace Clinics.Infrastructure
 
             modelBuilder.Entity<ExtensionCommand>()
                 .Property(c => c.CreatedAtUtc)
-                .HasDefaultValueSql("SYSUTCDATETIME()");
+                .HasDefaultValueSql(GetUtcNowSql());
 
             #endregion
 
@@ -313,7 +327,7 @@ namespace Clinics.Infrastructure
 
             modelBuilder.Entity<SystemSettings>()
                 .Property(s => s.CreatedAt)
-                .HasDefaultValueSql("SYSUTCDATETIME()");
+                .HasDefaultValueSql(GetUtcNowSql());
 
             // Seed default rate limit settings
             modelBuilder.Entity<SystemSettings>().HasData(

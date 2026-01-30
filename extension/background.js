@@ -224,7 +224,14 @@ async function completePairing(code) {
     }
   } catch (error) {
     console.error('[Extension] Pairing error:', error);
-    return { success: false, error: error.message };
+    // Translate network errors to Arabic
+    let errorMsg = error.message;
+    if (errorMsg.toLowerCase().includes('failed to fetch') || errorMsg.toLowerCase().includes('network') || errorMsg.toLowerCase().includes('err_connection')) {
+      errorMsg = 'فشل الاتصال بالخادم. يرجى التحقق من عنوان API والاتصال بالإنترنت.';
+    } else if (errorMsg.toLowerCase().includes('api url not configured')) {
+      errorMsg = 'لم يتم تكوين عنوان API. يرجى إعداد عنوان الخادم أولاً.';
+    }
+    return { success: false, error: errorMsg };
   }
 }
 

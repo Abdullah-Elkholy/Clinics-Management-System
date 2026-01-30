@@ -40,8 +40,11 @@ namespace Clinics.Api.Controllers
 
         /// <summary>
         /// Get the current user's moderator ID based on their role.
+        /// Returns (userId, moderatorId, isAdmin, error).
+        /// For admins: moderatorId is null (can view all), isAdmin is true.
+        /// For moderators/users: moderatorId is their effective ID, isAdmin is false.
         /// </summary>
-        private async Task<(int? userId, int? moderatorId, string? error)> GetUserAndModeratorId()
+        private async Task<(int? userId, int? moderatorId, bool isAdmin, string? error)> GetUserAndModeratorId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 ?? User.FindFirst("sub")?.Value
@@ -49,27 +52,28 @@ namespace Clinics.Api.Controllers
 
             if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
             {
-                return (null, null, "المستخدم غير مصرح له");
+                return (null, null, false, "المستخدم غير مصرح له");
             }
 
             // [FIX] For Admins, we don't enforce a moderator ID for VIEWING data
             if (User.IsInRole("primary_admin") || User.IsInRole("secondary_admin"))
             {
-                return (userId, null, null);
+                return (userId, null, true, null);  // isAdmin = true, can view all
             }
 
+            // For moderators and users: must get effective moderator ID
             try
             {
                 var effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
                 if (effectiveModeratorId <= 0)
                 {
-                    return (userId, null, "لم يتم العثور على المشرف المرتبط");
+                    return (userId, null, false, "لم يتم العثور على المشرف المرتبط");
                 }
-                return (userId, effectiveModeratorId, null);
+                return (userId, effectiveModeratorId, false, null);  // isAdmin = false
             }
             catch (InvalidOperationException)
             {
-                return (userId, null, "لم يتم العثور على المشرف المرتبط");
+                return (userId, null, false, "لم يتم العثور على المشرف المرتبط");
             }
         }
 
@@ -81,19 +85,26 @@ namespace Clinics.Api.Controllers
         [HttpGet("ongoing")]
         public async Task<IActionResult> GetOngoingSessions([FromQuery] int? moderatorId = null)
         {
-            var (userId, effectiveModeratorId, error) = await GetUserAndModeratorId();
+            var (userId, effectiveModeratorId, isAdmin, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
             }
 
-            // For Admins: use provided moderatorId parameter if specified
+            // [SECURITY FIX] For non-admins without a moderatorId, reject the request
+            // This prevents users who aren't linked to a moderator from seeing all data
+            if (!isAdmin && !effectiveModeratorId.HasValue)
+            {
+                return Unauthorized(new { success = false, error = "لم يتم العثور على المشرف المرتبط" });
+            }
+
+            // For Admins: use provided moderatorId parameter if specified (or null for all)
             // For non-Admins: always use their effective moderatorId (parameter ignored)
-            int? filterModeratorId = effectiveModeratorId ?? moderatorId;
+            int? filterModeratorId = isAdmin ? moderatorId : effectiveModeratorId;
 
             try
             {
-                var userRole = User.IsInRole("primary_admin") ? "PrimaryAdmin" : User.IsInRole("secondary_admin") ? "SecondaryAdmin" : "Moderator";
+                var userRole = isAdmin ? "Admin" : "Moderator/User";
                 var moderatorDisplay = filterModeratorId.HasValue ? filterModeratorId.Value.ToString() : "(All - Admin View)";
                 _logger.LogDebug("[SessionsController] Getting ongoing sessions for moderator {ModeratorId} (User: {UserId}, Role: {Role})", moderatorDisplay, userId, userRole);
 
@@ -203,14 +214,20 @@ namespace Clinics.Api.Controllers
         [HttpGet("failed")]
         public async Task<IActionResult> GetFailedSessions([FromQuery] int? moderatorId = null)
         {
-            var (userId, effectiveModeratorId, error) = await GetUserAndModeratorId();
+            var (userId, effectiveModeratorId, isAdmin, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
             }
 
+            // [SECURITY FIX] For non-admins without a moderatorId, reject the request
+            if (!isAdmin && !effectiveModeratorId.HasValue)
+            {
+                return Unauthorized(new { success = false, error = "لم يتم العثور على المشرف المرتبط" });
+            }
+
             // For Admins: use provided moderatorId parameter if specified
-            int? filterModeratorId = effectiveModeratorId ?? moderatorId;
+            int? filterModeratorId = isAdmin ? moderatorId : effectiveModeratorId;
 
             try
             {
@@ -308,14 +325,20 @@ namespace Clinics.Api.Controllers
         [HttpGet("completed")]
         public async Task<IActionResult> GetCompletedSessions([FromQuery] int? moderatorId = null)
         {
-            var (userId, effectiveModeratorId, error) = await GetUserAndModeratorId();
+            var (userId, effectiveModeratorId, isAdmin, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
             }
 
+            // [SECURITY FIX] For non-admins without a moderatorId, reject the request
+            if (!isAdmin && !effectiveModeratorId.HasValue)
+            {
+                return Unauthorized(new { success = false, error = "لم يتم العثور على المشرف المرتبط" });
+            }
+
             // For Admins: use provided moderatorId parameter if specified
-            int? filterModeratorId = effectiveModeratorId ?? moderatorId;
+            int? filterModeratorId = isAdmin ? moderatorId : effectiveModeratorId;
 
             try
             {
@@ -428,7 +451,7 @@ namespace Clinics.Api.Controllers
         [HttpPost("{sessionId}/pause")]
         public async Task<IActionResult> PauseSession(Guid sessionId)
         {
-            var (userId, moderatorId, error) = await GetUserAndModeratorId();
+            var (userId, moderatorId, isAdmin, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
@@ -439,7 +462,7 @@ namespace Clinics.Api.Controllers
                 var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
 
                 // Only filter by moderator if explicitly restricted (non-admin)
-                if (moderatorId.HasValue)
+                if (!isAdmin && moderatorId.HasValue)
                 {
                     query = query.Where(s => s.ModeratorId == moderatorId.Value);
                 }
@@ -485,7 +508,7 @@ namespace Clinics.Api.Controllers
         [HttpPost("{sessionId}/resume")]
         public async Task<IActionResult> ResumeSession(Guid sessionId)
         {
-            var (userId, moderatorId, error) = await GetUserAndModeratorId();
+            var (userId, moderatorId, isAdmin, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
@@ -496,7 +519,7 @@ namespace Clinics.Api.Controllers
                 var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
 
                 // Only filter by moderator if explicitly restricted (non-admin)
-                if (moderatorId.HasValue)
+                if (!isAdmin && moderatorId.HasValue)
                 {
                     query = query.Where(s => s.ModeratorId == moderatorId.Value);
                 }
@@ -542,7 +565,7 @@ namespace Clinics.Api.Controllers
         [HttpPost("{sessionId}/retry")]
         public async Task<IActionResult> RetrySession(Guid sessionId)
         {
-            var (userId, moderatorId, error) = await GetUserAndModeratorId();
+            var (userId, moderatorId, isAdmin, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
@@ -553,7 +576,7 @@ namespace Clinics.Api.Controllers
                 var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
 
                 // Only filter by moderator if explicitly restricted (non-admin)
-                if (moderatorId.HasValue)
+                if (!isAdmin && moderatorId.HasValue)
                 {
                     query = query.Where(s => s.ModeratorId == moderatorId.Value);
                 }
@@ -639,7 +662,7 @@ namespace Clinics.Api.Controllers
         [HttpDelete("{sessionId}")]
         public async Task<IActionResult> DeleteSession(Guid sessionId)
         {
-            var (userId, moderatorId, error) = await GetUserAndModeratorId();
+            var (userId, moderatorId, isAdmin, error) = await GetUserAndModeratorId();
             if (error != null)
             {
                 return Unauthorized(new { success = false, error });
@@ -650,7 +673,7 @@ namespace Clinics.Api.Controllers
                 var query = _db.MessageSessions.Where(s => s.Id == sessionId && !s.IsDeleted);
 
                 // Only filter by moderator if explicitly restricted (non-admin)
-                if (moderatorId.HasValue)
+                if (!isAdmin && moderatorId.HasValue)
                 {
                     query = query.Where(s => s.ModeratorId == moderatorId.Value);
                 }

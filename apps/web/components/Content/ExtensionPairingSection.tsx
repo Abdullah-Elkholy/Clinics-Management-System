@@ -759,14 +759,33 @@ export default function ExtensionPairingSection({
         )}
       </div>
 
+      {/* Download Extension Section */}
+      <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-4">
+        <h4 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
+          <i className="fas fa-download"></i>
+          تحميل إضافة Chrome
+        </h4>
+        <p className="text-sm text-blue-800 mb-3">
+          قم بتحميل ملف الإضافة المضغوط (.zip) وقم بتثبيته على متصفحك
+        </p>
+        <a
+          href={`${process.env.NEXT_PUBLIC_API_URL}/api/extension/download`}
+          download
+          className="inline-flex items-center px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+        >
+          <i className="fas fa-download ml-2"></i>
+          تحميل الإضافة
+        </a>
+      </div>
+
       {/* Help Section - Extension Installation */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
         <h4 className="font-semibold text-amber-900 mb-3 flex items-center gap-2">
           <i className="fas fa-download"></i>
-          تثبيت الإضافة يدوياً
+          خطوات تثبيت الإضافة
         </h4>
         <ol className="text-sm text-amber-800 space-y-2 mr-4 list-decimal">
-          <li>احصل على مجلد الإضافة <code className="bg-amber-100 px-1 rounded">extension</code> من مسؤول النظام</li>
+          <li>قم بتحميل ملف الإضافة من القسم أعلاه ثم فك الضغط عن الملف</li>
           <li>افتح المتصفح واذهب إلى صفحة الإضافات:
             <ul className="mr-4 mt-1 space-y-1 list-disc text-amber-700">
               <li><strong>Chrome:</strong> <code className="bg-amber-100 px-1 rounded text-xs">chrome://extensions</code></li>

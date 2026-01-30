@@ -57,7 +57,7 @@ function getTemplateStatus(
 } {
   // Prefer condition from messageConditions array, fallback to template.condition
   const operator = condition?.operator || template.condition?.operator;
-  
+
   if (operator === 'DEFAULT') {
     return {
       label: 'افتراضي',
@@ -96,21 +96,21 @@ function getTemplateStatus(
  */
 function getConditionDisplayText(condition: MessageCondition | undefined): string {
   if (!condition) return '';
-  
+
   // If there's no operator or value, it's a placeholder
   if (!condition.operator || (condition.value === undefined && condition.minValue === undefined)) {
     return '';
   }
-  
+
   const operatorLabels: Record<string, string> = {
     'EQUAL': 'يساوي',
     'GREATER': 'أكبر من',
     'LESS': 'أقل من',
     'RANGE': 'من...إلى',
   };
-  
+
   const label = operatorLabels[condition.operator] || condition.operator;
-  
+
   if (condition.operator === 'RANGE') {
     return `${label}: ${condition.minValue} - ${condition.maxValue}`;
   }
@@ -235,7 +235,7 @@ export default function ManageConditionsModal() {
 
     // Get condition from messageConditions array (real data)
     const condition = templateConditionMap.get(template.id);
-    
+
     const targetQueueId = queueId || selectedQueueId;
     if (!targetQueueId) {
       addToast('معرف العيادة غير متوفر', 'error');
@@ -258,13 +258,13 @@ export default function ManageConditionsModal() {
           // Only check conditions in the same queue
           const conditionQueueId = c.queueId?.toString();
           if (conditionQueueId !== String(targetQueueId)) return false;
-          
+
           // Skip the current condition being edited
           if (condition && c.id === condition.id) return false;
-          
+
           // Skip UNCONDITIONED and DEFAULT conditions (they don't conflict)
           if (c.operator === 'UNCONDITIONED' || c.operator === 'DEFAULT') return false;
-          
+
           // Check if conditions overlap
           return conditionsOverlap(newCondition as MessageCondition, c);
         })
@@ -290,7 +290,7 @@ export default function ManageConditionsModal() {
             return `- ${c.templateTitle} (${condDesc})`;
           })
           .join('\n');
-        
+
         const shouldProceed = await confirm({
           title: 'تعارض في الشروط',
           message: `هذا الشرط يتداخل مع الشروط التالية:\n\n${conflictDetails}\n\nهل تريد المتابعة على أي حال؟`,
@@ -312,12 +312,15 @@ export default function ManageConditionsModal() {
         const conditionBackendId = Number(condition.id);
         if (isNaN(conditionBackendId)) throw new Error('معرف الشرط غير صالح');
 
-        await messageApiClient.updateCondition(conditionBackendId, {
+        // Prepare update payload with proper null handling based on operator
+        const updatePayload: any = {
           operator: formData.operator as string,
-          value: formData.value,
-          minValue: formData.minValue,
-          maxValue: formData.maxValue,
-        });
+          value: formData.operator === 'RANGE' ? null : (formData.value ?? null),
+          minValue: formData.operator === 'RANGE' ? (formData.minValue ?? null) : null,
+          maxValue: formData.operator === 'RANGE' ? (formData.maxValue ?? null) : null,
+        };
+
+        await messageApiClient.updateCondition(conditionBackendId, updatePayload);
 
         // Update local state
         updateMessageCondition(condition.id, {
@@ -332,22 +335,25 @@ export default function ManageConditionsModal() {
         // Create new condition (shouldn't happen normally, but handle it)
         const templateBackendId = Number(template.id);
         const queueIdNum = Number(targetQueueId);
-        
+
         if (isNaN(templateBackendId)) throw new Error('معرف القالب غير صالح');
         if (isNaN(queueIdNum)) throw new Error('معرف العيادة غير صالح');
 
-        await messageApiClient.createCondition({
+        // Prepare create payload with proper null handling based on operator
+        const createPayload: any = {
           templateId: templateBackendId,
           queueId: queueIdNum,
           operator: formData.operator as string,
-          value: formData.value,
-          minValue: formData.minValue,
-          maxValue: formData.maxValue,
-        });
+          value: formData.operator === 'RANGE' ? null : (formData.value ?? null),
+          minValue: formData.operator === 'RANGE' ? (formData.minValue ?? null) : null,
+          maxValue: formData.operator === 'RANGE' ? (formData.maxValue ?? null) : null,
+        };
+
+        await messageApiClient.createCondition(createPayload);
 
         addToast('تم إنشاء الشرط بنجاح', 'success');
       }
-      
+
       // Refresh queue data to get updated state from backend
       if (targetQueueId) {
         await refreshQueueData(targetQueueId);
@@ -357,7 +363,7 @@ export default function ManageConditionsModal() {
           window.dispatchEvent(new CustomEvent('conditionDataUpdated'));
         }, 100);
       }
-      
+
       setEditingTemplateId(null);
       setFormErrors({});
     } catch (err: any) {
@@ -385,7 +391,7 @@ export default function ManageConditionsModal() {
     // Check real condition data from messageConditions array
     const condition = templateConditionMap.get(template.id);
     const operator = condition?.operator || template.condition?.operator;
-    
+
     if (operator === 'DEFAULT') {
       addToast('هذا القالب محدد بالفعل كافتراضي', 'info');
       return;
@@ -400,7 +406,7 @@ export default function ManageConditionsModal() {
       await messageApiClient.setTemplateAsDefault(templateBackendId);
 
       addToast('تم تحديد هذا القالب كافتراضي', 'success');
-      
+
       // Refresh queue data to get updated state from backend
       const targetQueueId = queueId || selectedQueueId;
       if (targetQueueId) {
@@ -451,7 +457,7 @@ export default function ManageConditionsModal() {
         });
 
         addToast('تم تحويل الشرط إلى بدون شرط بنجاح', 'success');
-        
+
         // Refresh to get unconditioned state
         const targetQueueId = queueId || selectedQueueId;
         if (targetQueueId) {
@@ -510,7 +516,7 @@ export default function ManageConditionsModal() {
       'GREATER': 'أكثر من',
       'LESS': 'أقل من',
       'RANGE': 'نطاق',
-      'UNCONDITIONED': 'بدون شرط', 
+      'UNCONDITIONED': 'بدون شرط',
       'DEFAULT': 'افتراضي',
     };
 
@@ -524,20 +530,20 @@ export default function ManageConditionsModal() {
   // Detect overlaps and format descriptions like QueueDashboard
   const overlappingConditions = useMemo(() => {
     const overlaps = detectOverlappingConditions(activeConditions as any);
-    
+
     // Transform descriptions to match QueueDashboard format
     return overlaps.map(overlap => {
       const cond1 = activeConditions.find(c => c.id === overlap.id1);
       const cond2 = activeConditions.find(c => c.id === overlap.id2);
-      
+
       if (!cond1 || !cond2) return overlap;
-      
+
       // Get template names
       const template1 = queueTemplates.find(t => t.id === cond1.templateId);
       const template2 = queueTemplates.find(t => t.id === cond2.templateId);
       const template1Name = template1?.title || 'قالب غير معروف';
       const template2Name = template2?.title || 'قالب غير معروف';
-      
+
       // Format like QueueDashboard: "تقاطع: TemplateName (conditionText) و TemplateName2 (conditionText2)"
       return {
         ...overlap,
@@ -545,7 +551,7 @@ export default function ManageConditionsModal() {
       };
     });
   }, [activeConditions, queueTemplates, getConditionText]);
-  
+
   // Create a set of condition IDs that are in conflict for quick lookup
   const conflictingConditionIds = useMemo(() => {
     const ids = new Set<string>();
@@ -585,11 +591,11 @@ export default function ManageConditionsModal() {
               const condB = templateConditionMap.get(b.id);
               const opA = condA?.operator || a.condition?.operator;
               const opB = condB?.operator || b.condition?.operator;
-              
+
               // DEFAULT always comes first
               if (opA === 'DEFAULT' && opB !== 'DEFAULT') return -1;
               if (opA !== 'DEFAULT' && opB === 'DEFAULT') return 1;
-              
+
               // Otherwise maintain original order
               return 0;
             }).map((template) => {
@@ -598,7 +604,7 @@ export default function ManageConditionsModal() {
               // Use real condition data for status
               const status = getTemplateStatus(template, condition);
               const isEditing = editingTemplateId === template.id;
-              
+
               // Check if this template's condition is in conflict
               const isInConflict = condition && condition.id && conflictingConditionIds.has(condition.id);
 
@@ -710,17 +716,16 @@ export default function ManageConditionsModal() {
                     </div>
                   ) : (
                     // View Mode - Template status card
-                    <div className={`p-4 border-2 rounded-lg transition ${
-                      isInConflict
-                        ? 'bg-red-100 border-red-400 hover:bg-red-150'
-                        : status.color.includes('red')
+                    <div className={`p-4 border-2 rounded-lg transition ${isInConflict
+                      ? 'bg-red-100 border-red-400 hover:bg-red-150'
+                      : status.color.includes('red')
                         ? 'hover:bg-red-50'
                         : status.color.includes('blue')
-                        ? 'hover:bg-blue-50'
-                        : status.color.includes('green')
-                        ? 'hover:bg-green-50'
-                        : 'hover:bg-gray-50'
-                    } ${isInConflict ? 'border-red-400' : status.color}`}>
+                          ? 'hover:bg-blue-50'
+                          : status.color.includes('green')
+                            ? 'hover:bg-green-50'
+                            : 'hover:bg-gray-50'
+                      } ${isInConflict ? 'border-red-400' : status.color}`}>
                       <div className="space-y-2">
                         {/* Header: Title and Status Badge */}
                         <div className="flex items-start justify-between gap-3">

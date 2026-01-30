@@ -19,7 +19,7 @@ interface ProtectedRouteProps {
  * - Handles direct navigation to protected routes gracefully
  */
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, user, isValidating } = useAuth();
+  const { isAuthenticated, user, isValidating, connectionError, retryConnection } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [isInitialized, setIsInitialized] = useState(false);
@@ -74,7 +74,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     }, 100);
 
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // If auth state changes after initialization, update checking state
@@ -101,6 +101,28 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       router.replace('/login');
     }
   }, [isAuthenticated, isValidating, pathname, router]);
+
+  // Show connection error UI
+  if (connectionError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center max-w-md p-8">
+          <div className="text-red-600 mb-4">
+            <i className="fas fa-exclamation-triangle text-5xl"></i>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">خطأ في الاتصال</h2>
+          <p className="text-gray-600 mb-6">{connectionError}</p>
+          <button
+            onClick={() => retryConnection && retryConnection()}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            <i className="fas fa-sync-alt ml-2"></i>
+            إعادة المحاولة
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Show loading state during initialization
   if (!isInitialized || isChecking) {
