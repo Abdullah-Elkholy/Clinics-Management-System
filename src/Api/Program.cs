@@ -251,7 +251,6 @@ builder.Services.AddCors(options =>
         }
     });
 });
-});
 
 // Add SignalR services for real-time updates
 builder.Services.AddSignalR(options =>
