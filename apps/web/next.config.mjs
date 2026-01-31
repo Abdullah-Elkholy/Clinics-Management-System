@@ -8,8 +8,6 @@ const nextConfig = {
   reactStrictMode: true,
   // Enable standalone output for Docker deployment
   output: 'standalone',
-  // Help Next.js correctly infer the monorepo root to avoid ESLint/trace warnings
-  outputFileTracingRoot: path.join(__dirname, '../..'),
 
   // Optimize webpack configuration for better chunk loading
   webpack: (config, { isServer, dev }) => {

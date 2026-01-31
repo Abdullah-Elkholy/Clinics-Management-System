@@ -367,8 +367,8 @@ try
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        // Create database from entity model (no migrations needed)
-        db.Database.EnsureCreated();
+        // Apply migrations automatically (EnsureCreated does not work with Migrations)
+        db.Database.Migrate();
 
         var utcNow = DateTime.UtcNow;
 
