@@ -46,7 +46,21 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Web Frontend
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: clinics-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${SSL_EMAIL:?SSL email required}
+      PGADMIN_DEFAULT_PASSWORD: ${DB_PASSWORD}
+    # Security: Do not expose 5050 publicly. Use SSH Tunneling to access.
+    # ports:
+    #   - "5050:80"
+    depends_on:
+      - db
+    restart: always
+    # Removed specific network to match other services (they use default bridge)
+
+    # Web Frontend
   web:
     build:
       context: ./apps/web
