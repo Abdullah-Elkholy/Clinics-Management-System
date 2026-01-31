@@ -36,6 +36,9 @@ RUN mkdir -p /app/logs && chown -R appuser:appgroup /app/logs
 # Copy published app
 COPY --from=build /app/publish .
 
+# Create directory for DataProtection keys and set permissions
+RUN mkdir -p /app/DataProtection-Keys && chown -R $APP_UID:$APP_GID /app/DataProtection-Keys
+
 # Set environment variables
 ENV ASPNETCORE_URLS=http://+:80
 ENV ASPNETCORE_ENVIRONMENT=Production
