@@ -48,6 +48,10 @@ ENV DATABASE_PROVIDER=PostgreSQL
 # Expose port
 EXPOSE 80
 
+# Install curl for the healthcheck (base image doesn't include it)
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:80/health || exit 1
