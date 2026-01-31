@@ -192,9 +192,10 @@ builder.Services.AddCors(options =>
         // Cannot use AllowAnyOrigin() with AllowCredentials() - specify exact origins
         policy.WithOrigins(
                   "http://localhost:3000",
-                  "http://127.0.0.1:3000",
                   "https://localhost:3000",
-                  "https://127.0.0.1:3000"
+                  "http://72.62.234.169",
+                  "http://medtown.cloud",
+                  "https://medtown.cloud"
               )
               .AllowAnyMethod()
               .AllowAnyHeader()
@@ -345,6 +346,9 @@ app.UseCookiePolicy();
 
 // System diagnostics middleware for performance monitoring
 app.UseMiddleware<SystemDiagnosticsMiddleware>();
+
+// DEBUG: Verify routing works
+app.MapGet("/api/test", () => Results.Text("API Routing Works", "text/plain"));
 
 app.MapControllers();
 
