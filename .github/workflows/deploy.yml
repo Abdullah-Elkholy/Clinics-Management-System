@@ -32,7 +32,6 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-          script: |
             cd /opt/clinics
             # Unpack the deployment package
             tar xzf deploy_package.tar.gz
