@@ -35,6 +35,10 @@ jobs:
             echo "JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}" >> .env
             echo "SSL_EMAIL=${{ secrets.SSL_EMAIL }}" >> .env
             echo "DOMAIN=${{ secrets.DOMAIN }}" >> .env
+            
+            # FALLBACK: Use IP for API_URL since domain is suspended (requested by user)
+            # This allows the frontend to talk to the backend via IP
+            echo "API_URL=http://${{ secrets.HOST }}" >> .env
             echo "Checking system..."
             
             # Build and Start (Using Docker Compose v2)
