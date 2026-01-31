@@ -52,9 +52,9 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${SSL_EMAIL:?SSL email required}
       PGADMIN_DEFAULT_PASSWORD: ${DB_PASSWORD}
-    # Security: Do not expose 5050 publicly. Use SSH Tunneling to access.
-    # ports:
-    #   - "5050:80"
+    # Security: Bind to localhost ONLY. Accessible via SSH Tunnel.
+    ports:
+      - "127.0.0.1:5050:80"
     depends_on:
       - db
     restart: always
