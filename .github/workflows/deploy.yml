@@ -12,15 +12,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Compress Files
+        run: tar --exclude='.git' -czf deploy_package.tar.gz .
+
       - name: Copy Files to Server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "."
+          source: "deploy_package.tar.gz"
           target: "/opt/clinics"
-          rm: true # Clean target folder before copy to remove any leftovers
+          rm: true # Clean target folder before copy
 
       - name: Execute Deployment
         uses: appleboy/ssh-action@v1.0.3
@@ -29,7 +32,12 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+          script: |
             cd /opt/clinics
+            # Unpack the deployment package
+            tar xzf deploy_package.tar.gz
+            rm deploy_package.tar.gz
+
             # Create .env file from GitHub Secrets (So secrets are never in the repo)
             echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env
             echo "DB_USER=clinics_user" >> .env
