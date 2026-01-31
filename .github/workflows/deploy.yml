@@ -32,6 +32,8 @@ jobs:
             cd /opt/clinics
             # Create .env file from GitHub Secrets (So secrets are never in the repo)
             echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env
+            echo "DB_USER=clinics_user" >> .env
+            echo "DB_NAME=ClinicsDb" >> .env
             echo "JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}" >> .env
             echo "SSL_EMAIL=${{ secrets.SSL_EMAIL }}" >> .env
             echo "DOMAIN=${{ secrets.DOMAIN }}" >> .env
