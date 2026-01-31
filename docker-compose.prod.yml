@@ -65,6 +65,8 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${API_URL}
     container_name: clinics-web-prod
     environment:
       - NEXT_PUBLIC_API_URL=${API_URL:-http://api}
