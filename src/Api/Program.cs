@@ -186,33 +186,71 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddCors(options =>
 {
+    var allowedOrigins = (builder.Configuration["AllowedOrigins"] ?? "")
+                            .Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(o => o.Trim())
+                            .ToList();
+
+    // In Development, ensure localhost is allowed for easier testing
+    if (builder.Environment.IsDevelopment())
+    {
+        allowedOrigins.Add("http://localhost:3000");
+        allowedOrigins.Add("https://localhost:3000");
+        allowedOrigins.Add("http://127.0.0.1:3000");
+        allowedOrigins.Add("https://127.0.0.1:3000");
+    }
+
     options.AddDefaultPolicy(policy =>
     {
-        // When AllowCredentials() is used you must explicitly list allowed origins.
-        // Cannot use AllowAnyOrigin() with AllowCredentials() - specify exact origins
-        policy.WithOrigins(
-                  "http://localhost:3000",
-                  "https://localhost:3000",
-                  "http://72.62.234.169",
-                  "http://medtown.cloud",
-                  "https://medtown.cloud"
-              )
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials(); // Required for HttpOnly cookies and SignalR
+        var originList = allowedOrigins.Distinct().ToArray();
+        if (originList.Any())
+        {
+            policy.WithOrigins(originList)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
     });
 
-    // Separate policy for browser extensions (they don't need credentials for pairing)
+    // Separate policy for browser extensions
+    var extensionOrigins = (builder.Configuration["ExtensionOrigins"] ?? "")
+                            .Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(o => o.Trim())
+                            .ToList();
+
     options.AddPolicy("ExtensionPolicy", policy =>
     {
-        policy.SetIsOriginAllowed(origin =>
-                origin.StartsWith("chrome-extension://") ||
-                origin.StartsWith("moz-extension://") ||
-                origin.StartsWith("http://localhost") ||
-                origin.StartsWith("https://localhost"))
+        if (builder.Environment.IsDevelopment())
+        {
+            // In Dev, allow any extension scheme to facilitate debugging
+            policy.SetIsOriginAllowed(origin =>
+               origin.StartsWith("chrome-extension://") ||
+               origin.StartsWith("moz-extension://"))
               .AllowAnyMethod()
               .AllowAnyHeader();
+        }
+        else
+        {
+            // In Prod, usually strictly limit to the specific extension ID
+            var extOriginList = extensionOrigins.Distinct().ToArray();
+            if (extOriginList.Any())
+            {
+                policy.WithOrigins(extOriginList)
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            }
+            else
+            {
+                // Fallback if no specific extension ID provided in prod configuration
+                policy.SetIsOriginAllowed(origin =>
+                   origin.StartsWith("chrome-extension://") ||
+                   origin.StartsWith("moz-extension://"))
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+            }
+        }
     });
+});
 });
 
 // Add SignalR services for real-time updates

@@ -39,6 +39,10 @@ jobs:
             # FALLBACK: Use IP for API_URL since domain is suspended (requested by user)
             # This allows the frontend to talk to the backend via IP
             echo "API_URL=http://${{ secrets.HOST }}" >> .env
+            
+            # CORS Origins (Semicolon separated)
+            echo "ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}" >> .env
+            echo "EXTENSION_ORIGIN=${{ secrets.EXTENSION_ORIGIN }}" >> .env
             echo "Checking system..."
             
             # Build and Start (Using Docker Compose v2)

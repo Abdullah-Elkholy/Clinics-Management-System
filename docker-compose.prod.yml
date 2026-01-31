@@ -36,6 +36,8 @@ services:
       - Jwt__Key=${JWT_SECRET_KEY:?JWT secret key required}
     expose:
       - "80"
+      - AllowedOrigins=${ALLOWED_ORIGINS}
+      - ExtensionOrigins=${EXTENSION_ORIGIN}
     depends_on:
       db:
         condition: service_healthy
