@@ -33,9 +33,11 @@ jobs:
             # Create .env file from GitHub Secrets (So secrets are never in the repo)
             echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env
             echo "JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}" >> .env
+            echo "SSL_EMAIL=${{ secrets.SSL_EMAIL }}" >> .env
+            echo "DOMAIN=${{ secrets.DOMAIN }}" >> .env
             echo "Checking system..."
             
-            # Build and Start
+            # Build and Start (Using Docker Compose v2)
             docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
             
             # Prune unused images to save space
