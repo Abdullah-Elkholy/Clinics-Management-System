@@ -13,7 +13,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Compress Files
-        run: tar --exclude='.git' --exclude='deploy_package.tar.gz' -czf deploy_package.tar.gz .
+        run: |
+          tar --exclude='.git' -czf /tmp/deploy_package.tar.gz .
+          mv /tmp/deploy_package.tar.gz ./deploy_package.tar.gz
 
       - name: Copy Files to Server
         uses: appleboy/scp-action@v0.1.7
