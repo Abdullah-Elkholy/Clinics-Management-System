@@ -125,6 +125,10 @@ jobs:
             echo "=== Container Status ==="
             docker compose -f docker-compose.prod.yml ps
             
+            # Reload nginx to ensure all config changes are applied
+            echo "=== Reloading Nginx ==="
+            docker exec clinics-nginx nginx -t && docker exec clinics-nginx nginx -s reload || echo "Nginx reload skipped"
+            
             # Test health endpoint
             echo "=== Health Check ==="
             curl -sf http://127.0.0.1/health 2>/dev/null || curl -sf https://127.0.0.1/health --insecure 2>/dev/null || echo "Health check pending..."
