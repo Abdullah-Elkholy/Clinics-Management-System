@@ -131,7 +131,7 @@ services:
     volumes:
       - certbot_data:/var/www/certbot
       - ./nginx/ssl:/etc/letsencrypt
-    command: certonly --webroot -w /var/www/certbot --email ${SSL_EMAIL} -d ${DOMAIN} --agree-tos --no-eff-email
+    command: certonly --webroot -w /var/www/certbot --email ${SSL_EMAIL} -d ${DOMAIN} -d www.${DOMAIN} --agree-tos --no-eff-email
     profiles:
       - ssl
     networks:
