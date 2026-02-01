@@ -4,6 +4,12 @@ on:
   push:
     branches: [ "master" ]
   workflow_dispatch:
+    inputs:
+      force_ssl_renew:
+        description: 'Force SSL certificate renewal'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   deploy:
@@ -25,45 +31,109 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "deploy_package.tar.gz"
           target: "/opt/clinics"
-          rm: true # Clean up target folder before copying
+          rm: true
           timeout: 300s
           command_timeout: 30m
-          debug: true
 
-      - name: Execute Deployment
+      - name: Execute Full Deployment
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          SSL_EMAIL: ${{ secrets.SSL_EMAIL }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          EXTENSION_ORIGIN: ${{ secrets.EXTENSION_ORIGIN }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           timeout: 300s
           command_timeout: 30m
-          debug: true
+          envs: DB_PASSWORD,JWT_SECRET_KEY,SSL_EMAIL,DOMAIN,ALLOWED_ORIGINS,EXTENSION_ORIGIN
           script: |
+            set -e
             cd /opt/clinics
+            
             # Unpack the deployment package
             tar xzf deploy_package.tar.gz
             rm deploy_package.tar.gz
 
-            # Create .env file from GitHub Secrets (So secrets are never in the repo)
-            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" > .env
+            # Create .env file from environment variables
+            echo "DB_PASSWORD=${DB_PASSWORD}" > .env
             echo "DB_USER=clinics_user" >> .env
             echo "DB_NAME=ClinicsDb" >> .env
-            echo "JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}" >> .env
-            echo "SSL_EMAIL=${{ secrets.SSL_EMAIL }}" >> .env
-            echo "DOMAIN=${{ secrets.DOMAIN }}" >> .env
+            echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}" >> .env
+            echo "SSL_EMAIL=${SSL_EMAIL}" >> .env
+            echo "DOMAIN=${DOMAIN}" >> .env
+            echo "API_URL=https://${DOMAIN}" >> .env
+            echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}" >> .env
+            echo "EXTENSION_ORIGIN=${EXTENSION_ORIGIN}" >> .env
             
-            # FALLBACK: Use IP for API_URL since domain is suspended (requested by user)
-            # This allows the frontend to talk to the backend via IP
-            echo "API_URL=http://${{ secrets.HOST }}" >> .env
+            echo "=== Checking existing containers ==="
+            docker ps -a || true
             
-            # CORS Origins (Semicolon separated)
-            echo "ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}" >> .env
-            echo "EXTENSION_ORIGIN=${{ secrets.EXTENSION_ORIGIN }}" >> .env
-            echo "Checking system..."
+            # Check if SSL certificates exist
+            SSL_CERT_PATH="./nginx/ssl/live/${DOMAIN}/fullchain.pem"
             
-            # Build and Start (Using Docker Compose v2)
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            if [ ! -f "$SSL_CERT_PATH" ]; then
+              echo "=== SSL certificate not found, obtaining new certificate ==="
+              
+              # Use HTTP-only nginx config first for ACME challenge
+              if [ -f "nginx/nginx.http.conf" ]; then
+                cp nginx/nginx.http.conf nginx/nginx.conf
+              fi
+              
+              # Start/restart services with HTTP config
+              docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+              
+              # Wait for services to be ready
+              echo "Waiting for services to start..."
+              sleep 15
+              
+              # Obtain SSL certificate
+              echo "=== Attempting to obtain SSL certificate ==="
+              docker compose -f docker-compose.prod.yml --profile ssl run --rm certbot && {
+                echo "=== SSL certificate obtained successfully ==="
+                
+                # Switch to SSL nginx config
+                if [ -f "nginx/nginx.ssl.conf" ]; then
+                  cp nginx/nginx.ssl.conf nginx/nginx.conf
+                  docker compose -f docker-compose.prod.yml restart nginx
+                  echo "=== Switched to HTTPS configuration ==="
+                fi
+              } || {
+                echo "=== Certbot failed, continuing with HTTP only ==="
+              }
+            else
+              echo "=== SSL certificate exists, using HTTPS config ==="
+              
+              # Use SSL nginx config
+              if [ -f "nginx/nginx.ssl.conf" ]; then
+                cp nginx/nginx.ssl.conf nginx/nginx.conf
+              fi
+              
+              # Build and start all services
+              docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            fi
             
-            # Prune unused images to save space
+            # Wait for health checks
+            echo "=== Waiting for services to be healthy ==="
+            sleep 10
+            
+            # Verify deployment
+            echo "=== Container Status ==="
+            docker compose -f docker-compose.prod.yml ps
+            
+            # Test health endpoint
+            echo "=== Health Check ==="
+            curl -sf http://127.0.0.1/health 2>/dev/null || curl -sf https://127.0.0.1/health --insecure 2>/dev/null || echo "Health check pending..."
+            
+            # Show container health status
+            echo "=== Container Health ==="
+            docker inspect --format='{{.Name}}: {{.State.Status}} {{if .State.Health}}({{.State.Health.Status}}){{end}}' $(docker ps -q) 2>/dev/null || true
+            
+            # Prune unused images
             docker image prune -f
+            
+            echo "=== Deployment complete ==="
