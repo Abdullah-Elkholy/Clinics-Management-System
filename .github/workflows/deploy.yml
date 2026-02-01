@@ -25,7 +25,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "deploy_package.tar.gz"
           target: "/opt/clinics"
-          rm: true # Clean target folder before copy
+          rm: true # Clean up target folder before copying
+          timeout: 300s
+          command_timeout: 30m
+          debug: true
 
       - name: Execute Deployment
         uses: appleboy/ssh-action@v1.0.3
@@ -33,6 +36,9 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          timeout: 300s
+          command_timeout: 30m
+          debug: true
           script: |
             cd /opt/clinics
             # Unpack the deployment package
