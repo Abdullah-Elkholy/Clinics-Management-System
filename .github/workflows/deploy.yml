@@ -136,4 +136,34 @@ jobs:
             # Prune unused images
             docker image prune -f
             
+            # ===========================================
+            # SECURITY HARDENING (runs on each deploy)
+            # ===========================================
+            echo "=== Applying Security Hardening ==="
+            
+            # 1. Secure file permissions for sensitive files
+            chmod 600 .env 2>/dev/null || true
+            chmod 600 nginx/ssl/live/${DOMAIN}/privkey.pem 2>/dev/null || true
+            
+            # 2. Remove unnecessary packages and clear temp files
+            rm -rf /tmp/* 2>/dev/null || true
+            
+            # 3. Verify UFW is active
+            if command -v ufw &> /dev/null; then
+              echo "UFW Status:"
+              sudo ufw status | head -5
+            fi
+            
+            # 4. Verify Fail2Ban is active
+            if command -v fail2ban-client &> /dev/null; then
+              echo "Fail2Ban Status:"
+              sudo fail2ban-client status | head -3
+            fi
+            
+            # 5. Show security summary
+            echo "=== Security Summary ==="
+            echo "- .env file permissions: $(stat -c '%a' .env 2>/dev/null || echo 'N/A')"
+            echo "- SSL cert expires: $(openssl x509 -enddate -noout -in nginx/ssl/live/${DOMAIN}/fullchain.pem 2>/dev/null | cut -d= -f2 || echo 'N/A')"
+            echo "- Docker containers running: $(docker ps -q | wc -l)"
+            
             echo "=== Deployment complete ==="

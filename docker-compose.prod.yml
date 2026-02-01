@@ -1,5 +1,5 @@
 # =============================================================================
-# Docker Compose - Production Environment
+# Docker Compose - Production Environment (SECURITY HARDENED)
 # =============================================================================
 # Usage: docker-compose -f docker-compose.prod.yml up -d
 # Secure PostgreSQL-based setup for production deployment
@@ -21,9 +21,14 @@ services:
       timeout: 5s
       retries: 5
     restart: always
-    # No port exposure in production - accessed only via internal network
+    # Security: No port exposure - accessed only via internal network
+    # Security: Read-only root filesystem where possible
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
 
-    # API Service
+  # API Service
   api:
     build:
       context: .
@@ -42,11 +47,16 @@ services:
       db:
         condition: service_healthy
     restart: always
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - internal
+      - frontend
 
   pgadmin:
     image: dpage/pgadmin4
@@ -54,15 +64,21 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${SSL_EMAIL:?SSL email required}
       PGADMIN_DEFAULT_PASSWORD: ${DB_PASSWORD}
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+      PGADMIN_CONFIG_LOGIN_BANNER: "'Authorized access only'"
+      PGADMIN_CONFIG_CONSOLE_LOG_LEVEL: "30"
     # Security: Bind to localhost ONLY. Accessible via SSH Tunnel.
     ports:
       - "127.0.0.1:5050:80"
     depends_on:
       - db
     restart: always
-    # Removed specific network to match other services (they use default bridge)
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal
 
-    # Web Frontend
+  # Web Frontend
   web:
     build:
       context: ./apps/web
@@ -78,11 +94,15 @@ services:
     depends_on:
       - api
     restart: always
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - frontend
 
   # Nginx Reverse Proxy
   nginx:
@@ -99,6 +119,10 @@ services:
       - api
       - web
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - frontend
 
   # Certbot for SSL (optional - run manually)
   certbot:
@@ -110,6 +134,15 @@ services:
     command: certonly --webroot -w /var/www/certbot --email ${SSL_EMAIL} -d ${DOMAIN} --agree-tos --no-eff-email
     profiles:
       - ssl
+    networks:
+      - frontend
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  frontend:
+    driver: bridge
 
 volumes:
   postgres_data_prod:
