@@ -57,6 +57,23 @@ services:
       - api
     restart: unless-stopped
 
+  # Nginx Reverse Proxy (optional for dev)
+  nginx:
+    image: nginx:alpine
+    container_name: clinics-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+    profiles:
+      - production
+
 volumes:
   postgres_data:
     driver: local

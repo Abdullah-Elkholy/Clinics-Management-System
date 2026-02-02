@@ -113,7 +113,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
       - certbot_data:/var/www/certbot:ro
     depends_on:
       - api
@@ -122,6 +122,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
+      - internal
       - frontend
 
   # Certbot for SSL (optional - run manually)
