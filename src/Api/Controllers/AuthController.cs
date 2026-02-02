@@ -15,13 +15,15 @@ namespace Clinics.Api.Controllers
         private readonly ITokenService _tokenService;
         private readonly ISessionService _sessionService;
         private readonly IWebHostEnvironment _env;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(ApplicationDbContext db, ITokenService tokenService, ISessionService sessionService, IWebHostEnvironment env)
+        public AuthController(ApplicationDbContext db, ITokenService tokenService, ISessionService sessionService, IWebHostEnvironment env, ILogger<AuthController> logger)
         {
             _db = db;
             _tokenService = tokenService;
             _sessionService = sessionService;
             _env = env;
+            _logger = logger;
         }
 
         [HttpPost("login")]
@@ -87,11 +89,16 @@ namespace Clinics.Api.Controllers
                 // Validate empty/whitespace username or password
                 if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
                 {
+                    _logger.LogWarning("Login attempt with empty credentials from IP: {IpAddress}", HttpContext.Connection.RemoteIpAddress);
                     return BadRequest(new { success = false, errors = new[] { new { code = "MissingCredentials", message = "Username and password are required" } } });
                 }
 
                 var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == req.Username && !u.IsDeleted);
-                if (user == null) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
+                if (user == null)
+                {
+                    _logger.LogWarning("Failed login - user not found: {Username} from IP: {IpAddress}", req.Username, HttpContext.Connection.RemoteIpAddress);
+                    return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
+                }
 
                 // For scaffold: PasswordHash may be null (seeded). Accept 'admin' without hash for demo
                 var valid = false;
@@ -103,7 +110,11 @@ namespace Clinics.Api.Controllers
                     valid = verification != PasswordVerificationResult.Failed;
                 }
 
-                if (!valid) return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
+                if (!valid)
+                {
+                    _logger.LogWarning("Failed login - invalid password for user: {Username} (UserId: {UserId}) from IP: {IpAddress}", user.Username, user.Id, HttpContext.Connection.RemoteIpAddress);
+                    return Unauthorized(new { success = false, errors = new[]{ new { code = "InvalidCredentials", message = "Invalid username or password" } } });
+                }
 
                 // Update last login timestamp
                 user.LastLogin = DateTime.UtcNow;
@@ -111,6 +122,10 @@ namespace Clinics.Api.Controllers
 
                 // Use Role property directly (now stores the role name string)
                 var token = _tokenService.CreateToken(user.Id, user.Username, user.Role, user.FirstName, user.LastName);
+                
+                // Log successful login
+                _logger.LogInformation("Successful login for user: {Username} (UserId: {UserId}, Role: {Role}) from IP: {IpAddress}", user.Username, user.Id, user.Role, HttpContext.Connection.RemoteIpAddress);
+                
                 // create refresh token and set cookie
                 var refreshToken = _sessionService.CreateRefreshToken(user.Id, TimeSpan.FromDays(7));
                 var isDevelopment = _env.IsDevelopment();
@@ -128,14 +143,7 @@ namespace Clinics.Api.Controllers
             }
             catch (Exception ex)
             {
-                // Log the exception properly
-                var errorMsg = $"Login error: {ex.Message}";
-                if (ex.InnerException != null)
-                    errorMsg += $" InnerException: {ex.InnerException.Message}";
-                
-                // Could log here with ILogger if needed
-                Console.WriteLine(errorMsg);
-                
+                _logger.LogError(ex, "Login error for username: {Username} from IP: {IpAddress}. Error: {ErrorMessage}", req?.Username ?? "unknown", HttpContext.Connection.RemoteIpAddress, ex.Message);
                 return StatusCode(500, new { success = false, errors = new[] { new { code = "InternalError", message = "حدث خطأ أثناء تسجيل الدخول. يرجى المحاولة مرة أخرى لاحقاً." } } });
             }
         }
