@@ -66,7 +66,17 @@ jobs:
             echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}" >> .env
             echo "SSL_EMAIL=${SSL_EMAIL}" >> .env
             echo "DOMAIN=${DOMAIN}" >> .env
-            echo "API_URL=https://${DOMAIN}" >> .env
+            
+            # Auto-detect SSL: Use HTTPS if cert exists, HTTP otherwise
+            SSL_CERT_PATH="./nginx/ssl/live/${DOMAIN}/fullchain.pem"
+            if [ -f "$SSL_CERT_PATH" ]; then
+              echo "API_URL=https://${DOMAIN}" >> .env
+              echo "=== SSL certificate found, using HTTPS ==="
+            else
+              echo "API_URL=http://${DOMAIN}" >> .env
+              echo "=== No SSL certificate, using HTTP ==="
+            fi
+            
             echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}" >> .env
             echo "EXTENSION_ORIGIN=${EXTENSION_ORIGIN}" >> .env
             
