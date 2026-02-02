@@ -97,12 +97,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Safety timeout: force stop validation after 10 seconds
     validationTimeoutRef.current = setTimeout(() => {
-      console.warn('[Auth] Validation timeout reached, forcing stop');
+      logger.warn('[Auth] Validation timeout reached, forcing stop');
       setIsValidating(false);
       // If still validating after timeout, clear potentially invalid token
       const token = localStorage.getItem('token');
       if (token && !authState.isAuthenticated) {
-        console.warn('[Auth] Clearing token after validation timeout');
+        logger.warn('[Auth] Clearing token after validation timeout');
         localStorage.removeItem('token');
         setHasToken(false);
         setAuthCookie(false);

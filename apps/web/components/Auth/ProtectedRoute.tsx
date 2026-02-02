@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAuthGuard } from '../../hooks/useAuthGuard';
 import LoginScreen from './LoginScreen';
+import logger from '../../utils/logger';
 
 // Extend Window interface for auth initialization flag
 declare global {
@@ -40,7 +41,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Maximum wait timeout to prevent infinite loading (10 seconds)
   useEffect(() => {
     maxWaitTimeoutRef.current = setTimeout(() => {
-      console.warn('[ProtectedRoute] Max wait time reached, forcing initialization');
+      logger.warn('[ProtectedRoute] Max wait time reached, forcing initialization');
       setIsInitialized(true);
       setIsChecking(false);
       window.__AUTH_INITIALIZED__ = true;
@@ -78,7 +79,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       // No token: show login (redirect handled below in render logic)
       setIsInitialized(true);
       setIsChecking(false);
-      (window as any).__AUTH_INITIALIZED__ = true;
+      window.__AUTH_INITIALIZED__ = true;
       hasGlobalInitRef.current = true;
       return;
     }
@@ -113,11 +114,11 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
         setIsChecking(true);
         // Wait a bit more for auth to complete, but not forever
         const timer = setTimeout(() => {
-          console.warn('[ProtectedRoute] Auth validation timeout, stopping check');
+          logger.warn('[ProtectedRoute] Auth validation timeout, stopping check');
           setIsChecking(false);
           // If still no auth after timeout, clear invalid token
           if (!isAuthenticated && !user) {
-            console.warn('[ProtectedRoute] Clearing invalid token after timeout');
+            logger.warn('[ProtectedRoute] Clearing invalid token after timeout');
             localStorage.removeItem('token');
           }
         }, 3000); // Increased to 3 seconds max wait

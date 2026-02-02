@@ -383,12 +383,12 @@ export default function UserManagementPanel() {
       const allowedTabs = ['moderators', 'myUsers', 'secondaryAdmins', 'whatsappAuth', 'quota', 'accountSettings', 'logs', 'trash', 'systemSettings'];
       if (!allowedTabs.includes(requestedTab)) return;
 
-      handleTabChange(requestedTab as any);
+      handleTabChange(requestedTab as 'moderators' | 'myUsers' | 'secondaryAdmins' | 'whatsappAuth' | 'quota' | 'accountSettings' | 'logs' | 'trash' | 'systemSettings');
     };
 
-    window.addEventListener('userManagementActiveTabChange', onExternalTabChange as EventListener);
+    window.addEventListener('userManagementActiveTabChange', onExternalTabChange as (this: Window, ev: Event) => void);
     return () => {
-      window.removeEventListener('userManagementActiveTabChange', onExternalTabChange as EventListener);
+      window.removeEventListener('userManagementActiveTabChange', onExternalTabChange as (this: Window, ev: Event) => void);
     };
   }, []);
 
