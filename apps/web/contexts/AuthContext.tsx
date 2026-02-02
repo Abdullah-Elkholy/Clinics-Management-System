@@ -9,6 +9,12 @@ import { login as loginApi, logout as logoutApi, getCurrentUser, refreshAccessTo
 import logger from '@/utils/logger';
 import { registerAuthErrorHandler, unregisterAuthErrorHandler } from '@/utils/apiInterceptor';
 
+// Error interface for login errors
+interface LoginError extends Error {
+  statusCode?: number;
+  details?: unknown;
+}
+
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
 
@@ -517,12 +523,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // If response is not success, treat as retryable or non-retryable error
         // Note: login() will throw ApiError if !response.ok, so we only reach here if response.ok but response.success is false
-        const err = new Error('Login response not successful') as any;
+        const err: LoginError = new Error('Login response not successful');
         err.statusCode = 400; // Treat as client error since response was OK but login failed
         err.message = 'فشل تسجيل الدخول';
         throw err;
       } catch (error) {
-        const err = error as any;
+        const err = error as LoginError;
 
         // Rich error log to avoid {} empty object in console (development only)
         if (process.env.NODE_ENV === 'development') {

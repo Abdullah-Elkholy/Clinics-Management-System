@@ -6,6 +6,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAuthGuard } from '../../hooks/useAuthGuard';
 import LoginScreen from './LoginScreen';
 
+// Extend Window interface for auth initialization flag
+declare global {
+  interface Window {
+    __AUTH_INITIALIZED__?: boolean;
+  }
+}
+
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
@@ -36,7 +43,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       console.warn('[ProtectedRoute] Max wait time reached, forcing initialization');
       setIsInitialized(true);
       setIsChecking(false);
-      (window as any).__AUTH_INITIALIZED__ = true;
+      window.__AUTH_INITIALIZED__ = true;
       hasGlobalInitRef.current = true;
     }, 10000);
 
@@ -51,7 +58,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (hasGlobalInitRef.current === null) {
-      hasGlobalInitRef.current = (window as any).__AUTH_INITIALIZED__ === true;
+      hasGlobalInitRef.current = window.__AUTH_INITIALIZED__ === true;
     }
     if (hasGlobalInitRef.current) {
       // Already initialized in this session; skip loader
@@ -89,7 +96,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       } else {
         setIsChecking(false);
       }
-      (window as any).__AUTH_INITIALIZED__ = true;
+      window.__AUTH_INITIALIZED__ = true;
       hasGlobalInitRef.current = true;
     }, 100);
 
