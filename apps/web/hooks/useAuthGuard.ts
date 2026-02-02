@@ -52,8 +52,8 @@ export function useAuthGuard() {
     // If no token and trying to access protected route, redirect to login immediately
     if (!token && pathname !== '/login' && pathname !== '/') {
       logger.info('[AuthGuard] No token found, redirecting to login from:', pathname);
-      // Use router for smooth redirect, let ProtectedRoute handle display
-      router.replace('/login');
+      // Use window.location for immediate redirect to ensure clean state
+      window.location.href = '/login';
       isCheckingRef.current = false;
       return;
     }
@@ -62,21 +62,14 @@ export function useAuthGuard() {
     // But if we're on a protected route and not authenticated after a delay, redirect
     if (token && !isAuthenticated && pathname !== '/login' && pathname !== '/') {
       // AuthContext will handle validation on mount
-      // Only intervene if REALLY stuck (longer timeout to let normal flow work)
+      // Just wait a bit for it to complete, then check again
       const timeout = setTimeout(() => {
-        // Re-check everything before taking action
+        // Re-check token and auth state
         const currentToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-        const authCookie = document.cookie.includes('auth=1');
-        
-        // Only clear if we still have token but no auth state AND no auth cookie
-        if (currentToken && !isAuthenticated && !authCookie) {
-          logger.warn('[AuthGuard] Token exists but auth failed after 2s, clearing');
-          localStorage.removeItem('token');
-          // Don't redirect here - let ProtectedRoute handle it
-          // This prevents race conditions
-        }
+        // If token still exists but we're still not authenticated, it's likely invalid
+        // Note: We can't check isAuthenticated here due to closure, so we'll let ProtectedRoute handle it
         isCheckingRef.current = false;
-      }, 2000); // Increased to 2s to let normal auth flow complete
+      }, 1000);
       
       return () => clearTimeout(timeout);
     }

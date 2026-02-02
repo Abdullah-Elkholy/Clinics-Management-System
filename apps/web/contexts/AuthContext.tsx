@@ -9,12 +9,6 @@ import { login as loginApi, logout as logoutApi, getCurrentUser, refreshAccessTo
 import logger from '@/utils/logger';
 import { registerAuthErrorHandler, unregisterAuthErrorHandler } from '@/utils/apiInterceptor';
 
-// Error interface for login errors
-interface LoginError extends Error {
-  statusCode?: number;
-  details?: unknown;
-}
-
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
 
@@ -79,7 +73,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isNavigatingToHome, setIsNavigatingToHome] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
-  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { addToast } = useUI();
   const router = useRouter();
@@ -94,20 +87,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Only run once on mount
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
-
-    // Safety timeout: force stop validation after 5 seconds
-    validationTimeoutRef.current = setTimeout(() => {
-      logger.warn('[Auth] Validation timeout reached (5s), forcing stop');
-      setIsValidating(false);
-      // If still validating after timeout, clear potentially invalid token
-      const token = localStorage.getItem('token');
-      if (token && !authState.isAuthenticated) {
-        logger.warn('[Auth] Clearing token after validation timeout');
-        localStorage.removeItem('token');
-        setHasToken(false);
-        setAuthCookie(false);
-      }
-    }, 5000);
 
     const restoreAuth = async () => {
       setIsValidating(true);
@@ -137,13 +116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Verify token is valid by fetching current user
         try {
-          // Add a timeout to getCurrentUser to prevent hanging
-          const userDataPromise = getCurrentUser();
-          const timeoutPromise = new Promise<null>((_, reject) => 
-            setTimeout(() => reject(new Error('API timeout')), 4000)
-          );
-          
-          const userData = await Promise.race([userDataPromise, timeoutPromise]);
+          const userData = await getCurrentUser();
           if (userData) {
             // Extract role from user data
             const role = userData.role as UserRole;
@@ -199,20 +172,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isAuthenticated: false,
         });
       } finally {
-        if (validationTimeoutRef.current) {
-          clearTimeout(validationTimeoutRef.current);
-        }
         setIsValidating(false);
       }
     };
 
     restoreAuth();
-
-    return () => {
-      if (validationTimeoutRef.current) {
-        clearTimeout(validationTimeoutRef.current);
-      }
-    };
   }, []); // Empty deps - only run on mount
 
   // Proactive token refresh - refresh token before expiration
@@ -529,12 +493,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // If response is not success, treat as retryable or non-retryable error
         // Note: login() will throw ApiError if !response.ok, so we only reach here if response.ok but response.success is false
-        const err: LoginError = new Error('Login response not successful');
+        const err = new Error('Login response not successful') as any;
         err.statusCode = 400; // Treat as client error since response was OK but login failed
         err.message = 'فشل تسجيل الدخول';
         throw err;
       } catch (error) {
-        const err = error as LoginError;
+        const err = error as any;
 
         // Rich error log to avoid {} empty object in console (development only)
         if (process.env.NODE_ENV === 'development') {
