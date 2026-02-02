@@ -30,7 +30,7 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "deploy_package.tar.gz"
-          target: "/opt/clinics"
+          target: ${{ secrets.DEPLOY_PATH }}
           rm: true # Clean target folder before copy to remove any leftovers
           timeout: 300s # Set timeout to 5 minutes
           command_timeout: 30m # Set command timeout to 30 minutes
@@ -39,21 +39,24 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
           JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
           SSL_EMAIL: ${{ secrets.SSL_EMAIL }}
           DOMAIN: ${{ secrets.DOMAIN }}
           ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
           EXTENSION_ORIGIN: ${{ secrets.EXTENSION_ORIGIN }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           timeout: 300s
           command_timeout: 30m
-          envs: DB_PASSWORD,JWT_SECRET_KEY,SSL_EMAIL,DOMAIN,ALLOWED_ORIGINS,EXTENSION_ORIGIN
+          envs: DB_PASSWORD,DB_USER,DB_NAME,JWT_SECRET_KEY,SSL_EMAIL,DOMAIN,ALLOWED_ORIGINS,EXTENSION_ORIGIN,DEPLOY_PATH
           script: |
             set -e
-            cd /opt/clinics
+            cd ${DEPLOY_PATH}
             
             # Unpack the deployment package
             tar xzf deploy_package.tar.gz
@@ -68,8 +71,8 @@ jobs:
 
             # Create .env file from environment variables
             echo "DB_PASSWORD=${DB_PASSWORD}" > .env
-            echo "DB_USER=clinics_user" >> .env
-            echo "DB_NAME=ClinicsDb" >> .env
+            echo "DB_USER=${DB_USER}" >> .env
+            echo "DB_NAME=${DB_NAME}" >> .env
             echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}" >> .env
             echo "SSL_EMAIL=${SSL_EMAIL}" >> .env
             echo "DOMAIN=${DOMAIN}" >> .env
