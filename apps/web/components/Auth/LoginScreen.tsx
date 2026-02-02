@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from 'react';
 import type React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
-import { TEST_CREDENTIALS } from '../../constants';
 import logger from '@/utils/logger';
 import { useFormKeyboardNavigation } from '@/hooks/useFormKeyboardNavigation';
 
@@ -26,11 +25,11 @@ export default function LoginScreen() {
       const newSearchParams = new URLSearchParams(searchParams.toString());
       newSearchParams.delete('username');
       newSearchParams.delete('password');
-      
-      const newUrl = newSearchParams.toString() 
+
+      const newUrl = newSearchParams.toString()
         ? `/?${newSearchParams.toString()}`
         : '/';
-      
+
       // Use replace to avoid adding to history
       router.replace(newUrl);
     }
@@ -64,29 +63,13 @@ export default function LoginScreen() {
   useFormKeyboardNavigation({
     formRef,
     onEnterSubmit: () => {
-      const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
+      const fakeEvent = { preventDefault: () => { } } as React.FormEvent;
       handleSubmit(fakeEvent);
     },
     enableEnterSubmit: true,
     disabled: isLoading,
   });
 
-  const handleQuickLogin = async (username: string, password: string) => {
-    setIsLoading(true);
-    try {
-      const result = await login(username, password);
-      if (result.success) {
-        setError('');
-      } else {
-        setError(result.error || 'فشل تسجيل الدخول');
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'حدث خطأ أثناء تسجيل الدخول';
-      setError(errorMsg || 'فشل تسجيل الدخول');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-purple-700 p-4">
@@ -108,9 +91,9 @@ export default function LoginScreen() {
         )}
 
         {/* Login Form */}
-        <form 
-          ref={formRef} 
-          onSubmit={handleSubmit} 
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
           method="post"
           action="#"
           className="space-y-6"
@@ -164,30 +147,6 @@ export default function LoginScreen() {
             {isLoading || isNavigatingToHome ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
           </button>
         </form>
-
-        {/* Test Credentials Info */}
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <p className="text-sm text-gray-600 mb-4 font-medium">للتجربة، استخدم أحد الحسابات التالية:</p>
-          <div className="space-y-2 text-xs">
-            {Object.entries(TEST_CREDENTIALS).map(([key, cred]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => handleQuickLogin(cred.username, cred.password)}
-                disabled={isLoading || isNavigatingToHome}
-                className="w-full p-2 text-left bg-gray-50 hover:bg-gray-100 rounded border border-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-800">{cred.username}</p>
-                    <p className="text-gray-600">{cred.password}</p>
-                  </div>
-                  <i className="fas fa-arrow-left text-blue-600"></i>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
