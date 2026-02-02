@@ -18,6 +18,14 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Security Audit - npm packages
+        run: |
+          cd apps/web
+          npm ci --legacy-peer-deps --ignore-scripts
+          echo "=== Running npm audit ==="
+          npm audit --audit-level=high || echo "::warning::npm audit found vulnerabilities - review before production"
+        continue-on-error: true
+
       - name: Compress Files
         run: |
           tar --exclude='.git' -czf /tmp/deploy_package.tar.gz .
@@ -57,6 +65,9 @@ jobs:
           script: |
             set -e
             cd ${DEPLOY_PATH}
+            
+            # Enable Docker Content Trust for image verification
+            export DOCKER_CONTENT_TRUST=1
             
             # Unpack the deployment package
             tar xzf deploy_package.tar.gz

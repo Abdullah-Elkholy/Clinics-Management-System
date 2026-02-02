@@ -1,16 +1,38 @@
 using Hangfire.Dashboard;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Linq;
+using System.Net;
 
 // Hangfire dashboard authorization: accept cookie auth or Authorization: Bearer <token>
+// SECURITY: In production, only localhost access is allowed (use SSH tunnel)
 public class DashboardAuthorizationFilter : IDashboardAuthorizationFilter
 {
     public bool Authorize(DashboardContext context)
     {
         var httpContext = context.GetHttpContext();
+        
+        // SECURITY: In production, only allow localhost access (via SSH tunnel)
+        var env = httpContext.RequestServices.GetService(typeof(IWebHostEnvironment)) as IWebHostEnvironment;
+        if (env != null && !env.IsDevelopment())
+        {
+            var remoteIp = httpContext.Connection.RemoteIpAddress;
+            var isLocalhost = remoteIp != null && (
+                IPAddress.IsLoopback(remoteIp) || 
+                remoteIp.Equals(IPAddress.IPv6Loopback) ||
+                remoteIp.ToString() == "::1" ||
+                remoteIp.ToString() == "127.0.0.1");
+            
+            if (!isLocalhost)
+            {
+                return false; // Block all non-localhost access in production
+            }
+        }
+        
         // If user is already authenticated via cookie/principal, check role
         if (httpContext.User?.Identity?.IsAuthenticated ?? false)
         {

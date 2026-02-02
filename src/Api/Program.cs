@@ -335,6 +335,7 @@ builder.Services.AddScoped<IMessageSender, SimulatedMessageSender>();
 // message processor (uses extension provider directly)
 builder.Services.AddScoped<IMessageProcessor, MessageProcessor>();
 builder.Services.AddScoped<ProcessQueuedMessagesJob>(); // Wrapper job with [DisableConcurrentExecution]
+builder.Services.AddScoped<CpuMonitorJob>(); // Security: CPU monitoring for detecting cryptominers
 
 // Extension Runner services for browser extension-based WhatsApp automation
 builder.Services.Configure<Clinics.Api.Services.Extension.WhatsAppProviderOptions>(
@@ -983,6 +984,9 @@ catch (Exception ex)
 try
 {
     RecurringJob.AddOrUpdate<ProcessQueuedMessagesJob>("process-queued-messages", job => job.ExecuteAsync(), "*/15 * * * * *");
+
+    // Security: Monitor CPU usage every 5 minutes to detect cryptominers or other malicious activity
+    RecurringJob.AddOrUpdate<CpuMonitorJob>("cpu-security-monitor", job => job.ExecuteAsync(), "*/5 * * * *");
 }
 catch { }
 
