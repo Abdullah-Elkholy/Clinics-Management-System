@@ -52,8 +52,8 @@ export function useAuthGuard() {
     // If no token and trying to access protected route, redirect to login immediately
     if (!token && pathname !== '/login' && pathname !== '/') {
       logger.info('[AuthGuard] No token found, redirecting to login from:', pathname);
-      // Use window.location for immediate redirect to ensure clean state
-      window.location.href = '/login';
+      // Use router for smooth redirect, let ProtectedRoute handle display
+      router.replace('/login');
       isCheckingRef.current = false;
       return;
     }
@@ -62,19 +62,21 @@ export function useAuthGuard() {
     // But if we're on a protected route and not authenticated after a delay, redirect
     if (token && !isAuthenticated && pathname !== '/login' && pathname !== '/') {
       // AuthContext will handle validation on mount
-      // Wait briefly, then check again - reduced from 1000ms to 500ms
+      // Only intervene if REALLY stuck (longer timeout to let normal flow work)
       const timeout = setTimeout(() => {
-        // Re-check token and auth state
+        // Re-check everything before taking action
         const currentToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-        // If token still exists but we're still not authenticated, it's likely invalid
-        // Clear it to prevent infinite loops
-        if (currentToken && !isAuthenticated) {
-          logger.warn('[AuthGuard] Token exists but not authenticated after timeout, clearing');
+        const authCookie = document.cookie.includes('auth=1');
+        
+        // Only clear if we still have token but no auth state AND no auth cookie
+        if (currentToken && !isAuthenticated && !authCookie) {
+          logger.warn('[AuthGuard] Token exists but auth failed after 2s, clearing');
           localStorage.removeItem('token');
-          window.location.href = '/login';
+          // Don't redirect here - let ProtectedRoute handle it
+          // This prevents race conditions
         }
         isCheckingRef.current = false;
-      }, 500); // Reduced timeout
+      }, 2000); // Increased to 2s to let normal auth flow complete
       
       return () => clearTimeout(timeout);
     }

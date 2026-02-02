@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAuthGuard } from '../../hooks/useAuthGuard';
 import LoginScreen from './LoginScreen';
 import logger from '../../utils/logger';
+import { LoopDetector } from '../../utils/loopDetector';
 
 // Extend Window interface for auth initialization flag
 declare global {
@@ -32,28 +33,74 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const pathname = usePathname();
   const [isInitialized, setIsInitialized] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [forceRender, setForceRender] = useState(false);
   const hasGlobalInitRef = useRef<boolean | null>(null);
   const maxWaitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mountTimeRef = useRef<number>(Date.now());
+  const isMountedRef = useRef(true);
 
   // Use auth guard to protect routes
   useAuthGuard();
-
-  // Maximum wait timeout to prevent infinite loading (10 seconds)
+  
+  // Reset loop detector on successful auth
   useEffect(() => {
-    maxWaitTimeoutRef.current = setTimeout(() => {
-      logger.warn('[ProtectedRoute] Max wait time reached, forcing initialization');
+    if (isAuthenticated && user) {
+      LoopDetector.reset();
+    }
+  }, [isAuthenticated, user]);
+
+  // Maximum wait timeout to prevent infinite loading (5 seconds absolute max)
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    // Check for page load loop (too many rapid page loads)
+    if (LoopDetector.recordPageLoad()) {
+      logger.error('[ProtectedRoute] Too many page loads, executing emergency break');
+      LoopDetector.emergencyBreak();
+      return;
+    }
+    
+    // Skip further checks if emergency break was recently executed
+    if (LoopDetector.wasEmergencyBreakRecent()) {
+      logger.warn('[ProtectedRoute] Emergency break recently executed, skipping init');
       setIsInitialized(true);
       setIsChecking(false);
+      return;
+    }
+    
+    // Check for infinite loop in auth attempts
+    if (LoopDetector.recordAttempt('ProtectedRoute')) {
+      logger.error('[ProtectedRoute] Infinite loop detected, executing emergency break');
+      LoopDetector.emergencyBreak();
+      return;
+    }
+    
+    // Aggressive timeout - force render after 5 seconds no matter what
+    const absoluteMaxTimeout = setTimeout(() => {
+      if (!isMountedRef.current) return;
+      logger.warn('[ProtectedRoute] Absolute max wait reached (5s), forcing render');
+      setIsInitialized(true);
+      setIsChecking(false);
+      setForceRender(true);
       window.__AUTH_INITIALIZED__ = true;
       hasGlobalInitRef.current = true;
-    }, 10000);
+      
+      // If no token and still not authenticated, clear everything
+      const token = localStorage.getItem('token');
+      if (token && !isAuthenticated) {
+        logger.warn('[ProtectedRoute] Clearing stuck token');
+        localStorage.removeItem('token');
+      }
+    }, 5000);
 
     return () => {
+      isMountedRef.current = false;
+      clearTimeout(absoluteMaxTimeout);
       if (maxWaitTimeoutRef.current) {
         clearTimeout(maxWaitTimeoutRef.current);
       }
     };
-  }, []);
+  }, [isAuthenticated]);
 
   // One-time initialization; persist across navigations using a window flag
   useEffect(() => {
@@ -86,20 +133,27 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
     // Token exists; short timeout to allow AuthContext to validate
     const timer = setTimeout(() => {
+      if (!isMountedRef.current) return;
       if (maxWaitTimeoutRef.current) clearTimeout(maxWaitTimeoutRef.current);
       setIsInitialized(true);
       if (!isAuthenticated && !user) {
         setIsChecking(true);
         const secondTimer = setTimeout(() => {
+          if (!isMountedRef.current) return;
           setIsChecking(false);
-        }, 400);
+          // Force break if stuck too long
+          if (Date.now() - mountTimeRef.current > 3000) {
+            logger.warn('[ProtectedRoute] Forcing break after 3s');
+            setForceRender(true);
+          }
+        }, 300); // Reduced from 400ms
         return () => clearTimeout(secondTimer);
       } else {
         setIsChecking(false);
       }
       window.__AUTH_INITIALIZED__ = true;
       hasGlobalInitRef.current = true;
-    }, 100);
+    }, 50); // Reduced from 100ms
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,17 +165,29 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       // If we have a token but not authenticated, still checking
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       if (token && !isAuthenticated && !user && !connectionError) {
+        // Check if we've been stuck too long
+        const elapsedTime = Date.now() - mountTimeRef.current;
+        if (elapsedTime > 4000) {
+          logger.warn('[ProtectedRoute] Stuck for >4s, forcing clear');
+          localStorage.removeItem('token');
+          setIsChecking(false);
+          setForceRender(true);
+          return;
+        }
+        
         setIsChecking(true);
-        // Wait a bit more for auth to complete, but not forever
+        // Reduced wait time for auth validation
         const timer = setTimeout(() => {
-          logger.warn('[ProtectedRoute] Auth validation timeout, stopping check');
+          if (!isMountedRef.current) return;
+          logger.warn('[ProtectedRoute] Auth validation timeout after 2s');
           setIsChecking(false);
           // If still no auth after timeout, clear invalid token
           if (!isAuthenticated && !user) {
-            logger.warn('[ProtectedRoute] Clearing invalid token after timeout');
+            logger.warn('[ProtectedRoute] Clearing invalid token');
             localStorage.removeItem('token');
+            setForceRender(true);
           }
-        }, 3000); // Increased to 3 seconds max wait
+        }, 2000); // Reduced from 3000ms
         return () => clearTimeout(timer);
       } else {
         setIsChecking(false);
@@ -172,8 +238,14 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   // If not authenticated, handle based on validation state
   if (!isAuthenticated) {
+    // Force render login if we've been stuck too long
+    if (forceRender || Date.now() - mountTimeRef.current > 6000) {
+      logger.warn('[ProtectedRoute] Force rendering login screen');
+      return <LoginScreen />;
+    }
+    
     // During validation/refresh, show loading instead of redirecting
-    if (isValidating) {
+    if (isValidating && !forceRender) {
       return (
         <div className="flex items-center justify-center min-h-screen bg-gray-50">
           <div className="text-center">
@@ -200,5 +272,6 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   // User is authenticated, render protected content
   return <>{children}</>;
 }
+
 
 

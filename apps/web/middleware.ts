@@ -36,6 +36,18 @@ function withSecurityHeaders(res: NextResponse) {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
+  // Check for redirect loop detection
+  const redirectCount = parseInt(request.cookies.get('redirect_count')?.value || '0', 10);
+  if (redirectCount > 3) {
+    // Too many redirects, clear auth and go to login
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    const response = withSecurityHeaders(NextResponse.redirect(url));
+    response.cookies.set('auth', '', { maxAge: 0, path: '/' });
+    response.cookies.set('redirect_count', '0', { maxAge: 60, path: '/' });
+    return response;
+  }
+  
   // Check for auth signals
   // Prefer secure, HttpOnly refresh token if it's on the same site/domain (prod)
   // Fallback to client-managed 'auth' presence cookie (dev/split domains)
@@ -68,10 +80,14 @@ export function middleware(request: NextRequest) {
       // Already logged in, redirect to home
       const url = request.nextUrl.clone();
       url.pathname = '/home';
-      return withSecurityHeaders(NextResponse.redirect(url));
+      const response = withSecurityHeaders(NextResponse.redirect(url));
+      response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: 60, path: '/' });
+      return response;
     }
     // Not authenticated, allow access to login page
-    return withSecurityHeaders(NextResponse.next());
+    const response = withSecurityHeaders(NextResponse.next());
+    response.cookies.set('redirect_count', '0', { maxAge: 60, path: '/' }); // Reset counter on login page
+    return response;
   }
   
   // Route: / (root)
@@ -84,7 +100,9 @@ export function middleware(request: NextRequest) {
       // Redirect unauthenticated users to login
       url.pathname = '/login';
     }
-    return withSecurityHeaders(NextResponse.redirect(url));
+    const response = withSecurityHeaders(NextResponse.redirect(url));
+    response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: 60, path: '/' });
+    return response;
   }
   
   // Protected routes
@@ -93,10 +111,14 @@ export function middleware(request: NextRequest) {
       // Not authenticated, redirect to login
       const url = request.nextUrl.clone();
       url.pathname = '/login';
-      return withSecurityHeaders(NextResponse.redirect(url));
+      const response = withSecurityHeaders(NextResponse.redirect(url));
+      response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: 60, path: '/' });
+      return response;
     }
-    // Authenticated, allow access
-    return withSecurityHeaders(NextResponse.next());
+    // Authenticated, allow access - reset redirect counter
+    const response = withSecurityHeaders(NextResponse.next());
+    response.cookies.set('redirect_count', '0', { maxAge: 60, path: '/' });
+    return response;
   }
   
   // For any other route, allow access

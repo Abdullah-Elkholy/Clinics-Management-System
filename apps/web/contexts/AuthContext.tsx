@@ -95,9 +95,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
 
-    // Safety timeout: force stop validation after 10 seconds
+    // Safety timeout: force stop validation after 5 seconds
     validationTimeoutRef.current = setTimeout(() => {
-      logger.warn('[Auth] Validation timeout reached, forcing stop');
+      logger.warn('[Auth] Validation timeout reached (5s), forcing stop');
       setIsValidating(false);
       // If still validating after timeout, clear potentially invalid token
       const token = localStorage.getItem('token');
@@ -107,7 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setHasToken(false);
         setAuthCookie(false);
       }
-    }, 10000);
+    }, 5000);
 
     const restoreAuth = async () => {
       setIsValidating(true);
@@ -137,7 +137,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Verify token is valid by fetching current user
         try {
-          const userData = await getCurrentUser();
+          // Add a timeout to getCurrentUser to prevent hanging
+          const userDataPromise = getCurrentUser();
+          const timeoutPromise = new Promise<null>((_, reject) => 
+            setTimeout(() => reject(new Error('API timeout')), 4000)
+          );
+          
+          const userData = await Promise.race([userDataPromise, timeoutPromise]);
           if (userData) {
             // Extract role from user data
             const role = userData.role as UserRole;
