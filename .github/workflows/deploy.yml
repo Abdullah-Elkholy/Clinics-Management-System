@@ -31,9 +31,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "deploy_package.tar.gz"
           target: "/opt/clinics"
-          rm: true
-          timeout: 300s
-          command_timeout: 30m
+          rm: true # Clean target folder before copy to remove any leftovers
+          timeout: 300s # Set timeout to 5 minutes
+          command_timeout: 30m # Set command timeout to 30 minutes
 
       - name: Execute Full Deployment
         uses: appleboy/ssh-action@v1.0.3
@@ -90,11 +90,53 @@ jobs:
             docker rm -f clinics-web 2>/dev/null || true
             docker rm -f clinics-db 2>/dev/null || true
             
-            # Check if SSL certificates exist
+            # ===========================================
+            # SSL CERTIFICATE MANAGEMENT (Rate Limit Safe)
+            # ===========================================
             SSL_CERT_PATH="./nginx/ssl/live/${DOMAIN}/fullchain.pem"
+            CERTBOT_LOCK_FILE="/tmp/certbot_last_run"
+            FORCE_SSL_RENEW="${{ inputs.force_ssl_renew }}"
+            NEED_CERTBOT=false
             
+            # Check if certificate exists
             if [ ! -f "$SSL_CERT_PATH" ]; then
-              echo "=== SSL certificate not found, obtaining new certificate ==="
+              echo "=== No SSL certificate found ==="
+              NEED_CERTBOT=true
+            else
+              # Check if certificate expires within 30 days
+              EXPIRY_DATE=$(openssl x509 -enddate -noout -in "$SSL_CERT_PATH" 2>/dev/null | cut -d= -f2)
+              if [ -n "$EXPIRY_DATE" ]; then
+                EXPIRY_EPOCH=$(date -d "$EXPIRY_DATE" +%s 2>/dev/null || echo 0)
+                NOW_EPOCH=$(date +%s)
+                DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+                echo "=== SSL certificate expires in $DAYS_LEFT days ==="
+                if [ "$DAYS_LEFT" -lt 30 ]; then
+                  echo "=== Certificate expiring soon, renewal needed ==="
+                  NEED_CERTBOT=true
+                fi
+              fi
+            fi
+            
+            # Force renewal if manually triggered
+            if [ "$FORCE_SSL_RENEW" = "true" ]; then
+              echo "=== Force SSL renewal requested ==="
+              NEED_CERTBOT=true
+            fi
+            
+            # Rate limit protection: Check if certbot ran recently (within 6 hours)
+            if [ "$NEED_CERTBOT" = "true" ] && [ -f "$CERTBOT_LOCK_FILE" ]; then
+              LAST_RUN=$(cat "$CERTBOT_LOCK_FILE" 2>/dev/null || echo 0)
+              NOW=$(date +%s)
+              HOURS_SINCE=$(( (NOW - LAST_RUN) / 3600 ))
+              if [ "$HOURS_SINCE" -lt 6 ] && [ "$FORCE_SSL_RENEW" != "true" ]; then
+                echo "=== Certbot ran $HOURS_SINCE hours ago, skipping to avoid rate limit ==="
+                NEED_CERTBOT=false
+              fi
+            fi
+            
+            # Run certbot if needed
+            if [ "$NEED_CERTBOT" = "true" ]; then
+              echo "=== Attempting to obtain SSL certificate ==="
               
               # Use HTTP-only nginx config first for ACME challenge
               if [ -f "nginx/nginx.http.conf" ]; then
@@ -108,8 +150,10 @@ jobs:
               echo "Waiting for services to start..."
               sleep 15
               
+              # Record attempt time (before running, to prevent rapid retries on failure)
+              date +%s > "$CERTBOT_LOCK_FILE"
+              
               # Obtain SSL certificate
-              echo "=== Attempting to obtain SSL certificate ==="
               docker compose -f docker-compose.prod.yml --profile ssl run --rm certbot && {
                 echo "=== SSL certificate obtained successfully ==="
                 
@@ -120,10 +164,11 @@ jobs:
                   echo "=== Switched to HTTPS configuration ==="
                 fi
               } || {
-                echo "=== Certbot failed, continuing with HTTP only ==="
+                echo "=== Certbot failed (possibly rate limited), continuing with HTTP ==="
+                echo "=== Next retry allowed in 6 hours or with force_ssl_renew ==="
               }
-            else
-              echo "=== SSL certificate exists, using HTTPS config ==="
+            elif [ -f "$SSL_CERT_PATH" ]; then
+              echo "=== SSL certificate valid, using HTTPS config ==="
               
               # Use SSL nginx config
               if [ -f "nginx/nginx.ssl.conf" ]; then
