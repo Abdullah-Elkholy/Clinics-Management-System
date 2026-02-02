@@ -59,6 +59,13 @@ jobs:
             tar xzf deploy_package.tar.gz
             rm deploy_package.tar.gz
 
+            # Replace placeholders in nginx configs with actual values from secrets
+            echo "=== Substituting config placeholders with secrets ==="
+            sed -i "s/__HOST_IP__/${{ secrets.HOST }}/g" nginx/nginx.http.conf
+            sed -i "s/__HOST_IP__/${{ secrets.HOST }}/g" nginx/nginx.ssl.conf
+            sed -i "s/__DOMAIN__/${DOMAIN}/g" nginx/nginx.http.conf
+            sed -i "s/__DOMAIN__/${DOMAIN}/g" nginx/nginx.ssl.conf
+
             # Create .env file from environment variables
             echo "DB_PASSWORD=${DB_PASSWORD}" > .env
             echo "DB_USER=clinics_user" >> .env
@@ -67,14 +74,15 @@ jobs:
             echo "SSL_EMAIL=${SSL_EMAIL}" >> .env
             echo "DOMAIN=${DOMAIN}" >> .env
             
-            # Auto-detect SSL: Use HTTPS if cert exists, HTTP otherwise
+            # Auto-detect SSL: Use HTTPS domain if cert exists, IP address otherwise
             SSL_CERT_PATH="./nginx/ssl/live/${DOMAIN}/fullchain.pem"
             if [ -f "$SSL_CERT_PATH" ]; then
               echo "API_URL=https://${DOMAIN}" >> .env
               echo "=== SSL certificate found, using HTTPS ==="
             else
-              echo "API_URL=http://${DOMAIN}" >> .env
-              echo "=== No SSL certificate, using HTTP ==="
+              # Use IP address when SSL not available to avoid cross-origin issues
+              echo "API_URL=http://${{ secrets.HOST }}" >> .env
+              echo "=== No SSL certificate, using HTTP with IP ==="
             fi
             
             echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}" >> .env
