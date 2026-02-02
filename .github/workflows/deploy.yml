@@ -199,6 +199,16 @@ jobs:
               
               # Build and start all services
               docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+            else
+              echo "=== No SSL certificate, starting with HTTP config ==="
+              
+              # Use HTTP nginx config
+              if [ -f "nginx/nginx.http.conf" ]; then
+                cp nginx/nginx.http.conf nginx/nginx.conf
+              fi
+              
+              # Build and start all services
+              docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
             fi
             
             # Wait for health checks
