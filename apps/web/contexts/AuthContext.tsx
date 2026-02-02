@@ -73,6 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isNavigatingToHome, setIsNavigatingToHome] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { addToast } = useUI();
   const router = useRouter();
@@ -87,6 +88,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Only run once on mount
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
+
+    // Safety timeout: force stop validation after 10 seconds
+    validationTimeoutRef.current = setTimeout(() => {
+      console.warn('[Auth] Validation timeout reached, forcing stop');
+      setIsValidating(false);
+      // If still validating after timeout, clear potentially invalid token
+      const token = localStorage.getItem('token');
+      if (token && !authState.isAuthenticated) {
+        console.warn('[Auth] Clearing token after validation timeout');
+        localStorage.removeItem('token');
+        setHasToken(false);
+        setAuthCookie(false);
+      }
+    }, 10000);
 
     const restoreAuth = async () => {
       setIsValidating(true);
@@ -172,11 +187,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isAuthenticated: false,
         });
       } finally {
+        if (validationTimeoutRef.current) {
+          clearTimeout(validationTimeoutRef.current);
+        }
         setIsValidating(false);
       }
     };
 
     restoreAuth();
+
+    return () => {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+      }
+    };
   }, []); // Empty deps - only run on mount
 
   // Proactive token refresh - refresh token before expiration

@@ -25,9 +25,27 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const hasGlobalInitRef = useRef<boolean | null>(null);
+  const maxWaitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Use auth guard to protect routes
   useAuthGuard();
+
+  // Maximum wait timeout to prevent infinite loading (10 seconds)
+  useEffect(() => {
+    maxWaitTimeoutRef.current = setTimeout(() => {
+      console.warn('[ProtectedRoute] Max wait time reached, forcing initialization');
+      setIsInitialized(true);
+      setIsChecking(false);
+      (window as any).__AUTH_INITIALIZED__ = true;
+      hasGlobalInitRef.current = true;
+    }, 10000);
+
+    return () => {
+      if (maxWaitTimeoutRef.current) {
+        clearTimeout(maxWaitTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // One-time initialization; persist across navigations using a window flag
   useEffect(() => {
@@ -37,6 +55,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     }
     if (hasGlobalInitRef.current) {
       // Already initialized in this session; skip loader
+      if (maxWaitTimeoutRef.current) clearTimeout(maxWaitTimeoutRef.current);
       setIsInitialized(true);
       setIsChecking(false);
       return;
@@ -59,6 +78,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
     // Token exists; short timeout to allow AuthContext to validate
     const timer = setTimeout(() => {
+      if (maxWaitTimeoutRef.current) clearTimeout(maxWaitTimeoutRef.current);
       setIsInitialized(true);
       if (!isAuthenticated && !user) {
         setIsChecking(true);
@@ -82,18 +102,24 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     if (isInitialized) {
       // If we have a token but not authenticated, still checking
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-      if (token && !isAuthenticated && !user) {
+      if (token && !isAuthenticated && !user && !connectionError) {
         setIsChecking(true);
-        // Wait a bit more for auth to complete
+        // Wait a bit more for auth to complete, but not forever
         const timer = setTimeout(() => {
+          console.warn('[ProtectedRoute] Auth validation timeout, stopping check');
           setIsChecking(false);
-        }, 500);
+          // If still no auth after timeout, clear invalid token
+          if (!isAuthenticated && !user) {
+            console.warn('[ProtectedRoute] Clearing invalid token after timeout');
+            localStorage.removeItem('token');
+          }
+        }, 3000); // Increased to 3 seconds max wait
         return () => clearTimeout(timer);
       } else {
         setIsChecking(false);
       }
     }
-  }, [isAuthenticated, user, isInitialized]);
+  }, [isAuthenticated, user, isInitialized, connectionError]);
 
   // Redirect to login if not authenticated (using useEffect to avoid setState during render)
   useEffect(() => {

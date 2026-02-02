@@ -62,14 +62,19 @@ export function useAuthGuard() {
     // But if we're on a protected route and not authenticated after a delay, redirect
     if (token && !isAuthenticated && pathname !== '/login' && pathname !== '/') {
       // AuthContext will handle validation on mount
-      // Just wait a bit for it to complete, then check again
+      // Wait briefly, then check again - reduced from 1000ms to 500ms
       const timeout = setTimeout(() => {
         // Re-check token and auth state
         const currentToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         // If token still exists but we're still not authenticated, it's likely invalid
-        // Note: We can't check isAuthenticated here due to closure, so we'll let ProtectedRoute handle it
+        // Clear it to prevent infinite loops
+        if (currentToken && !isAuthenticated) {
+          logger.warn('[AuthGuard] Token exists but not authenticated after timeout, clearing');
+          localStorage.removeItem('token');
+          window.location.href = '/login';
+        }
         isCheckingRef.current = false;
-      }, 1000);
+      }, 500); // Reduced timeout
       
       return () => clearTimeout(timeout);
     }
