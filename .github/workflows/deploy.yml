@@ -73,6 +73,13 @@ jobs:
             echo "=== Checking existing containers ==="
             docker ps -a || true
             
+            # Remove any manually created containers that might conflict
+            echo "=== Cleaning up conflicting containers ==="
+            docker rm -f clinics-nginx 2>/dev/null || true
+            docker rm -f clinics-api 2>/dev/null || true
+            docker rm -f clinics-web 2>/dev/null || true
+            docker rm -f clinics-db 2>/dev/null || true
+            
             # Check if SSL certificates exist
             SSL_CERT_PATH="./nginx/ssl/live/${DOMAIN}/fullchain.pem"
             
