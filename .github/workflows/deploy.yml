@@ -113,6 +113,15 @@ jobs:
             docker rm -f clinics-db 2>/dev/null || true
             
             # ===========================================
+            # DATABASE PASSWORD SYNC (Single Source of Truth)
+            # ===========================================
+            # Ensure PostgreSQL user password matches GitHub Secrets
+            if docker ps -q -f name=clinics-db-prod | grep -q .; then
+              echo "=== Syncing DB password from GitHub Secrets ==="
+              docker exec clinics-db-prod psql -U postgres -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" 2>/dev/null || echo "DB password sync skipped (fresh install)"
+            fi
+            
+            # ===========================================
             # SSL CERTIFICATE MANAGEMENT (Rate Limit Safe)
             # ===========================================
             SSL_CERT_PATH="./nginx/ssl/live/${DOMAIN}/fullchain.pem"
