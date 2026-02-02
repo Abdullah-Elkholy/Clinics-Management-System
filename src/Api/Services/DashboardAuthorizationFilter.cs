@@ -15,25 +15,24 @@ public class DashboardAuthorizationFilter : IDashboardAuthorizationFilter
     public bool Authorize(DashboardContext context)
     {
         var httpContext = context.GetHttpContext();
-        
-        // SECURITY: In production, only allow localhost access (via SSH tunnel)
+
+        // SECURITY: In production, only localhost can access (via SSH tunnel)
+        // SSH tunnel provides authentication, so we trust localhost requests
         var env = httpContext.RequestServices.GetService(typeof(IWebHostEnvironment)) as IWebHostEnvironment;
         if (env != null && !env.IsDevelopment())
         {
             var remoteIp = httpContext.Connection.RemoteIpAddress;
             var isLocalhost = remoteIp != null && (
-                IPAddress.IsLoopback(remoteIp) || 
+                IPAddress.IsLoopback(remoteIp) ||
                 remoteIp.Equals(IPAddress.IPv6Loopback) ||
                 remoteIp.ToString() == "::1" ||
                 remoteIp.ToString() == "127.0.0.1");
-            
-            if (!isLocalhost)
-            {
-                return false; // Block all non-localhost access in production
-            }
+
+            // In production: localhost = allowed (SSH tunnel), external = blocked
+            return isLocalhost;
         }
-        
-        // If user is already authenticated via cookie/principal, check role
+
+        // In development, check for admin role authentication
         if (httpContext.User?.Identity?.IsAuthenticated ?? false)
         {
             if (httpContext.User.IsInRole("primary_admin") || httpContext.User.IsInRole("secondary_admin")) return true;
