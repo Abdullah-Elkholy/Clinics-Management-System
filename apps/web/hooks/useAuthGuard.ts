@@ -8,11 +8,15 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import logger from '../utils/logger';
 
+// Configuration
+const AUTH_VALIDATION_TIMEOUT_MS = 2000; // Max time to wait for auth validation
+
 /**
  * Hook to protect routes and handle auth state changes
  * - Validates token on route changes
  * - Redirects to login if not authenticated
  * - Prevents navigation loops
+ * - Clears stale tokens after timeout
  */
 export function useAuthGuard() {
   const { isAuthenticated, user } = useAuth();
@@ -20,6 +24,7 @@ export function useAuthGuard() {
   const router = useRouter();
   const isCheckingRef = useRef(false);
   const lastPathRef = useRef<string | null>(null);
+  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Skip if already checking or same path
@@ -52,26 +57,35 @@ export function useAuthGuard() {
     // If no token and trying to access protected route, redirect to login immediately
     if (!token && pathname !== '/login' && pathname !== '/') {
       logger.info('[AuthGuard] No token found, redirecting to login from:', pathname);
-      // Use window.location for immediate redirect to ensure clean state
-      window.location.href = '/login';
+      // Clear auth cookie to sync state
+      document.cookie = 'auth=; Path=/; SameSite=Lax; Max-Age=0';
+      router.replace('/login');
       isCheckingRef.current = false;
       return;
     }
     
-    // If token exists but user is not authenticated, wait for auth validation
-    // But if we're on a protected route and not authenticated after a delay, redirect
+    // If token exists but user is not authenticated, wait for auth validation with timeout
     if (token && !isAuthenticated && pathname !== '/login' && pathname !== '/') {
-      // AuthContext will handle validation on mount
-      // Just wait a bit for it to complete, then check again
-      const timeout = setTimeout(() => {
-        // Re-check token and auth state
+      // Set a timeout to clear stale token if auth doesn't complete
+      validationTimeoutRef.current = setTimeout(() => {
         const currentToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        const authCookie = document.cookie.includes('auth=1');
+        
         // If token still exists but we're still not authenticated, it's likely invalid
-        // Note: We can't check isAuthenticated here due to closure, so we'll let ProtectedRoute handle it
+        if (currentToken && !isAuthenticated && !authCookie) {
+          logger.warn('[AuthGuard] Token exists but auth failed after 2s, clearing');
+          localStorage.removeItem('token');
+          document.cookie = 'auth=; Path=/; SameSite=Lax; Max-Age=0';
+        }
+        
         isCheckingRef.current = false;
-      }, 1000);
+      }, AUTH_VALIDATION_TIMEOUT_MS);
       
-      return () => clearTimeout(timeout);
+      return () => {
+        if (validationTimeoutRef.current) {
+          clearTimeout(validationTimeoutRef.current);
+        }
+      };
     }
 
     // If authenticated but on login, allow (middleware will redirect to /home)
@@ -104,5 +118,14 @@ export function useAuthGuard() {
       isCheckingRef.current = false;
     }
   }, [isAuthenticated, user]);
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+      }
+    };
+  }, []);
 }
 

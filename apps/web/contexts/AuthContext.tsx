@@ -8,12 +8,16 @@ import { UserRole } from '@/types/roles';
 import { login as loginApi, logout as logoutApi, getCurrentUser, refreshAccessToken } from '@/services/api/authApiClient';
 import logger from '@/utils/logger';
 import { registerAuthErrorHandler, unregisterAuthErrorHandler } from '@/utils/apiInterceptor';
+import { LoopDetector } from '@/utils/loopDetector';
 
 // Retry/backoff configuration
 const RETRY_DELAYS = [300, 900]; // ms delays for up to 2 retries
 
 // Token refresh configuration
 const TOKEN_REFRESH_BUFFER = 5 * 60 * 1000; // Refresh 5 minutes before expiry
+
+// Validation timeout - maximum time to wait for auth validation
+const VALIDATION_TIMEOUT_MS = 5000; // 5 seconds max
 
 /**
  * Helper function to decode JWT token payload
@@ -81,12 +85,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const attemptIdRef = useRef(0); // Incremented on each new login attempt
   const lastToastMessageRef = useRef<string>(''); // Track last toast to avoid duplicates
   const isInitializingRef = useRef(false); // Prevent multiple initialization attempts
+  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Timeout for validation
 
   // Restore authentication state from localStorage on mount
   useEffect(() => {
     // Only run once on mount
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
+
+    // Set up validation timeout - force complete after VALIDATION_TIMEOUT_MS
+    validationTimeoutRef.current = setTimeout(() => {
+      logger.warn('[Auth] Validation timeout reached (5s), forcing validation complete');
+      setIsValidating(false);
+      
+      // If we still have a token but no user, the token is likely invalid
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (token && !authState.isAuthenticated) {
+        logger.warn('[Auth] Token exists but validation timed out - clearing token');
+        localStorage.removeItem('token');
+        setHasToken(false);
+        setAuthCookie(false);
+      }
+    }, VALIDATION_TIMEOUT_MS);
 
     const restoreAuth = async () => {
       setIsValidating(true);
@@ -105,11 +125,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               // Still no token, user is not authenticated
               setAuthCookie(false);
               setIsValidating(false);
+              // Clear timeout since we're done
+              if (validationTimeoutRef.current) {
+                clearTimeout(validationTimeoutRef.current);
+                validationTimeoutRef.current = null;
+              }
               return;
             }
           } catch {
             setAuthCookie(false);
             setIsValidating(false);
+            // Clear timeout since we're done
+            if (validationTimeoutRef.current) {
+              clearTimeout(validationTimeoutRef.current);
+              validationTimeoutRef.current = null;
+            }
             return;
           }
         }
@@ -148,6 +178,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               isAuthenticated: true,
             });
             setAuthCookie(true);
+            // Reset loop detector on successful auth
+            LoopDetector.reset();
             logger.info('[Auth] Restored authentication state from localStorage');
           }
         } catch (error) {
@@ -173,10 +205,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       } finally {
         setIsValidating(false);
+        // Clear validation timeout
+        if (validationTimeoutRef.current) {
+          clearTimeout(validationTimeoutRef.current);
+          validationTimeoutRef.current = null;
+        }
       }
     };
 
     restoreAuth();
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+        validationTimeoutRef.current = null;
+      }
+    };
   }, []); // Empty deps - only run on mount
 
   // Proactive token refresh - refresh token before expiration
@@ -392,6 +437,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
               setHasToken(true);
               setAuthCookie(true);
+              
+              // Reset loop detector on successful login
+              LoopDetector.reset();
 
               // Refresh user data from backend to populate assignedModerator and other fields
               // This ensures the user object has all necessary data (especially for regular users)

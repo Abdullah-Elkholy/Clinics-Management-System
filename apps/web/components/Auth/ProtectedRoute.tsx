@@ -4,11 +4,17 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAuthGuard } from '../../hooks/useAuthGuard';
+import { LoopDetector } from '../../utils/loopDetector';
+import logger from '../../utils/logger';
 import LoginScreen from './LoginScreen';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
+
+// Configuration
+const MAX_WAIT_TIME_MS = 5000; // Absolute maximum wait time for any state
+const CHECKING_TIMEOUT_MS = 2000; // Max time to stay in "checking" state
 
 /**
  * ProtectedRoute Component
@@ -17,6 +23,7 @@ interface ProtectedRouteProps {
  * - Redirects to login if not authenticated
  * - Prevents rendering protected content without auth
  * - Handles direct navigation to protected routes gracefully
+ * - Includes loop detection and emergency break mechanism
  */
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isAuthenticated, user, isValidating, connectionError, retryConnection } = useAuth();
@@ -24,10 +31,75 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const pathname = usePathname();
   const [isInitialized, setIsInitialized] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [forceRender, setForceRender] = useState(false);
   const hasGlobalInitRef = useRef<boolean | null>(null);
+  const checkingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mountTimeRef = useRef<number>(Date.now());
+  const isMountedRef = useRef(true);
 
   // Use auth guard to protect routes
   useAuthGuard();
+
+  // Reset loop detector when successfully authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      LoopDetector.reset();
+    }
+  }, [isAuthenticated, user]);
+
+  // Main initialization effect with loop detection and max wait
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    // Check for too many page loads (stuck state detection)
+    if (LoopDetector.recordPageLoad()) {
+      logger.error('[ProtectedRoute] Too many page loads, executing emergency break');
+      LoopDetector.emergencyBreak();
+      return;
+    }
+    
+    // Check if emergency break was recently executed - skip normal init
+    if (LoopDetector.wasEmergencyBreakRecent()) {
+      logger.warn('[ProtectedRoute] Emergency break recently executed, skipping init');
+      setIsInitialized(true);
+      setIsChecking(false);
+      return;
+    }
+    
+    // Check for redirect loop
+    if (LoopDetector.recordAttempt('ProtectedRoute')) {
+      logger.error('[ProtectedRoute] Infinite loop detected, executing emergency break');
+      LoopDetector.emergencyBreak();
+      return;
+    }
+    
+    // Set absolute maximum wait timeout
+    const maxWaitTimeout = setTimeout(() => {
+      if (isMountedRef.current) {
+        logger.warn('[ProtectedRoute] Absolute max wait reached (5s), forcing render');
+        setIsInitialized(true);
+        setIsChecking(false);
+        setForceRender(true);
+        (window as any).__AUTH_INITIALIZED__ = true;
+        hasGlobalInitRef.current = true;
+        
+        // If we still have token but no auth, clear it
+        const token = localStorage.getItem('token');
+        if (token && !isAuthenticated) {
+          logger.warn('[ProtectedRoute] Clearing stuck token');
+          localStorage.removeItem('token');
+        }
+      }
+    }, MAX_WAIT_TIME_MS);
+    
+    return () => {
+      isMountedRef.current = false;
+      clearTimeout(maxWaitTimeout);
+      if (checkingTimeoutRef.current) {
+        clearTimeout(checkingTimeoutRef.current);
+      }
+    };
+  }, [isAuthenticated]);
 
   // One-time initialization; persist across navigations using a window flag
   useEffect(() => {
@@ -59,13 +131,17 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
     // Token exists; short timeout to allow AuthContext to validate
     const timer = setTimeout(() => {
+      if (!isMountedRef.current) return;
+      
       setIsInitialized(true);
       if (!isAuthenticated && !user) {
         setIsChecking(true);
-        const secondTimer = setTimeout(() => {
-          setIsChecking(false);
-        }, 400);
-        return () => clearTimeout(secondTimer);
+        // Set a max timeout for checking state
+        checkingTimeoutRef.current = setTimeout(() => {
+          if (isMountedRef.current) {
+            setIsChecking(false);
+          }
+        }, CHECKING_TIMEOUT_MS);
       } else {
         setIsChecking(false);
       }
@@ -84,13 +160,36 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
       if (token && !isAuthenticated && !user) {
         setIsChecking(true);
-        // Wait a bit more for auth to complete
-        const timer = setTimeout(() => {
-          setIsChecking(false);
-        }, 500);
-        return () => clearTimeout(timer);
+        
+        // Clear previous timeout if any
+        if (checkingTimeoutRef.current) {
+          clearTimeout(checkingTimeoutRef.current);
+        }
+        
+        // Set timeout to prevent infinite checking
+        checkingTimeoutRef.current = setTimeout(() => {
+          if (isMountedRef.current) {
+            logger.warn('[ProtectedRoute] Checking timeout reached, clearing token');
+            setIsChecking(false);
+            
+            // Token validation failed - clear it and sync cookie
+            localStorage.removeItem('token');
+            document.cookie = 'auth=; Path=/; SameSite=Lax; Max-Age=0';
+          }
+        }, CHECKING_TIMEOUT_MS);
+        
+        return () => {
+          if (checkingTimeoutRef.current) {
+            clearTimeout(checkingTimeoutRef.current);
+          }
+        };
       } else {
         setIsChecking(false);
+        // Clear timeout since we're done checking
+        if (checkingTimeoutRef.current) {
+          clearTimeout(checkingTimeoutRef.current);
+          checkingTimeoutRef.current = null;
+        }
       }
     }
   }, [isAuthenticated, user, isInitialized]);
@@ -98,6 +197,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Redirect to login if not authenticated (using useEffect to avoid setState during render)
   useEffect(() => {
     if (!isAuthenticated && !isValidating && pathname !== '/login' && pathname !== '/') {
+      // Also clear auth cookie to prevent middleware redirect loop
+      document.cookie = 'auth=; Path=/; SameSite=Lax; Max-Age=0';
       router.replace('/login');
     }
   }, [isAuthenticated, isValidating, pathname, router]);

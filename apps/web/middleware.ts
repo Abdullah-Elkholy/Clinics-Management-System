@@ -8,12 +8,17 @@ import type { NextRequest } from 'next/server';
  * - Redirects unauthenticated users to /login
  * - Redirects authenticated users from /login to /home
  * - Handles root / redirect based on auth state
+ * - Detects and breaks redirect loops
  * 
  * Security Note: The 'auth' cookie is ONLY for navigation/UX.
  * Real authentication is enforced by:
  * 1. JWT token in localStorage (client-side)
  * 2. Backend [Authorize] attributes (server-side)
  */
+
+// Configuration
+const MAX_REDIRECTS = 3; // Max redirects before breaking loop
+const REDIRECT_COUNTER_TTL = 30; // Seconds to keep redirect counter
 
 // Apply a minimal set of security headers to all responses handled via middleware
 function withSecurityHeaders(res: NextResponse) {
@@ -38,13 +43,15 @@ export function middleware(request: NextRequest) {
   
   // Check for redirect loop detection
   const redirectCount = parseInt(request.cookies.get('redirect_count')?.value || '0', 10);
-  if (redirectCount > 3) {
-    // Too many redirects, clear auth and go to login
+  if (redirectCount > MAX_REDIRECTS) {
+    // Too many redirects - clear auth state and go to login
+    console.warn('[Middleware] Too many redirects detected, breaking loop');
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     const response = withSecurityHeaders(NextResponse.redirect(url));
+    // Clear all auth-related cookies
     response.cookies.set('auth', '', { maxAge: 0, path: '/' });
-    response.cookies.set('redirect_count', '0', { maxAge: 60, path: '/' });
+    response.cookies.set('redirect_count', '0', { maxAge: REDIRECT_COUNTER_TTL, path: '/' });
     return response;
   }
   
@@ -81,12 +88,12 @@ export function middleware(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = '/home';
       const response = withSecurityHeaders(NextResponse.redirect(url));
-      response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: 60, path: '/' });
+      response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: REDIRECT_COUNTER_TTL, path: '/' });
       return response;
     }
-    // Not authenticated, allow access to login page
+    // Not authenticated, allow access to login page and reset counter
     const response = withSecurityHeaders(NextResponse.next());
-    response.cookies.set('redirect_count', '0', { maxAge: 60, path: '/' }); // Reset counter on login page
+    response.cookies.set('redirect_count', '0', { maxAge: REDIRECT_COUNTER_TTL, path: '/' });
     return response;
   }
   
@@ -101,7 +108,7 @@ export function middleware(request: NextRequest) {
       url.pathname = '/login';
     }
     const response = withSecurityHeaders(NextResponse.redirect(url));
-    response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: 60, path: '/' });
+    response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: REDIRECT_COUNTER_TTL, path: '/' });
     return response;
   }
   
@@ -112,12 +119,12 @@ export function middleware(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = '/login';
       const response = withSecurityHeaders(NextResponse.redirect(url));
-      response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: 60, path: '/' });
+      response.cookies.set('redirect_count', String(redirectCount + 1), { maxAge: REDIRECT_COUNTER_TTL, path: '/' });
       return response;
     }
     // Authenticated, allow access - reset redirect counter
     const response = withSecurityHeaders(NextResponse.next());
-    response.cookies.set('redirect_count', '0', { maxAge: 60, path: '/' });
+    response.cookies.set('redirect_count', '0', { maxAge: REDIRECT_COUNTER_TTL, path: '/' });
     return response;
   }
   
