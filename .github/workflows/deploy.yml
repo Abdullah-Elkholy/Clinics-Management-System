@@ -91,7 +91,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "deploy_package.tar.gz"
           target: ${{ secrets.DEPLOY_PATH }}
-          rm: true # Clean target folder before copy to remove any leftovers
+          rm: false # IMPORTANT: do NOT wipe deploy folder (preserves nginx/ssl Let's Encrypt state)
           timeout: 300s # Set timeout to 5 minutes
           command_timeout: 30m # Set command timeout to 30 minutes
 
@@ -175,7 +175,8 @@ jobs:
             fi
             
             echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}" >> .env
-            echo "ExtensionOrigins=${EXTENSION_ORIGIN}" >> .env
+            # Used by docker-compose.prod.yml for env substitution into API container's ExtensionOrigins
+            echo "EXTENSION_ORIGIN=${EXTENSION_ORIGIN}" >> .env
             
             echo "=== Checking existing containers ==="
             docker ps -a || true
