@@ -518,7 +518,8 @@ export default function MessagePreviewModal() {
     setIsSending(true);
     try {
       // Generate unique correlationId for idempotency - prevents duplicate messages on retry or double-click
-      const correlationId = crypto.randomUUID();
+      const correlationId = crypto.randomUUID?.() || 
+        `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
       await messageApiClient.sendMessages({
         templateId: templateToUse,
         patientIds: patientIdsToSend,

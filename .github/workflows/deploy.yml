@@ -152,7 +152,7 @@ jobs:
             fi
             
             echo "ALLOWED_ORIGINS=${ALLOWED_ORIGINS}" >> .env
-            echo "EXTENSION_ORIGIN=${EXTENSION_ORIGIN}" >> .env
+            echo "ExtensionOrigins=${EXTENSION_ORIGIN}" >> .env
             
             echo "=== Checking existing containers ==="
             docker ps -a || true
