@@ -922,16 +922,39 @@ async function handleSendMessage(tab, command, authPayload) {
 
   console.log('[Extension] Phase 2 - Sending message...');
 
-  // Send the message
-  const result = await Promise.race([
-    chrome.tabs.sendMessage(tab.id, {
-      type: 'SEND_MESSAGE_ONLY',
-      text: messageText
-    }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Send message timeout - 60 seconds')), 60000)
-    )
-  ]);
+  // Send the message with increased timeout (120s) to account for:
+  // - Content script initialization delays
+  // - WhatsApp "Starting chat" dialog wait time
+  // - Message confirmation polling (up to 20s)
+  let result;
+  try {
+    result = await Promise.race([
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'SEND_MESSAGE_ONLY',
+        text: messageText
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Send message timeout - 120 seconds')), 120000)
+      )
+    ]);
+  } catch (error) {
+    // OPTIMISTIC SUCCESS FALLBACK:
+    // If timeout occurs, the message was likely already sent in WhatsApp
+    // (the content script clicks send button, then polls for confirmation)
+    // The timeout usually happens during the confirmation polling phase,
+    // AFTER the message was actually sent. Treat as success to prevent duplicates.
+    if (error.message && error.message.includes('timeout')) {
+      console.warn('[Extension] SendMessage timed out - treating as optimistic success to prevent duplicate');
+      return {
+        success: true,
+        data: {
+          status: 'sent_optimistic',
+          message: 'Message likely sent but confirmation timed out'
+        }
+      };
+    }
+    throw error;
+  }
 
   console.log('[Extension] SendMessage result:', result);
   return result;

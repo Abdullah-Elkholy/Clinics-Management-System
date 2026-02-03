@@ -346,6 +346,7 @@ builder.Services.AddScoped<Clinics.Api.Services.Extension.IExtensionCommandServi
 builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProvider, Clinics.Api.Services.Extension.ExtensionRunnerProvider>();
 builder.Services.AddScoped<Clinics.Api.Services.Extension.IWhatsAppProviderFactory, Clinics.Api.Services.Extension.WhatsAppProviderFactory>();
 builder.Services.AddScoped<Clinics.Api.Services.Extension.ICheckWhatsAppService, Clinics.Api.Services.Extension.CheckWhatsAppService>();
+builder.Services.AddScoped<Clinics.Api.Services.Extension.ExtensionCommandCleanupService>(); // DEF-007/008/009: Cleanup orphaned commands and messages
 
 // Telemetry provider for system performance monitoring
 builder.Services.AddHttpClient<ITelemetryProvider, TelemetryProvider>();
@@ -987,6 +988,13 @@ try
 
     // Security: Monitor CPU usage every 5 minutes to detect cryptominers or other malicious activity
     RecurringJob.AddOrUpdate<CpuMonitorJob>("cpu-security-monitor", job => job.ExecuteAsync(), "*/5 * * * *");
+
+    // DEF-007/008/009: Clean up orphaned extension commands and messages every 60 seconds
+    // This recovers messages stuck in "sending" status due to timed-out commands
+    RecurringJob.AddOrUpdate<Clinics.Api.Services.Extension.ExtensionCommandCleanupService>(
+        "extension-command-cleanup",
+        service => service.RunCleanupAsync(),
+        "*/60 * * * * *");
 }
 catch { }
 
