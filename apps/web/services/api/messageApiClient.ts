@@ -666,7 +666,7 @@ export async function sendMessage(data: {
 
 /**
  * Send messages to multiple patients (bulk)
- * @param correlationId - Optional unique ID for idempotency. If provided, prevents duplicate message creation on retries.
+ * @param correlationId - Optional unique ID for idempotency. Must be a valid UUID/GUID format if provided.
  */
 export async function sendMessages(data: {
   templateId: number;
@@ -675,9 +675,21 @@ export async function sendMessages(data: {
   overrideContent?: string;
   correlationId?: string;
 }): Promise<{ success: boolean; queued: number }> {
+  // Build request body, only including correlationId if it's a valid UUID
+  const requestBody: Record<string, unknown> = {
+    templateId: data.templateId,
+    patientIds: data.patientIds,
+  };
+  if (data.channel) requestBody.channel = data.channel;
+  if (data.overrideContent) requestBody.overrideContent = data.overrideContent;
+  // Only include correlationId if it's a valid UUID format
+  if (data.correlationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.correlationId)) {
+    requestBody.correlationId = data.correlationId;
+  }
+  
   return fetchAPI('/messages/send', {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify(requestBody),
   });
 }
 
