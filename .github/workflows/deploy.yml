@@ -18,12 +18,30 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Preflight - verify SSH reachable from runner
+        shell: bash
+        env:
+          HOST: ${{ secrets.HOST }}
+        run: |
+          set -euo pipefail
+          echo "=== DNS resolution (may be masked) ==="
+          getent hosts "$HOST" || true
+          echo "=== Checking TCP 22 reachability ==="
+          # Fail fast with a clear error if GitHub-hosted runners cannot reach the server.
+          if timeout 7 bash -lc "cat < /dev/null > /dev/tcp/${HOST}/22"; then
+            echo "SSH port 22 reachable"
+          else
+            echo "::error::Cannot reach ${HOST}:22 from GitHub runner (timeout). Check provider firewall/ACL, Fail2Ban bans, or wrong HOST/port."
+            exit 1
+          fi
+
       - name: Bootstrap Server (if fresh)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          debug: true
           timeout: 300s
           command_timeout: 15m
           script: |
@@ -111,6 +129,7 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          debug: true
           timeout: 300s
           command_timeout: 30m
           envs: DB_PASSWORD,DB_USER,DB_NAME,JWT_SECRET_KEY,SSL_EMAIL,DOMAIN,ALLOWED_ORIGINS,EXTENSION_ORIGIN,DEPLOY_PATH
