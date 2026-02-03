@@ -18,6 +18,58 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Bootstrap Server (if fresh)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          timeout: 300s
+          command_timeout: 15m
+          script: |
+            # ===========================================
+            # ZERO-TOUCH BOOTSTRAP FOR FRESH SERVERS
+            # Only runs full setup if Docker not installed
+            # ===========================================
+            if ! command -v docker &> /dev/null; then
+              echo "=== Fresh server detected, running bootstrap ==="
+              
+              # Update system
+              apt update && apt upgrade -y
+              
+              # Install Docker v2
+              curl -fsSL https://get.docker.com | sh
+              systemctl enable docker
+              systemctl start docker
+              
+              # Install Fail2Ban
+              apt install -y fail2ban
+              systemctl enable fail2ban
+              systemctl start fail2ban
+              
+              # Configure firewall
+              ufw default deny incoming
+              ufw default allow outgoing
+              ufw allow 22/tcp
+              ufw allow 80/tcp
+              ufw allow 443/tcp
+              echo "y" | ufw enable
+              
+              # Harden SSH (disable password auth)
+              sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+              sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+              sed -i 's/PermitRootLogin yes/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+              systemctl restart ssh
+              
+              echo "=== Bootstrap complete! ==="
+            else
+              echo "=== Docker already installed, skipping bootstrap ==="
+              docker --version
+            fi
+            
+            # Always ensure deploy directory exists
+            mkdir -p ${{ secrets.DEPLOY_PATH }}
+
       - name: Security Audit - npm packages
         run: |
           cd apps/web
