@@ -121,9 +121,32 @@ jobs:
             # Enable Docker Content Trust for image verification
             export DOCKER_CONTENT_TRUST=1
             
+            # ===========================================
+            # BACKUP SSL CERTS BEFORE EXTRACTION
+            # Prevents rate limit issues by preserving existing certificates
+            # ===========================================
+            SSL_BACKUP_DIR="/tmp/ssl_backup_$$"
+            if [ -d "nginx/ssl/live" ] || [ -d "nginx/ssl/archive" ]; then
+              echo "=== Backing up SSL certificates ==="
+              mkdir -p "$SSL_BACKUP_DIR"
+              cp -a nginx/ssl/. "$SSL_BACKUP_DIR/" 2>/dev/null || true
+              echo "SSL certs backed up to $SSL_BACKUP_DIR"
+            fi
+            
             # Unpack the deployment package
             tar xzf deploy_package.tar.gz
             rm deploy_package.tar.gz
+            
+            # ===========================================
+            # RESTORE SSL CERTS AFTER EXTRACTION
+            # ===========================================
+            if [ -d "$SSL_BACKUP_DIR/live" ]; then
+              echo "=== Restoring SSL certificates ==="
+              rm -rf nginx/ssl/live nginx/ssl/archive nginx/ssl/renewal nginx/ssl/accounts 2>/dev/null || true
+              cp -a "$SSL_BACKUP_DIR/." nginx/ssl/
+              rm -rf "$SSL_BACKUP_DIR"
+              echo "SSL certs restored successfully"
+            fi
 
             # Replace placeholders in nginx configs with actual values from secrets
             echo "=== Substituting config placeholders with secrets ==="

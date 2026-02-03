@@ -97,6 +97,10 @@ const SELECTORS = {
   // Note: We can't use Playwright's :has-text() selector in vanilla JS
   // So we focus on aria-label and data attributes, with manual text checking
   errorDialogSelectors: [
+    // Current WhatsApp Web error format (2025+)
+    "[aria-label*=\"isn't on WhatsApp\"]",
+    "div[data-animate-modal-popup='true'][aria-label*=\"isn't on WhatsApp\"]",
+    // Legacy formats
     "[aria-label*='Phone number shared via url is invalid']",
     "div[role='dialog'] div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid']",
     "div[data-animate-modal-popup='true'][aria-label*='Phone number shared via url is invalid']",
