@@ -240,31 +240,32 @@ jobs:
               docker compose -f docker-compose.prod.yml --profile ssl run --rm certbot && {
                 echo "=== SSL certificate obtained successfully ==="
                 
-                # Switch to SSL nginx config
-                if [ -f "nginx/nginx.ssl.conf" ]; then
+                # Verify cert actually exists before switching to SSL
+                if [ -f "$SSL_CERT_PATH" ] || [ -L "$SSL_CERT_PATH" ]; then
                   cp nginx/nginx.ssl.conf nginx/nginx.conf
                   docker compose -f docker-compose.prod.yml restart nginx
                   echo "=== Switched to HTTPS configuration ==="
+                else
+                  echo "=== WARNING: Certbot succeeded but cert not found, staying on HTTP ==="
                 fi
               } || {
                 echo "=== Certbot failed (possibly rate limited), continuing with HTTP ==="
                 echo "=== Next retry allowed in 6 hours or with force_ssl_renew ==="
               }
-            elif [ -f "$SSL_CERT_PATH" ]; then
-              echo "=== SSL certificate valid, using HTTPS config ==="
-              
-              # Use SSL nginx config
-              if [ -f "nginx/nginx.ssl.conf" ]; then
-                cp nginx/nginx.ssl.conf nginx/nginx.conf
-              fi
-              
-              # Build and start all services
-              docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
             else
-              echo "=== No SSL certificate, starting with HTTP config ==="
-              
-              # Use HTTP nginx config
-              if [ -f "nginx/nginx.http.conf" ]; then
+              # No certbot needed - decide between HTTP and HTTPS based on cert existence
+              # Check for cert file OR symlink (Let's Encrypt uses symlinks)
+              if [ -f "$SSL_CERT_PATH" ] || [ -L "$SSL_CERT_PATH" ]; then
+                # Verify symlink target exists (cert not corrupted)
+                if [ -e "$SSL_CERT_PATH" ]; then
+                  echo "=== SSL certificate valid, using HTTPS config ==="
+                  cp nginx/nginx.ssl.conf nginx/nginx.conf
+                else
+                  echo "=== SSL cert symlink broken, using HTTP config ==="
+                  cp nginx/nginx.http.conf nginx/nginx.conf
+                fi
+              else
+                echo "=== No SSL certificate, starting with HTTP config ==="
                 cp nginx/nginx.http.conf nginx/nginx.conf
               fi
               
