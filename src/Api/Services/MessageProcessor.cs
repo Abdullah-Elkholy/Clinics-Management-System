@@ -116,9 +116,11 @@ namespace Clinics.Api.Services
                     orphan.InFlightCommandId = null;
                 }
                 else if (command.Status == ExtensionCommandStatuses.Expired ||
-                         command.Status == ExtensionCommandStatuses.Failed)
+                         command.Status == ExtensionCommandStatuses.Failed ||
+                         command.Status == ExtensionCommandStatuses.Completed)
                 {
-                    // Command expired or failed - reset message to queued for retry
+                    // Command expired, failed, or completed - reset message to queued for retry
+                    // (If completed successfully, the message should have been marked 'sent' - if it's still 'sending', something went wrong)
                     _logger.LogWarning("Resetting message {MessageId} from sending to queued (command {CommandId} status: {Status})",
                         orphan.Id, orphan.InFlightCommandId, command.Status);
                     orphan.Status = "queued";
@@ -126,10 +128,26 @@ namespace Clinics.Api.Services
                 }
             }
 
-            if (orphanedMessages.Count > 0)
+            // CRITICAL FIX: Also cleanup messages stuck in 'sending' with NO InFlightCommandId
+            // These messages block the entire moderator's queue but aren't detected by the above cleanup
+            // This can happen when: command creation failed, command was cleaned up but message wasn't updated
+            var stuckWithoutCommand = await _db.Messages
+                .Where(m => !m.IsDeleted && m.Status == "sending" && m.InFlightCommandId == null)
+                .ToListAsync();
+
+            foreach (var stuck in stuckWithoutCommand)
+            {
+                _logger.LogWarning("Resetting stuck message {MessageId} from sending to queued (no InFlightCommandId - was blocking queue)",
+                    stuck.Id);
+                stuck.Status = "queued";
+            }
+
+            var totalReset = orphanedMessages.Count + stuckWithoutCommand.Count;
+            if (totalReset > 0)
             {
                 await _db.SaveChangesAsync();
-                _logger.LogInformation("Reset {Count} orphaned message(s) from sending to queued", orphanedMessages.Count);
+                _logger.LogInformation("Reset {Count} stuck message(s) from sending to queued ({OrphanCount} orphaned, {StuckCount} without command)",
+                    totalReset, orphanedMessages.Count, stuckWithoutCommand.Count);
             }
 
             var totalMessages = 0;
