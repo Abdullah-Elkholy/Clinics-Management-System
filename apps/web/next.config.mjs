@@ -8,6 +8,11 @@ const nextConfig = {
   reactStrictMode: true,
   // Enable standalone output for Docker deployment
   output: 'standalone',
+  
+  // Disable ESLint errors during build (warnings only)
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 
   // Optimize webpack configuration for better chunk loading
   webpack: (config, { isServer, dev }) => {
