@@ -1093,7 +1093,7 @@ export default function UserManagementPanel() {
       )}
 
       {/* Content */}
-      <div className="p-6">
+      <div className="p-6 flex flex-col h-full overflow-hidden">
         {/* Navigation Tabs - Role Based */}
         <div className="flex gap-2 mb-6 border-b border-gray-200">
           {/* Account Settings Tab - Show for all (First Tab) */}
@@ -1253,7 +1253,7 @@ export default function UserManagementPanel() {
             )}
 
             {moderators.length > 0 && (
-              <div className="space-y-4">
+              <div className="space-y-4 max-h-[calc(100vh-400px)] overflow-y-auto pr-2">
                 {moderators.map((moderator) => {
                   const managedUsers = getUsersByModerator(moderator.id);
                   const isExpanded = expandedModerators.has(moderator.id);
@@ -2035,458 +2035,458 @@ export default function UserManagementPanel() {
           <QuotaTabContent currentUser={currentUser} />
         )}
 
-      {/* Log Detail Modal */}
-      {selectedLog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <i className="fas fa-file-alt"></i>
-                تفاصيل السجل
-              </h3>
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="text-white hover:text-gray-200 text-xl"
-              >
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              {/* Header Info */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="border-l-4 border-purple-600 pl-4">
-                  <p className="text-xs text-gray-600 font-medium">المستوى</p>
-                  <p className="text-sm font-semibold mt-1">{String(selectedLog.level)}</p>
-                </div>
-                <div className="border-l-4 border-blue-600 pl-4">
-                  <p className="text-xs text-gray-600 font-medium">الوقت</p>
-                  <p className="text-sm font-semibold mt-1">{selectedLog.timestamp ? formatLocalDateTime(selectedLog.timestamp as string) : 'غير محدد'}</p>
-                </div>
-                <div className="border-l-4 border-green-600 pl-4">
-                  <p className="text-xs text-gray-600 font-medium">المصدر</p>
-                  <p className="text-xs font-semibold mt-1 font-mono">{String(selectedLog.source)}</p>
-                </div>
-                <div className="border-l-4 border-orange-600 pl-4">
-                  <p className="text-xs text-gray-600 font-medium">المستخدم</p>
-                  <p className="text-sm font-semibold mt-1">{String(selectedLog.userName)}</p>
-                </div>
-              </div>
-
-              {/* Message */}
-              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <p className="text-xs text-gray-600 font-medium mb-2">الرسالة</p>
-                <p className="text-sm text-gray-900 font-mono break-words">{String(selectedLog.message)}</p>
-              </div>
-
-              {/* Exception */}
-              {selectedLog.exception && (
-                <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-                  <p className="text-xs text-red-600 font-medium mb-2">الاستثناء</p>
-                  <p className="text-sm text-red-900 font-mono break-words">{String(selectedLog.exception)}</p>
-                </div>
-              )}
-
-              {/* Stack Trace */}
-              {selectedLog.stackTrace && (
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  <p className="text-xs text-gray-600 font-medium mb-2">تتبع المكدس</p>
-                  <pre className="text-xs text-gray-900 overflow-x-auto whitespace-pre-wrap break-words">{String(selectedLog.stackTrace)}</pre>
-                </div>
-              )}
-
-              {/* Properties */}
-              {selectedLog.properties && Object.keys(selectedLog.properties).length > 0 && (
-                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                  <p className="text-xs text-blue-600 font-medium mb-3">الخصائص الإضافية</p>
-                  <div className="space-y-2">
-                    {Object.entries(selectedLog.properties).map(([key, value]) => (
-                      <div key={key} className="flex justify-between items-start text-xs gap-4">
-                        <span className="font-medium text-gray-700 flex-shrink-0">{key}:</span>
-                        <span className="text-gray-600 font-mono text-right break-all flex-1">{String(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-4 border-t border-gray-200">
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(selectedLog, null, 2));
-                    addToast('تم نسخ التفاصيل إلى الحافظة', 'success');
-                  }}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                >
-                  <i className="fas fa-copy"></i>
-                  نسخ
-                </button>
+        {/* Log Detail Modal */}
+        {selectedLog && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <i className="fas fa-file-alt"></i>
+                  تفاصيل السجل
+                </h3>
                 <button
                   onClick={() => setSelectedLog(null)}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors text-sm font-medium"
+                  className="text-white hover:text-gray-200 text-xl"
                 >
                   <i className="fas fa-times"></i>
-                  إغلاق
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-
-
-      {/* Trash Tab */}
-      {activeTab === 'trash' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
-        <div className="space-y-6">
-          {/* Trash Header */}
-          <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-red-900 flex items-center gap-2">
-              <i className="fas fa-trash"></i>
-              المهملات
-            </h3>
-            <p className="text-sm text-red-700 mt-2">
-              يمكنك استعادة العناصر المحذوفة خلال 30 يوم من تاريخ الحذف. المهملات تحتوي على المستخدمين والعيادات والقوالب والمرضى المحذوفين.
-            </p>
-          </div>
-
-          {/* Trash Tab Content - Users */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <button
-              onClick={() => {
-                setExpandedTrashSections(prev => {
-                  const next = new Set(prev);
-                  if (next.has('users')) next.delete('users'); else next.add('users');
-                  return next;
-                });
-              }}
-              className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
-            >
-              <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                <i className="fas fa-users text-blue-600"></i>
-                المستخدمون المحذوفون
-              </h4>
-              <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('users') ? 'rotate-180' : ''}`}></i>
-            </button>
-            {expandedTrashSections.has('users') && (
-              <div className="p-4">
-                <TrashTab
-                  entityType="user"
-                  items={trashItems}
-                  isLoading={isLoadingTrash}
-                  isError={!!trashError}
-                  errorMessage={trashError}
-                  pageNumber={trashPageNumber}
-                  pageSize={TRASH_PAGE_SIZE}
-                  totalCount={trashTotalCount}
-                  onPageChange={loadTrashUsers}
-                  onRestore={handleRestoreUser}
-                  adminOnly={false}
-                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Trash Tab Content - Queues */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <button
-              onClick={() => {
-                setExpandedTrashSections(prev => {
-                  const next = new Set(prev);
-                  if (next.has('queues')) next.delete('queues'); else next.add('queues');
-                  return next;
-                });
-              }}
-              className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
-            >
-              <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                <i className="fas fa-layer-group text-purple-600"></i>
-                العيادات المحذوفة
-              </h4>
-              <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('queues') ? 'rotate-180' : ''}`}></i>
-            </button>
-            {expandedTrashSections.has('queues') && (
-              <div className="p-4">
-                <TrashTab
-                  entityType="queue"
-                  items={trashQueues.map(q => ({ ...q, name: q.doctorName, id: q.id }))}
-                  isLoading={isLoadingTrashQueues}
-                  isError={!!trashQueuesError}
-                  errorMessage={trashQueuesError}
-                  pageNumber={trashQueuesPageNumber}
-                  pageSize={TRASH_PAGE_SIZE}
-                  totalCount={trashQueuesTotalCount}
-                  onPageChange={loadTrashQueues}
-                  onRestore={handleRestoreQueue}
-                  adminOnly={false}
-                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Trash Tab Content - Templates */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <button
-              onClick={() => {
-                setExpandedTrashSections(prev => {
-                  const next = new Set(prev);
-                  if (next.has('templates')) next.delete('templates'); else next.add('templates');
-                  return next;
-                });
-              }}
-              className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
-            >
-              <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                <i className="fas fa-file-alt text-green-600"></i>
-                القوالب المحذوفة
-              </h4>
-              <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('templates') ? 'rotate-180' : ''}`}></i>
-            </button>
-            {expandedTrashSections.has('templates') && (
-              <div className="p-4">
-                <TrashTab
-                  entityType="template"
-                  items={trashTemplates.map(t => ({ ...t, name: t.title, id: t.id }))}
-                  isLoading={isLoadingTrashTemplates}
-                  isError={!!trashTemplatesError}
-                  errorMessage={trashTemplatesError}
-                  pageNumber={trashTemplatesPageNumber}
-                  pageSize={TRASH_PAGE_SIZE}
-                  totalCount={trashTemplatesTotalCount}
-                  onPageChange={loadTrashTemplates}
-                  onRestore={handleRestoreTemplate}
-                  adminOnly={false}
-                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-                  queues={queues}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Trash Tab Content - Patients */}
-          {trashPatientsTotalCount > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <i className="fas fa-user-injured text-orange-600"></i>
-                المرضى المحذوفون
-              </h4>
-              <TrashTab
-                entityType="patient"
-                items={trashPatients.map(p => ({ ...p, name: p.fullName || p.name, id: p.id }))}
-                isLoading={isLoadingTrashPatients}
-                isError={!!trashPatientsError}
-                errorMessage={trashPatientsError}
-                pageNumber={trashPatientsPageNumber}
-                pageSize={TRASH_PAGE_SIZE}
-                totalCount={trashPatientsTotalCount}
-                onPageChange={loadTrashPatients}
-                onRestore={async (id) => {
-                  // Placeholder - implement when patient restore endpoint is available
-                  addToast('استعادة المرضى قيد التطوير', 'info');
-                }}
-                adminOnly={false}
-                isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* System Settings Section (Admin Only) */}
-      {activeTab === 'systemSettings' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
-        <div className="space-y-6">
-          {/* Header Banner */}
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
-              <i className="fas fa-cog"></i>
-              إعدادات النظام
-            </h3>
-            <p className="text-sm text-blue-700 mt-2">
-              إدارة إعدادات النظام الأساسية في حدود الاستخدام.
-            </p>
-          </div>
-
-          {/* Rate Limit Settings Card */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="bg-blue-50 border-b border-blue-100 p-4">
-              <h4 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
-                <i className="fas fa-shield-alt text-blue-600"></i>
-                إعدادات حماية الحساب (Rate Limiting)
-              </h4>
-              <p className="text-blue-700 text-sm mt-1">
-                تحكم في التأخير العشوائي بين الرسائل لحماية الحساب من اكتشاف النمط المتكرر
-              </p>
-            </div>
-
-            <div className="p-4">
-              {/* Current Settings Display */}
-              {rateLimitSettings && (
-                <div className="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
-                  <h4 className="text-blue-800 font-semibold mb-2 flex items-center gap-2">
-                    <i className="fas fa-info-circle"></i>
-                    الإعدادات الحالية
-                  </h4>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-                      <div className="text-2xl font-bold text-blue-600">{rateLimitSettings.minSeconds}</div>
-                      <div className="text-gray-600">الحد الأدنى (ثانية)</div>
-                    </div>
-                    <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-                      <div className="text-2xl font-bold text-blue-600">{rateLimitSettings.maxSeconds}</div>
-                      <div className="text-gray-600">الحد الأقصى (ثانية)</div>
-                    </div>
-                    <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-                      <div className={`text-2xl font-bold ${rateLimitSettings.enabled ? 'text-green-600' : 'text-red-600'}`}>
-                        {rateLimitSettings.enabled ? 'مفعّل' : 'معطّل'}
-                      </div>
-                      <div className="text-gray-600">الحالة</div>
-                    </div>
+              <div className="p-6 space-y-4">
+                {/* Header Info */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="border-l-4 border-purple-600 pl-4">
+                    <p className="text-xs text-gray-600 font-medium">المستوى</p>
+                    <p className="text-sm font-semibold mt-1">{String(selectedLog.level)}</p>
                   </div>
-                </div>
-              )}
-
-              {/* Edit Form */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      الحد الأدنى للتأخير (ثانية)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="60"
-                      value={tempMinSeconds}
-                      onChange={(e) => setTempMinSeconds(parseInt(e.target.value) || 0)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="3"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">قيمة بين 0 و 60 ثانية</p>
+                  <div className="border-l-4 border-blue-600 pl-4">
+                    <p className="text-xs text-gray-600 font-medium">الوقت</p>
+                    <p className="text-sm font-semibold mt-1">{selectedLog.timestamp ? formatLocalDateTime(selectedLog.timestamp as string) : 'غير محدد'}</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      الحد الأقصى للتأخير (ثانية)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="120"
-                      value={tempMaxSeconds}
-                      onChange={(e) => setTempMaxSeconds(parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="7"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">قيمة بين 1 و 120 ثانية</p>
+                  <div className="border-l-4 border-green-600 pl-4">
+                    <p className="text-xs text-gray-600 font-medium">المصدر</p>
+                    <p className="text-xs font-semibold mt-1 font-mono">{String(selectedLog.source)}</p>
+                  </div>
+                  <div className="border-l-4 border-orange-600 pl-4">
+                    <p className="text-xs text-gray-600 font-medium">المستخدم</p>
+                    <p className="text-sm font-semibold mt-1">{String(selectedLog.userName)}</p>
                   </div>
                 </div>
 
-                {/* Enable/Disable Toggle */}
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <h4 className="font-medium text-gray-900">تفعيل حماية الحساب</h4>
-                    <p className="text-sm text-gray-500">عند التعطيل، سيتم إرسال الرسائل بدون تأخير (غير موصى به)</p>
-                  </div>
-                  <button
-                    onClick={() => setTempEnabled(!tempEnabled)}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${tempEnabled ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    role="switch"
-                    aria-checked={tempEnabled}
-                    dir="ltr"
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${tempEnabled ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                    />
-                  </button>
+                {/* Message */}
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <p className="text-xs text-gray-600 font-medium mb-2">الرسالة</p>
+                  <p className="text-sm text-gray-900 font-mono break-words">{String(selectedLog.message)}</p>
                 </div>
 
-                {/* Validation Warning */}
-                {tempMaxSeconds < tempMinSeconds && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm flex items-center gap-2">
-                    <i className="fas fa-exclamation-triangle"></i>
-                    الحد الأقصى يجب أن يكون أكبر من أو يساوي الحد الأدنى
+                {/* Exception */}
+                {selectedLog.exception && (
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                    <p className="text-xs text-red-600 font-medium mb-2">الاستثناء</p>
+                    <p className="text-sm text-red-900 font-mono break-words">{String(selectedLog.exception)}</p>
                   </div>
                 )}
 
-                {/* Save Button */}
-                <div className="flex justify-end gap-3 pt-4 border-t">
+                {/* Stack Trace */}
+                {selectedLog.stackTrace && (
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p className="text-xs text-gray-600 font-medium mb-2">تتبع المكدس</p>
+                    <pre className="text-xs text-gray-900 overflow-x-auto whitespace-pre-wrap break-words">{String(selectedLog.stackTrace)}</pre>
+                  </div>
+                )}
+
+                {/* Properties */}
+                {selectedLog.properties && Object.keys(selectedLog.properties).length > 0 && (
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <p className="text-xs text-blue-600 font-medium mb-3">الخصائص الإضافية</p>
+                    <div className="space-y-2">
+                      {Object.entries(selectedLog.properties).map(([key, value]) => (
+                        <div key={key} className="flex justify-between items-start text-xs gap-4">
+                          <span className="font-medium text-gray-700 flex-shrink-0">{key}:</span>
+                          <span className="text-gray-600 font-mono text-right break-all flex-1">{String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 pt-4 border-t border-gray-200">
                   <button
-                    onClick={async () => {
-                      if (rateLimitSettings) {
-                        setTempMinSeconds(rateLimitSettings.minSeconds);
-                        setTempMaxSeconds(rateLimitSettings.maxSeconds);
-                        setTempEnabled(rateLimitSettings.enabled);
-                      }
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(selectedLog, null, 2));
+                      addToast('تم نسخ التفاصيل إلى الحافظة', 'success');
                     }}
-                    className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                   >
-                    <i className="fas fa-undo ml-1"></i>
-                    إعادة تعيين
+                    <i className="fas fa-copy"></i>
+                    نسخ
                   </button>
                   <button
-                    onClick={async () => {
-                      if (tempMaxSeconds < tempMinSeconds) {
-                        addToast('الحد الأقصى يجب أن يكون أكبر من أو يساوي الحد الأدنى', 'error');
-                        return;
-                      }
-                      setRateLimitSaving(true);
-                      try {
-                        const updated = await settingsApiClient.updateRateLimitSettings({
-                          minSeconds: tempMinSeconds,
-                          maxSeconds: tempMaxSeconds,
-                          enabled: tempEnabled
-                        });
-                        setRateLimitSettings(updated);
-                        addToast('تم حفظ إعدادات حماية الحساب بنجاح', 'success');
-                      } catch (err) {
-                        logger.error('Failed to save rate limit settings:', err);
-                        addToast('فشل حفظ الإعدادات', 'error');
-                      } finally {
-                        setRateLimitSaving(false);
-                      }
-                    }}
-                    disabled={rateLimitSaving || tempMaxSeconds < tempMinSeconds}
-                    className={`px-6 py-2 rounded-lg font-medium text-white flex items-center gap-2 transition-colors ${rateLimitSaving || tempMaxSeconds < tempMinSeconds
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700'
-                      }`}
+                    onClick={() => setSelectedLog(null)}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors text-sm font-medium"
                   >
-                    {rateLimitSaving ? (
-                      <>
-                        <i className="fas fa-spinner fa-spin"></i>
-                        جارٍ الحفظ...
-                      </>
-                    ) : (
-                      <>
-                        <i className="fas fa-save"></i>
-                        حفظ الإعدادات
-                      </>
-                    )}
+                    <i className="fas fa-times"></i>
+                    إغلاق
                   </button>
                 </div>
               </div>
             </div>
           </div>
+        )}
 
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="text-blue-800 font-semibold mb-2 flex items-center gap-2">
-              <i className="fas fa-lightbulb"></i>
-              ملاحظات مهمة
-            </h4>
-            <ul className="text-blue-700 text-sm space-y-2 list-disc list-inside">
-              <li>يتم توليد تأخير عشوائي بين الحد الأدنى والأقصى قبل كل رسالة</li>
-              <li>التأخير العشوائي يمنع واتساب من اكتشاف نمط الإرسال الآلي</li>
-              <li>القيم الافتراضية (3-7 ثانية) توفر توازناً جيداً بين السرعة والأمان</li>
-              <li>تعطيل الحماية قد يؤدي لحظر الحساب - استخدم بحذر!</li>
-            </ul>
+
+
+        {/* Trash Tab */}
+        {activeTab === 'trash' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin || currentUser?.role === UserRole.Moderator) && (
+          <div className="space-y-6">
+            {/* Trash Header */}
+            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-red-900 flex items-center gap-2">
+                <i className="fas fa-trash"></i>
+                المهملات
+              </h3>
+              <p className="text-sm text-red-700 mt-2">
+                يمكنك استعادة العناصر المحذوفة خلال 30 يوم من تاريخ الحذف. المهملات تحتوي على المستخدمين والعيادات والقوالب والمرضى المحذوفين.
+              </p>
+            </div>
+
+            {/* Trash Tab Content - Users */}
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => {
+                  setExpandedTrashSections(prev => {
+                    const next = new Set(prev);
+                    if (next.has('users')) next.delete('users'); else next.add('users');
+                    return next;
+                  });
+                }}
+                className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
+              >
+                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                  <i className="fas fa-users text-blue-600"></i>
+                  المستخدمون المحذوفون
+                </h4>
+                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('users') ? 'rotate-180' : ''}`}></i>
+              </button>
+              {expandedTrashSections.has('users') && (
+                <div className="p-4">
+                  <TrashTab
+                    entityType="user"
+                    items={trashItems}
+                    isLoading={isLoadingTrash}
+                    isError={!!trashError}
+                    errorMessage={trashError}
+                    pageNumber={trashPageNumber}
+                    pageSize={TRASH_PAGE_SIZE}
+                    totalCount={trashTotalCount}
+                    onPageChange={loadTrashUsers}
+                    onRestore={handleRestoreUser}
+                    adminOnly={false}
+                    isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Trash Tab Content - Queues */}
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => {
+                  setExpandedTrashSections(prev => {
+                    const next = new Set(prev);
+                    if (next.has('queues')) next.delete('queues'); else next.add('queues');
+                    return next;
+                  });
+                }}
+                className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
+              >
+                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                  <i className="fas fa-layer-group text-purple-600"></i>
+                  العيادات المحذوفة
+                </h4>
+                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('queues') ? 'rotate-180' : ''}`}></i>
+              </button>
+              {expandedTrashSections.has('queues') && (
+                <div className="p-4">
+                  <TrashTab
+                    entityType="queue"
+                    items={trashQueues.map(q => ({ ...q, name: q.doctorName, id: q.id }))}
+                    isLoading={isLoadingTrashQueues}
+                    isError={!!trashQueuesError}
+                    errorMessage={trashQueuesError}
+                    pageNumber={trashQueuesPageNumber}
+                    pageSize={TRASH_PAGE_SIZE}
+                    totalCount={trashQueuesTotalCount}
+                    onPageChange={loadTrashQueues}
+                    onRestore={handleRestoreQueue}
+                    adminOnly={false}
+                    isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Trash Tab Content - Templates */}
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => {
+                  setExpandedTrashSections(prev => {
+                    const next = new Set(prev);
+                    if (next.has('templates')) next.delete('templates'); else next.add('templates');
+                    return next;
+                  });
+                }}
+                className="w-full text-right flex items-center justify-between p-4 hover:bg-gray-50 transition-colors bg-white border-b border-gray-100"
+              >
+                <h4 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                  <i className="fas fa-file-alt text-green-600"></i>
+                  القوالب المحذوفة
+                </h4>
+                <i className={`fas fa-chevron-down text-gray-600 transition-transform ${expandedTrashSections.has('templates') ? 'rotate-180' : ''}`}></i>
+              </button>
+              {expandedTrashSections.has('templates') && (
+                <div className="p-4">
+                  <TrashTab
+                    entityType="template"
+                    items={trashTemplates.map(t => ({ ...t, name: t.title, id: t.id }))}
+                    isLoading={isLoadingTrashTemplates}
+                    isError={!!trashTemplatesError}
+                    errorMessage={trashTemplatesError}
+                    pageNumber={trashTemplatesPageNumber}
+                    pageSize={TRASH_PAGE_SIZE}
+                    totalCount={trashTemplatesTotalCount}
+                    onPageChange={loadTrashTemplates}
+                    onRestore={handleRestoreTemplate}
+                    adminOnly={false}
+                    isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                    queues={queues}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Trash Tab Content - Patients */}
+            {trashPatientsTotalCount > 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <i className="fas fa-user-injured text-orange-600"></i>
+                  المرضى المحذوفون
+                </h4>
+                <TrashTab
+                  entityType="patient"
+                  items={trashPatients.map(p => ({ ...p, name: p.fullName || p.name, id: p.id }))}
+                  isLoading={isLoadingTrashPatients}
+                  isError={!!trashPatientsError}
+                  errorMessage={trashPatientsError}
+                  pageNumber={trashPatientsPageNumber}
+                  pageSize={TRASH_PAGE_SIZE}
+                  totalCount={trashPatientsTotalCount}
+                  onPageChange={loadTrashPatients}
+                  onRestore={async (id) => {
+                    // Placeholder - implement when patient restore endpoint is available
+                    addToast('استعادة المرضى قيد التطوير', 'info');
+                  }}
+                  adminOnly={false}
+                  isAdmin={currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin}
+                />
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* System Settings Section (Admin Only) */}
+        {activeTab === 'systemSettings' && (currentUser?.role === UserRole.PrimaryAdmin || currentUser?.role === UserRole.SecondaryAdmin) && (
+          <div className="space-y-6">
+            {/* Header Banner */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
+                <i className="fas fa-cog"></i>
+                إعدادات النظام
+              </h3>
+              <p className="text-sm text-blue-700 mt-2">
+                إدارة إعدادات النظام الأساسية في حدود الاستخدام.
+              </p>
+            </div>
+
+            {/* Rate Limit Settings Card */}
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div className="bg-blue-50 border-b border-blue-100 p-4">
+                <h4 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
+                  <i className="fas fa-shield-alt text-blue-600"></i>
+                  إعدادات حماية الحساب (Rate Limiting)
+                </h4>
+                <p className="text-blue-700 text-sm mt-1">
+                  تحكم في التأخير العشوائي بين الرسائل لحماية الحساب من اكتشاف النمط المتكرر
+                </p>
+              </div>
+
+              <div className="p-4">
+                {/* Current Settings Display */}
+                {rateLimitSettings && (
+                  <div className="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
+                    <h4 className="text-blue-800 font-semibold mb-2 flex items-center gap-2">
+                      <i className="fas fa-info-circle"></i>
+                      الإعدادات الحالية
+                    </h4>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                        <div className="text-2xl font-bold text-blue-600">{rateLimitSettings.minSeconds}</div>
+                        <div className="text-gray-600">الحد الأدنى (ثانية)</div>
+                      </div>
+                      <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                        <div className="text-2xl font-bold text-blue-600">{rateLimitSettings.maxSeconds}</div>
+                        <div className="text-gray-600">الحد الأقصى (ثانية)</div>
+                      </div>
+                      <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                        <div className={`text-2xl font-bold ${rateLimitSettings.enabled ? 'text-green-600' : 'text-red-600'}`}>
+                          {rateLimitSettings.enabled ? 'مفعّل' : 'معطّل'}
+                        </div>
+                        <div className="text-gray-600">الحالة</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Edit Form */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        الحد الأدنى للتأخير (ثانية)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        value={tempMinSeconds}
+                        onChange={(e) => setTempMinSeconds(parseInt(e.target.value) || 0)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="3"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">قيمة بين 0 و 60 ثانية</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        الحد الأقصى للتأخير (ثانية)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="120"
+                        value={tempMaxSeconds}
+                        onChange={(e) => setTempMaxSeconds(parseInt(e.target.value) || 1)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="7"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">قيمة بين 1 و 120 ثانية</p>
+                    </div>
+                  </div>
+
+                  {/* Enable/Disable Toggle */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <h4 className="font-medium text-gray-900">تفعيل حماية الحساب</h4>
+                      <p className="text-sm text-gray-500">عند التعطيل، سيتم إرسال الرسائل بدون تأخير (غير موصى به)</p>
+                    </div>
+                    <button
+                      onClick={() => setTempEnabled(!tempEnabled)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${tempEnabled ? 'bg-green-500' : 'bg-gray-300'
+                        }`}
+                      role="switch"
+                      aria-checked={tempEnabled}
+                      dir="ltr"
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${tempEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Validation Warning */}
+                  {tempMaxSeconds < tempMinSeconds && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm flex items-center gap-2">
+                      <i className="fas fa-exclamation-triangle"></i>
+                      الحد الأقصى يجب أن يكون أكبر من أو يساوي الحد الأدنى
+                    </div>
+                  )}
+
+                  {/* Save Button */}
+                  <div className="flex justify-end gap-3 pt-4 border-t">
+                    <button
+                      onClick={async () => {
+                        if (rateLimitSettings) {
+                          setTempMinSeconds(rateLimitSettings.minSeconds);
+                          setTempMaxSeconds(rateLimitSettings.maxSeconds);
+                          setTempEnabled(rateLimitSettings.enabled);
+                        }
+                      }}
+                      className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <i className="fas fa-undo ml-1"></i>
+                      إعادة تعيين
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (tempMaxSeconds < tempMinSeconds) {
+                          addToast('الحد الأقصى يجب أن يكون أكبر من أو يساوي الحد الأدنى', 'error');
+                          return;
+                        }
+                        setRateLimitSaving(true);
+                        try {
+                          const updated = await settingsApiClient.updateRateLimitSettings({
+                            minSeconds: tempMinSeconds,
+                            maxSeconds: tempMaxSeconds,
+                            enabled: tempEnabled
+                          });
+                          setRateLimitSettings(updated);
+                          addToast('تم حفظ إعدادات حماية الحساب بنجاح', 'success');
+                        } catch (err) {
+                          logger.error('Failed to save rate limit settings:', err);
+                          addToast('فشل حفظ الإعدادات', 'error');
+                        } finally {
+                          setRateLimitSaving(false);
+                        }
+                      }}
+                      disabled={rateLimitSaving || tempMaxSeconds < tempMinSeconds}
+                      className={`px-6 py-2 rounded-lg font-medium text-white flex items-center gap-2 transition-colors ${rateLimitSaving || tempMaxSeconds < tempMinSeconds
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                        }`}
+                    >
+                      {rateLimitSaving ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin"></i>
+                          جارٍ الحفظ...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-save"></i>
+                          حفظ الإعدادات
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Info Box */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="text-blue-800 font-semibold mb-2 flex items-center gap-2">
+                <i className="fas fa-lightbulb"></i>
+                ملاحظات مهمة
+              </h4>
+              <ul className="text-blue-700 text-sm space-y-2 list-disc list-inside">
+                <li>يتم توليد تأخير عشوائي بين الحد الأدنى والأقصى قبل كل رسالة</li>
+                <li>التأخير العشوائي يمنع واتساب من اكتشاف نمط الإرسال الآلي</li>
+                <li>القيم الافتراضية (3-7 ثانية) توفر توازناً جيداً بين السرعة والأمان</li>
+                <li>تعطيل الحماية قد يؤدي لحظر الحساب - استخدم بحذر!</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
 
 

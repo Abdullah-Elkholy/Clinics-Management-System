@@ -40,7 +40,7 @@ const getDetailedStatusDisplay = (
         textColor: 'text-yellow-700',
         label: 'الإرسال متوقف مؤقتاً',
         icon: 'pause-circle',
-        sublabel: 'اضغط استئناف لمتابعة الإرسال',
+        sublabel: 'اضغط استئناف في "المهام الجارية" لمتابعة الإرسال',
       };
     case 'extension_connected':
       return {

@@ -6,6 +6,7 @@ import { useUI } from '../../contexts/UIContext';
 import { useModal } from '../../contexts/ModalContext';
 import { useConfirmDialog } from '../../contexts/ConfirmationContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useGlobalProgress } from '../../contexts/GlobalProgressContext';
 import { UserRole } from '../../types/roles';
 import { createDeleteConfirmation } from '../../utils/confirmationHelpers';
 import { useSidebarCollapse } from '../../hooks/useSidebarCollapse';
@@ -22,12 +23,22 @@ import type { ModeratorWithStats } from '@/utils/moderatorAggregation';
 
 export default function Navigation() {
   const { queues, selectedQueueId, setSelectedQueueId, moderators: queueBasedModerators, queuesLoading, refreshQueues } = useQueue();
-  const { currentPanel, setCurrentPanel, addToast } = useUI();
+  const { currentPanel, setCurrentPanel, addToast, taskPanelBadges, resetBadge } = useUI();
   const { openModal } = useModal();
   const { confirm } = useConfirmDialog();
   const { isCollapsed, toggleCollapse, isHydrated } = useSidebarCollapse();
   const { user, isAuthenticated } = useAuth();
   const [userManagementState, userManagementActions] = useUserManagement();
+  const { hasOngoingOperations, operations } = useGlobalProgress();
+
+  // Calculate if any messages are actively being sent (for pulse animation)
+  const isActivelySending = React.useMemo(() => {
+    if (!hasOngoingOperations || !operations || operations.length === 0) return false;
+    return operations.some(op =>
+      op.status === 'sending' ||
+      (op.messages && op.messages.some(m => m.status === 'sending'))
+    );
+  }, [hasOngoingOperations, operations]);
 
   // Listen for user data updates to refresh moderators in sidebar
   // Use ref to prevent infinite loops from userManagementActions dependency changes
@@ -524,19 +535,32 @@ export default function Navigation() {
                 icon="fa-spinner"
                 label="المهام الجارية"
                 isActive={currentPanel === 'ongoing'}
-                onClick={() => setCurrentPanel('ongoing')}
+                badge={taskPanelBadges.ongoing}
+                pulse={isActivelySending}
+                onClick={() => {
+                  resetBadge('ongoing');
+                  setCurrentPanel('ongoing');
+                }}
               />
               <TabItem
                 icon="fa-exclamation-circle"
                 label="المهام الفاشلة"
                 isActive={currentPanel === 'failed'}
-                onClick={() => setCurrentPanel('failed')}
+                badge={taskPanelBadges.failed}
+                onClick={() => {
+                  resetBadge('failed');
+                  setCurrentPanel('failed');
+                }}
               />
               <TabItem
                 icon="fa-check-circle"
                 label="المهام المكتملة"
                 isActive={currentPanel === 'completed'}
-                onClick={() => setCurrentPanel('completed')}
+                badge={taskPanelBadges.completed}
+                onClick={() => {
+                  resetBadge('completed');
+                  setCurrentPanel('completed');
+                }}
               />
             </div>
           </nav>
@@ -676,8 +700,11 @@ export default function Navigation() {
                                         icon="fa-spinner"
                                         label="المهام الجارية"
                                         isActive={isThisModeratorActive && currentPanel === 'ongoing'}
+                                        badge={taskPanelBadges.ongoing}
+                                        pulse={isActivelySending}
                                         onClick={(e) => {
                                           e?.stopPropagation?.();
+                                          resetBadge('ongoing');
                                           // Always track which moderator's panel was clicked
                                           setSelectedModeratorId(mod.moderatorId);
                                           // If moderator has queues and no queue selected, select first queue
@@ -691,8 +718,10 @@ export default function Navigation() {
                                         icon="fa-exclamation-circle"
                                         label="المهام الفاشلة"
                                         isActive={isThisModeratorActive && currentPanel === 'failed'}
+                                        badge={taskPanelBadges.failed}
                                         onClick={(e) => {
                                           e?.stopPropagation?.();
+                                          resetBadge('failed');
                                           // Always track which moderator's panel was clicked
                                           setSelectedModeratorId(mod.moderatorId);
                                           // If moderator has queues and no queue selected, select first queue
@@ -706,8 +735,10 @@ export default function Navigation() {
                                         icon="fa-check-circle"
                                         label="المهام المكتملة"
                                         isActive={isThisModeratorActive && currentPanel === 'completed'}
+                                        badge={taskPanelBadges.completed}
                                         onClick={(e) => {
                                           e?.stopPropagation?.();
+                                          resetBadge('completed');
                                           // Always track which moderator's panel was clicked
                                           setSelectedModeratorId(mod.moderatorId);
                                           // If moderator has queues and no queue selected, select first queue
@@ -839,28 +870,55 @@ export default function Navigation() {
             {!isAdmin && (
               <div className="flex flex-col items-center gap-2 mb-2 px-1 border-b border-gray-200 pb-2">
                 <button
-                  onClick={() => setCurrentPanel('ongoing')}
+                  onClick={() => {
+                    resetBadge('ongoing');
+                    setCurrentPanel('ongoing');
+                  }}
                   title="المهام الجارية"
                   aria-label="المهام الجارية"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'ongoing' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                  className={`relative w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'ongoing' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'} ${isActivelySending ? 'animate-pulse ring-2 ring-blue-400' : ''}`}
                 >
                   <i className="fas fa-spinner text-xs"></i>
+                  {/* Badge for collapsed view */}
+                  {taskPanelBadges.ongoing > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px] font-bold rounded-full bg-red-500 text-white flex items-center justify-center">
+                      {taskPanelBadges.ongoing > 9 ? '9+' : taskPanelBadges.ongoing}
+                    </span>
+                  )}
                 </button>
                 <button
-                  onClick={() => setCurrentPanel('failed')}
+                  onClick={() => {
+                    resetBadge('failed');
+                    setCurrentPanel('failed');
+                  }}
                   title="المهام الفاشلة"
                   aria-label="المهام الفاشلة"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'failed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                  className={`relative w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'failed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
                 >
                   <i className="fas fa-exclamation-circle text-xs"></i>
+                  {/* Badge for collapsed view */}
+                  {taskPanelBadges.failed > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px] font-bold rounded-full bg-red-500 text-white flex items-center justify-center">
+                      {taskPanelBadges.failed > 9 ? '9+' : taskPanelBadges.failed}
+                    </span>
+                  )}
                 </button>
                 <button
-                  onClick={() => setCurrentPanel('completed')}
+                  onClick={() => {
+                    resetBadge('completed');
+                    setCurrentPanel('completed');
+                  }}
                   title="المهام المكتملة"
                   aria-label="المهام المكتملة"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'completed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
+                  className={`relative w-8 h-8 rounded-full flex items-center justify-center text-white ${currentPanel === 'completed' ? 'bg-blue-600' : 'bg-gray-300 hover:bg-gray-400'}`}
                 >
                   <i className="fas fa-check-circle text-xs"></i>
+                  {/* Badge for collapsed view */}
+                  {taskPanelBadges.completed > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px] font-bold rounded-full bg-red-500 text-white flex items-center justify-center">
+                      {taskPanelBadges.completed > 9 ? '9+' : taskPanelBadges.completed}
+                    </span>
+                  )}
                 </button>
               </div>
             )}

@@ -69,7 +69,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
   const [isLoading, setIsLoading] = useState(true);
   const { connection, isConnected, on, off, onReconnected, offReconnected } = useSignalR();
   const { user, isAuthenticated } = useAuth();
-  const { addToast } = useUI();
+  const { addToast, incrementBadge } = useUI();
   // Get selectedModeratorId for Admin filtering (only show sessions for selected moderator)
   const { selectedModeratorId } = useQueue();
   const isLoadingRef = useRef(false);
@@ -248,12 +248,17 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
 
     /**
      * Handle MessageUpdated events
-     * Triggers refresh to get latest counts (debounced by component)
+     * Triggers badge updates for failed/completed messages
      */
     const handleMessageUpdate = (payload: any) => {
       logger.debug('GlobalProgressContext: Received MessageUpdated event', payload);
-      // Message updates affect session counters, but SessionUpdated should fire
-      // We don't need to do anything here - SessionUpdated will handle it
+
+      // Increment notification badges based on message status changes
+      if (payload?.status === 'failed') {
+        incrementBadge('failed', 1);
+      } else if (payload?.status === 'sent') {
+        incrementBadge('completed', 1);
+      }
     };
 
     // Subscribe to SignalR events
@@ -268,7 +273,7 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
       off('MessageUpdated', handleMessageUpdate);
       logger.debug('GlobalProgressContext: SignalR listeners unregistered');
     };
-  }, [connection, isConnected, on, off]);
+  }, [connection, isConnected, on, off, addToast, incrementBadge]);
 
   /**
    * State Refresh After Reconnection

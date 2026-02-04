@@ -13,6 +13,17 @@ interface UIContextType {
   selectedQueueId: string | null;
   setSelectedQueueId: (id: string | null) => void;
   isTransitioning: boolean;
+  // Task panel notification badges
+  taskPanelBadges: TaskPanelBadges;
+  incrementBadge: (panel: 'ongoing' | 'failed' | 'completed', count?: number) => void;
+  resetBadge: (panel: 'ongoing' | 'failed' | 'completed') => void;
+}
+
+// Badge counts for task panels - reset when user visits panel
+export interface TaskPanelBadges {
+  ongoing: number;   // New messages added via MessagePreviewModal
+  failed: number;    // New failed messages
+  completed: number; // New successfully sent messages
 }
 
 const UIContext = createContext<UIContextType | null>(null);
@@ -35,6 +46,42 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const transitionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const navigationTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const pendingPanelRef = React.useRef<'messages' | 'management' | 'welcome' | 'ongoing' | 'failed' | 'completed' | null>(null);
+
+  // Task panel notification badges - persist to localStorage
+  const [taskPanelBadges, setTaskPanelBadges] = useState<TaskPanelBadges>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('taskPanelBadges');
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch { /* ignore */ }
+      }
+    }
+    return { ongoing: 0, failed: 0, completed: 0 };
+  });
+
+  // Persist badges to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('taskPanelBadges', JSON.stringify(taskPanelBadges));
+    }
+  }, [taskPanelBadges]);
+
+  // Increment badge count for a panel
+  const incrementBadge = useCallback((panel: 'ongoing' | 'failed' | 'completed', count: number = 1) => {
+    setTaskPanelBadges(prev => ({
+      ...prev,
+      [panel]: prev[panel] + count
+    }));
+  }, []);
+
+  // Reset badge count when user visits a panel
+  const resetBadge = useCallback((panel: 'ongoing' | 'failed' | 'completed') => {
+    setTaskPanelBadges(prev => {
+      if (prev[panel] === 0) return prev; // No change needed
+      return { ...prev, [panel]: 0 };
+    });
+  }, []);
 
   // Sync selectedQueueId with localStorage on mount (if not already set from initial state)
   // This ensures queue is available immediately when queue routes are accessed
@@ -482,6 +529,9 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         selectedQueueId,
         setSelectedQueueId: handleSetSelectedQueueId,
         isTransitioning,
+        taskPanelBadges,
+        incrementBadge,
+        resetBadge,
       }}
     >
       {children}

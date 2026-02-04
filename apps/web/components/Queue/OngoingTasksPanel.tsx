@@ -206,7 +206,7 @@ export default function OngoingTasksPanel() {
       const quotaData = user?.role === 'moderator'
         ? await messageApiClient.getMyQuota()
         : await messageApiClient.getQuota(moderatorId);
-      
+
       setQuotaUsed(quotaData.used);
     } catch (err) {
       logger.error('Failed to load quota data:', err);
@@ -984,7 +984,7 @@ export default function OngoingTasksPanel() {
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   title={
-                    !globalPauseState?.isExtensionConnected 
+                    !globalPauseState?.isExtensionConnected
                       ? 'الإضافة غير متصلة - لا يوجد شيء للإيقاف'
                       : globalPauseState?.status !== 'connected'
                         ? 'الجلسة غير مصادق عليها - يجب المصادقة أولاً'
@@ -1175,13 +1175,31 @@ export default function OngoingTasksPanel() {
                         {/* Session Stats - 4 columns with actionable info */}
                         <div className="grid grid-cols-4 gap-4 mb-6">
                           <div className="bg-white rounded-lg p-4 border border-blue-200">
-                            <div className="text-sm text-gray-600 flex items-center gap-1">
-                              <i className="fas fa-spinner fa-spin text-blue-500 text-xs"></i>
-                              قيد الإرسال
-                            </div>
-                            <div className="text-2xl font-bold text-blue-600">
-                              {session.patients.filter(p => p.status === 'sending').length}
-                            </div>
+                            {(() => {
+                              const sendingCount = session.patients.filter(p => p.status === 'sending').length;
+                              const isSending = sendingCount > 0;
+                              return (
+                                <>
+                                  <div className="text-sm text-gray-600 flex items-center gap-1">
+                                    <i className={`fas ${isSending ? 'fa-spinner fa-spin' : 'fa-pause'} ${isSending ? 'text-blue-500' : 'text-gray-400'} text-xs`}></i>
+                                    قيد الإرسال
+                                  </div>
+                                  <div className={`text-2xl font-bold ${isSending ? 'text-blue-600' : 'text-gray-400'}`}>
+                                    {isSending ? (
+                                      <span className="flex items-center gap-2">
+                                        <i className="fas fa-broadcast-tower text-lg animate-pulse"></i>
+                                        نعم
+                                      </span>
+                                    ) : (
+                                      <span className="flex items-center gap-2">
+                                        <i className="fas fa-pause-circle text-lg"></i>
+                                        لا
+                                      </span>
+                                    )}
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                           <div className="bg-white rounded-lg p-4 border border-green-200">
                             <div className="text-sm text-gray-600 flex items-center gap-1">

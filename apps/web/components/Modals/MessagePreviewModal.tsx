@@ -22,7 +22,7 @@ import ConfirmationDialog from './ConfirmationDialog';
 
 export default function MessagePreviewModal() {
   const { openModals, closeModal, getModalData } = useModal();
-  const { addToast } = useUI();
+  const { addToast, incrementBadge } = useUI();
   const { queues, messageTemplates, messageConditions, patients: contextPatients, refreshPatients, selectedQueueId } = useQueue();
   const { user } = useAuth();
   const { sessionData } = useWhatsAppSession();
@@ -528,6 +528,10 @@ export default function MessagePreviewModal() {
       });
 
       addToast(`تم إرسال ${patientIdsToSend.length} رسالة بنجاح`, 'success');
+
+      // Increment ongoing panel badge to notify about new messages
+      incrementBadge('ongoing', patientIdsToSend.length);
+
       closeModal('messagePreview');
 
       // Trigger refetch events

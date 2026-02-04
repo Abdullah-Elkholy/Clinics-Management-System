@@ -63,6 +63,25 @@ export const GlobalProgressIndicator: React.FC = () => {
     setTimeout(dispatchTabSwitch, 0);
   };
 
+  // Navigate to OngoingTasksPanel when paused
+  const handlePausedClick = () => {
+    if (isAdmin) return;
+    setCurrentPanel('ongoing');
+  };
+
+  // Handle connection status bar click based on current status
+  const handleConnectionStatusClick = () => {
+    if (isAdmin) return;
+
+    // If paused, navigate to OngoingTasksPanel
+    if (detailedStatus === 'connected_paused') {
+      handlePausedClick();
+    } else {
+      // For all other statuses, navigate to WhatsApp Auth
+      handleWhatsAppAuthClick();
+    }
+  };
+
   // Helper to get status display info
   const getConnectionStatusDisplay = () => {
     const statusMap: Record<DetailedSessionStatus, { color: string; icon: string; label: string; bgColor: string }> = {
@@ -160,7 +179,7 @@ export const GlobalProgressIndicator: React.FC = () => {
 
   // Check if any session is actively processing (backend-calculated isProcessing flag)
   // OR has non-paused sessions with ongoing messages
-  const hasActiveProcessing = operations.some(op => 
+  const hasActiveProcessing = operations.some(op =>
     op.isProcessing || (!op.isPaused && op.ongoingMessages > 0)
   );
 
@@ -244,7 +263,7 @@ export const GlobalProgressIndicator: React.FC = () => {
         maxHeight: isExpanded ? '500px' : 'auto'
       }}
     >
-      {/* Connection Status Bar - Clickable for navigation to WhatsApp auth */}
+      {/* Connection Status Bar - Clickable for navigation to appropriate panel */}
       <div
         className={`px-4 py-2 rounded-t-lg flex items-center justify-between transition-opacity ${detailedStatus === 'connected_idle' || detailedStatus === 'connected_sending'
           ? 'bg-green-50 border-b border-green-200'
@@ -256,8 +275,8 @@ export const GlobalProgressIndicator: React.FC = () => {
                 ? 'bg-yellow-50 border-b border-yellow-200'
                 : 'bg-red-50 border-b border-red-200'
           } ${!isAdmin ? 'cursor-pointer hover:opacity-90' : 'cursor-default'}`}
-        onClick={handleWhatsAppAuthClick}
-        title={!isAdmin ? "انقر للانتقال إلى صفحة مصادقة واتساب" : "حالة اتصال المشرف"}>
+        onClick={handleConnectionStatusClick}
+        title={!isAdmin ? (detailedStatus === 'connected_paused' ? "انقر للانتقال إلى المهام الجارية" : "انقر للانتقال إلى صفحة مصادقة واتساب") : "حالة اتصال المشرف"}>
         <div className="flex items-center gap-2">
           <i className={`fas ${connectionStatus.icon} ${connectionStatus.color}`}></i>
           <span className={`text-xs font-medium ${connectionStatus.color}`}>
@@ -303,14 +322,14 @@ export const GlobalProgressIndicator: React.FC = () => {
             </button>
 
             {/* Animated sending icon */}
-            <div className={`${hasPausedOperations ? '' : 'animate-pulse'}`}>
+            <div className={`${shouldShowPausedState ? '' : 'animate-pulse'}`}>
               <svg
-                className={`w-6 h-6 ${hasPausedOperations ? 'text-yellow-500' : 'text-blue-500'}`}
+                className={`w-6 h-6 ${shouldShowPausedState ? 'text-yellow-500' : 'text-blue-500'}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                {hasPausedOperations ? (
+                {shouldShowPausedState ? (
                   // Pause icon
                   <path
                     strokeLinecap="round"
@@ -333,7 +352,7 @@ export const GlobalProgressIndicator: React.FC = () => {
             {/* Operation count and status */}
             <div>
               <div className="text-sm font-semibold text-gray-900">
-                {totalOperations} {totalOperations === 1 ? 'عملية إرسال' : 'عمليات إرسال'} {hasPausedOperations ? 'موقوفة' : 'جارية'}
+                {totalOperations} {totalOperations === 1 ? 'عملية إرسال' : 'عمليات إرسال'} {shouldShowPausedState ? 'موقوفة' : 'جارية'}
               </div>
               <div className="text-xs text-gray-600 mt-0.5">
                 {sentMessages} / {totalMessages} رسالة ({progressPercent}%)
@@ -370,7 +389,7 @@ export const GlobalProgressIndicator: React.FC = () => {
         {/* Overall progress bar */}
         <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
           <div
-            className={`h-2 rounded-full transition-all duration-500 ${hasPausedOperations
+            className={`h-2 rounded-full transition-all duration-500 ${shouldShowPausedState
               ? 'bg-yellow-500'
               : progressPercent === 100
                 ? 'bg-green-500'
