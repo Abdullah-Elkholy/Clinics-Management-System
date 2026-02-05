@@ -885,7 +885,7 @@ export default function FailedTasksPanel() {
 
 
       {/* Sessions List */}
-      <div className="space-y-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-2">
+      <div className="space-y-4">
         {sessions.map((session) => {
           const isExpanded = expandedSessions.has(session.id);
           const selectedCount = selectedPatients.get(session.id)?.size || 0;
@@ -893,213 +893,215 @@ export default function FailedTasksPanel() {
           return (
             <div
               key={session.id}
-              className="bg-white rounded-lg shadow overflow-hidden border border-red-200"
+              className="bg-white rounded-lg shadow overflow-x-auto border border-red-200"
             >
-              {/* Session Header - Fully Clickable */}
-              <div
-                className="px-6 py-4 border-b bg-gradient-to-r from-red-50 to-orange-50 cursor-pointer hover:from-red-100 hover:to-orange-100 transition-colors"
-                onClick={() => toggleSessionExpand(session.id)}
-              >
-                <div className="flex items-center gap-4 justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    {/* Collapse Button with Improved UI */}
-                    <div className="flex items-center gap-2">
-                      <button className="text-red-600 text-xl transition-transform duration-300">
-                        <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
-                      </button>
-                      <span className="text-sm font-medium text-red-600 whitespace-nowrap">القائمة</span>
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
+              <div className="min-w-[800px]">
+                {/* Session Header - Fully Clickable */}
+                <div
+                  className="px-6 py-4 border-b bg-gradient-to-r from-red-50 to-orange-50 cursor-pointer hover:from-red-100 hover:to-orange-100 transition-colors"
+                  onClick={() => toggleSessionExpand(session.id)}
+                >
+                  <div className="flex items-center gap-4 justify-between">
+                    <div className="flex items-center gap-4 flex-1">
+                      {/* Collapse Button with Improved UI */}
+                      <div className="flex items-center gap-2">
+                        <button className="text-red-600 text-xl transition-transform duration-300">
+                          <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
+                        </button>
+                        <span className="text-sm font-medium text-red-600 whitespace-nowrap">القائمة</span>
                       </div>
-                      <div className="text-sm text-gray-600 mt-2">
-                        <span>جلسة: <strong>{session.sessionId}</strong></span>
-                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
+
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
+                        </div>
+                        <div className="text-sm text-gray-600 mt-2">
+                          <span>جلسة: <strong>{session.sessionId}</strong></span>
+                          <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-4">
-                    {/* Failed Count Badge */}
-                    <div className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-center">
-                      <div className="text-sm font-medium">مرضى فاشلة</div>
-                      <div className="text-2xl font-bold">{session.failedCount}</div>
-                    </div>
+                    <div className="flex items-center gap-4">
+                      {/* Failed Count Badge */}
+                      <div className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-center">
+                        <div className="text-sm font-medium">مرضى فاشلة</div>
+                        <div className="text-2xl font-bold">{session.failedCount}</div>
+                      </div>
 
-                    {/* Session Actions */}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          retrySessionPatients(session.id);
-                        }}
-                        className="bg-orange-500 text-white hover:bg-orange-600 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors"
-                        title="إعادة محاولة جميع رسائل هذه الجلسة"
-                      >
-                        <i className="fas fa-redo-alt"></i>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteSession(session.id);
-                        }}
-                        className="bg-red-500 text-white hover:bg-red-600 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors"
-                        title="حذف جلسة"
-                      >
-                        <i className="fas fa-trash"></i>
-                      </button>
+                      {/* Session Actions */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            retrySessionPatients(session.id);
+                          }}
+                          className="bg-orange-500 text-white hover:bg-orange-600 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors"
+                          title="إعادة محاولة جميع رسائل هذه الجلسة"
+                        >
+                          <i className="fas fa-redo-alt"></i>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSession(session.id);
+                          }}
+                          className="bg-red-500 text-white hover:bg-red-600 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors"
+                          title="حذف جلسة"
+                        >
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Session Content (Expandable) */}
-              {isExpanded && (
-                <div className="p-6 bg-gray-50">
-                  {/* Session Summary */}
-                  <div className="grid grid-cols-3 gap-4 mb-6">
-                    <div className="bg-white rounded-lg p-4 border border-blue-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-users text-blue-500 text-xs"></i>
-                        إجمالي الرسائل
+                {/* Session Content (Expandable) */}
+                {isExpanded && (
+                  <div className="p-6 bg-gray-50">
+                    {/* Session Summary */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                      <div className="bg-white rounded-lg p-4 border border-blue-200">
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <i className="fas fa-users text-blue-500 text-xs"></i>
+                          إجمالي الرسائل
+                        </div>
+                        <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
                       </div>
-                      <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
+                      <div className="bg-white rounded-lg p-4 border border-red-200">
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <i className="fas fa-times-circle text-red-500 text-xs"></i>
+                          الرسائل الفاشلة
+                        </div>
+                        <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-orange-200">
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <i className="fas fa-redo text-orange-500 text-xs"></i>
+                          متوسط المحاولات
+                        </div>
+                        <div className="text-2xl font-bold text-orange-600">
+                          {session.patients.length > 0
+                            ? Math.round(session.patients.reduce((sum, p) => sum + ((p as any).attempts || 0), 0) / session.patients.length)
+                            : 0}
+                        </div>
+                      </div>
                     </div>
-                    <div className="bg-white rounded-lg p-4 border border-red-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-times-circle text-red-500 text-xs"></i>
-                        الرسائل الفاشلة
-                      </div>
-                      <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-orange-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-redo text-orange-500 text-xs"></i>
-                        متوسط المحاولات
-                      </div>
-                      <div className="text-2xl font-bold text-orange-600">
-                        {session.patients.length > 0
-                          ? Math.round(session.patients.reduce((sum, p) => sum + ((p as any).attempts || 0), 0) / session.patients.length)
-                          : 0}
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Patients Table */}
-                  <div className="bg-white rounded-lg overflow-hidden border">
-                    <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div
-                          onClick={() => toggleAllPatients(session.id)}
-                          className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
-                          style={{
-                            borderColor: selectedCount === 0 ? '#d1d5db' : selectedCount === session.totalPatients ? '#3b82f6' : '#f59e0b',
-                            backgroundColor: selectedCount === 0 ? 'white' : selectedCount === session.totalPatients ? '#3b82f6' : '#fef3c7',
-                          }}
-                          title={selectedCount === 0 ? 'تحديد الكل' : selectedCount === session.totalPatients ? 'إلغاء التحديد' : 'تحديد الكل'}
-                        >
+                    {/* Patients Table */}
+                    <div className="bg-white rounded-lg overflow-hidden border">
+                      <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div
+                            onClick={() => toggleAllPatients(session.id)}
+                            className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
+                            style={{
+                              borderColor: selectedCount === 0 ? '#d1d5db' : selectedCount === session.totalPatients ? '#3b82f6' : '#f59e0b',
+                              backgroundColor: selectedCount === 0 ? 'white' : selectedCount === session.totalPatients ? '#3b82f6' : '#fef3c7',
+                            }}
+                            title={selectedCount === 0 ? 'تحديد الكل' : selectedCount === session.totalPatients ? 'إلغاء التحديد' : 'تحديد الكل'}
+                          >
+                            {selectedCount > 0 && (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <i
+                                  className={`fas text-white text-xs ${selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
+                                    }`}
+                                ></i>
+                              </div>
+                            )}
+                          </div>
+                          <h4 className="font-bold text-gray-800">قائمة المرضى الفاشلة</h4>
+                          <span className="text-sm text-gray-600">
+                            {selectedCount} من {session.totalPatients} محدد
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
                           {selectedCount > 0 && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <i
-                                className={`fas text-white text-xs ${selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
-                                  }`}
-                              ></i>
-                            </div>
+                            <>
+                              <button
+                                onClick={() => setSelectedPatients(new Map(selectedPatients).set(session.id, new Set()))}
+                                className="text-sm text-red-600 hover:text-red-800"
+                              >
+                                إلغاء التحديد
+                              </button>
+                              <button
+                                onClick={() => retrySelectedPatients(session.id)}
+                                className="text-sm bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700"
+                              >
+                                إعادة محاولة ({selectedCount})
+                              </button>
+                              <button
+                                onClick={() => deleteSelectedPatients(session.id)}
+                                className="text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                              >
+                                حذف ({selectedCount})
+                              </button>
+                            </>
                           )}
                         </div>
-                        <h4 className="font-bold text-gray-800">قائمة المرضى الفاشلة</h4>
-                        <span className="text-sm text-gray-600">
-                          {selectedCount} من {session.totalPatients} محدد
-                        </span>
                       </div>
-                      <div className="flex gap-2">
-                        {selectedCount > 0 && (
-                          <>
-                            <button
-                              onClick={() => setSelectedPatients(new Map(selectedPatients).set(session.id, new Set()))}
-                              className="text-sm text-red-600 hover:text-red-800"
-                            >
-                              إلغاء التحديد
-                            </button>
-                            <button
-                              onClick={() => retrySelectedPatients(session.id)}
-                              className="text-sm bg-orange-600 text-white px-3 py-1 rounded hover:bg-orange-700"
-                            >
-                              إعادة محاولة ({selectedCount})
-                            </button>
-                            <button
-                              onClick={() => deleteSelectedPatients(session.id)}
-                              className="text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
-                            >
-                              حذف ({selectedCount})
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
 
-                    {session.patients.length === 0 ? (
-                      <div className="p-8 text-center text-gray-600">
-                        <i className="fas fa-check-circle text-3xl mb-2 text-green-600"></i>
-                        <p>لا يوجد مرضى فاشلة في هذه الجلسة</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-gray-50 border-b">
-                            <tr>
-                              {tableColumns.map((col: any) => (
-                                <th
-                                  key={col.key}
-                                  style={{ width: col.width }}
-                                  className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
-                                >
-                                  {col.hasToggle ? (
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span>{col.label}</span>
-                                      <button
-                                        onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
-                                        className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
-                                        title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
-                                      >
-                                        <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
-                                        <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    col.label
-                                  )}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {session.patients.map((patient) => {
-                              const row = renderPatientRow(patient, session.id);
-                              return (
-                                <tr
-                                  key={patient.id}
-                                  className="border-b hover:bg-gray-50 transition-colors"
-                                >
-                                  <td className="px-6 py-3 text-sm">{row.checkbox}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
-                                  <td className="px-6 py-3 text-sm">{row.reason}</td>
-                                  <td className="px-6 py-3 text-sm">{row.attempts}</td>
-                                  <td className="px-6 py-3 text-sm">{row.actions}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                      {session.patients.length === 0 ? (
+                        <div className="p-8 text-center text-gray-600">
+                          <i className="fas fa-check-circle text-3xl mb-2 text-green-600"></i>
+                          <p>لا يوجد مرضى فاشلة في هذه الجلسة</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 border-b">
+                              <tr>
+                                {tableColumns.map((col: any) => (
+                                  <th
+                                    key={col.key}
+                                    style={{ width: col.width }}
+                                    className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                                  >
+                                    {col.hasToggle ? (
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span>{col.label}</span>
+                                        <button
+                                          onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
+                                          className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
+                                          title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
+                                        >
+                                          <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
+                                          <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      col.label
+                                    )}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {session.patients.map((patient) => {
+                                const row = renderPatientRow(patient, session.id);
+                                return (
+                                  <tr
+                                    key={patient.id}
+                                    className="border-b hover:bg-gray-50 transition-colors"
+                                  >
+                                    <td className="px-6 py-3 text-sm">{row.checkbox}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
+                                    <td className="px-6 py-3 text-sm">{row.reason}</td>
+                                    <td className="px-6 py-3 text-sm">{row.attempts}</td>
+                                    <td className="px-6 py-3 text-sm">{row.actions}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })}

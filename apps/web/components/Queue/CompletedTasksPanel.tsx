@@ -344,7 +344,7 @@ export default function CompletedTasksPanel() {
         description={`عرض جميع المهام المكتملة والمرسلة بنجاح - ${sessions.length} جلسة`}
         stats={stats}
       />
-      <div className="space-y-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-2">
+      <div className="space-y-4">
         {sessions.map((session) => {
           const isExpanded = expandedSessions.has(session.id);
           const progressPercent = Math.round((session.sentCount / session.totalPatients) * 100);
@@ -352,210 +352,212 @@ export default function CompletedTasksPanel() {
           return (
             <div
               key={session.id}
-              className={`bg-white rounded-lg shadow overflow-hidden border ${session.isFullyCompleted ? 'border-green-200' : 'border-blue-200'}`}
+              className={`bg-white rounded-lg shadow overflow-x-auto border ${session.isFullyCompleted ? 'border-green-200' : 'border-blue-200'}`}
             >
-              {/* Session Header - Fully Clickable */}
-              <div
-                className={`px-6 py-4 border-b cursor-pointer transition-colors ${session.isFullyCompleted
-                  ? 'bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100'
-                  : 'bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100'
-                  }`}
-                onClick={() => toggleSessionExpand(session.id)}
-              >
-                <div className="flex items-center gap-4 justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    {/* Collapse Button with Improved UI */}
-                    <div className="flex items-center gap-2">
-                      <button className={`${session.isFullyCompleted ? 'text-green-600' : 'text-blue-600'} text-xl transition-transform duration-300`}>
-                        <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
-                      </button>
-                      <span className={`text-sm font-medium ${session.isFullyCompleted ? 'text-green-600' : 'text-blue-600'} whitespace-nowrap`}>القائمة</span>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
-                        {session.isFullyCompleted ? (
-                          <Badge color="green" label="✓ مكتملة" />
-                        ) : (
-                          <Badge color="blue" label="⏳ متبقية" />
-                        )}
-                        {session.hasOngoingMessages && (
-                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                            {session.queuedCount} رسالة متبقية
-                          </span>
-                        )}
+              <div className="min-w-[800px]">
+                {/* Session Header - Fully Clickable */}
+                <div
+                  className={`px-6 py-4 border-b cursor-pointer transition-colors ${session.isFullyCompleted
+                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 hover:from-green-100 hover:to-emerald-100'
+                    : 'bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100'
+                    }`}
+                  onClick={() => toggleSessionExpand(session.id)}
+                >
+                  <div className="flex items-center gap-4 justify-between">
+                    <div className="flex items-center gap-4 flex-1">
+                      {/* Collapse Button with Improved UI */}
+                      <div className="flex items-center gap-2">
+                        <button className={`${session.isFullyCompleted ? 'text-green-600' : 'text-blue-600'} text-xl transition-transform duration-300`}>
+                          <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
+                        </button>
+                        <span className={`text-sm font-medium ${session.isFullyCompleted ? 'text-green-600' : 'text-blue-600'} whitespace-nowrap`}>القائمة</span>
                       </div>
-                      <div className="text-sm text-gray-600 mt-2">
-                        <span>جلسة: <strong>{session.sessionId}</strong></span>
-                        <span className="mx-4">تاريخ الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
-                        {session.isFullyCompleted && (
-                          <span className="mx-4">تاريخ الإكمال: <strong>{session.completedAt ? formatLocalDateTime(session.completedAt) : 'غير محدد'}</strong></span>
-                        )}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
+                          {session.isFullyCompleted ? (
+                            <Badge color="green" label="✓ مكتملة" />
+                          ) : (
+                            <Badge color="blue" label="⏳ متبقية" />
+                          )}
+                          {session.hasOngoingMessages && (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                              {session.queuedCount} رسالة متبقية
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600 mt-2">
+                          <span>جلسة: <strong>{session.sessionId}</strong></span>
+                          <span className="mx-4">تاريخ الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
+                          {session.isFullyCompleted && (
+                            <span className="mx-4">تاريخ الإكمال: <strong>{session.completedAt ? formatLocalDateTime(session.completedAt) : 'غير محدد'}</strong></span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-4">
-                    {/* Completion Summary */}
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-gray-700 mb-1">نسبة الإرسال</div>
-                      <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${session.isFullyCompleted ? 'bg-green-500' : 'bg-blue-500'}`}
-                          style={{ width: `${progressPercent}%` }}
-                        ></div>
+                    <div className="flex items-center gap-4">
+                      {/* Completion Summary */}
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-gray-700 mb-1">نسبة الإرسال</div>
+                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${session.isFullyCompleted ? 'bg-green-500' : 'bg-blue-500'}`}
+                            style={{ width: `${progressPercent}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">{progressPercent}%</div>
                       </div>
-                      <div className="text-xs text-gray-600 mt-1">{progressPercent}%</div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Session Content (Expandable) */}
-              {isExpanded && (
-                <div className="p-6 bg-gray-50">
-                  {/* In Progress Notice */}
-                  {session.hasOngoingMessages && (
-                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-                      <i className="fas fa-clock text-blue-600 text-lg mt-0.5"></i>
-                      <div className="flex-1">
-                        <h5 className="font-semibold text-blue-800 mb-1">رسائل متبقية</h5>
-                        <p className="text-sm text-blue-700">
-                          هذه الجلسة لديها <strong>{session.queuedCount}</strong> رسالة متبقية.
-                          القائمة أدناه تعرض الرسائل المرسلة بنجاح حتى الآن.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Session Stats */}
-                  <div className={`grid ${session.hasOngoingMessages ? 'grid-cols-5' : 'grid-cols-4'} gap-4 mb-6`}>
-                    <div className="bg-white rounded-lg p-4 border border-blue-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-users text-blue-500 text-xs"></i>
-                        إجمالي الرسائل
-                      </div>
-                      <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-green-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-check-circle text-green-500 text-xs"></i>
-                        تم الإرسال
-                      </div>
-                      <div className="text-2xl font-bold text-green-600">{session.sentCount}</div>
-                    </div>
+                {/* Session Content (Expandable) */}
+                {isExpanded && (
+                  <div className="p-6 bg-gray-50">
+                    {/* In Progress Notice */}
                     {session.hasOngoingMessages && (
+                      <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                        <i className="fas fa-clock text-blue-600 text-lg mt-0.5"></i>
+                        <div className="flex-1">
+                          <h5 className="font-semibold text-blue-800 mb-1">رسائل متبقية</h5>
+                          <p className="text-sm text-blue-700">
+                            هذه الجلسة لديها <strong>{session.queuedCount}</strong> رسالة متبقية.
+                            القائمة أدناه تعرض الرسائل المرسلة بنجاح حتى الآن.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Session Stats */}
+                    <div className={`grid ${session.hasOngoingMessages ? 'grid-cols-5' : 'grid-cols-4'} gap-4 mb-6`}>
                       <div className="bg-white rounded-lg p-4 border border-blue-200">
                         <div className="text-sm text-gray-600 flex items-center gap-1">
-                          <i className="fas fa-clock text-blue-500 text-xs"></i>
-                          متبقية
+                          <i className="fas fa-users text-blue-500 text-xs"></i>
+                          إجمالي الرسائل
                         </div>
-                        <div className="text-2xl font-bold text-blue-600">{session.queuedCount}</div>
+                        <div className="text-2xl font-bold text-blue-600">{session.totalPatients}</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-green-200">
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <i className="fas fa-check-circle text-green-500 text-xs"></i>
+                          تم الإرسال
+                        </div>
+                        <div className="text-2xl font-bold text-green-600">{session.sentCount}</div>
+                      </div>
+                      {session.hasOngoingMessages && (
+                        <div className="bg-white rounded-lg p-4 border border-blue-200">
+                          <div className="text-sm text-gray-600 flex items-center gap-1">
+                            <i className="fas fa-clock text-blue-500 text-xs"></i>
+                            متبقية
+                          </div>
+                          <div className="text-2xl font-bold text-blue-600">{session.queuedCount}</div>
+                        </div>
+                      )}
+                      <div className="bg-white rounded-lg p-4 border border-red-200">
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <i className="fas fa-times-circle text-red-500 text-xs"></i>
+                          فشل
+                        </div>
+                        <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 border border-green-200">
+                        <div className="text-sm text-gray-600 flex items-center gap-1">
+                          <i className="fas fa-percentage text-green-500 text-xs"></i>
+                          معدل النجاح
+                        </div>
+                        <div className="text-2xl font-bold text-green-600">
+                          {session.totalPatients > 0 ? Math.round((session.sentCount / session.totalPatients) * 100) : 0}%
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Failed Messages Disclaimer */}
+                    {session.hasFailedMessages && (
+                      <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+                        <i className="fas fa-exclamation-triangle text-yellow-600 text-lg mt-0.5"></i>
+                        <div className="flex-1">
+                          <h5 className="font-semibold text-yellow-800 mb-1">تنبيه: يوجد رسائل فاشلة في هذه الجلسة</h5>
+                          <p className="text-sm text-yellow-700">
+                            تحتوي هذه الجلسة على <strong>{session.failedCount}</strong> رسالة فاشلة. القائمة أدناه تعرض فقط الرسائل المرسلة بنجاح.
+                            لعرض الرسائل الفاشلة وأسباب الفشل، يرجى زيارة لوحة المهام الفاشلة.
+                          </p>
+                        </div>
                       </div>
                     )}
-                    <div className="bg-white rounded-lg p-4 border border-red-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-times-circle text-red-500 text-xs"></i>
-                        فشل
+
+                    {/* Sent Messages Table */}
+                    <div className="bg-white rounded-lg overflow-hidden border">
+                      <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <h4 className="font-bold text-gray-800">الرسائل المرسلة بنجاح</h4>
+                          <span className="text-sm text-gray-600">
+                            {session.sentMessages.length} رسالة
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          {/* Deletion and selection controls intentionally removed - completed messages cannot be deleted */}
+                        </div>
                       </div>
-                      <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-4 border border-green-200">
-                      <div className="text-sm text-gray-600 flex items-center gap-1">
-                        <i className="fas fa-percentage text-green-500 text-xs"></i>
-                        معدل النجاح
-                      </div>
-                      <div className="text-2xl font-bold text-green-600">
-                        {session.totalPatients > 0 ? Math.round((session.sentCount / session.totalPatients) * 100) : 0}%
-                      </div>
+
+                      {session.sentMessages.length === 0 ? (
+                        <div className="p-8 text-center text-gray-600">
+                          <i className="fas fa-inbox text-3xl mb-2 opacity-50"></i>
+                          <p>لا توجد رسائل مرسلة في هذه الجلسة</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 border-b">
+                              <tr>
+                                {tableColumns.map((col: any) => (
+                                  <th
+                                    key={col.key}
+                                    style={{ width: col.width }}
+                                    className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                                  >
+                                    {col.hasToggle ? (
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span>{col.label}</span>
+                                        <button
+                                          onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
+                                          className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
+                                          title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
+                                        >
+                                          <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
+                                          <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      col.label
+                                    )}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {session.sentMessages.map((message) => {
+                                const row = renderSentMessageRow(message);
+                                return (
+                                  <tr
+                                    key={message.messageId}
+                                    className="border-b hover:bg-gray-50 transition-colors"
+                                  >
+                                    <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-600">{row.completedAt}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {/* Failed Messages Disclaimer */}
-                  {session.hasFailedMessages && (
-                    <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
-                      <i className="fas fa-exclamation-triangle text-yellow-600 text-lg mt-0.5"></i>
-                      <div className="flex-1">
-                        <h5 className="font-semibold text-yellow-800 mb-1">تنبيه: يوجد رسائل فاشلة في هذه الجلسة</h5>
-                        <p className="text-sm text-yellow-700">
-                          تحتوي هذه الجلسة على <strong>{session.failedCount}</strong> رسالة فاشلة. القائمة أدناه تعرض فقط الرسائل المرسلة بنجاح.
-                          لعرض الرسائل الفاشلة وأسباب الفشل، يرجى زيارة لوحة المهام الفاشلة.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Sent Messages Table */}
-                  <div className="bg-white rounded-lg overflow-hidden border">
-                    <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <h4 className="font-bold text-gray-800">الرسائل المرسلة بنجاح</h4>
-                        <span className="text-sm text-gray-600">
-                          {session.sentMessages.length} رسالة
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        {/* Deletion and selection controls intentionally removed - completed messages cannot be deleted */}
-                      </div>
-                    </div>
-
-                    {session.sentMessages.length === 0 ? (
-                      <div className="p-8 text-center text-gray-600">
-                        <i className="fas fa-inbox text-3xl mb-2 opacity-50"></i>
-                        <p>لا توجد رسائل مرسلة في هذه الجلسة</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-gray-50 border-b">
-                            <tr>
-                              {tableColumns.map((col: any) => (
-                                <th
-                                  key={col.key}
-                                  style={{ width: col.width }}
-                                  className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
-                                >
-                                  {col.hasToggle ? (
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span>{col.label}</span>
-                                      <button
-                                        onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
-                                        className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
-                                        title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
-                                      >
-                                        <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
-                                        <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    col.label
-                                  )}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {session.sentMessages.map((message) => {
-                              const row = renderSentMessageRow(message);
-                              return (
-                                <tr
-                                  key={message.messageId}
-                                  className="border-b hover:bg-gray-50 transition-colors"
-                                >
-                                  <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-600">{row.completedAt}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })}

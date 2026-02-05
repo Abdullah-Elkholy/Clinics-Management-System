@@ -948,18 +948,15 @@ export default function OngoingTasksPanel() {
                   </span>
                 </button>
                 {globalPauseState.pauseReason && (
-                  <div
-                    className={`text-sm flex items-center gap-2 max-w-[250px] ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
-                      ? 'text-yellow-700 font-semibold'
-                      : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
-                        ? 'text-green-600 font-semibold'
-                        : globalPauseState.pauseReason?.includes('BrowserClosure')
-                          ? 'text-red-600'
-                          : 'text-orange-600'
-                      }`}
-                    title={translatePauseReason(globalPauseState.pauseReason)}
-                  >
-                    <i className={`fas flex-shrink-0 ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
+                  <div className={`text-sm flex items-center gap-2 flex-wrap max-w-[350px] ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
+                    ? 'text-yellow-700 font-semibold'
+                    : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
+                      ? 'text-green-600 font-semibold'
+                      : globalPauseState.pauseReason?.includes('BrowserClosure')
+                        ? 'text-red-600'
+                        : 'text-orange-600'
+                    }`}>
+                    <i className={`fas ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
                       ? 'fa-exclamation-triangle'
                       : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
                         ? 'fa-check-circle'
@@ -967,12 +964,12 @@ export default function OngoingTasksPanel() {
                           ? 'fa-times-circle'
                           : 'fa-wifi'
                       }`}></i>
-                    <span className="truncate">{translatePauseReason(globalPauseState.pauseReason)}</span>
+                    <span>{translatePauseReason(globalPauseState.pauseReason)}</span>
                     {globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable && (
-                      <span className="text-xs flex-shrink-0">(يجب المصادقة أولاً)</span>
+                      <span className="text-xs">(يجب المصادقة أولاً)</span>
                     )}
                     {globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable && (
-                      <span className="text-xs text-green-600 flex-shrink-0">(تم المصادقة - اضغط استئناف)</span>
+                      <span className="text-xs text-green-600">(تم المصادقة - اضغط استئناف)</span>
                     )}
                   </div>
                 )}
@@ -1041,7 +1038,7 @@ export default function OngoingTasksPanel() {
       )}
 
       {/* Sessions List */}
-      <div className="space-y-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-2">
+      <div className="space-y-4">
         {sortedSessions.map((session, index) => {
           const isExpanded = expandedSessions.has(session.id);
           const progressPercent = getProgressPercentage(session);
@@ -1053,7 +1050,7 @@ export default function OngoingTasksPanel() {
           return (
             <div
               key={session.id}
-              className={`bg-white rounded-lg shadow overflow-hidden border-2 transition-all duration-500 ease-in-out transform hover:scale-[1.01] ${isCurrentlyActive
+              className={`bg-white rounded-lg shadow overflow-x-auto border-2 transition-all duration-500 ease-in-out transform hover:scale-[1.01] ${isCurrentlyActive
                 ? 'animate-glow-sending border-blue-500 shadow-xl shadow-blue-200/50 order-0'
                 : isNextInQueue
                   ? 'border-green-400 shadow-lg shadow-green-100/50 order-1'
@@ -1065,290 +1062,292 @@ export default function OngoingTasksPanel() {
                 animation: isCurrentlyActive ? 'slideToTop 0.5s ease-out' : 'none'
               }}
             >
-              {/* Active Session Badge */}
-              {isCurrentlyActive && (
-                <div className="absolute top-2 right-2 z-10 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 animate-pulse">
-                  <i className="fas fa-bolt"></i>
-                  <span>جارٍ المعالجة الآن</span>
-                </div>
-              )}
-              {/* Next in Queue Badge */}
-              {isNextInQueue && (
-                <div className="absolute top-2 right-2 z-10 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
-                  <i className="fas fa-clock"></i>
-                  <span>التالي في الدور</span>
-                </div>
-              )}
-              {/* Session Header - Fully Clickable */}
-              <div
-                className={`px-6 py-4 border-b cursor-pointer transition-colors relative ${isCurrentlyActive
-                  ? 'bg-gradient-to-r from-blue-50 via-blue-100 to-purple-100'
-                  : session.isPaused
-                    ? 'bg-gradient-to-r from-yellow-100 to-orange-50'
-                    : 'bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100'
-                  }`}
-                onClick={() => toggleSessionExpand(session.id)}
-                style={{ paddingTop: (isCurrentlyActive || isNextInQueue) ? '3rem' : '1rem' }}
-              >
-                <div className="flex items-center gap-4 justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    {/* Collapse Button with Improved UI */}
-                    <div className="flex items-center gap-2">
-                      <button className={`text-xl transition-transform duration-300 ${session.isPaused ? 'text-yellow-600' : 'text-blue-600'}`}>
-                        <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
-                      </button>
-                      <span className={`text-sm font-medium whitespace-nowrap ${session.isPaused ? 'text-yellow-600' : 'text-blue-600'}`}>القائمة</span>
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
-                        {session.isPaused && (
-                          <Badge color="yellow" label="⏸️ موقوف مؤقتاً" />
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-600 mt-2">
-                        <span>جلسة: <strong>{session.sessionId}</strong></span>
-                        <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
-                      </div>
-                    </div>
+              <div className="min-w-[800px]">
+                {/* Active Session Badge */}
+                {isCurrentlyActive && (
+                  <div className="absolute top-2 right-2 z-10 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1 animate-pulse">
+                    <i className="fas fa-bolt"></i>
+                    <span>جارٍ المعالجة الآن</span>
                   </div>
-
-                  <div className="flex items-center gap-4">
-                    {/* Progress Bar */}
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-gray-700 mb-1">تقدم الإرسال</div>
-                      <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${session.isPaused
-                            ? 'bg-yellow-500'
-                            : progressPercent === 100
-                              ? 'bg-green-500'
-                              : 'bg-blue-500'
-                            }`}
-                          style={{ width: `${progressPercent}%` }}
-                        ></div>
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">{progressPercent}%</div>
-                    </div>
-
-                    {/* Session Actions */}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleSessionPause(session.id);
-                        }}
-                        disabled={false}
-                        className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${session.isPaused
-                          ? 'bg-green-500 text-white hover:bg-green-600'
-                          : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
-                          }`}
-                        title={session.isPaused ? 'استئناف الجلسة' : 'إيقاف الجلسة'}
-                      >
-                        <i className={`fas fa-${session.isPaused ? 'play' : 'pause'}`}></i>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteSession(session.id);
-                        }}
-                        className="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-2 rounded text-sm"
-                      >
-                        <i className="fas fa-trash"></i>
-                      </button>
-                    </div>
+                )}
+                {/* Next in Queue Badge */}
+                {isNextInQueue && (
+                  <div className="absolute top-2 right-2 z-10 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg flex items-center gap-1">
+                    <i className="fas fa-clock"></i>
+                    <span>التالي في الدور</span>
                   </div>
-                </div>
-              </div>
+                )}
+                {/* Session Header - Fully Clickable */}
+                <div
+                  className={`px-6 py-4 border-b cursor-pointer transition-colors relative ${isCurrentlyActive
+                    ? 'bg-gradient-to-r from-blue-50 via-blue-100 to-purple-100'
+                    : session.isPaused
+                      ? 'bg-gradient-to-r from-yellow-100 to-orange-50'
+                      : 'bg-gradient-to-r from-blue-50 to-purple-50 hover:from-blue-100 hover:to-purple-100'
+                    }`}
+                  onClick={() => toggleSessionExpand(session.id)}
+                  style={{ paddingTop: (isCurrentlyActive || isNextInQueue) ? '3rem' : '1rem' }}
+                >
+                  <div className="flex items-center gap-4 justify-between">
+                    <div className="flex items-center gap-4 flex-1">
+                      {/* Collapse Button with Improved UI */}
+                      <div className="flex items-center gap-2">
+                        <button className={`text-xl transition-transform duration-300 ${session.isPaused ? 'text-yellow-600' : 'text-blue-600'}`}>
+                          <i className={`fas fa-chevron-${isExpanded ? 'down' : 'left'}`}></i>
+                        </button>
+                        <span className={`text-sm font-medium whitespace-nowrap ${session.isPaused ? 'text-yellow-600' : 'text-blue-600'}`}>القائمة</span>
+                      </div>
 
-              {/* Session Content (Expandable) */}
-              {isExpanded && (
-                <div className="p-6 bg-gray-50">
-                  {(() => {
-                    const remainingCount = session.patients.filter(p => p.status === 'queued' || p.status === 'pending').length;
-
-                    // Calculate estimated remaining time
-                    const estimatedTime = rateLimitSettings
-                      ? calculateEstimatedTime(remainingCount, rateLimitSettings.estimatedSecondsPerMessage)
-                      : remainingCount * 9; // Fallback estimate (9s per message)
-
-                    return (
-                      <>
-                        {/* Session Stats - 4 columns with actionable info */}
-                        <div className="grid grid-cols-4 gap-4 mb-6">
-                          <div className="bg-white rounded-lg p-4 border border-blue-200">
-                            {(() => {
-                              const sendingCount = session.patients.filter(p => p.status === 'sending').length;
-                              const isSending = sendingCount > 0;
-                              return (
-                                <>
-                                  <div className="text-sm text-gray-600 flex items-center gap-1">
-                                    <i className={`fas ${isSending ? 'fa-spinner fa-spin' : 'fa-pause'} ${isSending ? 'text-blue-500' : 'text-gray-400'} text-xs`}></i>
-                                    قيد الإرسال
-                                  </div>
-                                  <div className={`text-2xl font-bold ${isSending ? 'text-blue-600' : 'text-gray-400'}`}>
-                                    {isSending ? (
-                                      <span className="flex items-center gap-2">
-                                        <i className="fas fa-broadcast-tower text-lg animate-pulse"></i>
-                                        نعم
-                                      </span>
-                                    ) : (
-                                      <span className="flex items-center gap-2">
-                                        <i className="fas fa-pause-circle text-lg"></i>
-                                        لا
-                                      </span>
-                                    )}
-                                  </div>
-                                </>
-                              );
-                            })()}
-                          </div>
-                          <div className="bg-white rounded-lg p-4 border border-green-200">
-                            <div className="text-sm text-gray-600 flex items-center gap-1">
-                              <i className="fas fa-check-circle text-green-500 text-xs"></i>
-                              تم الإرسال
-                            </div>
-                            <div className="text-2xl font-bold text-green-600">
-                              {session.patients.filter(p => p.status === 'sent').length}
-                            </div>
-                          </div>
-                          <div className="bg-white rounded-lg p-4 border border-red-200">
-                            <div className="text-sm text-gray-600 flex items-center gap-1">
-                              <i className="fas fa-times-circle text-red-500 text-xs"></i>
-                              فشل
-                            </div>
-                            <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
-                          </div>
-                          <div className="bg-white rounded-lg p-4 border border-gray-200">
-                            <div className="text-sm text-gray-600 flex items-center gap-1">
-                              <i className="fas fa-clock text-gray-500 text-xs"></i>
-                              المتبقية
-                            </div>
-                            <div className="flex items-end gap-2">
-                              <div className="text-2xl font-bold text-gray-600">
-                                {remainingCount}
-                              </div>
-                              {remainingCount > 0 && (
-                                <div className="text-xs text-blue-600 mb-1 font-medium dir-ltr" title="الوقت المتبقي المتوقع">
-                                  ~{formatTimeArabic(estimatedTime)}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
-
-                  {/* Patients Table */}
-                  <div className="bg-white rounded-lg overflow-hidden border">
-                    <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div
-                          onClick={() => toggleAllPatients(session.id)}
-                          className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
-                          style={{
-                            borderColor: selectedCount === 0 ? '#d1d5db' : selectedCount === session.totalPatients ? '#3b82f6' : '#f59e0b',
-                            backgroundColor: selectedCount === 0 ? 'white' : selectedCount === session.totalPatients ? '#3b82f6' : '#fef3c7',
-                          }}
-                          title={selectedCount === 0 ? 'تحديد الكل' : selectedCount === session.totalPatients ? 'إلغاء التحديد' : 'تحديد الكل'}
-                        >
-                          {selectedCount > 0 && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <i
-                                className={`fas text-white text-xs ${selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
-                                  }`}
-                              ></i>
-                            </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-bold text-gray-900 text-lg">{session.clinicName}</h3>
+                          {session.isPaused && (
+                            <Badge color="yellow" label="⏸️ موقوف مؤقتاً" />
                           )}
                         </div>
-                        <h4 className="font-bold text-gray-800">قائمة المرضى</h4>
-                        <span className="text-sm text-gray-600">
-                          {selectedCount} من {session.totalPatients} محدد
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        {selectedCount > 0 && (
-                          <>
-                            <button
-                              onClick={() => setSelectedPatients(new Map(selectedPatients).set(session.id, new Set()))}
-                              className="text-sm text-red-600 hover:text-red-800"
-                            >
-                              إلغاء التحديد
-                            </button>
-                            <button
-                              onClick={() => deleteSelectedPatients(session.id)}
-                              className="text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
-                            >
-                              حذف ({selectedCount})
-                            </button>
-                          </>
-                        )}
+                        <div className="text-sm text-gray-600 mt-2">
+                          <span>جلسة: <strong>{session.sessionId}</strong></span>
+                          <span className="mx-4">وقت الإنشاء: <strong>{session.createdAt ? formatLocalDateTime(session.createdAt) : 'غير محدد'}</strong></span>
+                        </div>
                       </div>
                     </div>
 
-                    {session.patients.length === 0 ? (
-                      <div className="p-8 text-center text-gray-600">
-                        <i className="fas fa-inbox text-3xl mb-2 opacity-50"></i>
-                        <p>لا يوجد مرضى في هذه الجلسة</p>
+                    <div className="flex items-center gap-4">
+                      {/* Progress Bar */}
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-gray-700 mb-1">تقدم الإرسال</div>
+                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${session.isPaused
+                              ? 'bg-yellow-500'
+                              : progressPercent === 100
+                                ? 'bg-green-500'
+                                : 'bg-blue-500'
+                              }`}
+                            style={{ width: `${progressPercent}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1">{progressPercent}%</div>
                       </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead className="bg-gray-50 border-b">
-                            <tr>
-                              {tableColumns.map((col: any) => (
-                                <th
-                                  key={col.key}
-                                  style={{ width: col.width }}
-                                  className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
-                                >
-                                  {col.hasToggle ? (
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span>{col.label}</span>
-                                      <button
-                                        onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
-                                        className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
-                                        title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
-                                      >
-                                        <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
-                                        <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    col.label
-                                  )}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {session.patients.map((patient) => {
-                              const row = renderPatientRow(patient, session.id, session.isPaused || false);
-                              return (
-                                <tr
-                                  key={patient.id}
-                                  className={`border-b hover:bg-gray-50 transition-colors ${patient.isPaused ? 'bg-yellow-50' : ''
-                                    }`}
-                                >
-                                  <td className="px-6 py-3 text-sm">{row.checkbox}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
-                                  <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
-                                  <td className="px-6 py-3 text-sm">{row.status}</td>
-                                  <td className="px-6 py-3 text-sm">{row.failedAttempts}</td>
-                                  <td className="px-6 py-3 text-sm">{row.actions}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+
+                      {/* Session Actions */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSessionPause(session.id);
+                          }}
+                          disabled={false}
+                          className={`px-3 py-2 rounded text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-all ${session.isPaused
+                            ? 'bg-green-500 text-white hover:bg-green-600'
+                            : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'
+                            }`}
+                          title={session.isPaused ? 'استئناف الجلسة' : 'إيقاف الجلسة'}
+                        >
+                          <i className={`fas fa-${session.isPaused ? 'play' : 'pause'}`}></i>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSession(session.id);
+                          }}
+                          className="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-2 rounded text-sm"
+                        >
+                          <i className="fas fa-trash"></i>
+                        </button>
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
-              )}
+
+                {/* Session Content (Expandable) */}
+                {isExpanded && (
+                  <div className="p-6 bg-gray-50">
+                    {(() => {
+                      const remainingCount = session.patients.filter(p => p.status === 'queued' || p.status === 'pending').length;
+
+                      // Calculate estimated remaining time
+                      const estimatedTime = rateLimitSettings
+                        ? calculateEstimatedTime(remainingCount, rateLimitSettings.estimatedSecondsPerMessage)
+                        : remainingCount * 9; // Fallback estimate (9s per message)
+
+                      return (
+                        <>
+                          {/* Session Stats - 4 columns with actionable info */}
+                          <div className="grid grid-cols-4 gap-4 mb-6">
+                            <div className="bg-white rounded-lg p-4 border border-blue-200">
+                              {(() => {
+                                const sendingCount = session.patients.filter(p => p.status === 'sending').length;
+                                const isSending = sendingCount > 0;
+                                return (
+                                  <>
+                                    <div className="text-sm text-gray-600 flex items-center gap-1">
+                                      <i className={`fas ${isSending ? 'fa-spinner fa-spin' : 'fa-pause'} ${isSending ? 'text-blue-500' : 'text-gray-400'} text-xs`}></i>
+                                      قيد الإرسال
+                                    </div>
+                                    <div className={`text-2xl font-bold ${isSending ? 'text-blue-600' : 'text-gray-400'}`}>
+                                      {isSending ? (
+                                        <span className="flex items-center gap-2">
+                                          <i className="fas fa-broadcast-tower text-lg animate-pulse"></i>
+                                          نعم
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-2">
+                                          <i className="fas fa-pause-circle text-lg"></i>
+                                          لا
+                                        </span>
+                                      )}
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                            <div className="bg-white rounded-lg p-4 border border-green-200">
+                              <div className="text-sm text-gray-600 flex items-center gap-1">
+                                <i className="fas fa-check-circle text-green-500 text-xs"></i>
+                                تم الإرسال
+                              </div>
+                              <div className="text-2xl font-bold text-green-600">
+                                {session.patients.filter(p => p.status === 'sent').length}
+                              </div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 border border-red-200">
+                              <div className="text-sm text-gray-600 flex items-center gap-1">
+                                <i className="fas fa-times-circle text-red-500 text-xs"></i>
+                                فشل
+                              </div>
+                              <div className="text-2xl font-bold text-red-600">{session.failedCount}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 border border-gray-200">
+                              <div className="text-sm text-gray-600 flex items-center gap-1">
+                                <i className="fas fa-clock text-gray-500 text-xs"></i>
+                                المتبقية
+                              </div>
+                              <div className="flex items-end gap-2">
+                                <div className="text-2xl font-bold text-gray-600">
+                                  {remainingCount}
+                                </div>
+                                {remainingCount > 0 && (
+                                  <div className="text-xs text-blue-600 mb-1 font-medium dir-ltr" title="الوقت المتبقي المتوقع">
+                                    ~{formatTimeArabic(estimatedTime)}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+
+                    {/* Patients Table */}
+                    <div className="bg-white rounded-lg overflow-hidden border">
+                      <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div
+                            onClick={() => toggleAllPatients(session.id)}
+                            className="relative w-5 h-5 border-2 rounded cursor-pointer transition-all"
+                            style={{
+                              borderColor: selectedCount === 0 ? '#d1d5db' : selectedCount === session.totalPatients ? '#3b82f6' : '#f59e0b',
+                              backgroundColor: selectedCount === 0 ? 'white' : selectedCount === session.totalPatients ? '#3b82f6' : '#fef3c7',
+                            }}
+                            title={selectedCount === 0 ? 'تحديد الكل' : selectedCount === session.totalPatients ? 'إلغاء التحديد' : 'تحديد الكل'}
+                          >
+                            {selectedCount > 0 && (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <i
+                                  className={`fas text-white text-xs ${selectedCount === session.totalPatients ? 'fa-check' : 'fa-minus'
+                                    }`}
+                                ></i>
+                              </div>
+                            )}
+                          </div>
+                          <h4 className="font-bold text-gray-800">قائمة المرضى</h4>
+                          <span className="text-sm text-gray-600">
+                            {selectedCount} من {session.totalPatients} محدد
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          {selectedCount > 0 && (
+                            <>
+                              <button
+                                onClick={() => setSelectedPatients(new Map(selectedPatients).set(session.id, new Set()))}
+                                className="text-sm text-red-600 hover:text-red-800"
+                              >
+                                إلغاء التحديد
+                              </button>
+                              <button
+                                onClick={() => deleteSelectedPatients(session.id)}
+                                className="text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                              >
+                                حذف ({selectedCount})
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {session.patients.length === 0 ? (
+                        <div className="p-8 text-center text-gray-600">
+                          <i className="fas fa-inbox text-3xl mb-2 opacity-50"></i>
+                          <p>لا يوجد مرضى في هذه الجلسة</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 border-b">
+                              <tr>
+                                {tableColumns.map((col: any) => (
+                                  <th
+                                    key={col.key}
+                                    style={{ width: col.width }}
+                                    className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                                  >
+                                    {col.hasToggle ? (
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span>{col.label}</span>
+                                        <button
+                                          onClick={() => setIsMessagesExpanded(!isMessagesExpanded)}
+                                          className="flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors text-xs font-medium"
+                                          title={isMessagesExpanded ? 'طي الرسائل' : 'فرد الرسائل'}
+                                        >
+                                          <i className={`fas fa-${isMessagesExpanded ? 'compress' : 'expand'}`}></i>
+                                          <span>{isMessagesExpanded ? 'طي' : 'فرد'}</span>
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      col.label
+                                    )}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {session.patients.map((patient) => {
+                                const row = renderPatientRow(patient, session.id, session.isPaused || false);
+                                return (
+                                  <tr
+                                    key={patient.id}
+                                    className={`border-b hover:bg-gray-50 transition-colors ${patient.isPaused ? 'bg-yellow-50' : ''
+                                      }`}
+                                  >
+                                    <td className="px-6 py-3 text-sm">{row.checkbox}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-900 font-medium">{row.name}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-600">{row.phone}</td>
+                                    <td className="px-6 py-3 text-sm text-gray-700">{row.message}</td>
+                                    <td className="px-6 py-3 text-sm">{row.status}</td>
+                                    <td className="px-6 py-3 text-sm">{row.failedAttempts}</td>
+                                    <td className="px-6 py-3 text-sm">{row.actions}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
