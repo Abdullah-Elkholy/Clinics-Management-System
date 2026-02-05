@@ -344,7 +344,7 @@ export default function CompletedTasksPanel() {
         description={`عرض جميع المهام المكتملة والمرسلة بنجاح - ${sessions.length} جلسة`}
         stats={stats}
       />
-      <div className="space-y-4">
+      <div className="space-y-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-2">
         {sessions.map((session) => {
           const isExpanded = expandedSessions.has(session.id);
           const progressPercent = Math.round((session.sentCount / session.totalPatients) * 100);

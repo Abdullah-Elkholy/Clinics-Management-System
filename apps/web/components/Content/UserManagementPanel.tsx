@@ -1318,7 +1318,7 @@ export default function UserManagementPanel() {
 
                       {/* Managed Users Table */}
                       {isExpanded && (
-                        <div className="bg-white border-t border-gray-200">
+                        <div className="bg-white border-t border-gray-200 max-h-[400px] overflow-y-auto">
                           {/* Moderator Details Section */}
                           <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50">
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
@@ -1558,7 +1558,7 @@ export default function UserManagementPanel() {
 
                           {/* Secondary Admin Details */}
                           {isExpanded && (
-                            <div className="bg-white border-t border-gray-200 px-6 py-4">
+                            <div className="bg-white border-t border-gray-200 px-6 py-4 max-h-[300px] overflow-y-auto">
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center">
                                   <span className="text-sm text-gray-600">تاريخ الإنشاء:</span>

@@ -948,15 +948,18 @@ export default function OngoingTasksPanel() {
                   </span>
                 </button>
                 {globalPauseState.pauseReason && (
-                  <div className={`text-sm flex items-center gap-2 ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
-                    ? 'text-yellow-700 font-semibold'
-                    : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
-                      ? 'text-green-600 font-semibold'
-                      : globalPauseState.pauseReason?.includes('BrowserClosure')
-                        ? 'text-red-600'
-                        : 'text-orange-600'
-                    }`}>
-                    <i className={`fas ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
+                  <div
+                    className={`text-sm flex items-center gap-2 max-w-[250px] ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
+                      ? 'text-yellow-700 font-semibold'
+                      : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
+                        ? 'text-green-600 font-semibold'
+                        : globalPauseState.pauseReason?.includes('BrowserClosure')
+                          ? 'text-red-600'
+                          : 'text-orange-600'
+                      }`}
+                    title={translatePauseReason(globalPauseState.pauseReason)}
+                  >
+                    <i className={`fas flex-shrink-0 ${globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable
                       ? 'fa-exclamation-triangle'
                       : globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable
                         ? 'fa-check-circle'
@@ -964,12 +967,12 @@ export default function OngoingTasksPanel() {
                           ? 'fa-times-circle'
                           : 'fa-wifi'
                       }`}></i>
-                    <span>{translatePauseReason(globalPauseState.pauseReason)}</span>
+                    <span className="truncate">{translatePauseReason(globalPauseState.pauseReason)}</span>
                     {globalPauseState.pauseReason?.includes('PendingQR') && !globalPauseState.isResumable && (
-                      <span className="text-xs">(يجب المصادقة أولاً)</span>
+                      <span className="text-xs flex-shrink-0">(يجب المصادقة أولاً)</span>
                     )}
                     {globalPauseState.pauseReason?.includes('PendingQR') && globalPauseState.isResumable && (
-                      <span className="text-xs text-green-600">(تم المصادقة - اضغط استئناف)</span>
+                      <span className="text-xs text-green-600 flex-shrink-0">(تم المصادقة - اضغط استئناف)</span>
                     )}
                   </div>
                 )}
@@ -1038,7 +1041,7 @@ export default function OngoingTasksPanel() {
       )}
 
       {/* Sessions List */}
-      <div className="space-y-4">
+      <div className="space-y-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-2">
         {sortedSessions.map((session, index) => {
           const isExpanded = expandedSessions.has(session.id);
           const progressPercent = getProgressPercentage(session);

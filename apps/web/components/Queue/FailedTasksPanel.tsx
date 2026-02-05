@@ -885,7 +885,7 @@ export default function FailedTasksPanel() {
 
 
       {/* Sessions List */}
-      <div className="space-y-4">
+      <div className="space-y-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-2">
         {sessions.map((session) => {
           const isExpanded = expandedSessions.has(session.id);
           const selectedCount = selectedPatients.get(session.id)?.size || 0;
