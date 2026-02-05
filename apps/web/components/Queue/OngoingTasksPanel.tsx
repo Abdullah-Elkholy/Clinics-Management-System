@@ -1292,7 +1292,7 @@ export default function OngoingTasksPanel() {
                           <p>لا يوجد مرضى في هذه الجلسة</p>
                         </div>
                       ) : (
-                        <div className="overflow-x-auto">
+                        <div>
                           <table className="w-full">
                             <thead className="bg-gray-50 border-b">
                               <tr>

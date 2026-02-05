@@ -43,7 +43,10 @@ namespace Clinics.Api.Controllers
         /// <summary>
         /// Get recent system logs from log files.
         /// </summary>
-        /// <param name="date">Filter by date in YYYY-MM-DD format (optional, defaults to today)</param>
+        /// <param name="date">
+        /// Filter by date (optional, defaults to today).
+        /// Accepts either YYYYMMDD (e.g. 20260205) or YYYY-MM-DD; only the digits are used to match log file names.
+        /// </param>
         /// <param name="search">Search term to filter logs (optional)</param>
         /// <param name="page">Page number (1-indexed)</param>
         /// <param name="pageSize">Number of log lines per page (default 25, max 100)</param>
@@ -69,8 +72,11 @@ namespace Clinics.Api.Controllers
                     return Ok(new LogsResponse { Logs = new List<LogEntryDto>(), TotalCount = 0, Message = "مجلد السجلات غير موجود" });
                 }
 
-                // Determine which log files to read based on date
-                string targetDate = date ?? DateTime.Now.ToString("yyyyMMdd");
+                // Normalize and determine which log files to read based on date
+                // Frontend sends YYYYMMDD; if dashes are present we strip them so both formats work.
+                string targetDate = !string.IsNullOrWhiteSpace(date)
+                    ? new string(date.Where(char.IsDigit).ToArray())
+                    : DateTime.Now.ToString("yyyyMMdd");
                 var targetFiles = new List<FileInfo>();
 
                 // Get all log files ordered by latest
@@ -79,15 +85,28 @@ namespace Clinics.Api.Controllers
                 // Find all files matching the date pattern
                 targetFiles = logFiles.Where(f => f.Name.Contains(targetDate)).ToList();
 
-                // Fallback: If no files found for the date, and no specific date was requested (or just to keep existing behavior safe), 
-                // try to load the most recent file if we have nothing. 
-                // However, strictly speaking, if a date IS provided and not found, we might want empty. 
-                // But preserving previous logic: if target is empty, grab the first one.
-                if (!targetFiles.Any() && logFiles.Any())
+                // If a specific date was requested and no files were found for that date,
+                // return an empty result instead of silently falling back to the latest logs.
+                if (!targetFiles.Any())
                 {
-                    // Only fallback if date was NOT explicitly provided (i.e. default load)
-                    // Or follow previous logic which always fell back. Let's stick to safe fallback for now if the list is empty.
-                    targetFiles.Add(logFiles.First());
+                    if (!string.IsNullOrWhiteSpace(date))
+                    {
+                        return Ok(new LogsResponse
+                        {
+                            Logs = new List<LogEntryDto>(),
+                            TotalCount = 0,
+                            Page = page,
+                            PageSize = pageSize,
+                            TotalPages = 0,
+                            Message = "لا توجد سجلات لهذا التاريخ"
+                        });
+                    }
+
+                    // No specific date requested: fall back to the most recent log file if available
+                    if (logFiles.Any())
+                    {
+                        targetFiles.Add(logFiles.First());
+                    }
                 }
 
                 if (!targetFiles.Any())
