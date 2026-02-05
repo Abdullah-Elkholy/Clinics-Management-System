@@ -177,11 +177,23 @@ export default function Navigation() {
   // Detect icon-only mode: either collapsed via toggle OR dragged to narrow width (56px)
   const isIconOnly = isCollapsed || customWidth === 56;
 
+  // Sync customWidth with isCollapsed state when hydrated from localStorage
+  // This prevents the sidebar from auto-expanding due to initial customWidth (400) being > 120
+  React.useEffect(() => {
+    if (isHydrated) {
+      // On hydration, set customWidth based on the persisted isCollapsed state
+      if (isCollapsed) {
+        setCustomWidth(56); // Collapsed width
+      }
+    }
+  }, [isHydrated]); // Only run on hydration, not on isCollapsed changes
+
   // Auto-collapse/expand based on width thresholds during drag
   // When collapsed: expand when width > 120px
   // When expanded: collapse when width < 80px
+  // ONLY trigger during active resizing to prevent unwanted auto-expand on navigation
   React.useEffect(() => {
-    if (customWidth !== null) {
+    if (customWidth !== null && isResizing.current) {
       if (isCollapsed && customWidth > 120) {
         // Sidebar is collapsed but dragged wider - auto expand
         wasCollapsedByDrag.current = true;

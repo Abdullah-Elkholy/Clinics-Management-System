@@ -1095,7 +1095,7 @@ export default function UserManagementPanel() {
       {/* Content */}
       <div className="p-6 flex flex-col h-full overflow-hidden">
         {/* Navigation Tabs - Role Based */}
-        <div className="flex gap-2 mb-6 border-b border-gray-200">
+        <div className="flex gap-2 mb-6 border-b border-gray-200 overflow-x-auto flex-shrink-0 pb-2">
           {/* Account Settings Tab - Show for all (First Tab) */}
           <button
             onClick={() => handleTabChange('accountSettings')}
@@ -1383,7 +1383,7 @@ export default function UserManagementPanel() {
                           )}
 
                           {managedUsers.length > 0 ? (
-                            <div className="overflow-hidden rounded-lg border border-gray-200 m-4">
+                            <div className="overflow-hidden rounded-lg border border-gray-200 m-4 max-h-[300px] overflow-y-auto">
                               <table className="w-full">
                                 <thead>
                                   <tr className="bg-gradient-to-r from-blue-50 to-blue-100 border-b-2 border-blue-200">
@@ -1498,7 +1498,7 @@ export default function UserManagementPanel() {
                   </button>
                 </div>
                 {secondaryAdmins.length > 0 && (
-                  <div className="space-y-4">
+                  <div className="space-y-4 max-h-[calc(100vh-400px)] overflow-y-auto pr-2">
                     {secondaryAdmins.map((admin) => {
                       const isExpanded = expandedSecondaryAdmins.has(admin.id);
                       const roleInfo = getRoleInfo(admin.role);
