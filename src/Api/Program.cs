@@ -428,6 +428,7 @@ try
             }
             var root = new User
             {
+                Id = 1,
                 Username = "root",
                 PasswordHash = "AQAAAAIAAYagAAAAEOVl/Goh0ms6V7NLVmQCGR+EdEBstXbq5tARgYqkjcBvrR/Gx5YJ+FOtr4lFlV7ylg==",
                 FirstName = "عمدة",
@@ -447,6 +448,7 @@ try
             //Username: admin Password: admin123
             var admin = new User
             {
+                Id = 2,
                 Username = "admin",
                 PasswordHash = "AQAAAAIAAYagAAAAEFis02t8W90rJ6Pkqw6wwD45hx6QI2ArKLqW8tl77SnIidCWW43DLldUP2G1BhxkXw==",
                 FirstName = "عمدة",
@@ -467,6 +469,7 @@ try
             //Username: admin2 Password: admin123
             var admin2 = new User
             {
+                Id = 3,
                 Username = "admin2",
                 PasswordHash = "AQAAAAIAAYagAAAAEFmtEKOGKA5/ficlHNopu3+fZ1ly0ocuBAvJgl59wxjRQgGSFDlPgKNa+KR2a8vpTA==",
                 FirstName = "عمدة",
@@ -487,6 +490,7 @@ try
             //Username: mod1 Password: mod123
             var mod1 = new User
             {
+                Id = 4,
                 Username = "mod1",
                 PasswordHash = "AQAAAAIAAYagAAAAED2rs9SjaX3pu2CTEnn+zQ7BZmyYeHWYnD6QLOnwpthfMlk96bElhUhm7ElTbIDKlQ==",
                 FirstName = "عمدة",
@@ -507,6 +511,7 @@ try
             //Username: user1 Password: user123
             var user1 = new User
             {
+                Id = 5,
                 Username = "user1",
                 PasswordHash = "AQAAAAIAAYagAAAAEAl24nxVIY22QRB5OdNaWSlDWAVFL0NJRq5VxIpS2ReFYDg3Vh1KbnJbsNOnQPC/kw==",
                 FirstName = "عمدة",
@@ -524,8 +529,29 @@ try
                 RestoredBy = null
             };
 
-            db.Users.AddRange(root, admin, admin2, mod1, user1);
-            db.SaveChanges();
+            // Force explicit IDs: requires special handling per provider
+            if (!string.IsNullOrEmpty(defaultConn) && !isPostgreSQL)
+            {
+                // SQL Server: IDENTITY_INSERT must be ON for explicit IDs
+                using var transaction = db.Database.BeginTransaction();
+                db.Database.ExecuteSqlRaw("SET IDENTITY_INSERT [Users] ON");
+                db.Users.AddRange(root, admin, admin2, mod1, user1);
+                db.SaveChanges();
+                db.Database.ExecuteSqlRaw("SET IDENTITY_INSERT [Users] OFF");
+                transaction.Commit();
+            }
+            else
+            {
+                db.Users.AddRange(root, admin, admin2, mod1, user1);
+                db.SaveChanges();
+
+                if (isPostgreSQL)
+                {
+                    // Reset identity sequence so next auto-generated ID won't conflict
+                    db.Database.ExecuteSqlRaw(
+                        @"SELECT setval(pg_get_serial_sequence('""Users""', 'Id'), (SELECT COALESCE(MAX(""Id""), 1) FROM ""Users""))");
+                }
+            }
 
             // Seed demo queue for mod1 (moderator)
             if (!db.Queues.Any())
@@ -849,6 +875,7 @@ try
         {
             var root = new User
             {
+                Id = 1,
                 Username = "root",
                 PasswordHash = "AQAAAAIAAYagAAAAEOVl/Goh0ms6V7NLVmQCGR+EdEBstXbq5tARgYqkjcBvrR/Gx5YJ+FOtr4lFlV7ylg==",
                 FirstName = "المدير",
