@@ -486,8 +486,7 @@ namespace Clinics.Api.Services
                         // Arabic business log (UTF-8 file)
                         _logger.LogBusinessInformation("تم إرسال الرسالة بنجاح (ID: {MessageId}) إلى {Recipient}", m.Id, m.PatientPhone);
 
-                        // Notify via SignalR for real-time UI updates
-                        await NotifyMessageUpdate(m, "sent");
+                        // NOTE: SignalR notification handled by ChangeNotificationInterceptor on SaveChangesAsync
 
                         // Consume quota on successful send (moved from queueing phase for fair billing)
                         if (m.SenderUserId.HasValue)
@@ -553,8 +552,7 @@ namespace Clinics.Api.Services
 
                             await _db.SaveChangesAsync();
 
-                            // Notify via SignalR for real-time UI updates
-                            await NotifyMessageUpdate(m, "failed");
+                            // NOTE: SignalR notification handled by ChangeNotificationInterceptor on SaveChangesAsync
                         }
                     }
                     await _db.SaveChangesAsync();
