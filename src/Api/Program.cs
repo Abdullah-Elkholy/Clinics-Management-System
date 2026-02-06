@@ -893,8 +893,29 @@ try
                 RestoredBy = null
             };
 
-            db.Users.Add(root);
-            db.SaveChanges();
+            // Force explicit IDs: requires special handling per provider
+            if (!string.IsNullOrEmpty(defaultConn) && !isPostgreSQL)
+            {
+                // SQL Server: IDENTITY_INSERT must be ON for explicit IDs
+                using var transaction = db.Database.BeginTransaction();
+                db.Database.ExecuteSqlRaw("SET IDENTITY_INSERT [Users] ON");
+                db.Users.AddRange(root);
+                db.SaveChanges();
+                db.Database.ExecuteSqlRaw("SET IDENTITY_INSERT [Users] OFF");
+                transaction.Commit();
+            }
+            else
+            {
+                db.Users.AddRange(root);
+                db.SaveChanges();
+
+                if (isPostgreSQL)
+                {
+                    // Reset identity sequence so next auto-generated ID won't conflict
+                    db.Database.ExecuteSqlRaw(
+                        @"SELECT setval(pg_get_serial_sequence('""Users""', 'Id'), (SELECT COALESCE(MAX(""Id""), 1) FROM ""Users""))");
+                }
+            }
         }
 
 
