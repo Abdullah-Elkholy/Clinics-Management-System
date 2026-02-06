@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
+using System.IO.Compression;
 using System.Text.RegularExpressions;
 
 namespace Clinics.Api.Controllers
@@ -24,20 +26,26 @@ namespace Clinics.Api.Controllers
             _env = env;
             _configuration = configuration;
 
-            // Try to get logs path from configuration or environment variable
-            var configuredLogsPath = _configuration["LogPaths:Directory"]
+            // Prefer an explicit directory override, otherwise derive the directory from the same file path Serilog uses.
+            // This keeps dev/prod consistent even when LogPaths:Main is something like "../../logs/dev-.log" or "/app/logs/production-.log".
+            var configuredLogsDir = _configuration["LogPaths:Directory"]
                 ?? Environment.GetEnvironmentVariable("LOGS_PATH");
 
-            if (!string.IsNullOrEmpty(configuredLogsPath))
+            if (!string.IsNullOrWhiteSpace(configuredLogsDir))
             {
-                _logsPath = configuredLogsPath;
+                _logsPath = Path.IsPathRooted(configuredLogsDir)
+                    ? configuredLogsDir
+                    : Path.GetFullPath(Path.Combine(_env.ContentRootPath, configuredLogsDir));
+                return;
             }
-            else
-            {
-                // Default to standard logs folder inside API root
-                // This matches the new configuration in Program.cs and appsettings.json
-                _logsPath = Path.Combine(_env.ContentRootPath, "logs");
-            }
+
+            var mainLogPath = _configuration["LogPaths:Main"] ?? "logs/main-.log";
+            var mainLogFullPath = Path.IsPathRooted(mainLogPath)
+                ? mainLogPath
+                : Path.GetFullPath(Path.Combine(_env.ContentRootPath, mainLogPath));
+
+            _logsPath = Path.GetDirectoryName(mainLogFullPath)
+                ?? Path.Combine(_env.ContentRootPath, "logs");
         }
 
         /// <summary>
@@ -79,8 +87,14 @@ namespace Clinics.Api.Controllers
                     : DateTime.Now.ToString("yyyyMMdd");
                 var targetFiles = new List<FileInfo>();
 
-                // Get all log files ordered by latest
-                var logFiles = logDir.GetFiles("*.log").OrderByDescending(f => f.LastWriteTimeUtc).ToList();
+                // Get all log files ordered by latest.
+                // Note: some servers might archive rotated logs (e.g. *.log.gz), so we include those too.
+                var logFiles = logDir.EnumerateFiles()
+                    .Where(f =>
+                        f.Name.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ||
+                        f.Name.EndsWith(".log.gz", StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(f => f.LastWriteTimeUtc)
+                    .ToList();
 
                 // Find all files matching the date pattern
                 targetFiles = logFiles.Where(f => f.Name.Contains(targetDate)).ToList();
@@ -176,7 +190,10 @@ namespace Clinics.Api.Controllers
                     return Ok(new LogFilesResponse { Files = new List<LogFileInfo>() });
                 }
 
-                var files = logDir.GetFiles("*.log")
+                var files = logDir.EnumerateFiles()
+                    .Where(f =>
+                        f.Name.EndsWith(".log", StringComparison.OrdinalIgnoreCase) ||
+                        f.Name.EndsWith(".log.gz", StringComparison.OrdinalIgnoreCase))
                     .OrderByDescending(f => f.LastWriteTimeUtc)
                     .Select(f => new LogFileInfo
                     {
@@ -201,8 +218,14 @@ namespace Clinics.Api.Controllers
             var entries = new List<LogEntryDto>();
 
             // Read file with shared access (so Serilog can still write)
+            // Support gzip-archived logs (.log.gz) if present on the server.
             using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var reader = new StreamReader(fs);
+            Stream contentStream = fs;
+            if (filePath.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+            {
+                contentStream = new GZipStream(fs, CompressionMode.Decompress);
+            }
+            using var reader = new StreamReader(contentStream);
 
             string? line;
             var lineNumber = 0;
@@ -232,12 +255,51 @@ namespace Clinics.Api.Controllers
                     if (IsNoisyLog(message))
                         continue;
 
-                    if (DateTime.TryParse(match.Groups[1].Value, out var timestamp))
+                    // Preserve timezone offset if present, then normalize to UTC for consistent client-side local-time rendering.
+                    // Example line: "2026-01-11 21:06:42.249 +02:00 [INF] Message"
+                    var timestampText = match.Groups[1].Value;
+                    var offsetText = match.Groups[2].Success && !string.IsNullOrWhiteSpace(match.Groups[2].Value)
+                        ? match.Groups[2].Value
+                        : null;
+
+                    DateTime utcTimestamp;
+                    if (offsetText != null &&
+                        DateTimeOffset.TryParse(
+                            $"{timestampText} {offsetText}",
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.AllowWhiteSpaces,
+                            out var dtoWithOffset))
+                    {
+                        utcTimestamp = dtoWithOffset.UtcDateTime;
+                    }
+                    else if (DateTimeOffset.TryParse(
+                        timestampText,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                        out var dtoNoOffset))
+                    {
+                        utcTimestamp = dtoNoOffset.UtcDateTime;
+                    }
+                    else if (DateTime.TryParse(
+                        timestampText,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal,
+                        out var fallbackTimestamp))
+                    {
+                        utcTimestamp = fallbackTimestamp.Kind == DateTimeKind.Utc
+                            ? fallbackTimestamp
+                            : fallbackTimestamp.ToUniversalTime();
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
                     {
                         entries.Add(new LogEntryDto
                         {
                             LineNumber = lineNumber,
-                            Timestamp = timestamp,
+                            Timestamp = utcTimestamp,
                             Level = level,
                             LevelArabic = GetArabicLevel(level),
                             Message = message

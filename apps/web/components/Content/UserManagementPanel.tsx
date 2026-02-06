@@ -1,4 +1,4 @@
-﻿/* eslint-disable react-hooks/rules-of-hooks */
+/* eslint-disable react-hooks/rules-of-hooks */
 /* NOTE: This component has early returns before hooks which violates Rules of Hooks.
    This needs major refactoring to move all hooks before conditional returns.
    Temporarily disabled the lint rule to allow build to proceed. */
@@ -32,7 +32,7 @@ import TrashTab from '@/components/TrashTab';
 import { usersApiClient } from '@/services/api/usersApiClient';
 import queuesApiClient from '@/services/api/queuesApiClient';
 import { messageApiClient } from '@/services/api/messageApiClient';
-import { formatLocalDateTime, getUtcDateString } from '@/utils/dateTimeUtils';
+import { formatLocalDate, formatLocalDateTime, formatLocalTime, getUtcDateString } from '@/utils/dateTimeUtils';
 import { formatArabicPercentage } from '@/utils/numberUtils';
 
 import { logsApiClient, LogEntry, getLevelColor, getLevelIcon } from '@/services/api/logsApiClient';
@@ -1844,19 +1844,10 @@ export default function UserManagementPanel() {
                       {inlineLogs.map((log, index) => (
                         <tr key={`${log.lineNumber}-${index}`} className="hover:bg-gray-50 transition-colors">
                           <td className="px-4 py-3 text-gray-900 font-mono text-xs whitespace-nowrap">
-                            {new Date(log.timestamp).toLocaleTimeString('ar-EG-u-nu-latn', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                              hour12: false
-                            })}
+                            {formatLocalTime(log.timestamp)}
                           </td>
                           <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                            {new Date(log.timestamp).toLocaleDateString('ar-EG-u-nu-latn', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric'
-                            })}
+                            {formatLocalDate(log.timestamp)}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getLevelColor(log.level)}`}>

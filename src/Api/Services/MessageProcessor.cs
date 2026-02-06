@@ -16,6 +16,15 @@ namespace Clinics.Api.Services
     public interface IMessageProcessor
     {
         Task ProcessQueuedMessagesAsync(int maxBatch = 50);
+        
+        /// <summary>
+        /// Process queued messages for a specific moderator only.
+        /// Used by per-moderator Hangfire jobs for parallel processing.
+        /// Does NOT call ExpireTimedOutCommandsAsync (handled by global job).
+        /// </summary>
+        /// <param name="moderatorId">The moderator ID to process messages for</param>
+        /// <param name="maxBatch">Maximum number of messages to process in this batch</param>
+        Task ProcessQueuedMessagesForModeratorAsync(int moderatorId, int maxBatch = 50);
     }
 
     public class MessageProcessor : IMessageProcessor
