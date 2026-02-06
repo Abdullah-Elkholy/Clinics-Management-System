@@ -74,6 +74,8 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
   const { selectedModeratorId } = useQueue();
   const isLoadingRef = useRef(false);
   const isMountedRef = useRef(true);
+  // Track message IDs already counted for badge (prevents duplicates from multiple SignalR events)
+  const countedMessageIds = useRef<Set<string>>(new Set());
 
   /**
    * Fetch current ongoing sessions from API
@@ -251,8 +253,6 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
      * Triggers badge updates for failed/completed messages
      * Uses deduplication to prevent counting same message multiple times
      */
-    // Track message IDs already counted for badge (prevents duplicates from multiple code paths)
-    const countedMessageIds = useRef<Set<string>>(new Set());
 
     const handleMessageUpdate = (payload: any) => {
       logger.debug('GlobalProgressContext: Received MessageUpdated event', payload);
