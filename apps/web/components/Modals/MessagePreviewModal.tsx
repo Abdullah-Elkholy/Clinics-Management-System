@@ -1494,7 +1494,7 @@ export default function MessagePreviewModal() {
                     جاري التحقق من أرقام الواتساب...
                   </p>
                   <p className="text-xs text-blue-600 mt-1">
-                    {validationProgress.current} / {validationProgress.total}
+                    {validationProgress.current + 1} / {validationProgress.total}
                   </p>
                 </div>
               </div>
