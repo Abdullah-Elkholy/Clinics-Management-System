@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Clinics.Api.DTOs;
 using System.Security.Claims;
+using Hangfire;
 
 namespace Clinics.Api.Controllers
 {
@@ -270,6 +271,19 @@ namespace Clinics.Api.Controllers
 
                 _db.Users.Add(user);
                 await _db.SaveChangesAsync();
+
+                // Register per-moderator recurring job for new moderators
+                if (user.Role == "moderator")
+                {
+                    RecurringJob.AddOrUpdate<ProcessQueuedMessagesJob>(
+                        $"process-messages-mod-{user.Id}",
+                        job => job.ExecuteForModeratorAsync(user.Id),
+                        "*/60 * * * * *");
+                    
+                    _logger.LogInformation(
+                        "Registered per-moderator job process-messages-mod-{ModeratorId} for new moderator", 
+                        user.Id);
+                }
 
                 return Ok(user);
             }

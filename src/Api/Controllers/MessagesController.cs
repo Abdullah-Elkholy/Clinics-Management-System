@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using Clinics.Api.Hubs;
+using Hangfire;
 
 namespace Clinics.Api.Controllers
 {
@@ -22,6 +23,7 @@ namespace Clinics.Api.Controllers
         private readonly IContentVariableResolver _variableResolver;
         private readonly IdempotencyService _idempotencyService;
         private readonly IHubContext<DataUpdateHub> _hubContext;
+        private readonly IBackgroundJobClient _backgroundJobs;
 
         public MessagesController(
             ApplicationDbContext db,
@@ -29,7 +31,8 @@ namespace Clinics.Api.Controllers
             ILogger<MessagesController> logger,
             IContentVariableResolver variableResolver,
             IdempotencyService idempotencyService,
-            IHubContext<DataUpdateHub> hubContext)
+            IHubContext<DataUpdateHub> hubContext,
+            IBackgroundJobClient backgroundJobs)
         {
             _db = db;
             _quotaService = quotaService;
@@ -37,6 +40,7 @@ namespace Clinics.Api.Controllers
             _variableResolver = variableResolver;
             _idempotencyService = idempotencyService;
             _hubContext = hubContext;
+            _backgroundJobs = backgroundJobs;
         }
 
         [HttpPost("send")]
@@ -519,11 +523,19 @@ namespace Clinics.Api.Controllers
                         await _db.SaveChangesAsync();
                         await transaction.CommitAsync();
 
+                        // EVENT-DRIVEN: Trigger immediate processing for this moderator
+                        // This eliminates the 15-second polling delay
+                        // Safe to call multiple times - per-moderator lock prevents duplicate processing
+                        _backgroundJobs.Enqueue<ProcessQueuedMessagesJob>(
+                            job => job.ExecuteForModeratorAsync(effectiveModeratorId));
+
                         // NOTE: Quota is now consumed on successful send (in MessageProcessor), not on queueing
                         // This ensures quota is only consumed for messages that are actually sent
 
-                        _logger.LogInformation("User {UserId} queued {Count} messages in session {SessionId} with correlation ID {CorrelationId}. If session is paused, messages won't be sent until resumed (quota consumed on send only)",
-                            userId, messages.Count, sessionId, correlationId);
+                        _logger.LogInformation(
+                            "User {UserId} queued {Count} messages in session {SessionId}. " +
+                            "Triggered immediate processing for moderator {ModeratorId}. CorrelationId: {CorrelationId}",
+                            userId, messages.Count, sessionId, effectiveModeratorId, correlationId);
 
                         // Cache response for idempotency
                         var response = new SendMessageResponse

@@ -705,6 +705,421 @@ namespace Clinics.Api.Services
             HealthController.UpdateProcessorState(processedCount, errorCount);
         }
 
+        /// <summary>
+        /// Process queued messages for a specific moderator only.
+        /// This is a moderator-scoped version of ProcessQueuedMessagesAsync that:
+        /// - Does NOT call ExpireTimedOutCommandsAsync (global operation, handled by global job)
+        /// - Scopes orphan cleanup to this moderator only
+        /// - Uses ClaimNextEligibleMessageForModeratorAsync for scoped claiming
+        /// - Preserves all rate limiting and pause checks
+        /// </summary>
+        public async Task ProcessQueuedMessagesForModeratorAsync(int moderatorId, int maxBatch = 50)
+        {
+            // Generate correlation ID with moderator context
+            var processorRunId = Guid.NewGuid();
+            using var processorScope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["ProcessorRunId"] = processorRunId,
+                ["ProcessorStartTime"] = DateTime.UtcNow,
+                ["ModeratorId"] = moderatorId
+            });
+
+            _logger.LogDebug("Per-moderator ProcessorRun started: {ProcessorRunId} for moderator {ModeratorId}", 
+                processorRunId, moderatorId);
+
+            // Check if this moderator is globally paused (single check, not list)
+            var whatsappSession = await _db.WhatsAppSessions
+                .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted);
+            
+            if (whatsappSession?.IsPaused == true)
+            {
+                _logger.LogDebug("Moderator {ModeratorId} is globally paused, skipping processing", moderatorId);
+                return;
+            }
+
+            // NOTE: Do NOT call ExpireTimedOutCommandsAsync - that's a GLOBAL operation
+            // The global safety net job handles command expiration
+
+            // Cleanup orphaned messages FOR THIS MODERATOR ONLY
+            var orphanedMessages = await _db.Messages
+                .Where(m => !m.IsDeleted 
+                    && m.Status == "sending" 
+                    && m.InFlightCommandId != null
+                    && m.ModeratorId == moderatorId)  // SCOPED
+                .ToListAsync();
+
+            foreach (var orphan in orphanedMessages)
+            {
+                if (!orphan.InFlightCommandId.HasValue)
+                    continue;
+
+                var command = await _db.ExtensionCommands
+                    .FirstOrDefaultAsync(c => c.Id == orphan.InFlightCommandId.Value);
+
+                if (command == null)
+                {
+                    _logger.LogWarning("[Per-Mod] Resetting orphaned message {MessageId} from sending to queued (command {CommandId} not found)",
+                        orphan.Id, orphan.InFlightCommandId);
+                    orphan.Status = "queued";
+                    orphan.InFlightCommandId = null;
+                }
+                else if (command.Status == ExtensionCommandStatuses.Expired ||
+                         command.Status == ExtensionCommandStatuses.Failed)
+                {
+                    _logger.LogWarning("[Per-Mod] Resetting message {MessageId} from sending to queued (command {CommandId} status: {Status})",
+                        orphan.Id, orphan.InFlightCommandId, command.Status);
+                    orphan.Status = "queued";
+                    orphan.InFlightCommandId = null;
+                }
+            }
+
+            // Cleanup messages stuck in 'sending' with NO InFlightCommandId FOR THIS MODERATOR
+            var stuckWithoutCommand = await _db.Messages
+                .Where(m => !m.IsDeleted 
+                    && m.Status == "sending" 
+                    && m.InFlightCommandId == null
+                    && m.ModeratorId == moderatorId)  // SCOPED
+                .ToListAsync();
+
+            foreach (var stuck in stuckWithoutCommand)
+            {
+                _logger.LogWarning("[Per-Mod] Resetting stuck message {MessageId} from sending to queued (no InFlightCommandId)",
+                    stuck.Id);
+                stuck.Status = "queued";
+            }
+
+            var totalReset = orphanedMessages.Count + stuckWithoutCommand.Count;
+            if (totalReset > 0)
+            {
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("[Per-Mod] Reset {Count} stuck message(s) for moderator {ModeratorId}",
+                    totalReset, moderatorId);
+            }
+
+            var totalMessages = 0;
+            var processedCount = 0;
+            var errorCount = 0;
+
+            // Process messages one at a time with atomic claiming
+            for (int i = 0; i < maxBatch; i++)
+            {
+                // Atomic claim: SELECT + UPDATE in one query, scoped to this moderator
+                var claimedMessage = await ClaimNextEligibleMessageForModeratorAsync(moderatorId);
+
+                if (claimedMessage == null)
+                {
+                    // No more eligible messages for this moderator
+                    break;
+                }
+
+                totalMessages++;
+                var m = claimedMessage;
+
+                // Create message-level correlation scope
+                var messageAttemptId = Guid.NewGuid();
+                using var messageScope = _logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["MessageId"] = m.Id,
+                    ["MessageAttemptId"] = messageAttemptId,
+                    ["AttemptNumber"] = m.Attempts + 1,
+                    ["ModeratorId"] = moderatorId,
+                    ["SessionId"] = m.SessionId ?? "none",
+                    ["CorrelationId"] = m.CorrelationId?.ToString() ?? processorRunId.ToString()
+                });
+
+                _logger.LogInformation("[Per-Mod] StateTransition: {PreviousState} → {NewState} for message {MessageId}",
+                    "queued", "sending", m.Id);
+
+                try
+                {
+                    // Double-check pause state (may have been paused while processing)
+                    if (m.IsPaused)
+                    {
+                        _logger.LogInformation("[Per-Mod] StateTransition: {PreviousState} → {NewState} for message {MessageId} (paused by user)",
+                            "sending", "queued(paused)", m.Id);
+                        m.Status = "queued";
+                        await _db.SaveChangesAsync();
+                        continue;
+                    }
+
+                    // Check if moderator was globally paused while we were claiming
+                    var currentSession = await _db.WhatsAppSessions
+                        .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted);
+
+                    if (currentSession != null && currentSession.IsPaused)
+                    {
+                        _logger.LogInformation("[Per-Mod] StateTransition: {PreviousState} → {NewState} for message {MessageId} (moderator globally paused)",
+                            "sending", "queued(global_pause)", m.Id);
+                        m.Status = "queued";
+                        m.InFlightCommandId = null;
+                        await _db.SaveChangesAsync();
+                        await NotifyMessageUpdate(m, "paused");
+                        continue;
+                    }
+
+                    // Check circuit breaker state
+                    var circuitState = _circuitBreaker.GetState(moderatorId);
+                    if (circuitState == CircuitBreakerState.Open)
+                    {
+                        _logger.LogWarning("[Per-Mod] Skipping message {MessageId} - circuit is OPEN for moderator {ModeratorId}",
+                            m.Id, moderatorId);
+                        m.Status = "queued";
+                        await _db.SaveChangesAsync();
+                        continue;
+                    }
+
+                    // Create cancellation token source for pause interruption
+                    using var sendCts = new CancellationTokenSource();
+
+                    // Monitoring task for pause detection during send
+                    var monitoringTask = Task.Run(async () =>
+                    {
+                        using var scope = _scopeFactory.CreateScope();
+                        var monitoringDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                        try
+                        {
+                            while (!sendCts.Token.IsCancellationRequested)
+                            {
+                                await Task.Delay(200, sendCts.Token);
+
+                                // Check global pause
+                                var session = await monitoringDb.WhatsAppSessions
+                                    .AsNoTracking()
+                                    .FirstOrDefaultAsync(ws => ws.ModeratorUserId == moderatorId && !ws.IsDeleted, sendCts.Token);
+
+                                if (session?.IsPaused == true)
+                                {
+                                    _logger.LogWarning("[Per-Mod] Global pause detected during send for moderator {ModeratorId} - cancelling message {MessageId}",
+                                        moderatorId, m.Id);
+                                    sendCts.Cancel();
+                                    return;
+                                }
+
+                                // Check session pause
+                                if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuid))
+                                {
+                                    var messageSession = await monitoringDb.MessageSessions
+                                        .AsNoTracking()
+                                        .FirstOrDefaultAsync(s => s.Id == sessionGuid && !s.IsDeleted, sendCts.Token);
+
+                                    if (messageSession?.IsPaused == true)
+                                    {
+                                        _logger.LogWarning("[Per-Mod] Session pause detected during send for session {SessionId} - cancelling message {MessageId}",
+                                            sessionGuid, m.Id);
+                                        sendCts.Cancel();
+                                        return;
+                                    }
+                                }
+
+                                // Check message pause
+                                var currentMessage = await monitoringDb.Messages
+                                    .AsNoTracking()
+                                    .FirstOrDefaultAsync(msg => msg.Id == m.Id, sendCts.Token);
+
+                                if (currentMessage?.IsPaused == true)
+                                {
+                                    _logger.LogWarning("[Per-Mod] Message pause detected during send - cancelling message {MessageId}", m.Id);
+                                    sendCts.Cancel();
+                                    return;
+                                }
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Expected when sendCts is cancelled
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[Per-Mod] Error in pause monitoring task for message {MessageId}", m.Id);
+                        }
+                    });
+
+                    // Execute send through circuit breaker
+                    (bool success, string? providerId, string? providerResponse) result;
+                    try
+                    {
+                        result = await _circuitBreaker.ExecuteAsync(moderatorId, async () =>
+                        {
+                            var providerResult = await _providerFactory.GetProviderAsync(moderatorId);
+                            var provider = providerResult.provider;
+                            var providerName = providerResult.providerName;
+                            _logger.LogDebug("[Per-Mod] Using {ProviderName} provider for message {MessageId}", providerName, m.Id);
+
+                            var sendResult = await provider.SendMessageAsync(m, sendCts.Token);
+                            return (sendResult.Success, providerName, sendResult.ProviderResponse ?? sendResult.ErrorMessage);
+                        });
+                    }
+                    finally
+                    {
+                        // Stop monitoring
+                        sendCts.Cancel();
+                        try { await monitoringTask; } catch (OperationCanceledException) { }
+                    }
+
+                    // Update message based on result
+                    m.Attempts++;
+                    m.LastAttemptAt = DateTime.UtcNow;
+
+                    if (result.success)
+                    {
+                        m.Status = "sent";
+                        m.SentAt = DateTime.UtcNow;
+                        m.ErrorMessage = null;
+                        m.InFlightCommandId = null;
+
+                        _logger.LogInformation("[Per-Mod] StateTransition: {PreviousState} → {NewState} for message {MessageId}",
+                            "sending", "sent", m.Id);
+
+                        // Consume quota on successful send
+                        if (m.SenderUserId.HasValue)
+                        {
+                            await _quotaService.ConsumeMessageQuotaAsync(m.SenderUserId.Value, 1);
+                        }
+
+                        // Update session stats
+                        if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuidSuccess))
+                        {
+                            var session = await _db.MessageSessions.FindAsync(sessionGuidSuccess);
+                            if (session != null)
+                            {
+                                session.SentMessages++;
+                                session.LastUpdated = DateTime.UtcNow;
+                                await _db.SaveChangesAsync();
+                                await NotifySessionUpdate(session, "updated");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        errorCount++;
+                        var maxRetries = 3;
+
+                        if (m.Attempts >= maxRetries)
+                        {
+                            m.Status = "failed";
+                            m.ErrorMessage = result.providerResponse ?? "Max retries exceeded";
+                            m.InFlightCommandId = null;
+
+                            _logger.LogWarning("[Per-Mod] StateTransition: {PreviousState} → {NewState} for message {MessageId} (max retries reached)",
+                                "sending", "failed", m.Id);
+
+                            // Update session stats
+                            if (!string.IsNullOrEmpty(m.SessionId) && Guid.TryParse(m.SessionId, out var sessionGuidFail))
+                            {
+                                var session = await _db.MessageSessions.FindAsync(sessionGuidFail);
+                                if (session != null)
+                                {
+                                    session.FailedMessages++;
+                                    session.LastUpdated = DateTime.UtcNow;
+                                    await _db.SaveChangesAsync();
+                                    await NotifySessionUpdate(session, "updated");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Exponential backoff
+                            var backoffSeconds = Math.Pow(2, m.Attempts) * 30;
+                            m.NextAttemptAt = DateTime.UtcNow.AddSeconds(backoffSeconds);
+                            m.Status = "queued";
+                            m.ErrorMessage = result.providerResponse;
+                            m.InFlightCommandId = null;
+
+                            _logger.LogWarning("[Per-Mod] StateTransition: {PreviousState} → {NewState} for message {MessageId} (retry in {Seconds}s)",
+                                "sending", "queued(backoff)", m.Id, backoffSeconds);
+                        }
+                    }
+
+                    await _db.SaveChangesAsync();
+                    processedCount++;
+
+                    // RATE LIMITING: Apply random delay between messages (CRITICAL - preserve to avoid WhatsApp detection)
+                    if (result.success)
+                    {
+                        var rateLimitDelay = await _rateLimitService.GetRandomDelayAsync();
+                        if (rateLimitDelay > TimeSpan.Zero)
+                        {
+                            _logger.LogDebug("[Per-Mod] RateLimit: Waiting {DelaySeconds:F1}s before next message", rateLimitDelay.TotalSeconds);
+                            try
+                            {
+                                await Task.Delay(rateLimitDelay);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                _logger.LogInformation("[Per-Mod] Rate limit delay interrupted by pause");
+                            }
+                        }
+                    }
+                }
+                catch (InvalidOperationException ex) when (
+                    ex.Message.StartsWith("PendingQR:", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.StartsWith("PendingNET:", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.StartsWith("BrowserClosure:", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Global pause handling for connection/browser issues
+                    string pauseReason;
+
+                    if (ex.Message.StartsWith("PendingQR:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pauseReason = "PendingQR - Authentication required";
+                    }
+                    else if (ex.Message.StartsWith("PendingNET:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pauseReason = "PendingNET - Network issue";
+                    }
+                    else
+                    {
+                        pauseReason = "BrowserClosure - Browser closed";
+                    }
+
+                    _logger.LogWarning("[Per-Mod] Global pause triggered for moderator {ModeratorId}: {Reason}", moderatorId, pauseReason);
+
+                    // Pause the WhatsApp session
+                    if (whatsappSession != null)
+                    {
+                        whatsappSession.IsPaused = true;
+                        whatsappSession.PauseReason = pauseReason;
+                    }
+
+                    // Reset message to queued
+                    m.Status = "queued";
+                    m.InFlightCommandId = null;
+                    await _db.SaveChangesAsync();
+
+                    errorCount++;
+                    // Exit loop - moderator is now paused
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    errorCount++;
+                    _logger.LogError(ex, "[Per-Mod] Unexpected error processing message {MessageId}", m.Id);
+
+                    // Reset message to queued for retry
+                    m.Status = "queued";
+                    m.InFlightCommandId = null;
+                    m.ErrorMessage = ex.Message;
+                    await _db.SaveChangesAsync();
+                }
+            }
+
+            // Log processor run summary
+            if (totalMessages == 0 && errorCount == 0)
+            {
+                _logger.LogDebug("[Per-Mod] ProcessorRun completed: {ProcessorRunId} - Processed={Processed}, Errors={Errors}, Total={Total}",
+                    processorRunId, processedCount, errorCount, totalMessages);
+            }
+            else
+            {
+                _logger.LogInformation("[Per-Mod] ProcessorRun completed: {ProcessorRunId} for moderator {ModeratorId} - Processed={Processed}, Errors={Errors}, Total={Total}",
+                    processorRunId, moderatorId, processedCount, errorCount, totalMessages);
+            }
+
+            // Update health metrics
+            HealthController.UpdateProcessorState(processedCount, errorCount);
+        }
+
         #region SignalR Notification Helpers
 
         /// <summary>
@@ -921,6 +1336,118 @@ namespace Clinics.Api.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in atomic message claiming");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Atomically claim the next eligible message for a specific moderator.
+        /// Simplified version of ClaimNextEligibleMessageAsync that:
+        /// - Scopes to a single moderator
+        /// - Skips paused moderator check (done at method start)
+        /// - Preserves session type priority (check_whatsapp first)
+        /// </summary>
+        private async Task<Message?> ClaimNextEligibleMessageForModeratorAsync(int moderatorId)
+        {
+            var commandId = Guid.NewGuid();
+            var sql = "";
+
+            if (_db.IsPostgreSql)
+            {
+                sql = $@"
+                WITH EligibleMessages AS (
+                    SELECT m.""Id""
+                    FROM ""Messages"" m
+                    LEFT JOIN ""MessageSessions"" s ON 
+                        CASE WHEN m.""SessionId"" ~ '^[0-9a-fA-F-]{{{{36}}}}$' 
+                             THEN m.""SessionId""::uuid ELSE NULL END = s.""Id""
+                    WHERE m.""Status"" IN ('queued', 'pending')
+                      AND m.""IsPaused"" = FALSE
+                      AND m.""IsDeleted"" = FALSE
+                      AND m.""ModeratorId"" = {moderatorId}
+                      AND (m.""NextAttemptAt"" IS NULL OR m.""NextAttemptAt"" <= NOW())
+                      AND (s.""Id"" IS NULL OR (s.""IsPaused"" = FALSE AND s.""IsDeleted"" = FALSE))
+                      AND NOT EXISTS (
+                          SELECT 1 FROM ""Messages"" sending
+                          WHERE sending.""ModeratorId"" = {moderatorId}
+                            AND sending.""Status"" = 'sending'
+                            AND sending.""IsDeleted"" = FALSE
+                      )
+                    ORDER BY 
+                        CASE WHEN s.""SessionType"" = 'check_whatsapp' THEN 0 ELSE 1 END ASC,
+                        COALESCE(s.""StartTime"", m.""CreatedAt"") ASC,
+                        m.""CalculatedPosition"" ASC, 
+                        m.""Id"" ASC
+                    LIMIT 1
+                    FOR UPDATE OF m SKIP LOCKED
+                )
+                UPDATE ""Messages"" m
+                SET ""Status"" = 'sending',
+                    ""InFlightCommandId"" = '{commandId}'
+                FROM EligibleMessages e
+                WHERE m.""Id"" = e.""Id""
+                RETURNING m.""Id"";
+                ";
+            }
+            else
+            {
+                // SQL Server version with same moderator scoping
+                sql = $@"
+                CREATE TABLE #ClaimedMessages (MessageId UNIQUEIDENTIFIER);
+                
+                ;WITH EligibleMessages AS (
+                    SELECT TOP(1) m.Id
+                    FROM Messages m
+                    LEFT JOIN MessageSessions s ON TRY_CAST(m.SessionId AS UNIQUEIDENTIFIER) = s.Id
+                    WHERE m.Status IN ('queued', 'pending')
+                      AND m.IsPaused = 0
+                      AND m.IsDeleted = 0
+                      AND m.ModeratorId = {moderatorId}
+                      AND (m.NextAttemptAt IS NULL OR m.NextAttemptAt <= GETUTCDATE())
+                      AND (s.Id IS NULL OR (s.IsPaused = 0 AND s.IsDeleted = 0))
+                      AND NOT EXISTS (
+                          SELECT 1 FROM Messages sending
+                          WHERE sending.ModeratorId = {moderatorId}
+                            AND sending.Status = 'sending'
+                            AND sending.IsDeleted = 0
+                      )
+                    ORDER BY CASE WHEN s.SessionType = 'check_whatsapp' THEN 0 ELSE 1 END ASC,
+                             COALESCE(s.StartTime, m.CreatedAt) ASC, 
+                             m.CalculatedPosition ASC, m.Id ASC
+                )
+                UPDATE m
+                SET m.Status = 'sending', m.InFlightCommandId = '{commandId}'
+                OUTPUT inserted.Id INTO #ClaimedMessages
+                FROM Messages m
+                INNER JOIN EligibleMessages e ON m.Id = e.Id;
+                
+                SELECT MessageId FROM #ClaimedMessages;
+                DROP TABLE #ClaimedMessages;
+                ";
+            }
+
+            try
+            {
+                var claimedIds = await _db.Database.SqlQueryRaw<Guid>(sql).ToListAsync();
+
+                if (claimedIds.Count == 0)
+                    return null;
+
+                var claimedId = claimedIds.First();
+                var trackedMessage = await _db.Messages.FirstOrDefaultAsync(m => m.Id == claimedId);
+
+                if (trackedMessage != null)
+                {
+                    _logger.LogDebug("[Per-Mod] Atomically claimed message {MessageId} for moderator {ModeratorId}",
+                        trackedMessage.Id, moderatorId);
+                    await NotifyMessageUpdate(trackedMessage, "sending");
+                }
+
+                return trackedMessage;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[Per-Mod] Error in atomic message claiming for moderator {ModeratorId}", moderatorId);
                 return null;
             }
         }

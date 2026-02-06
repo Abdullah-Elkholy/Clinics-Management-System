@@ -979,24 +979,58 @@ catch (Exception ex)
 }
 
 
-// schedule hangfire recurring job every 15 seconds (demo)
-// P0.1: Using ProcessQueuedMessagesJob wrapper with [DisableConcurrentExecution] attribute
-// This ensures only one processor runs at a time, preventing duplicate message sends
+// HYBRID MESSAGE PROCESSING: Event-driven + per-moderator recurring + global safety net
+// - Event-driven: MessagesController triggers immediate processing after queueing
+// - Per-moderator recurring: Safety net catches orphaned messages (60s interval)
+// - Global recurring: ExpireTimedOutCommandsAsync + messages without moderator (60s interval)
 try
 {
-    RecurringJob.AddOrUpdate<ProcessQueuedMessagesJob>("process-queued-messages", job => job.ExecuteAsync(), "*/15 * * * * *");
+    // GLOBAL SAFETY NET: Handles cleanup and edge cases
+    // - ExpireTimedOutCommandsAsync (global operation)
+    // - Messages without ModeratorId (edge case)
+    RecurringJob.AddOrUpdate<ProcessQueuedMessagesJob>(
+        "process-queued-messages-global", 
+        job => job.ExecuteAsync(), 
+        "*/60 * * * * *");  // Reduced from 15s to 60s
 
-    // Security: Monitor CPU usage every 5 minutes to detect cryptominers or other malicious activity
+    // PER-MODERATOR RECURRING JOBS: Safety net for each active moderator
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        
+        var moderatorIds = db.Users
+            .Where(u => u.Role == "moderator" && !u.IsDeleted)
+            .Select(u => u.Id)
+            .ToList();
+
+        foreach (var moderatorId in moderatorIds)
+        {
+            RecurringJob.AddOrUpdate<ProcessQueuedMessagesJob>(
+                $"process-messages-mod-{moderatorId}",
+                job => job.ExecuteForModeratorAsync(moderatorId),
+                "*/60 * * * * *");  // Every 60 seconds as safety net
+        }
+
+        logger.LogInformation(
+            "Registered {Count} per-moderator message processing jobs (safety net, 60s interval)", 
+            moderatorIds.Count);
+    }
+
+    // Security: Monitor CPU usage every 5 minutes to detect cryptominers
     RecurringJob.AddOrUpdate<CpuMonitorJob>("cpu-security-monitor", job => job.ExecuteAsync(), "*/5 * * * *");
 
-    // DEF-007/008/009: Clean up orphaned extension commands and messages every 60 seconds
-    // This recovers messages stuck in "sending" status due to timed-out commands
+    // DEF-007/008/009: Clean up orphaned extension commands and messages
     RecurringJob.AddOrUpdate<Clinics.Api.Services.Extension.ExtensionCommandCleanupService>(
         "extension-command-cleanup",
         service => service.RunCleanupAsync(),
         "*/60 * * * * *");
 }
-catch { }
+catch (Exception ex)
+{
+    app.Services.GetRequiredService<ILogger<Program>>()
+        .LogError(ex, "Error registering Hangfire recurring jobs");
+}
 
 app.Run();
 

@@ -9,6 +9,7 @@
 using Clinics.Domain;
 using Clinics.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Hangfire;
 
 namespace Clinics.Api.Services;
 
@@ -127,6 +128,12 @@ public class UserCascadeService : IUserCascadeService
                         "WhatsAppSession {SessionId} for moderator {UserId} soft-deleted at {Timestamp}",
                         whatsappSession.Id, userId, operationTimestamp);
                 }
+
+                // Remove per-moderator recurring job
+                RecurringJob.RemoveIfExists($"process-messages-mod-{userId}");
+                _logger.LogInformation(
+                    "Removed per-moderator job process-messages-mod-{ModeratorId} for deleted moderator", 
+                    userId);
             }
 
             // Mark user as deleted with snapshot timestamp
