@@ -41,6 +41,8 @@ services:
       - Jwt__Key=${JWT_SECRET_KEY:?JWT secret key required}
       - AllowedOrigins=${ALLOWED_ORIGINS}
       - ExtensionOrigins=${EXTENSION_ORIGIN}
+    volumes:
+      - api_logs:/app/logs
     expose:
       - "80"
     depends_on:
@@ -149,4 +151,6 @@ volumes:
   postgres_data_prod:
     driver: local
   certbot_data:
+    driver: local
+  api_logs:
     driver: local
