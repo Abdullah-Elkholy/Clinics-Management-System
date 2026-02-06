@@ -50,14 +50,16 @@ function matchesCondition(offset: number, cond: MessageCondition): boolean {
  * - {CQP}: Current Queue Position (the position currently being served)
  * - {ETR}: Estimated Time Remaining (formatted as "X ساعة و Y دقيقة")
  * - {DN}: Department/Queue Name
+ * - {CN}: Clinic/Queue Name
  */
-function replacePlaceholders(template: string, params: { PN?: string; PQP?: number; CQP?: number; ETR?: string; DN?: string; }): string {
+function replacePlaceholders(template: string, params: { PN?: string; PQP?: number; CQP?: number; ETR?: string; DN?: string; CN?: string; }): string {
   return template
     .replace(/{PN}/g, params.PN ?? '')
     .replace(/{PQP}/g, params.PQP !== undefined ? String(params.PQP) : '')
     .replace(/{CQP}/g, params.CQP !== undefined ? String(params.CQP) : '')
     .replace(/{ETR}/g, params.ETR ?? '')
-    .replace(/{DN}/g, params.DN ?? '');
+    .replace(/{DN}/g, params.DN ?? '')
+    .replace(/{CN}/g, params.CN ?? '');
 }
 
 /**
@@ -153,6 +155,7 @@ export function resolvePatientMessage(
         CQP: currentQueuePosition,
         ETR: etrDisplay,
         DN: config.queueName,
+        CN: config.queueName,
       });
 
       console.log('[resolvePatientMessage] ✅ Active condition matched:', {
@@ -197,6 +200,7 @@ export function resolvePatientMessage(
       CQP: currentQueuePosition,
       ETR: etrDisplay,
       DN: config.queueName,
+      CN: config.queueName,
     });
     
     console.log('[resolvePatientMessage] ✅ DEFAULT condition matched:', {

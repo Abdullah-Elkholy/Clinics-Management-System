@@ -52,6 +52,7 @@ export const TEMPLATE_PLACEHOLDERS = {
   CQP: { label: 'Current Queue Position', example: '3' },
   ETR: { label: 'Estimated Time Remaining', example: '30 دقيقة' },
   DN: { label: 'Doctor Name', example: 'د. علي أحمد' },
+  CN: { label: 'Clinic Name', example: 'عيادة الأسنان' },
   QN: { label: 'Queue Name', example: 'العيادة الخارجية' },
 } as const;
 

@@ -19,7 +19,7 @@ export interface MessageCondition {
   minValue?: number;
   maxValue?: number;
 
-  // message template (use placeholders: {PN}, {PQP}, {ETR}, {DN})
+  // message template (use placeholders: {PN}, {PQP}, {ETR}, {DN}, {CN})
   template: string;
   
   // Metadata

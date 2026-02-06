@@ -182,7 +182,7 @@ export function validateTemplate(template: string): {
   usedPlaceholders: string[];
   invalidPlaceholders: string[];
 } {
-  const validPlaceholders = new Set(['{PN}', '{PQP}', '{ETR}', '{DN}']);
+  const validPlaceholders = new Set(['{PN}', '{PQP}', '{ETR}', '{DN}', '{CN}']);
   const usedPlaceholders: string[] = [];
   const invalidPlaceholders: string[] = [];
 

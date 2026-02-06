@@ -39,6 +39,8 @@ export default function AddTemplateModal() {
   const [isLoading, setIsLoading] = useState(false);
   const [showDefaultWarning, setShowDefaultWarning] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [existingDefaultTemplate, setExistingDefaultTemplate] = useState<MessageTemplate | null>(null);
   const [hasConfirmedDefaultOverride, setHasConfirmedDefaultOverride] = useState(false);
 
@@ -123,8 +125,15 @@ export default function AddTemplateModal() {
   };
 
   const insertVariable = (variable: string) => {
-    if (content.length + variable.length <= MAX_CONTENT_LENGTH) {
-      setContent(content + variable);
+    const el = contentRef.current;
+    const start = el ? (el.selectionStart ?? content.length) : selection.start;
+    const end = el ? (el.selectionEnd ?? content.length) : selection.end;
+    const safeStart = Math.min(start, content.length);
+    const safeEnd = Math.min(end, content.length);
+    const nextContent = content.slice(0, safeStart) + variable + content.slice(safeEnd);
+
+    if (nextContent.length <= MAX_CONTENT_LENGTH) {
+      setContent(nextContent);
       // Clear error if there was one
       if (errors.content) {
         setErrors((prev) => {
@@ -133,9 +142,23 @@ export default function AddTemplateModal() {
           return newErrors;
         });
       }
+      const nextCaret = safeStart + variable.length;
+      requestAnimationFrame(() => {
+        const nextEl = contentRef.current;
+        if (!nextEl) return;
+        nextEl.focus();
+        nextEl.setSelectionRange(nextCaret, nextCaret);
+        setSelection({ start: nextCaret, end: nextCaret });
+      });
     } else {
       addToast(`تم تجاوز الحد الأقصى للأحرف (${MAX_CONTENT_LENGTH})`, 'error');
     }
+  };
+
+  const updateSelection = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    setSelection({ start: el.selectionStart ?? 0, end: el.selectionEnd ?? 0 });
   };
 
   const validateField = (fieldName: string, value: string) => {
@@ -528,11 +551,18 @@ export default function AddTemplateModal() {
             id="addTemplate-content"
             name="content"
             value={content ?? ''}
-            onChange={(e) => handleFieldChange('content', e.target.value)}
+            onChange={(e) => {
+              handleFieldChange('content', e.target.value);
+              updateSelection();
+            }}
             onBlur={() => handleFieldBlur('content')}
+            onSelect={updateSelection}
+            onClick={updateSelection}
+            onKeyUp={updateSelection}
             rows={4}
             placeholder="أدخل محتوى الرسالة"
             disabled={isLoading}
+            ref={contentRef}
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all resize-none ${errors.content
               ? 'border-red-500 focus:ring-red-500'
               : 'border-gray-300 focus:ring-blue-500'
@@ -604,6 +634,16 @@ export default function AddTemplateModal() {
               <span className="font-bold text-lg text-blue-600">{'{ETR}'}</span>
               <br />
               <span className="text-sm font-medium text-gray-700">الوقت المتبقي بالدقائق</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => insertVariable('{CN}')}
+              disabled={isLoading}
+              className="bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed border-2 border-blue-300 hover:border-blue-400 px-3 py-2 rounded-lg text-blue-700 font-mono text-sm text-left transition-all hover:shadow-md"
+            >
+              <span className="font-bold text-lg text-blue-600">{'{CN}'}</span>
+              <br />
+              <span className="text-sm font-medium text-gray-700">اسم العيادة</span>
             </button>
           </div>
         </div>

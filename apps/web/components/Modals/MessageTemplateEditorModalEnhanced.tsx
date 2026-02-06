@@ -2,7 +2,7 @@
 
 import { formatLocalDateTime } from '@/utils/dateTimeUtils';
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { MessageTemplate } from '@/types/messageTemplate';
 
 interface MessageTemplateEditorModalProps {
@@ -37,13 +37,7 @@ const AVAILABLE_VARIABLES = [
     example: '15 دقيقة',
   },
   {
-    code: '{DIN}',
-    label: 'اسم الطبيب',
-    description: 'Doctor In Name',
-    example: 'د. فاطمة أحمد',
-  },
-  {
-    code: '{CIN}',
+    code: '{CN}',
     label: 'اسم العيادة',
     description: 'Clinic Name',
     example: 'عيادة الأسنان',
@@ -53,12 +47,11 @@ const AVAILABLE_VARIABLES = [
  * Variable Validation Rules
  */
 const VARIABLE_VALIDATION_RULES: Record<string, any> = {
-  '{PN}': { maxUsage: 3, context: 'Personalization' },
-  '{PQP}': { maxUsage: 1, context: 'Queue Info' },
-  '{CQP}': { maxUsage: 1, context: 'Queue Info' },
-  '{ETR}': { maxUsage: 1, context: 'Timing' },
-  '{DIN}': { maxUsage: 1, context: 'Staff' },
-  '{CIN}': { maxUsage: 2, context: 'Clinic Info' },
+  '{PN}': { context: 'Personalization' },
+  '{PQP}': { context: 'Queue Info' },
+  '{CQP}': { context: 'Queue Info' },
+  '{ETR}': { context: 'Timing' },
+  '{CN}': { context: 'Clinic Info' },
 };
 
 export default function MessageTemplateEditorModal({
@@ -69,6 +62,7 @@ export default function MessageTemplateEditorModal({
   onSave,
 }: MessageTemplateEditorModalProps) {
   const isEditing = !!template;
+  const MAX_CONTENT_LENGTH = 1000;
 
   // Form state
   const [formData, setFormData] = useState<Partial<MessageTemplate>>({
@@ -85,6 +79,8 @@ export default function MessageTemplateEditorModal({
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [versionHistory, setVersionHistory] = useState<any[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const contentRef = useRef<HTMLTextAreaElement | null>(null);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
 
   // Initialize form with existing template data
   useEffect(() => {
@@ -135,17 +131,6 @@ export default function MessageTemplateEditorModal({
     // Validate usage
     const issues: Array<{ variable: string; issue: string; severity: 'warn' | 'error' }> = [];
 
-    Object.entries(count).forEach(([variable, usage]) => {
-      const rule = VARIABLE_VALIDATION_RULES[variable];
-      if (rule && usage > rule.maxUsage) {
-        issues.push({
-          variable,
-          issue: `تم استخدام ${variable} ${usage} مرات (الحد الأقصى: ${rule.maxUsage})`,
-          severity: 'warn',
-        });
-      }
-    });
-
     // Check for invalid variables
     const invalidVars = Object.keys(count).filter((v) => !VARIABLE_VALIDATION_RULES[v]);
     if (invalidVars.length > 0) {
@@ -168,22 +153,67 @@ export default function MessageTemplateEditorModal({
    * Handle form field changes
    */
   const handleFieldChange = useCallback((field: string, value: any) => {
+    if (field === 'content') {
+      if (value.length <= MAX_CONTENT_LENGTH) {
+        setFormData((prev) => ({
+          ...prev,
+          [field]: value,
+        }));
+        if (error) {
+          setError(null);
+        }
+      } else {
+        setError(`الحد الأقصى ${MAX_CONTENT_LENGTH} حرف`);
+      }
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
     setError(null);
+  }, [error]);
+
+  const updateSelection = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    setSelection({ start: el.selectionStart ?? 0, end: el.selectionEnd ?? 0 });
   }, []);
 
   /**
    * Insert variable into content
    */
   const insertVariable = useCallback((variable: string) => {
+    const content = formData.content || '';
+    const el = contentRef.current;
+    const start = el ? (el.selectionStart ?? content.length) : selection.start;
+    const end = el ? (el.selectionEnd ?? content.length) : selection.end;
+    const safeStart = Math.min(start, content.length);
+    const safeEnd = Math.min(end, content.length);
+    const nextContent = content.slice(0, safeStart) + variable + content.slice(safeEnd);
+    if (nextContent.length > MAX_CONTENT_LENGTH) {
+      setError(`الحد الأقصى ${MAX_CONTENT_LENGTH} حرف`);
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
-      content: (prev.content || '') + ' ' + variable,
+      content: nextContent,
     }));
-  }, []);
+    if (error) {
+      setError(null);
+    }
+
+    const nextCaret = safeStart + variable.length;
+    requestAnimationFrame(() => {
+      const nextEl = contentRef.current;
+      if (!nextEl) return;
+      nextEl.focus();
+      nextEl.setSelectionRange(nextCaret, nextCaret);
+      setSelection({ start: nextCaret, end: nextCaret });
+    });
+  }, [formData.content, selection.start, selection.end, error]);
 
   /**
    * Generate preview text with mock data
@@ -195,8 +225,7 @@ export default function MessageTemplateEditorModal({
       '{PQP}': '5',
       '{CQP}': '3',
       '{ETR}': '15 دقيقة',
-      '{DIN}': 'د. فاطمة أحمد',
-      '{CIN}': queueName,
+      '{CN}': queueName,
     };
 
     Object.entries(mockData).forEach(([key, value]) => {
@@ -391,9 +420,16 @@ export default function MessageTemplateEditorModal({
               id="templateEditor-content"
               name="content"
               value={formData.content || ''}
-              onChange={(e) => handleFieldChange('content', e.target.value)}
+              onChange={(e) => {
+                handleFieldChange('content', e.target.value);
+                updateSelection();
+              }}
+              onSelect={updateSelection}
+              onClick={updateSelection}
+              onKeyUp={updateSelection}
               placeholder="مثال: مرحباً {PN}, ترتيبك {PQP} والموضع الحالي {CQP}"
               rows={5}
+              ref={contentRef}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-serif resize-none"
             />
 
@@ -433,10 +469,10 @@ export default function MessageTemplateEditorModal({
               <div className="text-xs text-gray-600">
                 <span
                   className={
-                    (formData.content?.length ?? 0) > 160 ? 'text-orange-600 font-semibold' : ''
+                    (formData.content?.length ?? 0) > 500 ? 'text-orange-600 font-semibold' : ''
                   }
                 >
-                  {formData.content?.length || 0} / 160
+                  {formData.content?.length || 0} / {MAX_CONTENT_LENGTH}
                 </span>
               </div>
               {variableAnalysis.used.length > 0 && (
