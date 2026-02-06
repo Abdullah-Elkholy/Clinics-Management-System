@@ -116,11 +116,11 @@ namespace Clinics.Api.Services
                     orphan.InFlightCommandId = null;
                 }
                 else if (command.Status == ExtensionCommandStatuses.Expired ||
-                         command.Status == ExtensionCommandStatuses.Failed ||
-                         command.Status == ExtensionCommandStatuses.Completed)
+                         command.Status == ExtensionCommandStatuses.Failed)
                 {
-                    // Command expired, failed, or completed - reset message to queued for retry
-                    // (If completed successfully, the message should have been marked 'sent' - if it's still 'sending', something went wrong)
+                    // Command expired or failed - reset message to queued for retry
+                    // NOTE: Do NOT reset if Completed - ExtensionCommandService already handled that
+                    // and resetting could cause duplicate sends if extension confirmed late
                     _logger.LogWarning("Resetting message {MessageId} from sending to queued (command {CommandId} status: {Status})",
                         orphan.Id, orphan.InFlightCommandId, command.Status);
                     orphan.Status = "queued";

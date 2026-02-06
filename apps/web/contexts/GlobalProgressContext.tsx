@@ -249,14 +249,31 @@ export const GlobalProgressProvider: React.FC<{ children: React.ReactNode }> = (
     /**
      * Handle MessageUpdated events
      * Triggers badge updates for failed/completed messages
+     * Uses deduplication to prevent counting same message multiple times
      */
+    // Track message IDs already counted for badge (prevents duplicates from multiple code paths)
+    const countedMessageIds = useRef<Set<string>>(new Set());
+
     const handleMessageUpdate = (payload: any) => {
       logger.debug('GlobalProgressContext: Received MessageUpdated event', payload);
 
+      // Only count 'sent' or 'failed' status for badges
+      if (!payload?.id || (payload?.status !== 'failed' && payload?.status !== 'sent')) {
+        return;
+      }
+
+      // Deduplicate: Only count each message-status combination once
+      const countKey = `${payload.id}-${payload.status}`;
+      if (countedMessageIds.current.has(countKey)) {
+        logger.debug('GlobalProgressContext: Skipping duplicate badge for', countKey);
+        return;
+      }
+      countedMessageIds.current.add(countKey);
+
       // Increment notification badges based on message status changes
-      if (payload?.status === 'failed') {
+      if (payload.status === 'failed') {
         incrementBadge('failed', 1);
-      } else if (payload?.status === 'sent') {
+      } else if (payload.status === 'sent') {
         incrementBadge('completed', 1);
       }
     };
