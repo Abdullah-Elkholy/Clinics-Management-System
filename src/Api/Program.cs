@@ -415,9 +415,17 @@ try
 
         var utcNow = DateTime.UtcNow;
 
-        // Seed required default users if Users table is empty
-        if (!db.Users.Any())
+        // Seed required default users if Users table is empty or contains only the root user
+        var existingUserCount = db.Users.Count();
+        var onlyRootExists = existingUserCount == 1 && db.Users.All(u => u.Username == "root" && u.Role == "primary_admin");
+        if (existingUserCount == 0 || onlyRootExists)
         {
+            // If only root exists, remove it first so seeding re-creates all users with correct IDs
+            if (onlyRootExists)
+            {
+                db.Users.RemoveRange(db.Users);
+                db.SaveChanges();
+            }
             var root = new User
             {
                 Username = "root",
@@ -555,7 +563,7 @@ try
                     TemplateId = null, // Will be set after template is created
                     QueueId = demoQueue.Id,
                     Operator = "EQUAL",
-                    Value = 5,
+                    Value = 4,
                     MinValue = null,
                     MaxValue = null,
                     CreatedAt = utcNow,
@@ -582,8 +590,8 @@ try
                     QueueId = demoQueue.Id,
                     Operator = "RANGE",
                     Value = null,
-                    MinValue = 3,
-                    MaxValue = 4,
+                    MinValue = 2,
+                    MaxValue = 3,
                     CreatedAt = utcNow,
                     UpdatedAt = null,
                     CreatedBy = 4,
@@ -629,7 +637,8 @@ try
                     Title = "رسالة الترحيب الافتراضية",
                     Content = @"بص ياكبير انت معادك بعد {ETR}
 احلى مسا عليك يا{PN}
-ورقمك هو {PQP}, والرقم اللي عليه الدور دلوقتي هو {CQP}",
+ورقمك هو {PQP}, والرقم اللي عليه الدور دلوقتي هو {CQP}
+الرسالة دي هتيجي للمريض رقم 4 في الدور ودي الرسالة الافتراضية للي ملوش شرط معين",
                     ModeratorId = 4,
                     QueueId = demoQueue.Id,
                     MessageConditionId = defaultCondition.Id,
@@ -667,8 +676,8 @@ try
                 };
                 var greaterThanTemplate = new Clinics.Domain.MessageTemplate
                 {
-                    Title = "رسالة الترحيب للي أكبر من أربعة",
-                    Content = "بنجرب الشرط اللي بيعمل أكبر من 4",
+                    Title = "رسالة الترحيب للي أكبر من خمسة",
+                    Content = "بنجرب الشرط اللي بيعمل أكبر من 5",
                     ModeratorId = 4,
                     QueueId = demoQueue.Id,
                     MessageConditionId = greaterThanCondition.Id,
