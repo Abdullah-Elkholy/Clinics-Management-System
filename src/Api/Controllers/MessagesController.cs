@@ -86,7 +86,33 @@ namespace Clinics.Api.Controllers
                 }
 
                 // Get effective moderator ID (unified WhatsApp session per moderator)
-                var effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+                // Admins must provide moderatorId in request, moderators/users use their own
+                int effectiveModeratorId;
+                var userRole = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value;
+                bool isAdmin = userRole == "primary_admin" || userRole == "secondary_admin";
+
+                if (isAdmin)
+                {
+                    // Admins must provide moderatorId - they don't have their own WhatsApp session
+                    if (!req.ModeratorId.HasValue || req.ModeratorId.Value <= 0)
+                    {
+                        _logger.LogWarning("[MessagesController.Send] Admin user {UserId} attempted to send messages without specifying moderatorId", userId);
+                        return BadRequest(new
+                        {
+                            success = false,
+                            error = "الأدمن يجب أن يحدد المشرف المسؤول عن جلسة الواتساب",
+                            code = "MODERATOR_ID_REQUIRED"
+                        });
+                    }
+                    effectiveModeratorId = req.ModeratorId.Value;
+                    _logger.LogInformation("[MessagesController.Send] Admin {UserId} sending messages using moderator {ModeratorId} session",
+                        userId, effectiveModeratorId);
+                }
+                else
+                {
+                    // Moderators and users use their effective moderator ID
+                    effectiveModeratorId = await _quotaService.GetEffectiveModeratorIdAsync(userId);
+                }
 
                 // Validate moderatorId is valid (should never be 0)
                 if (effectiveModeratorId <= 0)

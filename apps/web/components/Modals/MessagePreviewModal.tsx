@@ -524,6 +524,7 @@ export default function MessagePreviewModal() {
         templateId: templateToUse,
         patientIds: patientIdsToSend,
         channel: 'whatsapp',
+        moderatorId: moderatorUserId, // Pass for admin users to use correct WhatsApp session
         correlationId,
       });
 

@@ -667,10 +667,12 @@ export async function sendMessage(data: {
 /**
  * Send messages to multiple patients (bulk)
  * @param correlationId - Optional unique ID for idempotency. Must be a valid UUID/GUID format if provided.
+ * @param moderatorId - Optional moderator ID for admin users to specify which WhatsApp session to use.
  */
 export async function sendMessages(data: {
   templateId: number;
   patientIds: number[];
+  moderatorId?: number; // Required for admin users
   channel?: string;
   overrideContent?: string;
   correlationId?: string;
@@ -680,13 +682,14 @@ export async function sendMessages(data: {
     templateId: data.templateId,
     patientIds: data.patientIds,
   };
+  if (data.moderatorId) requestBody.moderatorId = data.moderatorId;
   if (data.channel) requestBody.channel = data.channel;
   if (data.overrideContent) requestBody.overrideContent = data.overrideContent;
   // Only include correlationId if it's a valid UUID format
   if (data.correlationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.correlationId)) {
     requestBody.correlationId = data.correlationId;
   }
-  
+
   return fetchAPI('/messages/send', {
     method: 'POST',
     body: JSON.stringify(requestBody),
