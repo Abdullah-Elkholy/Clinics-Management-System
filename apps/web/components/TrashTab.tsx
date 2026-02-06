@@ -77,7 +77,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
     switch (entityType) {
       case 'queue':
         return [
-          { key: 'doctorName', label: 'اسم الطبيب' },
+          { key: 'doctorName', label: 'اسم العيادة' },
           { key: 'moderatorUsername', label: 'اسم المشرف' },
           { key: 'deletedByUsername', label: 'حذف بواسطة' },
           { key: 'deletedAt', label: 'تاريخ الحذف', render: (item) => formatLocalDateTime(item.deletedAt) },
@@ -92,7 +92,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
           { key: 'title', label: 'اسم القالب' },
           {
             key: 'doctorName',
-            label: 'اسم الطبيب',
+            label: 'اسم العيادة',
             render: (item) => {
               // Look up doctor name from queueId
               if (item.queueId && queues.length > 0) {

@@ -73,7 +73,7 @@ export default function EditQueueModal() {
   }, [isOpen, freshQueue?.id, freshQueue?.doctorName]); // Depend on queue ID and doctorName to re-init when data updates
 
   const validateField = (value: string) => {
-    const error = validateName(value, 'اسم الطبيب');
+    const error = validateName(value, 'اسم العيادة');
     if (error) {
       setErrors({ doctorName: error });
     } else {
@@ -105,7 +105,7 @@ export default function EditQueueModal() {
       return;
     }
     
-    const error = validateName(doctorName, 'اسم الطبيب');
+    const error = validateName(doctorName, 'اسم العيادة');
     
     if (error) {
       setErrors({ doctorName: error });
@@ -125,7 +125,7 @@ export default function EditQueueModal() {
         updateQueue(String(queue.id), { doctorName: doctorName.trim() });
       }
 
-      addToast('تم تحديث اسم الطبيب بنجاح', 'success');
+      addToast('تم تحديث اسم العيادة بنجاح', 'success');
       
       // If refresh is available, also refetch from backend to ensure server truth
       // Wait for refetch to complete before closing modal and dispatching event
@@ -197,7 +197,7 @@ export default function EditQueueModal() {
     >
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="editQueue-doctorName" className="block text-sm font-medium text-gray-700 mb-2">اسم الطبيب *</label>
+          <label htmlFor="editQueue-doctorName" className="block text-sm font-medium text-gray-700 mb-2">اسم العيادة *</label>
           <input
             id="editQueue-doctorName"
             name="doctorName"
@@ -205,7 +205,7 @@ export default function EditQueueModal() {
             value={doctorName ?? ''}
             onChange={(e) => handleFieldChange(e.target.value)}
             onBlur={handleFieldBlur}
-            placeholder="أدخل اسم الطبيب"
+            placeholder="أدخل اسم العيادة"
             disabled={isLoading}
             className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${
               errors.doctorName

@@ -41,7 +41,7 @@ export default function AddQueueModal() {
   const moderatorInfo = targetModeratorId ? getModeratorInfo(targetModeratorId, userManagementState.moderators) : null;
 
   const validateField = (value: string) => {
-    const error = validateName(value, 'اسم الطبيب');
+    const error = validateName(value, 'اسم العيادة');
     if (error) {
       setErrors({ doctorName: error });
     } else {
@@ -68,7 +68,7 @@ export default function AddQueueModal() {
     setTouched(true);
 
     // Validate doctor name
-    const error = validateName(doctorName, 'اسم الطبيب');
+    const error = validateName(doctorName, 'اسم العيادة');
 
     if (error) {
       setErrors({ doctorName: error });
@@ -173,7 +173,7 @@ export default function AddQueueModal() {
         {/* Doctor Name */}
         <div>
           <label htmlFor="addQueue-doctorName" className="block text-sm font-medium text-gray-700 mb-2">
-            اسم الطبيب *
+            اسم العيادة *
           </label>
           <input
             id="addQueue-doctorName"
@@ -182,7 +182,7 @@ export default function AddQueueModal() {
             value={doctorName ?? ''}
             onChange={(e) => handleFieldChange(e.target.value)}
             onBlur={handleFieldBlur}
-            placeholder="أدخل اسم الطبيب"
+            placeholder="أدخل اسم العيادة"
             className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:border-transparent transition-all ${errors.doctorName
                 ? 'border-red-500 focus:ring-red-500'
                 : 'border-gray-300 focus:ring-blue-500'

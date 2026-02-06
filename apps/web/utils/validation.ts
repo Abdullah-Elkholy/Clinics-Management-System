@@ -259,7 +259,7 @@ export const formatPhoneDisplay = (phone: string): string => {
 export const validationRules = {
   // For AddQueueModal
   addQueue: {
-    doctorName: (value: string) => validateName(value, 'اسم الطبيب'),
+    doctorName: (value: string) => validateName(value, 'اسم العيادة'),
     clinicName: (value: string) => validateName(value, 'اسم العيادة'),
     phoneNumber: (value: string) => validatePhone(value),
     whatsappNumber: (value: string) => {
